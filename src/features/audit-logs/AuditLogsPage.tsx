@@ -1,0 +1,758 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Search, 
+  Filter, 
+  Clock, 
+  Laptop, 
+  Activity, 
+  RefreshCw, 
+  Sparkles, 
+  Download, 
+  Eye, 
+  LayoutGrid,
+  List,
+  Briefcase,
+  Layers,
+  Users,
+  CheckCircle2,
+  ShieldCheck,
+  Calendar,
+  UserCheck,
+  ArrowRight
+} from 'lucide-react';
+import { useAuditLogs } from '../../hooks/useAuditLogs';
+import { SessionTimelineModal } from './components/SessionTimelineModal';
+import { UserAuditDetailModal } from './components/UserAuditDetailModal';
+import type { UserSummaryItem } from './components/UserAuditDetailModal';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Card, CardContent } from '../../components/ui/card';
+import type { UserSession, AuditLog } from '../../types/audit';
+import { OFFICIAL_JOB_TITLES } from '../../constants/roles';
+import { PresenceTracker, resolvePresenceStatus, PRESENCE_META } from '../../services/presenceService';
+import type { PresenceEntry, PresenceStatus } from '../../services/presenceService';
+
+/** Convertit le statut de la carte en statut de présence (vert / orange / gris) */
+const toPresence = (status?: string): PresenceStatus =>
+  status === 'ACTIVE' ? 'ONLINE' : status === 'IDLE' ? 'IDLE' : 'OFFLINE';
+
+interface UserSessionAvatarProps {
+  name?: string | null;
+  email?: string | null;
+  photoUrl?: string | null;
+  status?: string;
+  size?: 'sm' | 'md' | 'lg';
+}
+
+const UserSessionAvatar: React.FC<UserSessionAvatarProps> = ({ 
+  name, 
+  email, 
+  photoUrl, 
+  status, 
+  size = 'md' 
+}) => {
+  const [imgError, setImgError] = useState(false);
+
+  const displayName = name || email || 'Utilisateur';
+  const initials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(p => p[0]?.toUpperCase() || '')
+    .join('') || displayName.slice(0, 2).toUpperCase();
+
+  const sizeClasses = {
+    sm: 'w-10 h-10 text-xs',
+    md: 'w-14 h-14 text-sm',
+    lg: 'w-16 h-16 text-base'
+  }[size];
+
+  const dotClasses = {
+    sm: 'w-3 h-3 right-0 bottom-0 border-2',
+    md: 'w-3.5 h-3.5 right-0.5 bottom-0.5 border-2',
+    lg: 'w-4 h-4 right-0.5 bottom-0.5 border-2'
+  }[size];
+
+  return (
+    <div className="relative inline-block shrink-0">
+      {photoUrl && !imgError ? (
+        <img
+          src={photoUrl}
+          alt={displayName}
+          onError={() => setImgError(true)}
+          className={`${sizeClasses} rounded-2xl object-cover border-2 border-border/80 shadow-md bg-secondary/30`}
+        />
+      ) : (
+        <div
+          className={`${sizeClasses} rounded-2xl bg-gradient-to-br from-primary via-primary/80 to-primary/60 text-primary-foreground font-black flex items-center justify-center border-2 border-primary/20 shadow-md`}
+        >
+          {initials}
+        </div>
+      )}
+
+      {/* Live status badge : vert = connecté, orange = inactif, gris = déconnecté */}
+      {(() => {
+        const meta = PRESENCE_META[toPresence(status)];
+        return (
+          <span
+            className={`absolute rounded-full border-card ${dotClasses} ${meta.dot}`}
+            title={meta.title}
+          >
+            {meta.ping && (
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${meta.ping} opacity-75`} />
+            )}
+          </span>
+        );
+      })()}
+    </div>
+  );
+};
+
+export const AuditLogsPage: React.FC = () => {
+  const {
+    sessions,
+    allSessions,
+    logs,
+    loading,
+    filters,
+    setFilters,
+    selectedSessionId,
+    setSelectedSessionId,
+    selectedSessionEvents,
+    selectedSessionDetails,
+    refresh
+  } = useAuditLogs();
+
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [groupByPoste, setGroupByPoste] = useState<boolean>(false);
+  const [selectedUserForModal, setSelectedUserForModal] = useState<UserSummaryItem | null>(null);
+
+  // Présence temps réel (Supabase Realtime Presence)
+  const [presenceSnapshot, setPresenceSnapshot] = useState<Map<string, PresenceEntry>>(new Map());
+  useEffect(() => PresenceTracker.subscribe(snap => setPresenceSnapshot(new Map(snap))), []);
+
+  const getJobBadgeClass = (title?: string | null) => {
+    const t = (title || '').toLowerCase();
+    if (t.includes('directeur') || t.includes('technique')) {
+      return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30';
+    }
+    if (t.includes('scout') || t.includes('recrutement')) {
+      return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30';
+    }
+    if (t.includes('analyste') || t.includes('vidéo') || t.includes('video')) {
+      return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30';
+    }
+    if (t.includes('entraîneur') || t.includes('coach')) {
+      return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30';
+    }
+    if (t.includes('préparateur') || t.includes('physique')) {
+      return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30';
+    }
+    if (t.includes('médical') || t.includes('médecin') || t.includes('kiné')) {
+      return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30';
+    }
+    if (t.includes('admin')) {
+      return 'bg-primary/10 text-primary border-primary/30';
+    }
+    return 'bg-secondary text-muted-foreground border-border';
+  };
+
+  // 1. REGROUPEMENT PAR UTILISATEUR UNIQUE (1 Carte par Collaborateur)
+  const allUserSummaries = useMemo<UserSummaryItem[]>(() => {
+    const userMap = new Map<string, UserSummaryItem>();
+
+    allSessions.forEach(s => {
+      const key = s.user_id || (s.user_email ? s.user_email.toLowerCase().trim() : s.session_id);
+      const isPlaceholder = s.session_id?.startsWith('NO_SESSION-');
+
+      if (!userMap.has(key)) {
+        userMap.set(key, {
+          userId: s.user_id,
+          userEmail: s.user_email,
+          userName: s.user_name || (s.user_email ? s.user_email.split('@')[0] : 'Utilisateur'),
+          userAvatar: s.user_avatar || null,
+          jobTitle: s.job_title || 'Collaborateur',
+          status: 'LOGGED_OUT',
+          lastActivity: isPlaceholder ? '' : (s.last_activity_at || s.login_at),
+          totalSessions: 0,
+          totalEvents: 0,
+          sessions: [],
+          logs: []
+        });
+      }
+
+      const item = userMap.get(key)!;
+      if (!isPlaceholder) {
+        item.sessions.push(s);
+        item.totalSessions += 1;
+        item.totalEvents += (s.event_count || 0);
+
+        // Conserver la date d'activité la plus récente
+        const sessionLast = s.last_activity_at || s.login_at;
+        if (!item.lastActivity || new Date(sessionLast).getTime() > new Date(item.lastActivity).getTime()) {
+          item.lastActivity = sessionLast;
+        }
+      }
+
+      if (s.user_avatar && !item.userAvatar) {
+        item.userAvatar = s.user_avatar;
+      }
+      if (s.job_title && (!item.jobTitle || item.jobTitle === 'Collaborateur')) {
+        item.jobTitle = s.job_title;
+      }
+    });
+
+    // Associer les logs d'audit à chaque utilisateur
+    logs.forEach(l => {
+      const key = l.user_id || (l.user_email ? l.user_email.toLowerCase().trim() : null);
+      if (key && userMap.has(key)) {
+        userMap.get(key)!.logs.push(l);
+      }
+    });
+
+    // Trier les sessions de chaque utilisateur par date décroissante
+    userMap.forEach(u => {
+      u.sessions.sort((a, b) => new Date(b.login_at).getTime() - new Date(a.login_at).getTime());
+      u.logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    });
+
+    // Statut réel basé sur la présence temps réel (et non sur user_sessions.status,
+    // qui reste ACTIVE si l'onglet est fermé sans déconnexion)
+    userMap.forEach(u => {
+      const presence = resolvePresenceStatus(presenceSnapshot, u.userId, u.userEmail);
+      u.status = presence === 'ONLINE' ? 'ACTIVE' : presence === 'IDLE' ? 'IDLE' : 'LOGGED_OUT';
+    });
+
+    const rank = (s: UserSummaryItem['status']) => (s === 'ACTIVE' ? 0 : s === 'IDLE' ? 1 : 2);
+    return Array.from(userMap.values()).sort((a, b) => {
+      // Prioriser : en ligne > inactif > déconnecté, puis date de dernière activité
+      const diff = rank(a.status) - rank(b.status);
+      if (diff !== 0) return diff;
+      return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+    });
+  }, [allSessions, logs, presenceSnapshot]);
+
+  // Liste dynamique des postes distincts détectés depuis le profil des utilisateurs
+  const distinctJobTitles = useMemo(() => {
+    const titles = new Set<string>();
+    allUserSummaries.forEach(u => {
+      if (u.jobTitle && u.jobTitle.trim()) {
+        titles.add(u.jobTitle.trim());
+      }
+    });
+    return Array.from(titles).sort();
+  }, [allUserSummaries]);
+
+  // Filtrage des utilisateurs
+  const filteredUsers = useMemo(() => {
+    return allUserSummaries.filter(u => {
+      const matchSearch = filters.searchTerm === '' ||
+        u.userName.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
+        (u.userEmail && u.userEmail.toLowerCase().includes(filters.searchTerm.toLowerCase())) ||
+        u.jobTitle.toLowerCase().includes(filters.searchTerm.toLowerCase());
+
+      const matchJobTitle = filters.jobTitle === 'ALL' ||
+        u.jobTitle.trim().toLowerCase() === filters.jobTitle.trim().toLowerCase() ||
+        u.jobTitle.toLowerCase().includes(filters.jobTitle.toLowerCase());
+
+      const matchStatus = filters.status === 'ALL' || u.status === filters.status;
+
+      const matchStart = !filters.startDate || new Date(u.lastActivity) >= new Date(filters.startDate);
+      const matchEnd = !filters.endDate || new Date(u.lastActivity) <= new Date(filters.endDate + 'T23:59:59');
+
+      return matchSearch && matchJobTitle && matchStatus && matchStart && matchEnd;
+    });
+  }, [allUserSummaries, filters]);
+
+  // Groupement des utilisateurs par poste
+  const groupedUsersByPoste = useMemo(() => {
+    const map = new Map<string, UserSummaryItem[]>();
+    filteredUsers.forEach(u => {
+      const key = u.jobTitle || 'Collaborateur';
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key)!.push(u);
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filteredUsers]);
+
+  // Statistiques clés calculées en direct
+  const stats = useMemo(() => {
+    const activeCount = allUserSummaries.filter(u => u.status === 'ACTIVE').length;
+    const totalUsers = allUserSummaries.length;
+    const totalSessionsCount = allSessions.length;
+    const uniqueRoles = distinctJobTitles.length;
+
+    return {
+      totalUsers,
+      activeUsers: activeCount,
+      totalSessions: totalSessionsCount,
+      uniqueRoles
+    };
+  }, [allUserSummaries, allSessions, distinctJobTitles]);
+
+  const handleExportJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allUserSummaries, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `Supervision_Utilisateurs_FUS_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  return (
+    <div className="space-y-8 pb-20 overflow-visible">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h2 className="text-3xl font-black tracking-tight text-foreground uppercase italic flex items-center gap-2">
+            Supervision des Collaborateurs <Sparkles className="w-6 h-6 text-primary" />
+          </h2>
+          <p className="text-muted-foreground text-sm font-medium">
+            Traçabilité des accès par utilisateur, suivi des sessions, statut en direct et historique d'actions réelles
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={refresh}
+            variant="outline"
+            size="icon"
+            className="w-11 h-11 rounded-xl shrink-0"
+            title="Rafraîchir les données"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary' : ''}`} />
+          </Button>
+
+          <Button
+            onClick={handleExportJSON}
+            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-5 rounded-xl font-bold uppercase tracking-wider text-xs shadow-lg shadow-primary/20"
+          >
+            <Download className="w-4 h-4" /> Exporter JSON
+          </Button>
+        </div>
+      </div>
+
+      {/* KPI Cards Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Collaborateurs</span>
+            <Users className="w-4 h-4 text-blue-500" />
+          </div>
+          <div className="text-2xl font-black text-foreground mt-2">{stats.totalUsers}</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Comptes identifiés</div>
+        </div>
+
+        <div className="bg-card border border-emerald-500/20 bg-emerald-500/[0.02] rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Actuellement en ligne</span>
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+          </div>
+          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">{stats.activeUsers}</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Connectés en temps réel</div>
+        </div>
+
+        <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Sessions Cumulées</span>
+            <Clock className="w-4 h-4 text-primary" />
+          </div>
+          <div className="text-2xl font-black text-foreground mt-2">{stats.totalSessions}</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Connexions tracées</div>
+        </div>
+
+        <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Postes Métier</span>
+            <Briefcase className="w-4 h-4 text-purple-500" />
+          </div>
+          <div className="text-2xl font-black text-foreground mt-2">{stats.uniqueRoles}</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Fonctions actives</div>
+        </div>
+      </div>
+
+      {/* Control Bar : Mode Toggle + Search + Filters */}
+      <div className="flex flex-col lg:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-card border border-border shadow-sm">
+        {/* Search */}
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            type="text"
+            value={filters.searchTerm}
+            onChange={(e) => setFilters({ ...filters, searchTerm: e.target.value })}
+            placeholder="Rechercher par collaborateur, email, intitulé de poste..."
+            className="pl-10 h-11 bg-secondary/30 border-transparent focus:bg-background transition-all rounded-xl font-medium text-sm"
+          />
+        </div>
+
+        {/* Dropdown Filters & Controls */}
+        <div className="flex items-center flex-wrap gap-2 w-full lg:w-auto">
+          {/* Filter by Poste (job_title) */}
+          <div className="flex items-center gap-1.5 bg-secondary/40 rounded-xl px-2.5 py-1 border border-border/50">
+            <Briefcase className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <select
+              value={filters.jobTitle}
+              onChange={(e) => setFilters({ ...filters, jobTitle: e.target.value })}
+              className="h-8 bg-transparent text-foreground text-xs font-bold uppercase tracking-wider border-none outline-none cursor-pointer pr-2"
+            >
+              <option value="ALL">POSTE : TOUS</option>
+              {OFFICIAL_JOB_TITLES.map(title => (
+                <option key={title} value={title}>{title.toUpperCase()}</option>
+              ))}
+              {distinctJobTitles
+                .filter(title => !OFFICIAL_JOB_TITLES.some(o => o.toLowerCase() === title.toLowerCase()))
+                .map(title => (
+                  <option key={title} value={title}>{title.toUpperCase()} (AUTRE)</option>
+                ))}
+            </select>
+          </div>
+
+          {/* Filter by Status */}
+          <div className="flex items-center gap-1.5 bg-secondary/40 rounded-xl px-2.5 py-1 border border-border/50">
+            <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <select
+              value={filters.status}
+              onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+              className="h-8 bg-transparent text-foreground text-xs font-bold uppercase tracking-wider border-none outline-none cursor-pointer pr-2"
+            >
+              <option value="ALL">STATUT: TOUS</option>
+              <option value="ACTIVE">EN LIGNE (ACTIF)</option>
+              <option value="IDLE">INACTIF</option>
+              <option value="LOGGED_OUT">DÉCONNECTÉ</option>
+            </select>
+          </div>
+
+          {/* Date Picker Start */}
+          <input
+            type="date"
+            value={filters.startDate}
+            onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+            className="h-10 px-2.5 bg-secondary/40 text-foreground text-xs font-bold rounded-xl border border-border/50 outline-none cursor-pointer"
+            title="Actif depuis le"
+          />
+
+          {/* Date Picker End */}
+          <input
+            type="date"
+            value={filters.endDate}
+            onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+            className="h-10 px-2.5 bg-secondary/40 text-foreground text-xs font-bold rounded-xl border border-border/50 outline-none cursor-pointer"
+            title="Actif jusqu'au"
+          />
+
+          {/* Group by Poste Toggle */}
+          <button
+            onClick={() => setGroupByPoste(!groupByPoste)}
+            className={`flex items-center gap-1.5 px-3 h-10 rounded-xl text-xs font-bold transition-all border ${
+              groupByPoste
+                ? 'bg-primary/10 text-primary border-primary/30'
+                : 'bg-secondary/40 text-muted-foreground border-border/50 hover:text-foreground'
+            }`}
+            title="Regrouper les collaborateurs par intitulé de poste"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Groupé</span>
+          </button>
+
+          {/* View Mode Toggle: Grid vs Table */}
+          <div className="flex items-center p-1 bg-secondary/50 rounded-xl border border-border/80">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg transition-all ${
+                viewMode === 'grid'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Affichage en Grille (1 Carte par Utilisateur)"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-2 rounded-lg transition-all ${
+                viewMode === 'table'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="Affichage en Tableau"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      {loading ? (
+        <div className="py-24 text-center space-y-3">
+          <RefreshCw className="w-9 h-9 text-primary animate-spin mx-auto" />
+          <p className="text-muted-foreground text-sm font-semibold tracking-wide">Chargement des données de supervision...</p>
+        </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="p-16 text-center bg-card border border-border rounded-3xl space-y-3">
+          <Users className="w-12 h-12 text-muted-foreground/40 mx-auto" />
+          <h3 className="text-lg font-bold text-foreground">Aucun collaborateur trouvé</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Aucun utilisateur ne correspond aux filtres sélectionnés. Essayez de réinitialiser vos critères de recherche.
+          </p>
+        </div>
+      ) : viewMode === 'grid' ? (
+        /* ================= VUE 1 : GRILLE 1 CARTE PAR UTILISATEUR ================= */
+        groupByPoste ? (
+          /* Grille groupée par poste */
+          <div className="space-y-8">
+            {groupedUsersByPoste.map(([posteName, usersList]) => (
+              <div key={posteName} className="space-y-4">
+                <div className="flex items-center gap-3 border-b border-border/60 pb-2">
+                  <span className={`px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider border ${getJobBadgeClass(posteName)}`}>
+                    {posteName}
+                  </span>
+                  <span className="text-xs font-bold text-muted-foreground">
+                    ({usersList.length} {usersList.length > 1 ? 'collaborateurs' : 'collaborateur'})
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                  {usersList.map((user) => (
+                    <UserCard
+                      key={user.userId || user.userEmail || user.userName}
+                      user={user}
+                      getJobBadgeClass={getJobBadgeClass}
+                      onSelectUser={setSelectedUserForModal}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          /* Grille uniforme (1 carte par utilisateur) */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {filteredUsers.map((user) => (
+              <UserCard
+                key={user.userId || user.userEmail || user.userName}
+                user={user}
+                getJobBadgeClass={getJobBadgeClass}
+                onSelectUser={setSelectedUserForModal}
+              />
+            ))}
+          </div>
+        )
+      ) : (
+        /* ================= VUE 2 : TABLEAU DES COLLABORATEURS ================= */
+        <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-secondary/20 border-b border-border">
+                <tr>
+                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Collaborateur</th>
+                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Poste / Fonction</th>
+                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Dernière Activité</th>
+                  <th className="text-center py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Sessions</th>
+                  <th className="text-center py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions Réelles</th>
+                  <th className="text-center py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Statut</th>
+                  <th className="text-right py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredUsers.map((user) => (
+                  <tr key={user.userId || user.userEmail} className="hover:bg-secondary/15 transition-colors group">
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-3">
+                        <UserSessionAvatar
+                          name={user.userName}
+                          email={user.userEmail}
+                          photoUrl={user.userAvatar}
+                          status={user.status}
+                          size="sm"
+                        />
+                        <div>
+                          <div className="font-bold text-sm text-foreground">{user.userName}</div>
+                          <div className="text-[11px] text-muted-foreground font-medium">{user.userEmail || 'Email non renseigné'}</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="py-4 px-6">
+                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${getJobBadgeClass(user.jobTitle)}`}>
+                        {user.jobTitle}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-6 text-xs text-muted-foreground">
+                      {user.lastActivity && !isNaN(new Date(user.lastActivity).getTime()) ? (
+                        <>
+                          <strong className="text-foreground">{new Date(user.lastActivity).toLocaleDateString('fr-FR')}</strong> à {new Date(user.lastActivity).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        </>
+                      ) : (
+                        <span className="italic text-muted-foreground/70">Jamais connecté</span>
+                      )}
+                    </td>
+
+                    <td className="py-4 px-6 text-center">
+                      <span className="px-2.5 py-1 rounded-xl bg-secondary text-foreground font-black text-xs">
+                        {user.totalSessions}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-6 text-center">
+                      <span className="px-2.5 py-1 rounded-xl bg-primary/10 text-primary font-black text-xs">
+                        {user.totalEvents}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-6 text-center">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${PRESENCE_META[toPresence(user.status)].badge}`}>
+                        {PRESENCE_META[toPresence(user.status)].label}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-6 text-right">
+                      <Button
+                        onClick={() => setSelectedUserForModal(user)}
+                        variant="ghost"
+                        size="sm"
+                        className="rounded-xl text-xs font-bold gap-1.5 hover:bg-primary hover:text-white"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> Voir Détails
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 1 : Détail Complet de l'Utilisateur (Sessions + Actions Réelles filtrables par dates) */}
+      <UserAuditDetailModal
+        isOpen={!!selectedUserForModal}
+        onClose={() => setSelectedUserForModal(null)}
+        user={selectedUserForModal}
+        onOpenSessionTimeline={(sessionId) => setSelectedSessionId(sessionId)}
+      />
+
+      {/* Modal 2 : Timeline Chronologique d'une Session Spécifique */}
+      <SessionTimelineModal
+        isOpen={!!selectedSessionId}
+        onClose={() => setSelectedSessionId(null)}
+        session={selectedSessionDetails}
+        events={selectedSessionEvents}
+      />
+    </div>
+  );
+};
+
+// Sous-composant Carte Collaborateur Unique (1 Carte par Utilisateur)
+interface UserCardProps {
+  user: UserSummaryItem;
+  getJobBadgeClass: (title?: string | null) => string;
+  onSelectUser: (user: UserSummaryItem) => void;
+}
+
+const UserCard: React.FC<UserCardProps> = ({
+  user,
+  getJobBadgeClass,
+  onSelectUser
+}) => {
+  const hasValidDate = user.lastActivity && !isNaN(new Date(user.lastActivity).getTime());
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className="bg-card border border-border/80 hover:border-primary/40 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden h-full"
+    >
+      {/* Top Banner Accent */}
+      <div className={`absolute top-0 left-0 right-0 h-1.5 ${PRESENCE_META[toPresence(user.status)].banner}`} />
+
+      {/* Header : Photo + Identité + Poste */}
+      <div className="space-y-4">
+        <div className="flex items-start gap-3.5">
+          <UserSessionAvatar
+            name={user.userName}
+            email={user.userEmail}
+            photoUrl={user.userAvatar}
+            status={user.status}
+            size="md"
+          />
+
+          <div className="flex-1 min-w-0">
+            <h4 className="font-extrabold text-sm text-foreground truncate group-hover:text-primary transition-colors">
+              {user.userName}
+            </h4>
+            <p className="text-[11px] text-muted-foreground truncate font-medium">
+              {user.userEmail || 'Email non renseigné'}
+            </p>
+
+            <div className="mt-2">
+              <span className={`inline-block px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider border truncate max-w-full ${getJobBadgeClass(user.jobTitle)}`}>
+                {user.jobTitle}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Détails opérationnels synthétisés */}
+        <div className="space-y-2 py-3 border-y border-border/50 text-xs">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-primary" /> Dernière Activité
+            </span>
+            <span className="font-bold text-foreground text-[11px]">
+              {hasValidDate ? (
+                `${new Date(user.lastActivity).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} à ${new Date(user.lastActivity).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+              ) : (
+                <span className="italic text-muted-foreground/70 font-normal">Jamais connecté</span>
+              )}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5" /> Total Sessions
+            </span>
+            <span className="font-extrabold text-foreground text-[11px]">
+              {user.totalSessions} {user.totalSessions > 1 ? 'connexions' : 'connexion'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5" /> Actions Réelles
+            </span>
+            <span className="font-black text-primary text-[11px] bg-primary/10 px-2 py-0.5 rounded-md">
+              {user.totalEvents} actions
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer : Bouton d'ouverture des Détails & Actions */}
+      <div className="mt-4 pt-1 flex items-center justify-between gap-2">
+        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${PRESENCE_META[toPresence(user.status)].badge}`}>
+          {PRESENCE_META[toPresence(user.status)].label}
+        </span>
+
+        <Button
+          onClick={() => onSelectUser(user)}
+          size="sm"
+          className="rounded-xl text-xs font-bold gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/15 h-8 px-3.5"
+        >
+          <Eye className="w-3.5 h-3.5" /> Voir Détails
+        </Button>
+      </div>
+    </motion.div>
+  );
+};
+
+export default AuditLogsPage;
