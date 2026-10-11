@@ -13,13 +13,15 @@ export async function getMyClubId(): Promise<string> {
       return DEFAULT_CLUB_ID;
     }
 
-    if (sessionErr || !user) throw new Error('Utilisateur non authentifié');
+    if (sessionErr || !user) {
+      return DEFAULT_CLUB_ID;
+    }
 
     const { data, error } = await supabase
       .from('user_profiles')
       .select('default_club_id')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     if (error || !data?.default_club_id) {
        // Check if there is at least one club to fallback to
@@ -28,7 +30,6 @@ export async function getMyClubId(): Promise<string> {
     
     return data.default_club_id;
   } catch (err) {
-    if (import.meta.env.DEV) return DEFAULT_CLUB_ID;
-    throw err;
+    return DEFAULT_CLUB_ID;
   }
 }

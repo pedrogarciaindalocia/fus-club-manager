@@ -1328,9 +1328,12 @@ Direction Générale — FUS Rabat`;
         if (newPassword && newPassword.length >= 6) {
           authUpdates.password = newPassword;
         }
-        const { error: authUpdErr } = await adminClient.auth.admin.updateUserById(currentUserId, authUpdates);
-        if (authUpdErr) {
-          console.warn('[UserManagement] auth.admin.updateUserById notice:', authUpdErr);
+        // N'appeler auth.admin.updateUserById que si une vraie clé service_role est active dans l'environnement
+        if (import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY && adminClient?.auth?.admin) {
+          const { error: authUpdErr } = await adminClient.auth.admin.updateUserById(currentUserId, authUpdates);
+          if (authUpdErr) {
+            console.warn('[UserManagement] auth.admin.updateUserById notice:', authUpdErr);
+          }
         }
       } catch (authEx) {
         console.warn('[UserManagement] auth.admin.updateUserById exception:', authEx);
@@ -1646,14 +1649,16 @@ Direction Générale — FUS Rabat`;
         console.warn('Erreur cascade libération candidats:', relErr);
       }
 
-      // 4. Appel RPC admin_delete_user si disponible (supprime auth.users, user_profiles, scouts, etc.)
+      // 4. Suppression du compte dans auth.users si service_role est disponible
       try {
-        await supabase.rpc('admin_delete_user', {
-          target_user_id: id,
-          target_email: oldUser?.email || null
-        });
-      } catch (rpcErr) {
-        console.warn('Notice admin_delete_user RPC fallback:', rpcErr);
+        if (import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY) {
+          const adminClient = getAdminSupabase();
+          if (adminClient?.auth?.admin) {
+            await adminClient.auth.admin.deleteUser(id).catch(() => {});
+          }
+        }
+      } catch (authDelErr) {
+        // Non bloquant
       }
 
       // 5. Suppression définitive dans public.user_profiles

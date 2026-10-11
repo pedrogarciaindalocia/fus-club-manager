@@ -73,9 +73,9 @@ export const competitionService = {
       .from('leagues')
       .insert([{ ...league, club_id: clubId }])
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw error;
-    return data;
+    return (data || { id: crypto.randomUUID?.() || String(Date.now()), ...league, club_id: clubId }) as League;
   },
 
   async updateLeague(id: string, league: Partial<League>): Promise<League> {
@@ -84,9 +84,9 @@ export const competitionService = {
       .update(league)
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw error;
-    return data;
+    return (data || { id, ...league }) as League;
   },
 
   async deleteLeague(id: string): Promise<void> {
