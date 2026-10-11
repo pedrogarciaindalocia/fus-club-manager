@@ -691,12 +691,20 @@ export const mediaService = {
       storagePath = cleanPath ? `${cleanPath}/${uniqueFileName}` : `default/${uniqueFileName}`;
     }
 
+    // Déterminer le type MIME effectif (notamment si le navigateur envoie une chaîne vide pour .heic/.heif)
+    const effectiveMimeType = processedFile.type || (
+      processedFile.name.toLowerCase().endsWith('.heic') ? 'image/heic' :
+      processedFile.name.toLowerCase().endsWith('.heif') ? 'image/heif' :
+      'image/jpeg'
+    );
+
     // 1. Upload dans Supabase Storage (bucket 'medias')
     const { error: uploadError } = await supabase.storage
       .from('medias')
       .upload(storagePath, processedFile, {
         cacheControl: '3600',
         upsert: true,
+        contentType: effectiveMimeType,
       });
 
     if (uploadError) {
@@ -704,7 +712,10 @@ export const mediaService = {
       // Tentative de fallback ou création si bucket absent
       try {
         await supabase.storage.createBucket('medias', { public: true });
-        await supabase.storage.from('medias').upload(storagePath, processedFile, { upsert: true });
+        await supabase.storage.from('medias').upload(storagePath, processedFile, {
+          upsert: true,
+          contentType: effectiveMimeType,
+        });
       } catch (e) {
         console.warn('[MediaService] Création dynamique de bucket échouée:', e);
       }
@@ -724,7 +735,7 @@ export const mediaService = {
       storage_path: storagePath,
       public_url: publicUrl,
       file_size: processedFile.size,
-      mime_type: processedFile.type || 'image/jpeg',
+      mime_type: effectiveMimeType,
       created_at: new Date().toISOString(),
     };
 

@@ -9,11 +9,11 @@ VALUES (
   'medias', 
   'medias', 
   true, 
-  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']
+  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence', 'application/octet-stream']
 )
 ON CONFLICT (id) DO UPDATE SET 
   public = true,
-  allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
+  allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence', 'application/octet-stream'];
 
 -- Politiques de sécurité Storage pour le bucket 'medias'
 DO $$
