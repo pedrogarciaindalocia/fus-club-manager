@@ -576,6 +576,10 @@ const PlayerManagement: React.FC = () => {
   const updateBulkRow = (id: string, field: keyof BulkRow, value: any) =>
     setBulkRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
   const removeBulkRow = (id: string) => setBulkRows(prev => prev.filter(r => r.id !== id));
+  const [isBulkSaving, setIsBulkSaving] = useState(false);
+  const [bulkSaveProgress, setBulkSaveProgress] = useState(0);
+  const [bulkSavedCount, setBulkSavedCount] = useState(0);
+  const [bulkTotalCount, setBulkTotalCount] = useState(0);
 
   const handleBulkPhotoUpload = async (rowId: string, file: File) => {
     updateBulkRow(rowId, 'uploading', true);
@@ -598,6 +602,7 @@ const PlayerManagement: React.FC = () => {
       toast.error("Vous ne pouvez créer des joueurs que dans vos catégories assignées.");
       return;
     }
+
     const payload = valid.map(({ id, uploading, ...r }) => ({
       ...r,
       jersey_number: Number(r.jersey_number),
@@ -607,9 +612,48 @@ const PlayerManagement: React.FC = () => {
       preferred_foot: 'right' as const,
       photo_url: r.photo_url || null, height: null, weight: null,
     }));
-    await bulkAddPlayers(payload as any);
-    setBulkRows([newBulkRow(0)]);
-    setViewState('LIST');
+
+    setIsBulkSaving(true);
+    setBulkSaveProgress(10);
+    setBulkSavedCount(0);
+    setBulkTotalCount(valid.length);
+
+    try {
+      const chunkSize = 5;
+      const chunks: typeof payload[] = [];
+      for (let i = 0; i < payload.length; i += chunkSize) {
+        chunks.push(payload.slice(i, i + chunkSize));
+      }
+
+      let saved = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        await bulkAddPlayers(chunks[i] as any);
+        saved += chunks[i].length;
+        setBulkSavedCount(saved);
+        const pct = Math.min(95, Math.round((saved / payload.length) * 100));
+        setBulkSaveProgress(pct);
+        if (chunks.length > 1) {
+          await new Promise(r => setTimeout(r, 120));
+        }
+      }
+
+      setBulkSaveProgress(100);
+      setBulkSavedCount(payload.length);
+      toast.success(`${payload.length} joueur${payload.length > 1 ? 's' : ''} enregistré${payload.length > 1 ? 's' : ''} avec succès !`);
+
+      setTimeout(() => {
+        setIsBulkSaving(false);
+        setBulkSaveProgress(0);
+        setBulkSavedCount(0);
+        setBulkTotalCount(0);
+        const activeCat = getActiveBulkCategory();
+        setBulkRows([newBulkRow(0, activeCat)]);
+        setViewState('LIST');
+      }, 500);
+    } catch (err: any) {
+      setIsBulkSaving(false);
+      toast.error(`Erreur lors de l'enregistrement : ${err.message || 'Erreur inconnue'}`);
+    }
   };
   const [isUploading, setIsUploading] = useState(false);
   const [cropModalOpen, setCropModalOpen] = useState(false);
@@ -3508,27 +3552,82 @@ const PlayerManagement: React.FC = () => {
           <motion.div key="bulk" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
 
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-black uppercase italic tracking-tighter">Ajout Multiple</h2>
+                <h2 className="text-2xl font-black uppercase italic tracking-tighter">Ajout Multiple de Joueurs</h2>
                 <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground mt-1">
-                  {bulkRows.filter(r => r.full_name.trim()).length} / {bulkRows.length} joueur{bulkRows.length > 1 ? 's' : ''} à importer
+                  {bulkRows.filter(r => r.full_name.trim()).length} / {bulkRows.length} joueur{bulkRows.length > 1 ? 's' : ''} prêt{bulkRows.length > 1 ? 's' : ''} à enregistrer
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <Button variant="outline" onClick={() => setViewState('LIST')} className="h-11 px-6 rounded-2xl font-black uppercase text-xs">
+                <Button
+                  variant="outline"
+                  onClick={() => setViewState('LIST')}
+                  disabled={isBulkSaving}
+                  className="h-11 px-6 rounded-2xl font-black uppercase text-xs"
+                >
                   Annuler
                 </Button>
                 <Button
                   onClick={handleBulkSave}
-                  disabled={isBulkAdding || bulkRows.filter(r => r.full_name.trim()).length === 0}
-                  className="h-11 px-8 rounded-2xl font-black uppercase text-xs bg-primary shadow-lg shadow-primary/20 gap-2"
+                  disabled={isBulkSaving || bulkRows.filter(r => r.full_name.trim()).length === 0}
+                  className="h-11 px-8 rounded-2xl font-black uppercase text-xs bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25 gap-2 transition-all min-w-[175px]"
                 >
-                  {isBulkAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                  Importer {bulkRows.filter(r => r.full_name.trim()).length} joueur{bulkRows.filter(r => r.full_name.trim()).length > 1 ? 's' : ''}
+                  {isBulkSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Enregistrement ({bulkSaveProgress}%)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 text-white" />
+                      <span>Enregistrer {bulkRows.filter(r => r.full_name.trim()).length > 0 ? `(${bulkRows.filter(r => r.full_name.trim()).length})` : ''}</span>
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
+
+            {/* Barre de Progression d'Enregistrement */}
+            {isBulkSaving && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="bg-white border-2 border-primary/20 rounded-[2rem] p-5 shadow-lg shadow-primary/5 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                        Enregistrement des joueurs en cours...
+                        <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full font-mono">
+                          {bulkSaveProgress}%
+                        </span>
+                      </p>
+                      <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+                        {bulkSavedCount} sur {bulkTotalCount} joueur{bulkTotalCount > 1 ? 's' : ''} enregistré{bulkSavedCount > 1 ? 's' : ''} en base de données
+                      </p>
+                    </div>
+                  </div>
+                  <div className="hidden sm:flex items-center gap-2">
+                    <span className="text-xl font-black text-primary font-mono tracking-tight">{bulkSaveProgress}%</span>
+                  </div>
+                </div>
+
+                <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-red-600 via-primary to-emerald-500 rounded-full shadow-sm"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${bulkSaveProgress}%` }}
+                    transition={{ duration: 0.25, ease: 'easeOut' }}
+                  />
+                </div>
+              </motion.div>
+            )}
 
             {/* Sélecteurs communs */}
             <div className="flex items-center gap-4 p-5 bg-white border rounded-[2rem] shadow-sm">
@@ -3674,15 +3773,33 @@ const PlayerManagement: React.FC = () => {
                 </tbody>
               </table>
 
-              {/* Bouton ajouter une ligne */}
-              <div className="p-4 border-t border-secondary/30">
+              {/* Actions bas de tableau */}
+              <div className="p-4 border-t border-secondary/30 flex flex-col sm:flex-row items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setBulkRows(prev => [...prev, newBulkRow(prev.length, prev[0]?.category)])}
-                  className="w-full h-11 rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center gap-2 text-slate-400 hover:border-primary hover:text-primary transition-all text-[11px] font-black uppercase tracking-widest"
+                  className="flex-1 w-full h-11 rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center gap-2 text-slate-500 hover:border-primary hover:text-primary transition-all text-[11px] font-black uppercase tracking-widest bg-slate-50/50 hover:bg-white"
                 >
                   <UserPlus className="w-4 h-4" /> Ajouter une ligne
                 </button>
+                <Button
+                  type="button"
+                  onClick={handleBulkSave}
+                  disabled={isBulkSaving || bulkRows.filter(r => r.full_name.trim()).length === 0}
+                  className="w-full sm:w-auto h-11 px-8 rounded-2xl font-black uppercase text-xs bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20 gap-2 shrink-0 transition-all min-w-[175px]"
+                >
+                  {isBulkSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Enregistrement ({bulkSaveProgress}%)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 text-white" />
+                      <span>Enregistrer {bulkRows.filter(r => r.full_name.trim()).length > 0 ? `(${bulkRows.filter(r => r.full_name.trim()).length})` : ''}</span>
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           </motion.div>
