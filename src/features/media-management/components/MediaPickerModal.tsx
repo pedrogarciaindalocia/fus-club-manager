@@ -132,7 +132,7 @@ export const MediaPickerModal: React.FC<MediaPickerModalProps> = ({
               type="file"
               ref={fileInputRef}
               onChange={handleFileUpload}
-              accept="image/*"
+              accept="image/*,.heic,.heif,image/heic,image/heif"
               multiple
               className="hidden"
             />
@@ -275,7 +275,16 @@ export const MediaPickerModal: React.FC<MediaPickerModalProps> = ({
                             alt={file.name}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             loading="lazy"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
                           />
+                          <div className="hidden w-full h-full flex-col items-center justify-center bg-white/5 text-white/50 p-2 text-center">
+                            <ImageIcon className="w-8 h-8 text-primary mb-1 opacity-70" />
+                            <span className="text-[10px] font-bold truncate max-w-full text-white/70">{file.name}</span>
+                          </div>
 
                           {/* Badge de sélection */}
                           {isSelected && (

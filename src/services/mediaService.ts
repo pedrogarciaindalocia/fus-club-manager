@@ -20,14 +20,18 @@ export interface MediaFile {
   created_at?: string;
 }
 
-// 🛡️ SÉCURITÉ : Extensions et types MIME autorisés (Liste blanche stricte)
-export const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif'];
+// 🛡️ SÉCURITÉ : Extensions et types MIME autorisés (Liste blanche stricte, incluant formats Apple HEIC/HEIF)
+export const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif', 'heic', 'heif'];
 export const ALLOWED_IMAGE_MIME_TYPES = [
   'image/jpeg',
   'image/png',
   'image/webp',
   'image/gif',
   'image/avif',
+  'image/heic',
+  'image/heif',
+  'image/heic-sequence',
+  'image/heif-sequence',
 ];
 
 // Extensions formellement interdites (Scripts, exécutables, web shells)
@@ -40,6 +44,42 @@ export const DANGEROUS_EXTENSIONS = [
   'html', 'htm', 'xhtml', 'svg', 'xml',
   'vbs', 'jar', 'apk', 'msi', 'jsp', 'asp', 'aspx',
 ];
+
+/**
+ * Tente de transcoder une image HEIC/HEIF en JPEG universel via l'API Canvas/createImageBitmap
+ * si le navigateur supporte le décodage direct (macOS, iOS Safari, etc.).
+ * Préserve la qualité haute fidélité (92%). Retourne le fichier inchangé sinon.
+ */
+export async function convertHeicIfSupported(file: File): Promise<File> {
+  const fileName = file.name.toLowerCase();
+  const ext = fileName.split('.').pop() || '';
+  if (ext !== 'heic' && ext !== 'heif') {
+    return file;
+  }
+
+  try {
+    if (typeof window !== 'undefined' && 'createImageBitmap' in window) {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0);
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, 'image/jpeg', 0.92)
+        );
+        if (blob) {
+          const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+          return new File([blob], newName, { type: 'image/jpeg' });
+        }
+      }
+    }
+  } catch (conversionErr) {
+    console.info('[MediaService] Transcodage HEIC direct non supporté par ce navigateur, upload au format natif .heic:', conversionErr);
+  }
+  return file;
+}
 
 /**
  * Valide la conformité et la sécurité d'un fichier avant téléversement.
@@ -70,7 +110,9 @@ export function validateFileSecurity(file: File): { isValid: boolean; error?: st
   }
 
   // 3. Vérification du type MIME
-  if (file.type && !ALLOWED_IMAGE_MIME_TYPES.includes(file.type)) {
+  // Note : Sur Windows et certains navigateurs, file.type pour .heic / .heif est vide ("") ou générique ("application/octet-stream")
+  const isHeicOrHeif = ext === 'heic' || ext === 'heif';
+  if (file.type && !ALLOWED_IMAGE_MIME_TYPES.includes(file.type) && !isHeicOrHeif) {
     return {
       isValid: false,
       error: `Type MIME non autorisé (${file.type}). Le fichier ne correspond pas à une image valide.`,
@@ -622,8 +664,11 @@ export const mediaService = {
       throw new Error(validation.error || 'Fichier refusé pour des raisons de sécurité.');
     }
 
-    const fileExt = file.name.split('.').pop() || 'jpg';
-    const cleanBaseName = (customName || file.name.replace(/\.[^/.]+$/, ''))
+    // 🚀 Adaptation transparente du format Apple HEIC/HEIF si décodable par le navigateur
+    const processedFile = await convertHeicIfSupported(file);
+
+    const fileExt = processedFile.name.split('.').pop() || 'jpg';
+    const cleanBaseName = (customName || processedFile.name.replace(/\.[^/.]+$/, ''))
       .trim()
       .replace(/[^a-zA-Z0-9_-]/g, '_');
     const timestamp = Date.now();
@@ -649,7 +694,7 @@ export const mediaService = {
     // 1. Upload dans Supabase Storage (bucket 'medias')
     const { error: uploadError } = await supabase.storage
       .from('medias')
-      .upload(storagePath, file, {
+      .upload(storagePath, processedFile, {
         cacheControl: '3600',
         upsert: true,
       });
@@ -659,7 +704,7 @@ export const mediaService = {
       // Tentative de fallback ou création si bucket absent
       try {
         await supabase.storage.createBucket('medias', { public: true });
-        await supabase.storage.from('medias').upload(storagePath, file, { upsert: true });
+        await supabase.storage.from('medias').upload(storagePath, processedFile, { upsert: true });
       } catch (e) {
         console.warn('[MediaService] Création dynamique de bucket échouée:', e);
       }
@@ -675,11 +720,11 @@ export const mediaService = {
     const mediaFile: MediaFile = {
       id: crypto.randomUUID ? crypto.randomUUID() : `file-${timestamp}-${Math.random().toString(36).substr(2, 6)}`,
       folder_id: targetFolderId,
-      name: file.name,
+      name: processedFile.name,
       storage_path: storagePath,
       public_url: publicUrl,
-      file_size: file.size,
-      mime_type: file.type || 'image/jpeg',
+      file_size: processedFile.size,
+      mime_type: processedFile.type || 'image/jpeg',
       created_at: new Date().toISOString(),
     };
 

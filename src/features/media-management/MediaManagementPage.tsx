@@ -357,7 +357,7 @@ export const MediaManagementPage: React.FC = () => {
             type="file"
             ref={fileInputRef}
             onChange={(e) => e.target.files && handleUploadFiles(e.target.files)}
-            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif,.heic,.heif,image/heic,image/heif"
             multiple
             className="hidden"
           />
@@ -693,7 +693,19 @@ export const MediaManagementPage: React.FC = () => {
                       alt={file.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const fallback = e.currentTarget.parentElement?.querySelector('.heic-fallback') as HTMLElement;
+                        if (fallback) fallback.style.display = 'flex';
+                      }}
                     />
+                    <div className="heic-fallback hidden w-full h-full flex-col items-center justify-center bg-white/5 text-white/50 p-4 text-center">
+                      <FileImage className="w-10 h-10 text-primary mb-2 opacity-70" />
+                      <span className="text-[11px] font-bold truncate max-w-full text-white/80">{file.name}</span>
+                      <span className="text-[9px] text-primary uppercase font-black tracking-wider mt-1 px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">
+                        {file.name.split('.').pop()?.toUpperCase() || 'MÉDIA'}
+                      </span>
+                    </div>
 
                     {/* Overlay d'actions rapides au survol */}
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
@@ -783,11 +795,21 @@ export const MediaManagementPage: React.FC = () => {
                         onClick={() => setPreviewFile(file)}
                       >
                         <td className="py-3 px-4">
-                          <img
-                            src={file.public_url}
-                            alt=""
-                            className="w-10 h-10 rounded-xl object-cover border border-white/10"
-                          />
+                          <div className="relative w-10 h-10">
+                            <img
+                              src={file.public_url}
+                              alt=""
+                              className="w-10 h-10 rounded-xl object-cover border border-white/10"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                                if (fallback) fallback.style.display = 'flex';
+                              }}
+                            />
+                            <div className="hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 items-center justify-center text-primary">
+                              <FileImage className="w-5 h-5" />
+                            </div>
+                          </div>
                         </td>
                         <td className="py-3 px-4 font-bold text-white">
                           {file.name}
@@ -1071,11 +1093,33 @@ export const MediaManagementPage: React.FC = () => {
 
             {/* Corps Image */}
             <div className="flex-1 p-6 flex items-center justify-center bg-black/50 overflow-auto">
-              <img
-                src={previewFile.public_url}
-                alt={previewFile.name}
-                className="max-h-[65vh] max-w-full rounded-2xl object-contain shadow-2xl"
-              />
+              <div className="relative max-h-[65vh] max-w-full flex items-center justify-center">
+                <img
+                  src={previewFile.public_url}
+                  alt={previewFile.name}
+                  className="max-h-[65vh] max-w-full rounded-2xl object-contain shadow-2xl"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                    if (fallback) fallback.style.display = 'flex';
+                  }}
+                />
+                <div className="hidden flex-col items-center justify-center p-10 rounded-2xl bg-[#141414] border border-white/10 text-center max-w-md">
+                  <FileImage className="w-16 h-16 text-primary mb-4 opacity-80" />
+                  <p className="text-white font-bold text-base truncate max-w-xs">{previewFile.name}</p>
+                  <p className="text-xs text-white/50 mt-2">
+                    Aperçu direct non décodable sur ce navigateur (format {previewFile.name.split('.').pop()?.toUpperCase() || 'HEIC'}).
+                  </p>
+                  <a
+                    href={previewFile.public_url}
+                    download={previewFile.name}
+                    className="mt-4 px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Télécharger le fichier original
+                  </a>
+                </div>
+              </div>
             </div>
 
             {/* Footer Lightbox avec lien public */}
