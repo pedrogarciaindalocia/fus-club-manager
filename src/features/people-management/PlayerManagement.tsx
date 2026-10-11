@@ -1254,8 +1254,14 @@ const PlayerManagement: React.FC = () => {
 
   const handleSave = async () => {
     try {
+      if (!formData.full_name?.trim()) {
+        toast.error("Veuillez saisir le nom complet du joueur.");
+        return;
+      }
+
       const sanitizedData = {
         ...formData,
+        full_name: formData.full_name.trim(),
         team_id: formData.team_id === '' ? null : formData.team_id,
         birth_date: formData.birth_date === '' ? null : formData.birth_date,
         preferred_foot: (formData.preferred_foot as string)?.toLowerCase() as any, // DB expects lowercase 'left', 'right', 'both'

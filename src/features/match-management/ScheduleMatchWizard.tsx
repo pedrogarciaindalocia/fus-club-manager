@@ -139,7 +139,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
 
   // Step 1
   const [setup, setSetup] = useState({
-    match_type: 'amical' as 'amical' | 'league' | 'internal_scrimmage',
+    match_type: 'league' as 'amical' | 'league' | 'internal_scrimmage',
     internal_opposition_type: 'intra_squad' as 'intra_squad' | 'inter_category',
     internal_target_category: '' as string,
     internal_opponent_team_id: '' as string,
@@ -484,9 +484,11 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         }
 
         if (prev.league_id) {
-          const currentLeague = leagues.find(l => l.id === prev.league_id);
-          if (currentLeague && currentLeague.category && currentLeague.category !== setup.category) {
-            next = { ...next, league_id: '' };
+          // Si une compétition est déjà sélectionnée, la conserver
+        } else if (leagues.length > 0) {
+          const matchingLeague = leagues.find(l => l.category === setup.category) || leagues[0];
+          if (matchingLeague) {
+            next = { ...next, league_id: matchingLeague.id };
             changed = true;
           }
         }
@@ -495,6 +497,16 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
       });
     }
   }, [setup.category, teams, leagues, currentStep, initialMatch]);
+
+  // Auto-sélection de la compétition officielle au chargement initial
+  useEffect(() => {
+    if (!initialMatch && leagues.length > 0 && !setup.league_id && setup.match_type !== 'internal_scrimmage') {
+      const bestLeague = leagues.find(l => l.category === setup.category) || leagues[0];
+      if (bestLeague) {
+        setSetup(prev => ({ ...prev, league_id: bestLeague.id }));
+      }
+    }
+  }, [leagues, setup.category, initialMatch, setup.league_id, setup.match_type]);
 
   // Auto-select staff when category changes in wizard setup (safeguarded against infinite loops)
   useEffect(() => {
@@ -1118,8 +1130,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                              }));
                            }}
                         >
-                           <option value="amical">Match Amical (Club Extérieur)</option>
                            <option value="league">Match Officiel (Compétition)</option>
+                           <option value="amical">Match Amical (Club Extérieur)</option>
                            <option value="internal_scrimmage">Opposition Interne (FUS Scrimmage)</option>
                         </select>
                      </div>
@@ -1312,13 +1324,31 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                           </select>
                         )}
                      </div>
-                     {setup.match_type === 'league' && (
+                     {setup.match_type !== 'internal_scrimmage' && (
                        <div className="space-y-3">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-3"><Trophy className="inline w-3.5 h-3.5 mr-2 text-primary" /> Compétition / Saison</label>
+                          <div className="flex items-center justify-between ml-3">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                              <Trophy className="inline w-3.5 h-3.5 mr-2 text-primary" /> Compétition / Saison
+                            </label>
+                            {setup.match_type === 'amical' && (
+                              <span className="text-[10px] font-bold text-muted-foreground/60">(Facultatif pour amical)</span>
+                            )}
+                          </div>
                           <select className="w-full h-16 rounded-2xl bg-white border border-transparent px-8 font-black text-lg outline-none focus:ring-4 ring-primary/20 appearance-none shadow-sm transition-all"
                              value={setup.league_id} onChange={e => setSetup({ ...setup, league_id: e.target.value })}>
                              <option value="">Sélectionner la compétition...</option>
-                             {leagues.filter(l => !l.category || l.category === setup.category).map(l => <option key={l.id} value={l.id}>{l.name} — {l.season}</option>)}
+                             {leagues
+                               .slice()
+                               .sort((a, b) => {
+                                 const aMatch = a.category === setup.category ? -1 : 1;
+                                 const bMatch = b.category === setup.category ? -1 : 1;
+                                 return aMatch - bMatch;
+                               })
+                               .map(l => (
+                                 <option key={l.id} value={l.id}>
+                                   {l.name} — {l.season}{l.category ? ` (${l.category})` : ''}
+                                 </option>
+                               ))}
                           </select>
                           {(() => {
                              const selLeague = leagues.find(l => l.id === setup.league_id);
@@ -1334,7 +1364,9 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                  </div>
                                  <div className="min-w-0">
                                    <p className="text-xs font-black uppercase tracking-tight text-slate-900 truncate">{selLeague.name}</p>
-                                   <p className="text-[10px] font-bold text-amber-700 uppercase">Saison {selLeague.season} · Compétition Officielle</p>
+                                   <p className="text-[10px] font-bold text-amber-700 uppercase">
+                                     Saison {selLeague.season}{selLeague.category ? ` · ${selLeague.category}` : ''} · Compétition Officielle
+                                   </p>
                                  </div>
                                 </div>
                              );
