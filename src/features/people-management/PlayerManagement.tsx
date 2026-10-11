@@ -553,11 +553,25 @@ const PlayerManagement: React.FC = () => {
     birth_date: string; nationality: string; team_id: string; category: string;
     photo_url: string; uploading: boolean;
   };
-  const newBulkRow = (idx: number): BulkRow => ({
-    id: crypto.randomUUID(), full_name: '', jersey_number: players.length + idx + 1,
-    position: 'FW', birth_date: '2012-01-01', nationality: 'Maroc', team_id: allowedTeams[0]?.id || '', category: defaultCategory,
-    photo_url: '', uploading: false,
-  });
+
+  const getActiveBulkCategory = (): string => {
+    if (categoryFilter && categoryFilter !== 'ALL' && allowedCategories.includes(categoryFilter)) {
+      return categoryFilter;
+    }
+    return defaultCategory || allowedCategories[0] || 'SENIOR';
+  };
+
+  const newBulkRow = (idx: number, catOverride?: string): BulkRow => {
+    const activeCat = catOverride || getActiveBulkCategory();
+    const matchingTeam = teams.find(t => t.category === activeCat) || allowedTeams[0];
+    return {
+      id: crypto.randomUUID(), full_name: '', jersey_number: players.length + idx + 1,
+      position: 'FW', birth_date: '2012-01-01', nationality: 'Maroc',
+      team_id: matchingTeam?.id || '',
+      category: activeCat,
+      photo_url: '', uploading: false,
+    };
+  };
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([newBulkRow(0)]);
   const updateBulkRow = (id: string, field: keyof BulkRow, value: any) =>
     setBulkRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
@@ -1511,7 +1525,13 @@ const PlayerManagement: React.FC = () => {
                   <>
                     <Button
                       variant="outline"
-                      onClick={() => { setGenCategory(''); setGenTeamId(''); setGenModal(true); }}
+                      onClick={() => {
+                        const activeCat = getActiveBulkCategory();
+                        const matchingTeam = teams.find(t => t.category === activeCat) || teams[0];
+                        setGenCategory(activeCat);
+                        setGenTeamId(matchingTeam?.id || '');
+                        setGenModal(true);
+                      }}
                       className="gap-2 h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs border-violet-300 text-violet-600 hover:bg-violet-50 shrink-0"
                     >
                       <Sparkles className="w-4 h-4" />
@@ -1521,7 +1541,11 @@ const PlayerManagement: React.FC = () => {
 
                     <Button
                       variant="outline"
-                      onClick={() => { setBulkRows([newBulkRow(0)]); setViewState('BULK_ADD'); }}
+                      onClick={() => {
+                        const activeCat = getActiveBulkCategory();
+                        setBulkRows([newBulkRow(0, activeCat)]);
+                        setViewState('BULK_ADD');
+                      }}
                       className="gap-2 h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs border-primary/30 text-primary hover:bg-primary/5 shrink-0"
                     >
                       <Users className="w-4 h-4" />
@@ -3510,12 +3534,30 @@ const PlayerManagement: React.FC = () => {
             <div className="flex items-center gap-4 p-5 bg-white border rounded-[2rem] shadow-sm">
               <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground shrink-0">Appliquer à tous :</p>
               <div className="flex items-center gap-3 flex-wrap">
-                {allowedCategories.filter(c => c !== 'PRO').map(cat => (
-                  <button key={cat} onClick={() => setBulkRows(prev => prev.map(r => ({ ...r, category: cat })))}
-                    className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase bg-secondary/30 hover:bg-primary hover:text-white transition-all">
-                    {cat}
-                  </button>
-                ))}
+                {allowedCategories.filter(c => c !== 'PRO').map(cat => {
+                  const isActive = bulkRows.length > 0 && bulkRows.every(r => r.category === cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        const matchingTeam = teams.find(t => t.category === cat);
+                        setBulkRows(prev => prev.map(r => ({
+                          ...r,
+                          category: cat,
+                          team_id: matchingTeam?.id || r.team_id
+                        })));
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all ${
+                        isActive
+                          ? 'bg-primary text-white shadow-md shadow-primary/20 scale-105'
+                          : 'bg-secondary/30 hover:bg-primary/20 text-foreground'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
                 <div className="h-6 w-px bg-slate-200" />
                 <select
                   onChange={e => setBulkRows(prev => prev.map(r => ({ ...r, team_id: e.target.value })))}
@@ -3635,7 +3677,8 @@ const PlayerManagement: React.FC = () => {
               {/* Bouton ajouter une ligne */}
               <div className="p-4 border-t border-secondary/30">
                 <button
-                  onClick={() => setBulkRows(prev => [...prev, newBulkRow(prev.length)])}
+                  type="button"
+                  onClick={() => setBulkRows(prev => [...prev, newBulkRow(prev.length, prev[0]?.category)])}
                   className="w-full h-11 rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center gap-2 text-slate-400 hover:border-primary hover:text-primary transition-all text-[11px] font-black uppercase tracking-widest"
                 >
                   <UserPlus className="w-4 h-4" /> Ajouter une ligne
