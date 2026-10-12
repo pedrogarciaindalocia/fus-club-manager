@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
   Search, 
   Filter, 
   Clock, 
   Laptop, 
+  Smartphone,
   Activity, 
   RefreshCw, 
   Sparkles, 
@@ -15,27 +16,43 @@ import {
   Briefcase,
   Layers,
   Users,
-  CheckCircle2,
-  ShieldCheck,
-  Calendar,
-  UserCheck,
-  ArrowRight
+  SmartphoneNfc
 } from 'lucide-react';
-import { useAuditLogs } from '../../hooks/useAuditLogs';
+import { useAuditLogs, isMobilePlatform, isGuestEntry } from '../../hooks/useAuditLogs';
 import { SessionTimelineModal } from './components/SessionTimelineModal';
 import { UserAuditDetailModal } from './components/UserAuditDetailModal';
-import type { UserSummaryItem } from './components/UserAuditDetailModal';
+import type { UserSummaryItem, UserLatestAction } from './components/UserAuditDetailModal';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Card, CardContent } from '../../components/ui/card';
-import type { UserSession, AuditLog } from '../../types/audit';
 import { OFFICIAL_JOB_TITLES } from '../../constants/roles';
-import { PresenceTracker, resolvePresenceStatus, PRESENCE_META } from '../../services/presenceService';
+import { 
+  PresenceTracker, 
+  resolvePresenceStatus, 
+  resolveUserPresenceDetails, 
+  PRESENCE_META 
+} from '../../services/presenceService';
 import type { PresenceEntry, PresenceStatus } from '../../services/presenceService';
 
 /** Convertit le statut de la carte en statut de présence (vert / orange / gris) */
 const toPresence = (status?: string): PresenceStatus =>
   status === 'ACTIVE' ? 'ONLINE' : status === 'IDLE' ? 'IDLE' : 'OFFLINE';
+
+/** Formate une date en temps relatif convivial */
+const formatRelativeTime = (dateStr: string): string => {
+  try {
+    const timestamp = new Date(dateStr).getTime();
+    if (isNaN(timestamp)) return '';
+    const diffSec = Math.floor((Date.now() - timestamp) / 1000);
+    if (diffSec < 60) return "à l'instant";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `il y a ${diffMin} min`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `il y a ${diffHours} h`;
+    return new Date(dateStr).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+  } catch (_) {
+    return '';
+  }
+};
 
 interface UserSessionAvatarProps {
   name?: string | null;
@@ -158,11 +175,13 @@ export const AuditLogsPage: React.FC = () => {
     return 'bg-secondary text-muted-foreground border-border';
   };
 
-  // 1. REGROUPEMENT PAR UTILISATEUR UNIQUE (1 Carte par Collaborateur)
+  // 1. REGROUPEMENT PAR UTILISATEUR UNIQUE AVEC IDENTIFICATION MULTI-PLATEFORME & DERNIÈRE ACTION TEMPS RÉEL
   const allUserSummaries = useMemo<UserSummaryItem[]>(() => {
     const userMap = new Map<string, UserSummaryItem>();
 
     allSessions.forEach(s => {
+      if (isGuestEntry(s.user_email, s.session_id)) return;
+
       const key = s.user_id || (s.user_email ? s.user_email.toLowerCase().trim() : s.session_id);
       const isPlaceholder = s.session_id?.startsWith('NO_SESSION-');
 
@@ -174,6 +193,9 @@ export const AuditLogsPage: React.FC = () => {
           userAvatar: s.user_avatar || null,
           jobTitle: s.job_title || 'Collaborateur',
           status: 'LOGGED_OUT',
+          activePlatform: 'none',
+          lastPlatform: 'web',
+          latestAction: null,
           lastActivity: isPlaceholder ? '' : (s.last_activity_at || s.login_at),
           totalSessions: 0,
           totalEvents: 0,
@@ -205,23 +227,72 @@ export const AuditLogsPage: React.FC = () => {
 
     // Associer les logs d'audit à chaque utilisateur
     logs.forEach(l => {
+      if (isGuestEntry(l.user_email, l.session_id)) return;
+
       const key = l.user_id || (l.user_email ? l.user_email.toLowerCase().trim() : null);
       if (key && userMap.has(key)) {
         userMap.get(key)!.logs.push(l);
       }
     });
 
-    // Trier les sessions de chaque utilisateur par date décroissante
+    // Trier les sessions et logs de chaque utilisateur par date décroissante
     userMap.forEach(u => {
       u.sessions.sort((a, b) => new Date(b.login_at).getTime() - new Date(a.login_at).getTime());
       u.logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    });
 
-    // Statut réel basé sur la présence temps réel (et non sur user_sessions.status,
-    // qui reste ACTIVE si l'onglet est fermé sans déconnexion)
-    userMap.forEach(u => {
-      const presence = resolvePresenceStatus(presenceSnapshot, u.userId, u.userEmail);
-      u.status = presence === 'ONLINE' ? 'ACTIVE' : presence === 'IDLE' ? 'IDLE' : 'LOGGED_OUT';
+      // Résolution de la dernière action en temps réel
+      if (u.logs.length > 0) {
+        const topLog = u.logs[0];
+        const isMobAction = isMobilePlatform(topLog.session_id, null, topLog.user_agent, topLog.module);
+        u.latestAction = {
+          action: topLog.action,
+          module: topLog.module,
+          description: topLog.description,
+          timestamp: topLog.created_at,
+          platform: isMobAction ? 'mobile' : 'web'
+        };
+      }
+
+      // Résolution de la dernière plateforme connue
+      if (u.sessions.length > 0) {
+        const topSession = u.sessions[0];
+        u.lastPlatform = isMobilePlatform(topSession.session_id, topSession.device, topSession.user_agent, null) ? 'mobile' : 'web';
+      }
+
+      // Résolution de la présence en direct et de la plateforme active (Web vs Mobile)
+      let presenceDetails = resolveUserPresenceDetails(presenceSnapshot, u.userId, u.userEmail);
+      if (presenceDetails.status === 'OFFLINE' && u.sessions.length > 0) {
+        for (const s of u.sessions) {
+          const detail = resolveUserPresenceDetails(presenceSnapshot, s.user_id, s.user_email);
+          if (detail.status !== 'OFFLINE') {
+            presenceDetails = detail;
+            break;
+          }
+        }
+      }
+
+      const isPresenceOnline = presenceDetails.status === 'ONLINE';
+      const isPresenceIdle = presenceDetails.status === 'IDLE';
+
+      // Détecter aussi les sessions au statut 'ACTIVE'
+      const activeSessions = u.sessions.filter(s => s.status === 'ACTIVE');
+      const hasActiveWeb = activeSessions.some(s => !isMobilePlatform(s.session_id, s.device, s.user_agent, null));
+      const hasActiveMobile = activeSessions.some(s => isMobilePlatform(s.session_id, s.device, s.user_agent, null));
+
+      // L'utilisateur est connecté s'il est en présence (ONLINE ou IDLE) ou s'il a une session active
+      if (isPresenceOnline || isPresenceIdle || activeSessions.length > 0) {
+        u.status = (isPresenceIdle && activeSessions.length === 0) ? 'IDLE' : 'ACTIVE';
+        if ((presenceDetails.platform === 'both') || (hasActiveWeb && hasActiveMobile)) {
+          u.activePlatform = 'both';
+        } else if (presenceDetails.platform === 'mobile' || hasActiveMobile) {
+          u.activePlatform = 'mobile';
+        } else {
+          u.activePlatform = 'web';
+        }
+      } else {
+        u.status = 'LOGGED_OUT';
+        u.activePlatform = 'none';
+      }
     });
 
     const rank = (s: UserSummaryItem['status']) => (s === 'ACTIVE' ? 0 : s === 'IDLE' ? 1 : 2);
@@ -244,7 +315,7 @@ export const AuditLogsPage: React.FC = () => {
     return Array.from(titles).sort();
   }, [allUserSummaries]);
 
-  // Filtrage des utilisateurs
+  // Filtrage des utilisateurs (Recherche + Poste + Statut + Plateforme + Période)
   const filteredUsers = useMemo(() => {
     return allUserSummaries.filter(u => {
       const matchSearch = filters.searchTerm === '' ||
@@ -256,12 +327,19 @@ export const AuditLogsPage: React.FC = () => {
         u.jobTitle.trim().toLowerCase() === filters.jobTitle.trim().toLowerCase() ||
         u.jobTitle.toLowerCase().includes(filters.jobTitle.toLowerCase());
 
-      const matchStatus = filters.status === 'ALL' || u.status === filters.status;
+      const matchStatus = filters.status === 'ALL' ||
+        (filters.status === 'ACTIVE' && (u.status === 'ACTIVE' || u.status === 'IDLE')) ||
+        u.status === filters.status;
+
+      // Filtrage par Plateforme : Dashboard Web vs Mobile Fus-App
+      const matchPlatform = filters.platform === 'ALL' ||
+        (filters.platform === 'MOBILE' && (u.activePlatform === 'mobile' || u.activePlatform === 'both' || (u.status !== 'ACTIVE' && u.lastPlatform === 'mobile'))) ||
+        (filters.platform === 'WEB' && (u.activePlatform === 'web' || u.activePlatform === 'both' || (u.status !== 'ACTIVE' && u.lastPlatform === 'web')));
 
       const matchStart = !filters.startDate || new Date(u.lastActivity) >= new Date(filters.startDate);
       const matchEnd = !filters.endDate || new Date(u.lastActivity) <= new Date(filters.endDate + 'T23:59:59');
 
-      return matchSearch && matchJobTitle && matchStatus && matchStart && matchEnd;
+      return matchSearch && matchJobTitle && matchStatus && matchPlatform && matchStart && matchEnd;
     });
   }, [allUserSummaries, filters]);
 
@@ -280,14 +358,20 @@ export const AuditLogsPage: React.FC = () => {
 
   // Statistiques clés calculées en direct
   const stats = useMemo(() => {
-    const activeCount = allUserSummaries.filter(u => u.status === 'ACTIVE').length;
+    // Les utilisateurs connectés regroupent les actifs et inactifs récents
+    const connectedList = allUserSummaries.filter(u => u.status === 'ACTIVE' || u.status === 'IDLE');
     const totalUsers = allUserSummaries.length;
-    const totalSessionsCount = allSessions.length;
+    const totalSessionsCount = allSessions.filter(s => !isGuestEntry(s.user_email, s.session_id)).length;
     const uniqueRoles = distinctJobTitles.length;
+
+    const webCount = connectedList.filter(u => u.activePlatform === 'web' || u.activePlatform === 'both').length;
+    const mobileCount = connectedList.filter(u => u.activePlatform === 'mobile' || u.activePlatform === 'both').length;
 
     return {
       totalUsers,
-      activeUsers: activeCount,
+      activeUsers: connectedList.length,
+      webActiveUsers: webCount,
+      mobileActiveUsers: mobileCount,
       totalSessions: totalSessionsCount,
       uniqueRoles
     };
@@ -309,16 +393,16 @@ export const AuditLogsPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-3xl font-black tracking-tight text-foreground uppercase italic flex items-center gap-2">
-            Supervision des Collaborateurs <Sparkles className="w-6 h-6 text-primary" />
+            Supervision Multi-Plateforme <Sparkles className="w-6 h-6 text-primary" />
           </h2>
           <p className="text-muted-foreground text-sm font-medium">
-            Traçabilité des accès par utilisateur, suivi des sessions, statut en direct et historique d'actions réelles
+            Traçabilité unifiée : utilisateurs connectés sur le <strong className="text-foreground">Dashboard Web</strong> & sur l'application <strong className="text-primary">Fus-App Mobile</strong> en temps réel
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <Button
-            onClick={refresh}
+            onClick={() => refresh()}
             variant="outline"
             size="icon"
             className="w-11 h-11 rounded-xl shrink-0"
@@ -347,6 +431,7 @@ export const AuditLogsPage: React.FC = () => {
           <div className="text-[11px] text-muted-foreground mt-0.5">Comptes identifiés</div>
         </div>
 
+        {/* Live Active Connections with Web/Mobile breakdown */}
         <div className="bg-card border border-emerald-500/20 bg-emerald-500/[0.02] rounded-2xl p-4 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Actuellement en ligne</span>
@@ -355,17 +440,27 @@ export const AuditLogsPage: React.FC = () => {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
           </div>
-          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">{stats.activeUsers}</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">Connectés en temps réel</div>
+          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">
+            {stats.activeUsers}
+          </div>
+          <div className="text-[11px] font-bold text-muted-foreground mt-0.5 flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-foreground">
+              <Laptop className="w-3 h-3 text-primary" /> {stats.webActiveUsers} Web
+            </span>
+            <span>•</span>
+            <span className="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400">
+              <Smartphone className="w-3 h-3" /> {stats.mobileActiveUsers} Mobile
+            </span>
+          </div>
         </div>
 
         <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Sessions Cumulées</span>
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Sessions Tracées</span>
             <Clock className="w-4 h-4 text-primary" />
           </div>
           <div className="text-2xl font-black text-foreground mt-2">{stats.totalSessions}</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">Connexions tracées</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Historique des connexions</div>
         </div>
 
         <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm relative overflow-hidden">
@@ -378,7 +473,7 @@ export const AuditLogsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Control Bar : Mode Toggle + Search + Filters */}
+      {/* Control Bar : Mode Toggle + Search + Platform Filter + Status + Dates */}
       <div className="flex flex-col lg:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-card border border-border shadow-sm">
         {/* Search */}
         <div className="relative flex-1 w-full">
@@ -394,6 +489,20 @@ export const AuditLogsPage: React.FC = () => {
 
         {/* Dropdown Filters & Controls */}
         <div className="flex items-center flex-wrap gap-2 w-full lg:w-auto">
+          {/* Filter by Platform (Web Dashboard vs Mobile Fus-App) */}
+          <div className="flex items-center gap-1.5 bg-secondary/40 rounded-xl px-2.5 py-1 border border-border/50">
+            <SmartphoneNfc className="w-3.5 h-3.5 text-primary shrink-0" />
+            <select
+              value={filters.platform}
+              onChange={(e) => setFilters({ ...filters, platform: e.target.value as any })}
+              className="h-8 bg-transparent text-foreground text-xs font-bold uppercase tracking-wider border-none outline-none cursor-pointer pr-2"
+            >
+              <option value="ALL">PLATEFORME: TOUTES</option>
+              <option value="WEB">💻 WEB DASHBOARD</option>
+              <option value="MOBILE">📱 FUS-APP MOBILE</option>
+            </select>
+          </div>
+
           {/* Filter by Poste (job_title) */}
           <div className="flex items-center gap-1.5 bg-secondary/40 rounded-xl px-2.5 py-1 border border-border/50">
             <Briefcase className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -493,7 +602,7 @@ export const AuditLogsPage: React.FC = () => {
       {loading ? (
         <div className="py-24 text-center space-y-3">
           <RefreshCw className="w-9 h-9 text-primary animate-spin mx-auto" />
-          <p className="text-muted-foreground text-sm font-semibold tracking-wide">Chargement des données de supervision...</p>
+          <p className="text-muted-foreground text-sm font-semibold tracking-wide">Chargement des données de supervision en direct...</p>
         </div>
       ) : filteredUsers.length === 0 ? (
         <div className="p-16 text-center bg-card border border-border rounded-3xl space-y-3">
@@ -554,9 +663,10 @@ export const AuditLogsPage: React.FC = () => {
                 <tr>
                   <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Collaborateur</th>
                   <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Poste / Fonction</th>
-                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Dernière Activité</th>
+                  <th className="text-center py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Plateforme</th>
+                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Dernière Action en Direct</th>
                   <th className="text-center py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Sessions</th>
-                  <th className="text-center py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions Réelles</th>
+                  <th className="text-center py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions</th>
                   <th className="text-center py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Statut</th>
                   <th className="text-right py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Action</th>
                 </tr>
@@ -586,13 +696,38 @@ export const AuditLogsPage: React.FC = () => {
                       </span>
                     </td>
 
-                    <td className="py-4 px-6 text-xs text-muted-foreground">
-                      {user.lastActivity && !isNaN(new Date(user.lastActivity).getTime()) ? (
-                        <>
-                          <strong className="text-foreground">{new Date(user.lastActivity).toLocaleDateString('fr-FR')}</strong> à {new Date(user.lastActivity).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                        </>
+                    <td className="py-4 px-6 text-center">
+                      {user.status === 'ACTIVE' ? (
+                        user.activePlatform === 'both' ? (
+                          <span className="px-2.5 py-1 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold text-[11px] border border-cyan-500/30 inline-flex items-center gap-1">
+                            💻+📱 Web & Mobile
+                          </span>
+                        ) : user.activePlatform === 'mobile' ? (
+                          <span className="px-2.5 py-1 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 font-extrabold text-[11px] border border-purple-500/30 inline-flex items-center gap-1">
+                            📱 Fus-App Mobile
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 font-extrabold text-[11px] border border-blue-500/30 inline-flex items-center gap-1">
+                            💻 Web Dashboard
+                          </span>
+                        )
                       ) : (
-                        <span className="italic text-muted-foreground/70">Jamais connecté</span>
+                        <span className="text-[11px] text-muted-foreground font-semibold inline-flex items-center gap-1">
+                          {user.lastPlatform === 'mobile' ? '📱 Mobile' : '💻 Web'}
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="py-4 px-6 text-xs text-muted-foreground max-w-xs">
+                      {user.latestAction ? (
+                        <div className="truncate">
+                          <span className="font-black text-primary">[{user.latestAction.module}]</span> {user.latestAction.description}
+                          <div className="text-[10px] text-muted-foreground/80 mt-0.5">
+                            {formatRelativeTime(user.latestAction.timestamp)}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="italic text-muted-foreground/60">Aucune action</span>
                       )}
                     </td>
 
@@ -694,16 +829,54 @@ const UserCard: React.FC<UserCardProps> = ({
               {user.userEmail || 'Email non renseigné'}
             </p>
 
-            <div className="mt-2">
+            <div className="mt-2 flex items-center gap-1.5 flex-wrap">
               <span className={`inline-block px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider border truncate max-w-full ${getJobBadgeClass(user.jobTitle)}`}>
                 {user.jobTitle}
               </span>
+
+              {/* Badge Plateforme Connecté en Direct */}
+              {user.status === 'ACTIVE' && (
+                user.activePlatform === 'both' ? (
+                  <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 flex items-center gap-1">
+                    💻+📱 Web & App
+                  </span>
+                ) : user.activePlatform === 'mobile' ? (
+                  <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                    📱 Fus-App
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 flex items-center gap-1">
+                    💻 Dashboard
+                  </span>
+                )
+              )}
             </div>
           </div>
         </div>
 
+        {/* Encart Dernière Action en Direct (Temps Réel) */}
+        {user.latestAction ? (
+          <div className="bg-secondary/40 border border-border/70 rounded-2xl p-2.5 text-xs space-y-1">
+            <div className="flex items-center justify-between text-[10px] font-bold">
+              <span className="flex items-center gap-1 text-primary">
+                <Activity className="w-3 h-3" /> Dernière action
+              </span>
+              <span className="text-muted-foreground font-medium flex items-center gap-1">
+                {user.latestAction.platform === 'mobile' ? '📱 Fus-App' : '💻 Dashboard'} • {formatRelativeTime(user.latestAction.timestamp)}
+              </span>
+            </div>
+            <p className="text-foreground font-semibold text-[11px] truncate" title={user.latestAction.description}>
+              <span className="text-primary font-bold">[{user.latestAction.module}]</span> {user.latestAction.description}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-secondary/20 border border-border/40 rounded-2xl p-2 text-center text-[10px] text-muted-foreground/70 italic">
+            Aucune action récente tracée
+          </div>
+        )}
+
         {/* Détails opérationnels synthétisés */}
-        <div className="space-y-2 py-3 border-y border-border/50 text-xs">
+        <div className="space-y-2 py-2.5 border-y border-border/50 text-xs">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-primary" /> Dernière Activité
@@ -737,7 +910,7 @@ const UserCard: React.FC<UserCardProps> = ({
         </div>
       </div>
 
-      {/* Footer : Bouton d'ouverture des Détails & Actions */}
+      {/* Footer : Statut + Bouton Détails */}
       <div className="mt-4 pt-1 flex items-center justify-between gap-2">
         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${PRESENCE_META[toPresence(user.status)].badge}`}>
           {PRESENCE_META[toPresence(user.status)].label}

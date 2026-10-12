@@ -20,6 +20,7 @@ import { useClubData } from '../../../hooks/useClubData';
 import { useMetrics } from '../../../hooks/useMetrics';
 import type { Club } from '../../../types';
 import { OpponentClubFormModal } from '../../club-management/components/OpponentClubFormModal';
+import DOMPurify from 'dompurify';
 
 interface CandidateDetailModalProps {
   isOpen: boolean;
@@ -819,7 +820,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                           </span>
                           <div
                             className="text-slate-700 text-xs leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: latestEval.strengths }}
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(latestEval.strengths) }}
                           />
                         </div>
                       )}
@@ -831,7 +832,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                           </span>
                           <div
                             className="text-slate-700 text-xs leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: latestEval.weaknesses }}
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(latestEval.weaknesses) }}
                           />
                         </div>
                       )}
@@ -843,7 +844,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                           </span>
                           <div
                             className="text-slate-700 text-xs leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: latestEval.projection }}
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(latestEval.projection) }}
                           />
                         </div>
                       )}

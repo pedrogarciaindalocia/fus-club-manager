@@ -212,11 +212,25 @@ export const SessionSecurityProvider: React.FC<{ children: React.ReactNode }> = 
     };
   }, []);
 
-  // 5. Présence temps réel : connecté (vert) / inactif (orange) / déconnecté (gris = absent du canal)
+  // 5. Présence temps réel & initialisation automatique de session d'audit
   useEffect(() => {
-    const syncUser = (user: { id: string; email?: string | null } | null | undefined) => {
+    const syncUser = async (user: { id: string; email?: string | null; user_metadata?: any } | null | undefined) => {
       if (user?.id) {
-        PresenceTracker.connect({ id: user.id, email: user.email ?? null });
+        PresenceTracker.connect({ id: user.id, email: user.email ?? null }, 'web');
+
+        // Initialiser ou restaurer la session dans user_sessions si non encore active
+        const curSession = AuditLogger.getCurrentSession();
+        if (!curSession || curSession.user_id !== user.id || curSession.status !== 'ACTIVE') {
+          try {
+            await AuditLogger.startSession(
+              user.id,
+              user.email ?? null,
+              user.user_metadata?.role || 'super_admin'
+            );
+          } catch (e) {
+            console.warn('[SessionSecurityContext] Erreur auto-démarrage session audit:', e);
+          }
+        }
       } else {
         PresenceTracker.disconnect();
       }
@@ -227,13 +241,12 @@ export const SessionSecurityProvider: React.FC<{ children: React.ReactNode }> = 
       syncUser(session?.user);
     });
 
-    // Inactif si aucune interaction depuis 60s ou si l'onglet est masqué
+    // Inactif uniquement après 5 minutes sans mouvement (300s) au lieu de 60s
     const updateActivity = () => {
       const idleMs = Date.now() - lastActivityRef.current;
-      const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
-      PresenceTracker.setActivity(hidden || idleMs >= gracePeriodSeconds * 1000 ? 'idle' : 'active');
+      PresenceTracker.setActivity(idleMs >= 300000 ? 'idle' : 'active');
     };
-    const presenceTimer = setInterval(updateActivity, 5000);
+    const presenceTimer = setInterval(updateActivity, 10000);
     const activityEvents = ['mousedown', 'keydown', 'pointermove', 'touchstart'];
     activityEvents.forEach(ev => window.addEventListener(ev, updateActivity, { passive: true }));
     document.addEventListener('visibilitychange', updateActivity);

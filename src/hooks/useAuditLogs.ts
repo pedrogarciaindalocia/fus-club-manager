@@ -15,7 +15,27 @@ export interface AuditFilters {
   endDate: string;
   ipAddress: string;
   jobTitle: string;
+  platform: 'ALL' | 'WEB' | 'MOBILE';
 }
+
+/** Vérifie et filtre rigoureusement toute trace de compte invité fantôme */
+export const isGuestEntry = (email?: string | null, sessionId?: string | null): boolean => {
+  const em = (email || '').toLowerCase().trim();
+  const sId = (sessionId || '').toUpperCase();
+  return em === 'invite@fus.ma' || em.includes('invite') || sId.includes('GUEST');
+};
+
+/** Détecte avec précision si une session ou un log provient de l'application mobile Fus-App */
+export const isMobilePlatform = (sessionId?: string | null, device?: string | null, userAgent?: string | null, module?: string | null): boolean => {
+  if (sessionId && sessionId.startsWith('MOB-')) return true;
+  const d = (device || '').toLowerCase();
+  if (d.includes('fus-app') || d.includes('mobile') || d.includes('ios') || d.includes('android') || d.includes('téléphone')) return true;
+  const ua = (userAgent || '').toLowerCase();
+  if (ua.includes('fusapp')) return true;
+  const m = (module || '').toUpperCase();
+  if (m.includes('MOBILE')) return true;
+  return false;
+};
 
 export const useAuditLogs = () => {
   const [sessions, setSessions] = useState<UserSession[]>([]);
@@ -34,20 +54,15 @@ export const useAuditLogs = () => {
     endDate: '',
     ipAddress: '',
     jobTitle: 'ALL',
+    platform: 'ALL',
   });
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       // 1. Fetch User Sessions, Audit Logs, User Profiles, RPC Users, and Staff/Scouts in parallel
-      const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://fuhrxfhszttvpkmjydca.supabase.co';
-      const clientToUse = serviceRoleKey
-        ? supabase
-        : supabase;
-
       const [
         { data: dbSessions },
         { data: dbLogs },
@@ -58,7 +73,7 @@ export const useAuditLogs = () => {
       ] = await Promise.all([
         supabase.from('user_sessions').select('*').order('login_at', { ascending: false }),
         supabase.from('audit_logs').select('*').order('created_at', { ascending: false }),
-        supabase.from('user_profiles').select('id, full_name, avatar_url, job_title, system_role, is_active'),
+        supabase.from('user_profiles').select('id, full_name, avatar_url, job_title, system_role, is_active, biometric_device_id, updated_at, biometric_last_used_at'),
         supabase.rpc('get_all_users').catch(() => ({ data: [] })),
         supabase.from('staff').select('id, full_name, photo_url, role, email'),
         supabase.from('scouts').select('id, full_name, photo_url, role_title, email')
@@ -124,23 +139,106 @@ export const useAuditLogs = () => {
       const localLogs = AuditLogger.getLocalCachedLogs();
       const localSessions = AuditLogger.getLocalCachedSessions();
 
-      const combinedLogs: AuditLog[] = [
+      // Filtrer et purger rigoureusement tout compte/log invité
+      const rawLogs: AuditLog[] = [
         ...(dbLogs || []),
         ...localLogs.filter(l => !(dbLogs || []).some(dbL => dbL.id === l.id))
       ];
+      const combinedLogs = rawLogs.filter(l => !isGuestEntry(l.user_email, l.session_id));
 
-      // Exclude phantom orphan test sessions (e.g. invite@fus.ma) that have no registered auth account or profile
       const rawSessions: UserSession[] = [
         ...(dbSessions || []),
         ...localSessions.filter(s => !(dbSessions || []).some(dbS => dbS.session_id === s.session_id))
       ];
+      const combinedSessions = rawSessions.filter(s => !isGuestEntry(s.user_email, s.session_id));
 
-      const combinedSessions = rawSessions.filter(s => {
-        const emailKey = (s.user_email || '').toLowerCase().trim();
-        if (emailKey === 'invite@fus.ma' && !profileByEmail.has('invite@fus.ma') && !s.user_id) {
-          return false;
+      // 2. Inclusion prioritaire de la session de l'utilisateur actuellement authentifié sur cette session
+      try {
+        const { data: authUserRes } = await supabase.auth.getUser();
+        const currentAuthUser = authUserRes?.user;
+
+        if (currentAuthUser && !isGuestEntry(currentAuthUser.email, null)) {
+          const curSession = AuditLogger.getCurrentSession();
+          const activeSessId = curSession?.session_id || `SES-${Date.now()}`;
+          const currentEmailLower = (currentAuthUser.email || '').toLowerCase().trim();
+          
+          const hasActiveInList = combinedSessions.some(
+            s => s.status === 'ACTIVE' && (
+              s.user_id === currentAuthUser.id || 
+              (s.user_email && s.user_email.toLowerCase().trim() === currentEmailLower)
+            )
+          );
+
+          if (!hasActiveInList) {
+            const nowStr = new Date().toISOString();
+            combinedSessions.unshift({
+              id: activeSessId,
+              session_id: activeSessId,
+              user_id: currentAuthUser.id,
+              user_email: currentAuthUser.email || 'Utilisateur',
+              user_role: curSession?.user_role || currentAuthUser.user_metadata?.role || 'super_admin',
+              ip_address: curSession?.ip_address || '127.0.0.1 (Local)',
+              user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+              device: '💻 Web Dashboard',
+              status: 'ACTIVE',
+              login_at: curSession?.login_at || nowStr,
+              logout_at: null,
+              last_activity_at: nowStr,
+              created_at: curSession?.created_at || nowStr,
+              event_count: curSession?.event_count || 1
+            });
+          }
         }
-        return true;
+      } catch (_) {}
+
+      // 2b. Détection et inclusion directe des utilisateurs connectés (base de données user_profiles)
+      // Garantit la détection immédiate des utilisateurs de Fus-App et Web Dashboard
+      (dbProfiles || []).forEach(p => {
+        if (!p.id) return;
+        const dev = p.biometric_device_id || '';
+        const isOnlineDb = (dev.startsWith('ONLINE') || dev.includes('Fus-App') || dev.includes('Dashboard')) && !dev.startsWith('OFFLINE');
+        const lastActiveTime = p.updated_at ? new Date(p.updated_at).getTime() : 0;
+        const diffSeconds = (Date.now() - lastActiveTime) / 1000;
+        const isFresh = diffSeconds < 900; // Actif ou inactif au cours des 15 dernières minutes
+
+        if (isOnlineDb && isFresh) {
+          const isMob = dev.toLowerCase().includes('mobile') || dev.toLowerCase().includes('fus-app');
+          const deviceLabel = dev.replace(/^ONLINE:(mobile|web):/, '') || (isMob ? '📱 Fus-App Mobile' : '💻 Web Dashboard');
+          const statusValue = diffSeconds < 300 ? 'ACTIVE' : 'IDLE';
+          const activeSessId = `ACTIVE-DB-${p.id}`;
+
+          const existingIdx = combinedSessions.findIndex(s => s.user_id === p.id);
+          const pEmail = profileById.get(p.id)?.email || p.email || 'Utilisateur';
+          if (isGuestEntry(pEmail, null)) return;
+
+          const sessionObj: UserSession = {
+            id: activeSessId,
+            session_id: activeSessId,
+            user_id: p.id,
+            user_email: pEmail,
+            user_role: p.system_role || 'collaborateur',
+            ip_address: isMob ? 'Mobile App' : '127.0.0.1 (Local)',
+            user_agent: isMob ? 'FusApp Mobile' : 'Web Dashboard',
+            device: deviceLabel,
+            status: statusValue,
+            login_at: p.biometric_last_used_at || p.updated_at || new Date().toISOString(),
+            logout_at: null,
+            last_activity_at: p.updated_at || new Date().toISOString(),
+            created_at: p.biometric_last_used_at || p.updated_at || new Date().toISOString(),
+            event_count: 1
+          };
+
+          if (existingIdx >= 0) {
+            combinedSessions[existingIdx] = {
+              ...combinedSessions[existingIdx],
+              status: statusValue,
+              device: deviceLabel,
+              last_activity_at: p.updated_at || combinedSessions[existingIdx].last_activity_at
+            };
+          } else {
+            combinedSessions.unshift(sessionObj);
+          }
+        }
       });
 
       // Reconstitution automatique des sessions pour chaque session_id présent dans les logs mais absent des sessions
@@ -152,15 +250,18 @@ export const useAuditLogs = () => {
           const oldestEvent = sessionEvents[sessionEvents.length - 1] || log;
           const newestEvent = sessionEvents[0] || log;
 
+          const isMob = isMobilePlatform(log.session_id, null, log.user_agent, log.module);
+          const deviceLabel = isMob ? '📱 Fus-App Mobile' : '💻 Web Dashboard';
+
           combinedSessions.push({
             id: log.session_id,
             session_id: log.session_id,
             user_id: log.user_id,
             user_email: log.user_email || 'Utilisateur',
-            user_role: log.user_role || 'super_admin',
-            ip_address: log.ip_address || '127.0.0.1 (Local)',
+            user_role: log.user_role || 'collaborateur',
+            ip_address: log.ip_address || (isMob ? 'Mobile App' : '127.0.0.1 (Local)'),
             user_agent: log.user_agent || '',
-            device: '💻 Ordinateur (Mac)',
+            device: deviceLabel,
             status: 'ACTIVE',
             login_at: oldestEvent.created_at,
             logout_at: null,
@@ -187,10 +288,10 @@ export const useAuditLogs = () => {
       });
 
       // Add dummy 0-session placeholder for accounts with 0 sessions
-      const allKnownProfiles = Array.from(profileById.values());
       (rpcUsers || []).forEach(u => {
         const uId = u.id;
         const uEmail = u.email ? u.email.toLowerCase().trim() : '';
+        if (isGuestEntry(uEmail, null)) return;
         if ((uId && !userAccountsSet.has(uId)) && (uEmail && !userAccountsSet.has(uEmail))) {
           userAccountsSet.add(uId || uEmail);
           const p = uId ? profileById.get(uId) : null;
@@ -216,6 +317,7 @@ export const useAuditLogs = () => {
       (dbProfiles || []).forEach(p => {
         const pId = p.id;
         const pEmail = p.email ? p.email.toLowerCase().trim() : '';
+        if (isGuestEntry(pEmail, null)) return;
         if (pId && !userAccountsSet.has(pId) && (!pEmail || !userAccountsSet.has(pEmail))) {
           userAccountsSet.add(pId);
           combinedSessions.push({
@@ -246,8 +348,17 @@ export const useAuditLogs = () => {
         const resolvedAvatar = p?.avatar_url || st?.photo_url || null;
         const resolvedJobTitle = p?.job_title || st?.role_title || st?.role || (p?.system_role ? p.system_role.replace(/_/g, ' ') : (s.user_role ? s.user_role.replace(/_/g, ' ') : 'Collaborateur'));
 
+        // Normalisation propre du device avec détection mobile
+        let resolvedDevice = s.device;
+        if (isMobilePlatform(s.session_id, s.device, s.user_agent, null)) {
+          if (!resolvedDevice || resolvedDevice === 'Desktop' || resolvedDevice === 'N/A') {
+            resolvedDevice = '📱 Fus-App Mobile';
+          }
+        }
+
         return {
           ...s,
+          device: resolvedDevice,
           event_count: countMap.get(s.session_id) || s.event_count || 0,
           user_name: resolvedName,
           user_avatar: resolvedAvatar,
@@ -259,20 +370,55 @@ export const useAuditLogs = () => {
       setLogs(combinedLogs);
     } catch (err) {
       console.warn('Fallback to cached audit logs:', err);
-      setLogs(AuditLogger.getLocalCachedLogs());
-      setSessions(AuditLogger.getLocalCachedSessions());
+      setLogs(AuditLogger.getLocalCachedLogs().filter(l => !isGuestEntry(l.user_email, l.session_id)));
+      setSessions(AuditLogger.getLocalCachedSessions().filter(s => !isGuestEntry(s.user_email, s.session_id)));
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, []);
 
+  // Initial load + Supabase Realtime Subscription (Actions et Sessions en temps réel instantané)
   useEffect(() => {
     fetchData();
+
+    const realtimeChannel = supabase
+      .channel('audit_realtime_stream')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'audit_logs' },
+        () => {
+          fetchData(true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_sessions' },
+        () => {
+          fetchData(true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_profiles' },
+        () => {
+          fetchData(true);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(realtimeChannel);
+    };
   }, [fetchData]);
 
   // Filtered Sessions
   const filteredSessions = useMemo(() => {
     return sessions.filter(s => {
+      const isMob = isMobilePlatform(s.session_id, s.device, s.user_agent, null);
+
+      if (filters.platform === 'MOBILE' && !isMob) return false;
+      if (filters.platform === 'WEB' && isMob) return false;
+
       const matchSearch = filters.searchTerm === '' ||
         (s.session_id && s.session_id.toLowerCase().includes(filters.searchTerm.toLowerCase())) ||
         (s.user_email && s.user_email.toLowerCase().includes(filters.searchTerm.toLowerCase())) ||
@@ -297,6 +443,11 @@ export const useAuditLogs = () => {
   // Filtered Audit Logs
   const filteredLogs = useMemo(() => {
     return logs.filter(l => {
+      const isMob = isMobilePlatform(l.session_id, null, l.user_agent, l.module);
+
+      if (filters.platform === 'MOBILE' && !isMob) return false;
+      if (filters.platform === 'WEB' && isMob) return false;
+
       const matchSearch = filters.searchTerm === '' ||
         l.description.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
         l.action.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||

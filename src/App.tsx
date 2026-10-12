@@ -27,6 +27,7 @@ import ForcePasswordChange from './features/auth/ForcePasswordChange';
 // Pages protégées
 import DashboardPage from './features/dashboard/DashboardPage';
 import MatchManagementPage from './features/match-management/MatchManagementPage';
+import ScheduleMatchPage from './features/match-management/ScheduleMatchPage';
 import MatchDayPage from './features/match-management/MatchDayPage';
 import PlayerManagement from './features/people-management/PlayerManagement';
 import StaffManagement from './features/people-management/StaffManagement';
@@ -61,6 +62,7 @@ const pageTitles: Record<string, string> = {
   '/tickets': 'Support & Tickets Fus-App',
   '/media': 'Espace de Gestion Média',
   '/matches': 'Calendrier des Matchs',
+  '/matches/new': 'Planifier un Match (Stepper)',
   '/matchday': 'Match Day',
   '/official-shortlist': 'Shortlist Officielle — Placement Tactique',
   '/club': 'Mon Club — Effectif FUS',
@@ -89,7 +91,10 @@ const pageTitles: Record<string, string> = {
 
 const AppContent: React.FC = () => {
   const location = useLocation();
-  const currentTitle = pageTitles[location.pathname] || 'Tableau de Bord';
+  const currentTitle = 
+    location.pathname.startsWith('/matches/edit') || location.pathname.includes('/prepare')
+      ? 'Modifier le Match (Stepper)'
+      : (pageTitles[location.pathname] || 'Tableau de Bord');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { isPluginActive } = usePlugins();
@@ -109,7 +114,7 @@ const AppContent: React.FC = () => {
     (location.pathname === '/media' && hasSubModuleAccess('media', 'read')) ||
     ((location.pathname === '/players' || location.pathname === '/club') && hasSubModuleAccess('players', 'read')) ||
     (location.pathname === '/teams' && hasSubModuleAccess('teams', 'read')) ||
-    ((location.pathname === '/matches' || location.pathname === '/matchday') && hasSubModuleAccess('matches', 'read')) ||
+    ((location.pathname === '/matches' || location.pathname.startsWith('/matches/') || location.pathname === '/matchday') && hasSubModuleAccess('matches', 'read')) ||
     (location.pathname.startsWith('/trainings') && hasModuleAccess('trainings', 'read')) ||
     (location.pathname === '/official-shortlist' && hasSubModuleAccess('official_shortlist', 'read')) ||
     (location.pathname === '/arbitres' && hasSubModuleAccess('arbitres', 'read')) ||
@@ -137,7 +142,7 @@ const AppContent: React.FC = () => {
   // 3. Protection granulaire des sous-rubriques métier (Read guard)
   if (!isSuperAdmin) {
     // Compétition & Matchs
-    if ((location.pathname === '/matches' || location.pathname === '/matchday') && !hasSubModuleAccess('matches', 'read')) {
+    if ((location.pathname === '/matches' || location.pathname.startsWith('/matches/') || location.pathname === '/matchday') && !hasSubModuleAccess('matches', 'read')) {
       return <Navigate to="/" replace />;
     }
     if (location.pathname === '/official-shortlist' && !hasSubModuleAccess('official_shortlist', 'read')) {
@@ -211,6 +216,21 @@ const AppContent: React.FC = () => {
                 <Route path="/"          element={<DashboardPage />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/matches"   element={<MatchManagementPage />} />
+                <Route path="/matches/new" element={
+                  <ProtectedRoute requiredPermission="create_match">
+                    <ScheduleMatchPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/matches/edit/:id" element={
+                  <ProtectedRoute requiredPermission="manage_matches">
+                    <ScheduleMatchPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/matches/:id/prepare" element={
+                  <ProtectedRoute requiredPermission="manage_matches">
+                    <ScheduleMatchPage />
+                  </ProtectedRoute>
+                } />
                 <Route path="/matchday"  element={
                   <ProtectedRoute requiredPermission="track_live_match">
                     <MatchDayPage />

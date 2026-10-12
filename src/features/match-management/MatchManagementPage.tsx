@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMatches } from '../../hooks/useMatches';
 import { useClubData } from '../../hooks/useClubData';
 import { useCompetitions } from '../../hooks/useCompetitions';
@@ -158,16 +159,29 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
                   🤝 Amical
                </Badge>
             ) : (
-               <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 text-[8px] font-black uppercase px-2 py-0.5 shadow-sm truncate max-w-[120px]" title={leagueName}>
-                  🏆 {leagueName}
+               <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 text-[8px] font-black uppercase px-2 py-0.5 shadow-sm flex items-center gap-1.5 truncate max-w-[150px]" title={leagueName}>
+                  {league?.logo_url ? (
+                     <img src={league.logo_url} alt="" className="w-3.5 h-3.5 object-contain shrink-0" />
+                  ) : (
+                     <Trophy className="w-3 h-3 text-emerald-600 shrink-0" />
+                  )}
+                  <span className="truncate">{leagueName}</span>
                </Badge>
             )}
          </div>
 
          <div className="flex items-center justify-between w-full pt-4">
+            {/* Club Principal (FUS) avec Badge de Catégorie incrusté sur le logo */}
             <div className="flex flex-col items-center gap-1 w-1/3">
-               <div className={`w-12 h-12 rounded-xl bg-white border flex items-center justify-center p-1.5 shadow-sm transition-all ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
-                  {mainClub?.logo_url ? <img src={mainClub.logo_url} className="w-full h-full object-contain" /> : <div className="bg-yellow-500 w-full h-full text-white font-black text-[12px] flex items-center justify-center rounded-lg">FUS</div>}
+               <div className="relative">
+                  <div className={`w-14 h-14 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center p-1.5 shadow-sm transition-all overflow-hidden ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
+                     {mainClub?.logo_url ? <img src={mainClub.logo_url} alt="" className="w-full h-full object-contain rounded-full" /> : <div className="bg-yellow-500 w-full h-full text-white font-black text-[12px] flex items-center justify-center rounded-full">FUS</div>}
+                  </div>
+                  {match.category && (
+                     <span className="absolute -bottom-1 -right-1 bg-primary text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm leading-none">
+                        {match.category}
+                     </span>
+                  )}
                </div>
                <span className="text-[10px] font-black uppercase tracking-tight text-foreground truncate max-w-full text-center">
                   {mainClub?.club_name || 'FUS'}
@@ -182,13 +196,19 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-2 opacity-80 whitespace-nowrap">
                   {match.match_date}
                </p>
-               <p className="text-[8px] font-black uppercase tracking-wider mt-0.5 whitespace-nowrap flex items-center justify-center gap-1">
-                  <span className="text-primary">{match.category || 'Équipe'}</span>
-                  <span className="text-slate-300">•</span>
-                  <span className={isInternal ? 'text-purple-700 font-bold' : (isFriendly ? 'text-amber-700 font-bold' : 'text-emerald-700 font-bold')}>
-                     {isInternal ? '⚔️ Opp. Interne' : (isFriendly ? '🤝 Amical' : leagueName)}
+               <div className="mt-1 flex flex-col items-center gap-0.5">
+                  <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider">
+                     {match.category || 'Équipe'}
                   </span>
-               </p>
+                  <div className="flex items-center justify-center gap-1 text-[8px] font-black uppercase tracking-wider text-muted-foreground">
+                     {league?.logo_url && (
+                        <img src={league.logo_url} alt="" className="w-3 h-3 object-contain shrink-0 inline" />
+                     )}
+                     <span className={isInternal ? 'text-purple-700 font-bold' : (isFriendly ? 'text-amber-700 font-bold' : 'text-emerald-700 font-bold')}>
+                        {isInternal ? '⚔️ Opp. Interne' : (isFriendly ? '🤝 Amical' : leagueName)}
+                     </span>
+                  </div>
+               </div>
                {match.status === 'live' && (
                   <Badge className="mt-1 bg-red-500 text-white text-[8px] font-black px-2 py-0 rounded-full animate-pulse shadow-sm shadow-red-500/20">
                      LIVE
@@ -196,17 +216,25 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
                )}
             </div>
 
+            {/* Club Adversaire avec badge de compétition incrusté si disponible */}
             <div className="flex flex-col items-center gap-1 w-1/3">
-               <div className={`w-12 h-12 rounded-xl bg-white border flex items-center justify-center p-1.5 shadow-sm transition-all ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
-                  <img 
-                     src={
-                        (isInternal && mainClub?.logo_url)
-                           ? mainClub.logo_url
-                           : (opponentClubs.find(c => c.id === match.opponent_id)?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(getOpponentName(match.opponent_id))}&background=random`)
-                     } 
-                     alt="" 
-                     className="w-full h-full object-contain" 
-                  />
+               <div className="relative">
+                  <div className={`w-14 h-14 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center p-1.5 shadow-sm transition-all overflow-hidden ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
+                     <img 
+                        src={
+                           (isInternal && mainClub?.logo_url)
+                              ? mainClub.logo_url
+                              : (opponentClubs.find(c => c.id === match.opponent_id)?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(getOpponentName(match.opponent_id))}&background=random`)
+                        } 
+                        alt="" 
+                        className="w-full h-full object-contain rounded-full" 
+                     />
+                  </div>
+                  {league?.logo_url && (
+                     <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white p-0.5 border-2 border-slate-200 shadow-sm flex items-center justify-center overflow-hidden" title={league.name}>
+                        <img src={league.logo_url} alt="" className="w-full h-full object-contain" />
+                     </div>
+                  )}
                </div>
                <span className="text-[10px] font-black uppercase tracking-tight text-foreground truncate max-w-full text-center">
                   {getOpponentName(match.opponent_id)}
@@ -273,6 +301,7 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
 };
 
 const MatchManagementPage: React.FC = () => {
+   const navigate = useNavigate();
    const { matches, deleteMatch, updateMatch, isLoading: matchesLoading, refetch } = useMatches();
    const { mainClub, opponentClubs, isLoading: clubLoading } = useClubData();
    const { leagues } = useCompetitions();
@@ -490,14 +519,50 @@ const MatchManagementPage: React.FC = () => {
    };
    const getStadiumName = (stadiumId: string) => 'Stadium Venue'; 
 
+   const matchBelongsToLeague = (m: Match, filter: string) => {
+      if (filter === 'All') return true;
+      const isInternal = (m as any).match_type === 'internal_scrimmage'
+         || (m.lineup as any)?.internal_opposition?.is_internal_scrimmage
+         || (m.notes && m.notes.includes('[Opposition Interne]'))
+         || (mainClub && m.opponent_id === mainClub.id);
+      const isFriendly = !isInternal && (!m.league_id || m.category?.toLowerCase().includes('amical') || m.notes?.toLowerCase().includes('amical'));
+      if (filter === 'internal') return isInternal;
+      if (filter === 'friendly') return isFriendly;
+      return m.league_id === filter;
+   };
+
+   const competitionStats = useMemo(() => {
+      const counts: Record<string, number> = {};
+      let friendlyCount = 0;
+      let internalCount = 0;
+      matches.forEach(m => {
+         const isInternal = (m as any).match_type === 'internal_scrimmage'
+            || (m.lineup as any)?.internal_opposition?.is_internal_scrimmage
+            || (m.notes && m.notes.includes('[Opposition Interne]'))
+            || (mainClub && m.opponent_id === mainClub.id);
+         const isFriendly = !isInternal && (!m.league_id || m.category?.toLowerCase().includes('amical') || m.notes?.toLowerCase().includes('amical'));
+
+         if (isInternal) {
+            internalCount++;
+         } else if (isFriendly) {
+            friendlyCount++;
+         } else if (m.league_id) {
+            counts[m.league_id] = (counts[m.league_id] || 0) + 1;
+         }
+      });
+      return { counts, friendlyCount, internalCount };
+   }, [matches, mainClub]);
+
    const categoryCounts = useMemo(() => {
       const counts: Record<string, number> = {};
       matches.forEach(m => {
+         // If a league filter is active, only count categories for that league
+         if (!matchBelongsToLeague(m, leagueFilter)) return;
          const normCat = normalizeAgeCategory(m.category);
          counts[normCat] = (counts[normCat] || 0) + 1;
       });
       return counts;
-   }, [matches]);
+   }, [matches, leagueFilter, mainClub]);
 
    const filteredMatches = useMemo(() => {
       return matches.filter(m => {
@@ -505,7 +570,7 @@ const MatchManagementPage: React.FC = () => {
          const matchCategory = categoryFilter === 'All' || normCat === categoryFilter;
          if (!matchCategory) return false;
 
-         const matchLeague = leagueFilter === 'All' || m.league_id === leagueFilter;
+         const matchLeague = matchBelongsToLeague(m, leagueFilter);
          if (!matchLeague) return false;
 
          // Date filter takes priority over listFilter if set
@@ -521,7 +586,7 @@ const MatchManagementPage: React.FC = () => {
          }
          return m.status === listFilter;
       });
-   }, [matches, categoryFilter, listFilter, leagueFilter, dateFilter]);
+   }, [matches, categoryFilter, listFilter, leagueFilter, dateFilter, mainClub]);
 
    const isAllSelected = useMemo(() => {
       return filteredMatches.length > 0 && filteredMatches.every(m => selectedMatchIds.has(m.id));
@@ -651,40 +716,40 @@ const MatchManagementPage: React.FC = () => {
                                   className={`h-9 sm:h-12 px-3 sm:px-5 rounded-lg sm:rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-2 transition-all ${
                                      viewMode === 'planning' 
                                         ? 'bg-white text-blue-950 shadow-lg' 
-                                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                                        : 'text-white/70 hover:text-white hover:bg-white/5'
                                   }`}
                                   title="Vue calendrier mensuelle interactive"
                                >
                                   <Calendar className="w-3.5 h-3.5 shrink-0" />
-                                  <span className="hidden md:inline">Calendrier</span>
+                                  <span>Calendrier</span>
                                </button>
                                <button
                                   onClick={() => setViewMode('grid')}
                                   className={`h-9 sm:h-12 px-3 sm:px-5 rounded-lg sm:rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-2 transition-all ${
                                      viewMode === 'grid' 
-                                        ? 'bg-white text-blue-955 shadow-lg' 
-                                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                                        ? 'bg-white text-blue-950 shadow-lg' 
+                                        : 'text-white/70 hover:text-white hover:bg-white/5'
                                   }`}
                                   title="Vue en cartes de match"
                                >
                                   <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
-                                  <span className="hidden md:inline">Grille</span>
+                                  <span>Grille</span>
                                </button>
                                <button
                                   onClick={() => setViewMode('table')}
                                   className={`h-9 sm:h-12 px-3 sm:px-5 rounded-lg sm:rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-2 transition-all ${
                                      viewMode === 'table' 
-                                        ? 'bg-white text-blue-955 shadow-lg' 
-                                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                                        ? 'bg-white text-blue-950 shadow-lg' 
+                                        : 'text-white/70 hover:text-white hover:bg-white/5'
                                   }`}
                                   title="Vue en tableau condensé"
                                >
                                   <Table className="w-3.5 h-3.5 shrink-0" />
-                                  <span className="hidden md:inline">Tableau</span>
+                                  <span>Tableau</span>
                                </button>
                             </div>
                            {can('create_match') && (
-                             <Button onClick={() => setActiveTab('wizard')} className="bg-white hover:bg-white/90 text-blue-900 h-11 sm:h-14 lg:h-16 px-4 sm:px-6 lg:px-10 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] gap-2 sm:gap-4 shadow-2xl transition-all hover:scale-105 active:scale-95 group shrink-0">
+                             <Button onClick={() => navigate('/matches/new' + (categoryFilter !== 'All' ? `?category=${encodeURIComponent(categoryFilter)}` : ''))} className="bg-white hover:bg-white/90 text-blue-900 h-11 sm:h-14 lg:h-16 px-4 sm:px-6 lg:px-10 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] gap-2 sm:gap-4 shadow-2xl transition-all hover:scale-105 active:scale-95 group shrink-0">
                                 <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:rotate-90 transition-transform duration-500" /> 
                                 <span className="hidden sm:inline">Planifier un Match</span>
                                 <span className="sm:hidden">Planifier</span>
@@ -695,44 +760,179 @@ const MatchManagementPage: React.FC = () => {
                   </div>
 
                   {/* Filters Bar */}
-                  <div className="flex flex-col gap-4 sm:gap-6">
-                     {/* Category filters - scrollable on mobile */}
-                     <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0">
-                        {['All', ...PLAYER_CATEGORIES].map(cat => {
-                           const count = cat === 'All' ? matches.length : (categoryCounts[cat] || 0);
-                           return (
-                           <Button
-                              key={cat}
-                              variant={categoryFilter === cat ? 'default' : 'ghost'}
-                              onClick={() => setCategoryFilter(cat)}
-                              className={`rounded-xl sm:rounded-[1.2rem] px-3 sm:px-4 lg:px-6 font-black uppercase tracking-widest text-[9px] sm:text-[10px] h-10 sm:h-12 transition-all gap-1.5 sm:gap-2 shrink-0 ${categoryFilter === cat ? 'bg-primary text-white shadow-xl shadow-primary/20 scale-105' : count === 0 ? 'opacity-30 text-muted-foreground hover:bg-secondary' : 'text-muted-foreground hover:bg-secondary'}`}
+                  <div className="flex flex-col gap-3 sm:gap-4">
+                     {/* 1. Competition Logo Filters Bar */}
+                     <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between px-1">
+                           <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+                              <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                              Compétition
+                           </span>
+                           {leagueFilter !== 'All' && (
+                              <button
+                                 onClick={() => setLeagueFilter('All')}
+                                 className="text-[9px] font-black text-primary hover:underline uppercase flex items-center gap-1 transition-all"
+                              >
+                                 <X className="w-3 h-3" /> Réinitialiser le filtre
+                              </button>
+                           )}
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto pb-2 pt-0.5 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0">
+                           {/* "Toutes les Compétitions" pill */}
+                           <button
+                              onClick={() => setLeagueFilter('All')}
+                              className={`flex items-center gap-2.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border transition-all shrink-0 ${
+                                 leagueFilter === 'All'
+                                    ? 'bg-gradient-to-r from-blue-900 to-indigo-950 text-white border-blue-900 shadow-md shadow-blue-900/20 scale-[1.02]'
+                                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/80 hover:border-slate-300 shadow-sm'
+                              }`}
                            >
-                              {cat}
-                              <span className={`text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded-md ${categoryFilter === cat ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'}`}>
-                                 {count}
-                              </span>
-                           </Button>
-                           );
-                        })}
+                              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                 leagueFilter === 'All' ? 'bg-white/20 text-amber-300' : 'bg-amber-50 text-amber-600 border border-amber-200/60'
+                              }`}>
+                                 <Trophy className="w-4 h-4" />
+                              </div>
+                              <div className="flex flex-col text-left">
+                                 <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider leading-none">
+                                    Toutes
+                                 </span>
+                                 <span className={`text-[8px] font-semibold mt-0.5 leading-none ${leagueFilter === 'All' ? 'text-white/70' : 'text-slate-400'}`}>
+                                    {matches.length} matchs
+                                 </span>
+                              </div>
+                           </button>
+
+                           {/* Individual Competitions with Logos */}
+                           {leagues.map(l => {
+                              const count = competitionStats.counts[l.id] || 0;
+                              const isSelected = leagueFilter === l.id;
+                              return (
+                                 <button
+                                    key={l.id}
+                                    onClick={() => setLeagueFilter(isSelected ? 'All' : l.id)}
+                                    className={`flex items-center gap-2.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border transition-all shrink-0 group ${
+                                       isSelected
+                                          ? 'bg-primary text-white border-primary shadow-lg shadow-primary/25 scale-[1.02]'
+                                          : count === 0
+                                             ? 'bg-white/60 text-slate-400 border-slate-200/60 opacity-60 hover:opacity-100 hover:bg-white hover:text-slate-700'
+                                             : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/80 hover:border-slate-300 shadow-sm'
+                                    }`}
+                                    title={l.name}
+                                 >
+                                    <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg p-1 flex items-center justify-center overflow-hidden shrink-0 ${
+                                       isSelected ? 'bg-white shadow-sm' : 'bg-slate-50 border border-slate-200/80 group-hover:bg-white'
+                                    }`}>
+                                       {l.logo_url ? (
+                                          <img src={l.logo_url} alt={l.name} className="w-full h-full object-contain" />
+                                       ) : (
+                                          <Trophy className={`w-4 h-4 ${isSelected ? 'text-primary' : 'text-amber-500'}`} />
+                                       )}
+                                    </div>
+                                    <div className="flex flex-col text-left">
+                                       <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-tight leading-none truncate max-w-[130px] sm:max-w-[180px]">
+                                          {l.name}
+                                       </span>
+                                       <span className={`text-[8px] font-semibold mt-0.5 leading-none ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                                          {count} match{count > 1 ? 's' : ''}
+                                       </span>
+                                    </div>
+                                 </button>
+                              );
+                           })}
+
+                           {/* Matchs Amicaux */}
+                           {competitionStats.friendlyCount > 0 && (
+                              <button
+                                 onClick={() => setLeagueFilter(leagueFilter === 'friendly' ? 'All' : 'friendly')}
+                                 className={`flex items-center gap-2.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border transition-all shrink-0 ${
+                                    leagueFilter === 'friendly'
+                                       ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-600/25 scale-[1.02]'
+                                       : 'bg-white hover:bg-amber-50/50 text-slate-700 border-slate-200/80 shadow-sm'
+                                 }`}
+                              >
+                                 <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-sm shrink-0 ${
+                                    leagueFilter === 'friendly' ? 'bg-white/20 text-white' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                 }`}>
+                                    🤝
+                                 </div>
+                                 <div className="flex flex-col text-left">
+                                    <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-tight leading-none">
+                                       Amicaux
+                                    </span>
+                                    <span className={`text-[8px] font-semibold mt-0.5 leading-none ${leagueFilter === 'friendly' ? 'text-white/80' : 'text-slate-400'}`}>
+                                       {competitionStats.friendlyCount} match{competitionStats.friendlyCount > 1 ? 's' : ''}
+                                    </span>
+                                 </div>
+                              </button>
+                           )}
+
+                           {/* Oppositions Internes */}
+                           {competitionStats.internalCount > 0 && (
+                              <button
+                                 onClick={() => setLeagueFilter(leagueFilter === 'internal' ? 'All' : 'internal')}
+                                 className={`flex items-center gap-2.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border transition-all shrink-0 ${
+                                    leagueFilter === 'internal'
+                                       ? 'bg-purple-600 text-white border-purple-600 shadow-lg shadow-purple-600/25 scale-[1.02]'
+                                       : 'bg-white hover:bg-purple-50/50 text-slate-700 border-slate-200/80 shadow-sm'
+                                 }`}
+                              >
+                                 <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-sm shrink-0 ${
+                                    leagueFilter === 'internal' ? 'bg-white/20 text-white' : 'bg-purple-50 text-purple-700 border border-purple-200'
+                                 }`}>
+                                    ⚔️
+                                 </div>
+                                 <div className="flex flex-col text-left">
+                                    <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-tight leading-none">
+                                       Internes
+                                    </span>
+                                    <span className={`text-[8px] font-semibold mt-0.5 leading-none ${leagueFilter === 'internal' ? 'text-white/80' : 'text-slate-400'}`}>
+                                       {competitionStats.internalCount} match{competitionStats.internalCount > 1 ? 's' : ''}
+                                    </span>
+                                 </div>
+                              </button>
+                           )}
+                        </div>
+                     </div>
+
+                     {/* 2. Category filters directly below competitions - scrollable on mobile */}
+                     <div className="flex flex-col gap-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-1">
+                           Catégorie d'âge
+                        </span>
+                        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0">
+                           {['All', ...PLAYER_CATEGORIES].map(cat => {
+                              const count = cat === 'All' ? filteredMatches.length : (categoryCounts[cat] || 0);
+                              return (
+                              <Button
+                                 key={cat}
+                                 variant={categoryFilter === cat ? 'default' : 'ghost'}
+                                 onClick={() => setCategoryFilter(cat)}
+                                 className={`rounded-xl sm:rounded-[1.2rem] px-3 sm:px-4 lg:px-6 font-black uppercase tracking-widest text-[9px] sm:text-[10px] h-10 sm:h-11 transition-all gap-1.5 sm:gap-2 shrink-0 ${categoryFilter === cat ? 'bg-primary text-white shadow-xl shadow-primary/20 scale-105' : count === 0 ? 'opacity-30 text-muted-foreground hover:bg-secondary' : 'text-muted-foreground hover:bg-secondary'}`}
+                              >
+                                 {cat}
+                                 <span className={`text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded-md ${categoryFilter === cat ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                    {count}
+                                 </span>
+                              </Button>
+                              );
+                           })}
+                        </div>
                      </div>
                      
-                     {/* Secondary filters */}
-                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+                     {/* 3. Secondary filters (Tout, Aujourd'hui, Passé - sans "Calendrier") + Date + Tout Sélectionner */}
+                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 pt-1">
                         <div className="bg-secondary/40 p-1 sm:p-1.5 rounded-xl sm:rounded-[1.5rem] flex border shadow-inner overflow-x-auto">
                            {[
                               { id: 'all', label: 'Tout', icon: LayoutGrid, shortLabel: 'All' },
-                              { id: 'scheduled', label: 'Calendrier', icon: Calendar, shortLabel: 'Cal' },
                               { id: 'today', label: 'Aujourd\'hui', icon: Timer, shortLabel: 'Auj' },
                               { id: 'finished', label: 'Passé', icon: History, shortLabel: 'Passé' }
                            ].map(f => (
                               <button
                                  key={f.id}
                                  onClick={() => {
-                                    const nextFilter = f.id as 'all' | 'scheduled' | 'finished' | 'today';
+                                    const nextFilter = f.id as 'all' | 'finished' | 'today';
                                     setListFilter(nextFilter);
-                                    if (nextFilter === 'scheduled') {
-                                       setViewMode('planning');
-                                    } else if (viewMode === 'planning') {
+                                    if (viewMode === 'planning') {
                                        setViewMode('grid');
                                     }
                                  }}
@@ -744,31 +944,6 @@ const MatchManagementPage: React.FC = () => {
                               </button>
                            ))}
                         </div>
-
-                        <div className="flex items-center gap-2 overflow-x-auto">
-                             <div className="flex items-center gap-2 sm:gap-3 bg-white/50 p-1 sm:p-1.5 px-2 sm:px-4 rounded-xl sm:rounded-[1.5rem] border shadow-sm group shrink-0">
-                                <Trophy className="w-4 h-4 text-emerald-500 shrink-0" />
-                                <select 
-                                   value={leagueFilter}
-                                   onChange={(e) => setLeagueFilter(e.target.value)}
-                                   className="bg-transparent border-none text-[10px] font-black uppercase tracking-widest text-slate-700 outline-none focus:ring-0 cursor-pointer pr-2 sm:pr-4"
-                                >
-                                   <option value="All">Toutes les Ligues</option>
-                                   {leagues.map(l => (
-                                      <option key={l.id} value={l.id}>{l.name}</option>
-                                   ))}
-                                </select>
-                             </div>
-
-                             {leagueFilter !== 'All' && (
-                                <button 
-                                   onClick={() => { setLeagueFilter('All'); }}
-                                   className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-slate-100 hover:bg-red-50 hover:text-red-500 rounded-full transition-all border border-slate-200 shrink-0"
-                                >
-                                   <X className="w-4 h-4" />
-                                </button>
-                             )}
-                         </div>
 
                         {/* Date Filter */}
                         <div className="flex items-center gap-2 shrink-0">
@@ -869,8 +1044,7 @@ const MatchManagementPage: React.FC = () => {
                                const dayMatches = matches.filter(m => {
                                   if (m.match_date !== formattedDate) return false;
                                   if (categoryFilter !== 'All' && normalizeAgeCategory(m.category) !== categoryFilter) return false;
-                                  if (leagueFilter !== 'All' && m.league_id !== leagueFilter) return false;
-                                  return true;
+                                  return matchBelongsToLeague(m, leagueFilter);
                                });
                                const isToday = new Date().toLocaleDateString('en-CA') === formattedDate;
                                const isSelected = calendarSelectedDate === formattedDate;
@@ -910,9 +1084,7 @@ const MatchManagementPage: React.FC = () => {
                                            <button
                                               onClick={(e) => {
                                                  e.stopPropagation();
-                                                 setDateFilter(formattedDate);
-                                                 setEditingMatch({ match_date: formattedDate } as any);
-                                                 setActiveTab('wizard');
+                                                 navigate(`/matches/new?date=${formattedDate}${categoryFilter !== 'All' ? `&category=${encodeURIComponent(categoryFilter)}` : ''}`);
                                               }}
                                               className="opacity-70 sm:opacity-0 sm:group-hover:opacity-100 p-1 hover:bg-primary hover:text-white rounded-md text-slate-400 transition-all shadow-sm"
                                               title="Planifier un match pour ce jour"
@@ -933,6 +1105,16 @@ const MatchManagementPage: React.FC = () => {
                                            const oppClub = opponentClubs.find(c => c.id === match.opponent_id);
                                            const oppName = getOpponentName(match.opponent_id);
                                            const isDraggable = match.status !== 'finished';
+                                           const matchLeague = leagues.find(l => l.id === match.league_id);
+                                           const isInternalScrimmage = (match as any).match_type === 'internal_scrimmage'
+                                              || (match.lineup as any)?.internal_opposition?.is_internal_scrimmage
+                                              || (match.notes && match.notes.includes('[Opposition Interne]'))
+                                              || (mainClub && match.opponent_id === mainClub.id);
+                                           const isFriendlyM = !isInternalScrimmage && (!match.league_id || match.category?.toLowerCase().includes('amical') || match.notes?.toLowerCase().includes('amical'));
+                                           const oppLogoSrc = (isInternalScrimmage && mainClub?.logo_url)
+                                              ? mainClub.logo_url
+                                              : (oppClub?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(oppName)}`);
+
                                            return (
                                               <div 
                                                  key={match.id}
@@ -950,14 +1132,36 @@ const MatchManagementPage: React.FC = () => {
                                                     match.status === 'scheduled' ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100' :
                                                     'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                                                  }`}
-                                                 title={`${isDraggable ? 'Glisser pour déplacer • ' : ''}${oppName} (${match.match_time ? match.match_time.slice(0, 5) : 'Horaire à fixer'})`}
+                                                 title={`${isDraggable ? 'Glisser pour déplacer • ' : ''}${oppName} (${match.category || 'Équipe'}) - ${matchLeague?.name || (isInternalScrimmage ? 'Interne' : isFriendlyM ? 'Amical' : 'Compétition')}`}
                                               >
                                                  {isDraggable && <GripVertical className="w-2.5 h-2.5 text-slate-400 shrink-0 hidden sm:inline" />}
-                                                 <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full overflow-hidden shrink-0 bg-white border border-slate-200">
-                                                    <img src={oppClub?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(oppName)}`} alt="" className="w-full h-full object-contain" />
+                                                 
+                                                 {/* Opponent Logo with Category Badge */}
+                                                 <div className="relative shrink-0">
+                                                    <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full overflow-hidden bg-white border border-slate-200">
+                                                       <img src={oppLogoSrc} alt="" className="w-full h-full object-contain" />
+                                                    </div>
+                                                    {match.category && (
+                                                       <span className="absolute -bottom-1 -right-1 bg-primary text-white text-[6px] font-black px-0.5 rounded leading-none border border-white">
+                                                          {match.category}
+                                                       </span>
+                                                    )}
                                                  </div>
-                                                 <span className="truncate max-w-[45px] sm:max-w-[60px]">{oppName}</span>
-                                                 {match.status === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping ml-auto" />}
+
+                                                 <span className="truncate max-w-[36px] sm:max-w-[48px] font-bold text-[8px] sm:text-[9px]">{oppName}</span>
+
+                                                 {/* Competition logo or badge */}
+                                                 {matchLeague?.logo_url ? (
+                                                    <img src={matchLeague.logo_url} alt="" className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain shrink-0 ml-auto" title={matchLeague.name} />
+                                                 ) : isInternalScrimmage ? (
+                                                    <span className="text-[7px] shrink-0 ml-auto" title="Opposition Interne">⚔️</span>
+                                                 ) : isFriendlyM ? (
+                                                    <span className="text-[7px] shrink-0 ml-auto" title="Match Amical">🤝</span>
+                                                 ) : (
+                                                    <Trophy className="w-2.5 h-2.5 text-amber-500 shrink-0 ml-auto" title={matchLeague?.name || 'Compétition'} />
+                                                 )}
+
+                                                 {match.status === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping ml-0.5 shrink-0" />}
                                               </div>
                                            );
                                         })}
@@ -977,8 +1181,7 @@ const MatchManagementPage: React.FC = () => {
                            const panelMatches = matches.filter(m => {
                               if (m.match_date !== calendarSelectedDate) return false;
                               if (categoryFilter !== 'All' && normalizeAgeCategory(m.category) !== categoryFilter) return false;
-                              if (leagueFilter !== 'All' && m.league_id !== leagueFilter) return false;
-                              return true;
+                              return matchBelongsToLeague(m, leagueFilter);
                            });
                            const selDate = new Date(calendarSelectedDate + 'T00:00:00');
                            const dayLabel = selDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
@@ -1006,9 +1209,7 @@ const MatchManagementPage: React.FC = () => {
                                        <Button
                                           size="sm"
                                           onClick={() => {
-                                             setDateFilter(calendarSelectedDate);
-                                             setEditingMatch({ match_date: calendarSelectedDate } as any);
-                                             setActiveTab('wizard');
+                                             navigate(`/matches/new?date=${calendarSelectedDate}${categoryFilter !== 'All' ? `&category=${encodeURIComponent(categoryFilter)}` : ''}`);
                                           }}
                                           className="bg-primary hover:bg-primary/90 text-white text-xs font-bold gap-1.5"
                                        >
@@ -1068,7 +1269,12 @@ const MatchManagementPage: React.FC = () => {
                                                 <span className="text-[10px] font-black text-white uppercase tracking-widest">
                                                    {selDate.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase()}
                                                 </span>
-                                                {isFriendlyMatch ? (
+                                                {league?.logo_url ? (
+                                                   <span className="text-[9px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                      <img src={league.logo_url} alt="" className="w-3.5 h-3.5 object-contain" />
+                                                      {league.name}
+                                                   </span>
+                                                ) : isFriendlyMatch ? (
                                                    <span className="text-[9px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1">
                                                       🤝 Match Amical
                                                    </span>
@@ -1098,10 +1304,15 @@ const MatchManagementPage: React.FC = () => {
 
                                           {/* Main match content */}
                                           <div className="flex items-center justify-between px-4 sm:px-8 py-4 sm:py-5 gap-4">
-                                             {/* Our Club */}
+                                             {/* Our Club with Category Badge on Logo */}
                                              <div className="flex flex-col items-center gap-2 flex-1">
-                                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-800 border border-slate-600 flex items-center justify-center overflow-hidden p-2 shadow-lg">
+                                                <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-800 border border-slate-600 flex items-center justify-center overflow-hidden p-2 shadow-lg">
                                                    <img src={mainClubLogo} alt={mainClubName} className="w-full h-full object-contain drop-shadow-lg" />
+                                                   {match.category && (
+                                                      <span className="absolute bottom-1 right-1 text-[8px] font-black bg-primary text-white px-1.5 py-0.5 rounded shadow border border-white/20 leading-none">
+                                                         {match.category}
+                                                      </span>
+                                                   )}
                                                 </div>
                                                 <span className="text-[10px] font-black text-white uppercase tracking-tight text-center max-w-[80px] leading-tight">{mainClubName}</span>
                                                 {match.category && <span className="text-[8px] font-black bg-white/10 text-white/70 px-2 py-0.5 rounded-full uppercase">{match.category}</span>}
@@ -1132,10 +1343,15 @@ const MatchManagementPage: React.FC = () => {
                                                 {hasScore && <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Score Final</span>}
                                              </div>
 
-                                             {/* Opponent */}
+                                             {/* Opponent with Competition Badge on Logo */}
                                              <div className="flex flex-col items-center gap-2 flex-1">
-                                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-800 border border-slate-600 flex items-center justify-center overflow-hidden p-2 shadow-lg">
+                                                <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-800 border border-slate-600 flex items-center justify-center overflow-hidden p-2 shadow-lg">
                                                    <img src={oppLogo} alt={getOpponentName(match.opponent_id)} className="w-full h-full object-contain drop-shadow-lg" />
+                                                   {league?.logo_url && (
+                                                      <div className="absolute bottom-1 right-1 w-5 h-5 rounded-lg bg-slate-900/95 p-0.5 border border-slate-700 shadow flex items-center justify-center overflow-hidden" title={league.name}>
+                                                         <img src={league.logo_url} alt="" className="w-full h-full object-contain" />
+                                                      </div>
+                                                   )}
                                                 </div>
                                                 <span className="text-[10px] font-black text-white uppercase tracking-tight text-center max-w-[80px] leading-tight">{getOpponentName(match.opponent_id)}</span>
                                                 {match.formation && <span className="text-[8px] font-black bg-white/10 text-white/70 px-2 py-0.5 rounded-full uppercase">{match.formation}</span>}
@@ -1279,7 +1495,7 @@ const MatchManagementPage: React.FC = () => {
                                                 <Button 
                                                    variant="ghost" 
                                                    size="sm" 
-                                                   onClick={() => { setEditingMatch(match); setActiveTab('wizard'); }}
+                                                   onClick={() => navigate(`/matches/edit/${match.id}`, { state: { match } })}
                                                    className="h-8 px-2 rounded-lg bg-slate-100 hover:bg-amber-50 text-amber-600 font-bold text-[9px] flex items-center gap-1"
                                                    title="Modifier"
                                                 >
@@ -1331,8 +1547,7 @@ const MatchManagementPage: React.FC = () => {
                               }}
                               onEdit={canManageCategory(match.category) ? (e) => {
                                  e.stopPropagation();
-                                 setEditingMatch(match);
-                                 setActiveTab('wizard');
+                                 navigate(`/matches/edit/${match.id}`, { state: { match } });
                               } : undefined}
                               onDelete={canManageCategory(match.category) ? (e) => { 
                                  handleOpenDeleteSingle(match, e);
@@ -1370,8 +1585,7 @@ const MatchManagementPage: React.FC = () => {
                         opponentClubs={opponentClubs}
                         getOpponentName={getOpponentName}
                         onOrchestrate={() => {
-                           setEditingMatch(selectedMatch);
-                           setActiveTab('wizard');
+                           navigate(`/matches/edit/${selectedMatch.id}`, { state: { match: selectedMatch } });
                         }}
                         onStats={() => setActiveTab('stats')}
                         onBack={() => setActiveTab('details')}
@@ -1501,8 +1715,7 @@ const MatchManagementPage: React.FC = () => {
                whileHover={{ scale: 1.05 }}
                whileTap={{ scale: 0.95 }}
                onClick={() => {
-                  setEditingMatch(null);
-                  setActiveTab('wizard');
+                  navigate('/matches/new' + (categoryFilter !== 'All' ? `?category=${encodeURIComponent(categoryFilter)}` : ''));
                }}
                className="fixed bottom-6 right-6 z-40 bg-gradient-to-r from-primary to-red-600 text-white p-4 rounded-full shadow-2xl flex items-center gap-2 group hover:shadow-primary/40 border-2 border-white/20"
                title="Planifier un nouveau match"

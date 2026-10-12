@@ -28,14 +28,15 @@ import {
   getFormationPositions,
   inferMatchFormat
 } from './tacticalFormations';
+import { classifyPosition } from './ScheduleMatchWizard';
 
 const FORMATIONS = FORMATIONS_BY_FORMAT[11];
 
 const POSITION_GROUPS = [
-  { label: 'Gardiens', roles: ['GK', 'G', 'GARDIEN'] },
-  { label: 'Défenseurs', roles: ['CB', 'LB', 'RB', 'LWB', 'RWB', 'D', 'DC', 'DG', 'DD'] },
-  { label: 'Milieux', roles: ['CDM', 'CM', 'CAM', 'LM', 'RM', 'M', 'MDC', 'MC', 'MO', 'MD', 'MG'] },
-  { label: 'Attaquants', roles: ['ST', 'LW', 'RW', 'SS', 'CF', 'F', 'BU', 'A', 'WG'] }
+  { label: 'Gardiens',   category: 'Gardiens' as const },
+  { label: 'Défenseurs', category: 'Défenseurs' as const },
+  { label: 'Milieux',    category: 'Milieux' as const },
+  { label: 'Attaquants', category: 'Attaquants' as const }
 ];
 
 type PrepStep = 'setup' | 'staff' | 'lineup' | 'opponent';
@@ -270,9 +271,21 @@ const MatchDayPage: React.FC = () => {
   }, [players, match, searchQuery]);
 
   const groupedPlayers = useMemo(() => {
+    const map: Record<'Gardiens' | 'Défenseurs' | 'Milieux' | 'Attaquants', Player[]> = {
+      Gardiens: [],
+      Défenseurs: [],
+      Milieux: [],
+      Attaquants: []
+    };
+
+    matchPlayers.forEach(p => {
+      const cat = classifyPosition(p.position);
+      map[cat].push(p);
+    });
+
     return POSITION_GROUPS.map(group => ({
       ...group,
-      players: matchPlayers.filter(p => group.roles.includes(p.position?.toUpperCase() || ''))
+      players: map[group.category] || []
     })).filter(g => g.players.length > 0);
   }, [matchPlayers]);
 

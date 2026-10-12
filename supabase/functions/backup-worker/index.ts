@@ -49,6 +49,37 @@ serve(async (req: Request) => {
     // Admin client with service role (bypasses RLS)
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+    // Validate authentication: only super_admin or admin can trigger backups
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing auth header' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+    if (authErr || !authData?.user) {
+      return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { data: callerProfile, error: profileErr } = await supabase
+      .from('user_profiles')
+      .select('system_role')
+      .eq('id', authData.user.id)
+      .single();
+
+    if (profileErr || (callerProfile?.system_role !== 'super_admin' && callerProfile?.system_role !== 'admin')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: Only super_admin or admin can trigger backups' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     const logs: string[] = [];
     const addLog = async (message: string) => {
       const timestamp = new Date().toISOString().split('T')[1].split('.')[0];

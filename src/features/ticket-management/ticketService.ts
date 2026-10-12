@@ -1,22 +1,8 @@
 import { supabase } from '../../lib/supabase';
-import { createClient } from '@supabase/supabase-js';
 import type { SupportTicket, TicketMessage, TicketStatus } from './types';
 
-// Client d'administration avec clé service_role en singleton pour éviter les instances multiples de GoTrueClient
-let adminClientInstance: any = null;
-
-const getAdminSupabase = () => {
-  if (adminClientInstance) return adminClientInstance;
-  const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://fuhrxfhszttvpkmjydca.supabase.co';
-  if (serviceRoleKey) {
-    adminClientInstance = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    return adminClientInstance;
-  }
-  return supabase;
-};
+// Client d'accès aux tickets utilisant la session utilisateur authentifiée
+const getAdminSupabase = () => supabase;
 
 export const ticketService = {
   /**

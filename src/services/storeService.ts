@@ -1,25 +1,11 @@
 import { supabase } from '../lib/supabase';
-import { createClient } from '@supabase/supabase-js';
 import { getMyClubId } from './_helpers';
 import type { Banner } from '../types';
 
 /**
- * Récupère le client Supabase approprié pour les opérations d'administration.
- * En environnement back-office avec clé de service disponible, permet de contourner les blocages RLS stricts.
+ * Récupère le client Supabase authentifié standard pour les opérations de bannières
  */
-let storeClientInstance: any = null;
-const getClient = () => {
-  if (storeClientInstance) return storeClientInstance;
-  const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  if (serviceRoleKey && supabaseUrl) {
-    storeClientInstance = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    return storeClientInstance;
-  }
-  return supabase;
-};
+const getClient = () => supabase;
 
 export const storeService = {
   async getBanners(): Promise<Banner[]> {

@@ -19,6 +19,14 @@ import {
 import type { UserSession, AuditLog } from '../../../types/audit';
 import { Button } from '../../../components/ui/button';
 
+export interface UserLatestAction {
+  action: string;
+  module: string;
+  description: string;
+  timestamp: string;
+  platform: 'web' | 'mobile';
+}
+
 export interface UserSummaryItem {
   userId: string | null;
   userEmail: string | null;
@@ -26,6 +34,9 @@ export interface UserSummaryItem {
   userAvatar: string | null;
   jobTitle: string;
   status: 'ACTIVE' | 'IDLE' | 'LOGGED_OUT';
+  activePlatform?: 'web' | 'mobile' | 'both' | 'none';
+  lastPlatform?: 'web' | 'mobile';
+  latestAction?: UserLatestAction | null;
   lastActivity: string;
   totalSessions: number;
   totalEvents: number;
@@ -271,10 +282,25 @@ export const UserAuditDetailModal: React.FC<UserAuditDetailModalProps> = ({
                             {calculateDuration(s.login_at, s.logout_at)}
                           </td>
                           <td className="py-3 px-5 text-xs text-muted-foreground">
-                            <div className="font-bold text-foreground flex items-center gap-1.5">
-                              <Laptop className="w-3.5 h-3.5 text-primary" /> {s.device || 'Desktop'}
-                            </div>
-                            <div className="font-mono text-[10px]">{s.ip_address}</div>
+                            {(() => {
+                              const isMob = s.session_id?.startsWith('MOB-') || (s.device || '').toLowerCase().includes('fus-app') || (s.device || '').toLowerCase().includes('mobile');
+                              return (
+                                <>
+                                  <div className="font-bold text-foreground flex items-center gap-1.5">
+                                    {isMob ? (
+                                      <span className="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 font-extrabold">
+                                        📱 {s.device || 'Fus-App Mobile'}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-primary font-extrabold">
+                                        <Laptop className="w-3.5 h-3.5" /> {s.device || 'Web Dashboard'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="font-mono text-[10px]">{s.ip_address}</div>
+                                </>
+                              );
+                            })()}
                           </td>
                           <td className="py-3 px-5 text-center">
                             <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-black text-xs">
@@ -335,12 +361,22 @@ export const UserAuditDetailModal: React.FC<UserAuditDetailModalProps> = ({
                             {new Date(log.created_at).toLocaleString('fr-FR')}
                           </td>
                           <td className="py-3 px-5">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getActionBadgeClass(log.action)}`}>
-                                {log.action}
-                              </span>
-                              <span className="text-[10px] font-bold uppercase text-muted-foreground">{log.module}</span>
-                            </div>
+                            {(() => {
+                              const isMob = log.session_id?.startsWith('MOB-') || (log.module || '').toUpperCase().includes('MOBILE');
+                              return (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getActionBadgeClass(log.action)}`}>
+                                      {log.action}
+                                    </span>
+                                    <span className="text-[10px] font-bold uppercase text-muted-foreground">{log.module}</span>
+                                  </div>
+                                  <div className="text-[10px] font-semibold text-muted-foreground flex items-center gap-1">
+                                    {isMob ? '📱 Fus-App Mobile' : '💻 Web Dashboard'}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="py-3 px-5 text-xs font-semibold text-foreground max-w-lg">
                             {log.description}

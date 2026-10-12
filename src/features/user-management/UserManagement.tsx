@@ -3,20 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 
-// Client Supabase avec droits d'administration (service_role) pour garantir la gestion complète des utilisateurs et contourner les restrictions RLS
-let adminSupabaseInstance: any = null;
-const getAdminSupabase = () => {
-  if (adminSupabaseInstance) return adminSupabaseInstance;
-  const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://fuhrxfhszttvpkmjydca.supabase.co';
-  if (serviceRoleKey) {
-    adminSupabaseInstance = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    });
-    return adminSupabaseInstance;
-  }
-  return supabase;
-};
+// Client Supabase standard pour les opérations d'administration utilisateur
+const getAdminSupabase = () => supabase;
 
 const DEFAULT_FUS_CLUB_ID = '45642829-a3d7-48de-afdd-3c45a1ced474';
 
@@ -1329,14 +1317,29 @@ Direction Générale — FUS Rabat`;
           authUpdates.password = newPassword;
         }
         // N'appeler auth.admin.updateUserById que si une vraie clé service_role est active dans l'environnement
-        if (import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY && adminClient?.auth?.admin) {
-          const { error: authUpdErr } = await adminClient.auth.admin.updateUserById(currentUserId, authUpdates);
-          if (authUpdErr) {
-            console.warn('[UserManagement] auth.admin.updateUserById notice:', authUpdErr);
+        // Mise à jour sécurisée via Edge Function serveur (ou client admin si présent)
+        try {
+          const { error: edgeUpdErr } = await supabase.functions.invoke('create-user', {
+            body: {
+              action: 'update',
+              user_id: currentUserId,
+              email: formData.email?.trim().toLowerCase(),
+              password: newPassword || undefined,
+              full_name: formData.full_name,
+              system_role: formData.system_role,
+              job_title: formData.job_title,
+              phone_number: formData.phone_number,
+              club_id: DEFAULT_FUS_CLUB_ID
+            }
+          });
+          if (!edgeUpdErr) {
+            passwordUpdateSuccess = true;
           }
+        } catch (edgeEx) {
+          console.warn('[UserManagement] Edge Function update notice:', edgeEx);
         }
       } catch (authEx) {
-        console.warn('[UserManagement] auth.admin.updateUserById exception:', authEx);
+        console.warn('[UserManagement] updateUser credentials exception:', authEx);
       }
 
       // 3. Mise à jour directe dans user_profiles (nom, téléphone, rôle système, intitulé de poste, statut, avatar, club)
@@ -1649,14 +1652,14 @@ Direction Générale — FUS Rabat`;
         console.warn('Erreur cascade libération candidats:', relErr);
       }
 
-      // 4. Suppression du compte dans auth.users si service_role est disponible
+      // 4. Suppression du compte dans auth.users via Edge Function
       try {
-        if (import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY) {
-          const adminClient = getAdminSupabase();
-          if (adminClient?.auth?.admin) {
-            await adminClient.auth.admin.deleteUser(id).catch(() => {});
+        await supabase.functions.invoke('create-user', {
+          body: {
+            action: 'delete',
+            user_id: id
           }
-        }
+        });
       } catch (authDelErr) {
         // Non bloquant
       }

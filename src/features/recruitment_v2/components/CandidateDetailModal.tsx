@@ -54,6 +54,8 @@ const calculateAge = (birthDate?: string) => {
   return age;
 };
 
+import DOMPurify from 'dompurify';
+
 // Helper pour afficher le texte riche HTML proprement sans balises <p> brutes
 const RichTextView: React.FC<{ content?: string; fallback?: string; className?: string }> = ({
   content,
@@ -66,10 +68,11 @@ const RichTextView: React.FC<{ content?: string; fallback?: string; className?: 
 
   const isHtml = /<[a-z][\s\S]*>/i.test(content);
   if (isHtml) {
+    const cleanHtml = DOMPurify.sanitize(content);
     return (
       <div
         className={cn("prose prose-sm max-w-none text-slate-800 text-xs [&>p]:mb-1 [&>p:last-child]:mb-0 [&>ul]:list-disc [&>ul]:pl-4 [&>ol]:list-decimal [&>ol]:pl-4", className)}
-        dangerouslySetInnerHTML={{ __html: content }}
+        dangerouslySetInnerHTML={{ __html: cleanHtml }}
       />
     );
   }

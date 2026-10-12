@@ -75,33 +75,81 @@ export const getCategoryRelativeLabel = (currentCat: string, targetCat: string) 
   return { label: 'Catégorie Inférieure ↘', badgeClass: 'bg-amber-100 text-amber-800 border-amber-300', isHigher: false };
 };
 
+export const classifyPosition = (position?: string | null): 'Gardiens' | 'Défenseurs' | 'Milieux' | 'Attaquants' => {
+  if (!position) return 'Milieux';
+  const raw = String(position).toUpperCase().trim();
+
+  // 1. Direct Goalkeeper check
+  if (/\b(GK|GKP|GARDIEN|GOAL|GOALKEEPER)\b/.test(raw) || raw === 'G' || raw.startsWith('G/')) {
+    return 'Gardiens';
+  }
+
+  // 2. Tokenized check (splits on slashes, spaces, commas, hyphens, plus)
+  // Handles composite positions: "CDM / 6", "ST / CF", "RW / LW", "RB/LB", "CAM / 10", "FW", "CB", etc.
+  const tokens = raw.split(/[\/\s,\-\+]+/).filter(Boolean);
+
+  const defTokens = new Set([
+    'CB', 'LB', 'RB', 'LWB', 'RWB', 'DC', 'DG', 'DD', 'DF', 'DEF', 'DEFENDER',
+    'LATERAL', 'ARRIERE', 'D', 'DÉFENSEUR', 'DEFENSEUR'
+  ]);
+  const midTokens = new Set([
+    'CDM', 'MDC', 'CM', 'MC', 'CAM', 'MO', 'LM', 'RM', 'MD', 'MG', 'MID', 'MF',
+    'MILIEU', 'RELAYEUR', 'RECUPERATEUR', 'M', '6', '8', '10'
+  ]);
+  const attTokens = new Set([
+    'ST', 'CF', 'SS', 'BU', 'RW', 'LW', 'AD', 'AG', 'FW', 'ATT', 'FORWARD',
+    'AILIER', 'BUTEUR', 'POINTE', 'FOR', 'A', 'WG', '9', '7', '11', 'ATTAQUANT'
+  ]);
+
+  for (const token of tokens) {
+    if (defTokens.has(token)) return 'Défenseurs';
+    if (midTokens.has(token)) return 'Milieux';
+    if (attTokens.has(token)) return 'Attaquants';
+  }
+
+  // 3. Regex keyword fallback
+  if (/(GARDIEN|GOAL)/i.test(raw)) return 'Gardiens';
+  if (/(DEF|CB|LB|RB|ARRIERE|LATERAL|BACK)/i.test(raw)) return 'Défenseurs';
+  if (/(MILIEU|MID|CAM|CDM|CENTRE|RELAYEUR)/i.test(raw)) return 'Milieux';
+  if (/(ATT|AILIER|BUTEUR|ST|CF|FW|AVANT)/i.test(raw)) return 'Attaquants';
+
+  return 'Milieux';
+};
+
+export const isPlayerMatchingRole = (playerPosition?: string | null, roleLabel?: string): boolean => {
+  if (!playerPosition || !roleLabel) return false;
+  const raw = String(playerPosition).toUpperCase().trim();
+  const target = String(roleLabel).toUpperCase().trim();
+  if (raw === target) return true;
+
+  const tokens = raw.split(/[\/\s,\-\+]+/).filter(Boolean);
+  if (tokens.includes(target)) return true;
+
+  return classifyPosition(raw) === classifyPosition(target);
+};
+
 const POSITION_GROUPS = [
-  { label: 'Gardiens',   roles: ['GK', 'G', 'GARDIEN', 'GKP'], color: 'from-amber-400 to-amber-600' },
-  { label: 'Défenseurs', roles: ['CB', 'LB', 'RB', 'LWB', 'RWB', 'D', 'DC', 'DG', 'DD', 'DF', 'DEF', 'DEFENDER'], color: 'from-blue-500 to-blue-700' },
-  { label: 'Milieux',    roles: ['CDM', 'CM', 'CAM', 'LM', 'RM', 'M', 'MDC', 'MC', 'MO', 'MD', 'MG', 'MF', 'MID', 'MILIEU'], color: 'from-emerald-500 to-emerald-700' },
-  { label: 'Attaquants', roles: ['ST', 'LW', 'RW', 'SS', 'CF', 'F', 'BU', 'A', 'WG', 'FW', 'ATT', 'FOR', 'FORWARD'], color: 'from-rose-500 to-rose-700' }
+  { label: 'Gardiens',   category: 'Gardiens' as const,   color: 'from-amber-400 to-amber-600' },
+  { label: 'Défenseurs', category: 'Défenseurs' as const, color: 'from-blue-500 to-blue-700' },
+  { label: 'Milieux',    category: 'Milieux' as const,    color: 'from-emerald-500 to-emerald-700' },
+  { label: 'Attaquants', category: 'Attaquants' as const, color: 'from-rose-500 to-rose-700' }
 ];
 
 const getPositionColor = (position: string) => {
-  const upperPos = position?.toUpperCase() || '';
-  if (POSITION_GROUPS[0].roles.includes(upperPos)) return POSITION_GROUPS[0].color;
-  if (POSITION_GROUPS[1].roles.includes(upperPos)) return POSITION_GROUPS[1].color;
-  if (POSITION_GROUPS[2].roles.includes(upperPos)) return POSITION_GROUPS[2].color;
-  if (POSITION_GROUPS[3].roles.includes(upperPos)) return POSITION_GROUPS[3].color;
+  const cat = classifyPosition(position);
+  if (cat === 'Gardiens') return 'from-amber-400 to-amber-600';
+  if (cat === 'Défenseurs') return 'from-blue-500 to-blue-700';
+  if (cat === 'Milieux') return 'from-emerald-500 to-emerald-700';
+  if (cat === 'Attaquants') return 'from-rose-500 to-rose-700';
   return 'from-slate-500 to-slate-700';
 };
 
 const getPositionPriority = (position: string) => {
-  const upperPos = position?.toUpperCase() || '';
-  if (['GK', 'G', 'GARDIEN', 'GKP'].includes(upperPos)) return 0;
-  if (['CB', 'DC', 'DEF', 'DF', 'DEFENDER'].includes(upperPos)) return 1;
-  if (['LB', 'RB', 'DG', 'DD', 'LWB', 'RWB'].includes(upperPos)) return 2;
-  if (['CDM', 'MDC'].includes(upperPos)) return 3;
-  if (['CM', 'MC', 'MID', 'MF', 'MILIEU'].includes(upperPos)) return 4;
-  if (['CAM', 'MO'].includes(upperPos)) return 5;
-  if (['LM', 'RM', 'MG', 'MD'].includes(upperPos)) return 6;
-  if (['ST', 'SS', 'BU', 'CF', 'F', 'FOR', 'FORWARD'].includes(upperPos)) return 7;
-  if (['LW', 'RW', 'WG', 'ATT'].includes(upperPos)) return 8;
+  const cat = classifyPosition(position);
+  if (cat === 'Gardiens') return 0;
+  if (cat === 'Défenseurs') return 1;
+  if (cat === 'Milieux') return 4;
+  if (cat === 'Attaquants') return 7;
   return 9;
 };
 
@@ -689,7 +737,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
     const newSubs: string[] = [];
     
     // First, place the goalkeeper
-    const gk = availablePlayers.find(p => ['GK', 'G', 'GARDIEN', 'GKP'].includes(p.position?.toUpperCase() || ''));
+    const gk = availablePlayers.find(p => classifyPosition(p.position) === 'Gardiens');
     if (gk) {
       newXI[0] = gk.id;
     }
@@ -707,7 +755,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
       const matchingPlayer = remainingPlayers.find(p => 
         !newXI.includes(p.id) && 
         !newSubs.includes(p.id) &&
-        p.position?.toUpperCase() === positionLabel
+        isPlayerMatchingRole(p.position, positionLabel)
       );
       
       if (matchingPlayer) {
@@ -751,7 +799,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
     const newSubs: string[] = [];
     
     // First, place the goalkeeper
-    const gk = availablePlayers.find(p => ['GK', 'G', 'GARDIEN', 'GKP'].includes(p.position?.toUpperCase() || ''));
+    const gk = availablePlayers.find(p => classifyPosition(p.position) === 'Gardiens');
     if (gk) {
       newLineup[0] = gk.id;
     }
@@ -765,7 +813,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
       const matchingPlayer = remainingPlayers.find(p => 
         !newLineup.includes(p.id) && 
         !newSubs.includes(p.id) && 
-        p.position?.toUpperCase() === positionLabel
+        isPlayerMatchingRole(p.position, positionLabel)
       );
       if (matchingPlayer) {
         newLineup[i] = matchingPlayer.id;
@@ -981,9 +1029,21 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
   }, [setup.match_type, setup.internal_opposition_type, setup.internal_target_category, setup.internal_opponent_team_id, allGroupPlayers, players, startingXI, substitutes, mainClub, rawOpponentSquad, setup.category]);
 
   const groupedPlayers = useMemo(() => {
+    const map: Record<'Gardiens' | 'Défenseurs' | 'Milieux' | 'Attaquants', Player[]> = {
+      Gardiens: [],
+      Défenseurs: [],
+      Milieux: [],
+      Attaquants: []
+    };
+
+    matchPlayers.forEach(p => {
+      const cat = classifyPosition(p.position);
+      map[cat].push(p);
+    });
+
     return POSITION_GROUPS.map(group => ({
       ...group,
-      players: matchPlayers.filter(p => group.roles.includes(p.position?.toUpperCase() || ''))
+      players: map[group.category] || []
     })).filter(g => g.players.length > 0);
   }, [matchPlayers]);
 
@@ -1697,6 +1757,15 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                             />
                          </div>
 
+                         <div className="flex items-center justify-between px-1 mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                               Effectif disponible
+                            </span>
+                            <Badge variant="outline" className="text-[10px] font-black bg-slate-50 border-slate-200">
+                               {matchPlayers.length} joueur{matchPlayers.length > 1 ? 's' : ''}
+                            </Badge>
+                         </div>
+
                          {matchPlayers.length === 0 ? (
                            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-8">
                              <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center">
@@ -1706,7 +1775,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                              <p className="text-[10px] text-slate-300 font-medium">Sélectionnez une équipe ou ajoutez des joueurs</p>
                            </div>
                          ) : (
-                           <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 max-h-[450px]">
+                           <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 max-h-[620px]">
                              {groupedPlayers.map(group => (
                                <div key={group.label} className="space-y-3">
                                  <div className="flex items-center gap-3 px-3">

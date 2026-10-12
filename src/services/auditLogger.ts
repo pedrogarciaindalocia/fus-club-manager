@@ -96,7 +96,16 @@ class AuditLoggerService {
     try {
       const saved = localStorage.getItem(LOCAL_SESSION_KEY);
       if (saved) {
-        this.currentSession = JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Élimination stricte des sessions invitées (invite@fus.ma / GUEST)
+        const email = (parsed?.user_email || '').toLowerCase().trim();
+        const sId = (parsed?.session_id || '').toUpperCase();
+        if (email === 'invite@fus.ma' || email.includes('invite') || sId.includes('GUEST')) {
+          localStorage.removeItem(LOCAL_SESSION_KEY);
+          this.currentSession = null;
+        } else {
+          this.currentSession = parsed;
+        }
       }
     } catch (_) {}
   }
@@ -205,6 +214,20 @@ class AuditLoggerService {
       this.cacheSessionLocally(newSession);
     }
 
+    // Mettre à jour directement le statut ONLINE dans user_profiles
+    if (userId) {
+      try {
+        await supabase
+          .from('user_profiles')
+          .update({
+            biometric_device_id: 'ONLINE:web:💻 Web Dashboard',
+            biometric_last_used_at: newSession.login_at,
+            updated_at: newSession.login_at
+          })
+          .eq('id', userId);
+      } catch (_) {}
+    }
+
     // Logger l'événement LOGIN
     await this.log({
       action: 'LOGIN',
@@ -258,6 +281,18 @@ class AuditLoggerService {
       status: 'SUCCESS'
     });
 
+    if (this.currentSession.user_id) {
+      try {
+        await supabase
+          .from('user_profiles')
+          .update({
+            biometric_device_id: 'OFFLINE:web',
+            updated_at: now
+          })
+          .eq('id', this.currentSession.user_id);
+      } catch (_) {}
+    }
+
     try {
       await supabase
         .from('user_sessions')
@@ -288,6 +323,15 @@ class AuditLoggerService {
     this.currentSession.last_activity_at = now;
     this.saveSessionToStorage(this.currentSession);
 
+    if (this.currentSession.user_id) {
+      try {
+        await supabase
+          .from('user_profiles')
+          .update({ updated_at: now })
+          .eq('id', this.currentSession.user_id);
+      } catch (_) {}
+    }
+
     try {
       await supabase
         .from('user_sessions')
@@ -307,33 +351,14 @@ class AuditLoggerService {
   }
 
   /**
-   * Récupère ou génère un ID de session actif
+   * Récupère l'ID de la session active courante.
+   * Ne crée JAMAIS de faux utilisateur invité.
    */
   getCurrentSessionId(): string {
     if (!this.currentSession) {
-      const fallbackId = `SES-${Date.now()}-GUEST`;
-      const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-      const { device } = getDeviceSupportInfo(userAgent);
-
-      this.saveSessionToStorage({
-        id: String(Date.now()),
-        session_id: fallbackId,
-        user_id: null,
-        user_email: 'invite@fus.ma',
-        user_role: 'viewer',
-        ip_address: this.cachedIp || '127.0.0.1 (Local)',
-        user_agent: userAgent,
-        device: device,
-        status: 'ACTIVE',
-        login_at: new Date().toISOString(),
-        logout_at: null,
-        last_activity_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        event_count: 0
-      });
-      return fallbackId;
+      this.restoreSessionFromStorage();
     }
-    return this.currentSession.session_id;
+    return this.currentSession?.session_id || '';
   }
 
   /**
@@ -342,6 +367,12 @@ class AuditLoggerService {
   async log(input: AuditLogInput): Promise<void> {
     const sessionId = this.getCurrentSessionId();
     const user = this.currentSession;
+    
+    // Si aucun utilisateur n'est authentifié ou présent en session, on ne crée pas de log orphelin fantôme
+    if (!sessionId && !user?.user_id && !user?.user_email) {
+      return;
+    }
+
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
     const now = new Date().toISOString();
 
@@ -350,10 +381,10 @@ class AuditLoggerService {
     const sanitizedMeta = sanitizePayload(input.metadata);
 
     const logEntry: Omit<AuditLog, 'id'> = {
-      session_id: sessionId,
+      session_id: sessionId || `SYS-${Date.now()}`,
       user_id: user?.user_id || null,
       user_email: user?.user_email || 'Système',
-      user_role: user?.user_role || 'super_admin',
+      user_role: user?.user_role || 'collaborateur',
       action: input.action,
       module: input.module,
       entity_type: input.entity_type || null,

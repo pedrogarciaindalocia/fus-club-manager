@@ -718,11 +718,11 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               <div className="flex items-center justify-between px-2">
                 {/* Home Club */}
                 <div className="flex-1 text-center min-w-0">
-                  <div className="w-12 h-12 mx-auto rounded-2xl bg-white/10 border border-white/20 p-2 shadow-lg flex items-center justify-center mb-1.5">
+                  <div className="w-20 h-20 md:w-24 md:h-24 mx-auto rounded-full bg-white p-2 shadow-2xl flex items-center justify-center mb-2.5 overflow-hidden ring-4 ring-white/20 border-2 border-white/40">
                     {mainClubLogo ? (
-                      <img src={mainClubLogo} alt="" className="w-full h-full object-contain" />
+                      <img src={mainClubLogo} alt={mainClubName} className="w-full h-full object-contain rounded-full" />
                     ) : (
-                      <Shield className="w-6 h-6 text-emerald-400" />
+                      <Shield className="w-10 h-10 text-emerald-500" />
                     )}
                   </div>
                   <h4 className="font-black text-xs md:text-sm tracking-wider uppercase text-white truncate max-w-full px-1">
@@ -737,18 +737,18 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                 {/* Score separator & minute */}
                 <div className="px-3 flex flex-col items-center">
                   <span className="text-slate-500 font-bold text-lg mb-1">—</span>
-                  <div className="w-11 h-11 rounded-full border-2 border-slate-600 bg-slate-800/80 flex items-center justify-center text-xs font-black text-emerald-400 shadow-inner">
+                  <div className="w-12 h-12 rounded-full border-2 border-slate-600 bg-slate-800/80 flex items-center justify-center text-xs font-black text-emerald-400 shadow-inner">
                     {isFinished ? `${totalDuration}'` : isLive ? `${Math.min(totalDuration, Math.round((match.time_elapsed_seconds || halfDuration * 60) / 60))}'` : '00\''}
                   </div>
                 </div>
 
                 {/* Away Club */}
                 <div className="flex-1 text-center min-w-0">
-                  <div className="w-12 h-12 mx-auto rounded-2xl bg-white/10 border border-white/20 p-2 shadow-lg flex items-center justify-center mb-1.5">
+                  <div className="w-20 h-20 md:w-24 md:h-24 mx-auto rounded-full bg-white p-2 shadow-2xl flex items-center justify-center mb-2.5 overflow-hidden ring-4 ring-white/20 border-2 border-white/40">
                     {opponentLogo ? (
-                      <img src={opponentLogo} alt="" className="w-full h-full object-contain" />
+                      <img src={opponentLogo} alt={opponentName} className="w-full h-full object-contain rounded-full" />
                     ) : (
-                      <Target className="w-6 h-6 text-rose-400" />
+                      <Target className="w-10 h-10 text-rose-500" />
                     )}
                   </div>
                   <h4 className="font-black text-xs md:text-sm tracking-wider uppercase text-white truncate max-w-full px-1">
@@ -933,19 +933,19 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
             {/* Team Badges */}
             <div className="flex items-center justify-between text-center px-2">
               <div className="w-[110px] min-w-0">
-                <div className="w-11 h-11 mx-auto rounded-full bg-slate-100 p-1 flex items-center justify-center shadow-sm">
-                  {mainClubLogo ? <img src={mainClubLogo} className="w-full h-full object-contain" /> : <Shield className="w-6 h-6 text-[#4d94ff]" />}
+                <div className="w-14 h-14 mx-auto rounded-full bg-white border-2 border-slate-200 p-1.5 flex items-center justify-center shadow-md overflow-hidden ring-2 ring-slate-100">
+                  {mainClubLogo ? <img src={mainClubLogo} alt={mainClubName} className="w-full h-full object-contain rounded-full" /> : <Shield className="w-7 h-7 text-[#4d94ff]" />}
                 </div>
-                <p className="text-[10px] font-black text-slate-800 mt-1 truncate">{mainClubName}</p>
+                <p className="text-[10px] font-black text-slate-800 mt-1.5 truncate">{mainClubName}</p>
               </div>
 
               <div className="text-slate-300 font-bold text-xs">VS</div>
 
               <div className="w-[110px] min-w-0">
-                <div className="w-11 h-11 mx-auto rounded-full bg-slate-100 p-1 flex items-center justify-center shadow-sm">
-                  {opponentLogo ? <img src={opponentLogo} className="w-full h-full object-contain" /> : <Target className="w-6 h-6 text-[#e94e77]" />}
+                <div className="w-14 h-14 mx-auto rounded-full bg-white border-2 border-slate-200 p-1.5 flex items-center justify-center shadow-md overflow-hidden ring-2 ring-slate-100">
+                  {opponentLogo ? <img src={opponentLogo} alt={opponentName} className="w-full h-full object-contain rounded-full" /> : <Target className="w-7 h-7 text-[#e94e77]" />}
                 </div>
-                <p className="text-[10px] font-black text-slate-800 mt-1 truncate">{opponentName}</p>
+                <p className="text-[10px] font-black text-slate-800 mt-1.5 truncate">{opponentName}</p>
               </div>
             </div>
 

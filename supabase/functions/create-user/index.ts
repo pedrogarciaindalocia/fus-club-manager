@@ -28,20 +28,11 @@ serve(async (req) => {
       }
     })
 
-    // Parse request body early to handle public actions
+    // Parse request body early
     const body = await req.json()
     const { action } = body
 
-    // Public endpoint: get_all_profiles (no auth required)
-    if (action === 'get_all_profiles') {
-      const { data: profiles, error: pErr } = await supabaseAdmin
-        .from('user_profiles')
-        .select('id, job_title, phone_number, avatar_url, system_role, full_name, is_active')
-      if (pErr) return new Response(JSON.stringify({ error: pErr.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-      return new Response(JSON.stringify({ profiles }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
-    }
-
-    // Continue with auth validation for protected actions
+    // Require valid authentication for ALL endpoints
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing auth header' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -60,14 +51,24 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // Authenticated endpoint: get_all_profiles (accessible to authenticated users)
+    if (action === 'get_all_profiles') {
+      const { data: profiles, error: pErr } = await supabaseAdmin
+        .from('user_profiles')
+        .select('id, job_title, phone_number, avatar_url, system_role, full_name, is_active')
+      if (pErr) return new Response(JSON.stringify({ error: pErr.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ profiles }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
+    }
+
     const { data: callerProfile, error: profileError } = await supabaseAdmin
       .from('user_profiles')
       .select('system_role')
       .eq('id', callerUser.id)
       .single()
 
-    if (profileError || callerProfile?.system_role !== 'super_admin') {
-      return new Response(JSON.stringify({ error: 'Unauthorized: Only super_admin can perform this action' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    const isAuthorizedAdmin = callerProfile?.system_role === 'super_admin' || callerProfile?.system_role === 'admin'
+    if (profileError || !isAuthorizedAdmin) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: Only admin or super_admin can perform this action' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     // Duplicate get_all_profiles handling removed - early handling above
@@ -142,6 +143,15 @@ serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ message: 'User updated successfully' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
+    } else if (action === 'delete') {
+      if (!user_id) return new Response(JSON.stringify({ error: 'Missing user_id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+      const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(user_id)
+      if (delErr) {
+        console.warn('deleteUser warning:', delErr)
+      }
+      await supabaseAdmin.from('user_profiles').delete().eq('id', user_id)
+      return new Response(JSON.stringify({ message: 'User deleted successfully' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
     }
 
     return new Response(JSON.stringify({ error: 'Invalid action' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
