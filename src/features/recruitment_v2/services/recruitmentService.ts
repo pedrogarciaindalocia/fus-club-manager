@@ -418,24 +418,44 @@ export const recruitmentService = {
   async getScouts(): Promise<Scout[]> {
     const deduplicate = (list: Scout[]): Scout[] => {
       const byEmail = new Map<string, Scout>();
+      const byName = new Map<string, Scout>();
       const byId = new Map<string, Scout>();
+      const result: Scout[] = [];
+
       list.forEach(s => {
-        const email = s.email?.toLowerCase().trim();
-        if (email) {
-          if (!byEmail.has(email)) {
-            byEmail.set(email, s);
-          } else {
-            // Conserver la fiche la plus complète ou la plus récente
-            const existing = byEmail.get(email)!;
-            if ((!existing.phone && s.phone) || (!existing.assigned_categories?.length && s.assigned_categories?.length)) {
-              byEmail.set(email, s);
+        if (!s) return;
+        const idKey = s.id?.trim();
+        const emailKey = s.email?.toLowerCase().trim();
+        const nameKey = s.full_name?.toLowerCase().trim().replace(/\s+/g, ' ');
+
+        const existing = (idKey ? byId.get(idKey) : null) ||
+                         (emailKey ? byEmail.get(emailKey) : null) ||
+                         (nameKey ? byName.get(nameKey) : null);
+
+        if (!existing) {
+          if (idKey) byId.set(idKey, s);
+          if (emailKey) byEmail.set(emailKey, s);
+          if (nameKey) byName.set(nameKey, s);
+          result.push(s);
+        } else {
+          // Fusionner et conserver la fiche la plus complète et officielle (fus.ma, photo, catégories)
+          const isMoreOfficial = (s.email?.endsWith('@fus.ma') && !existing.email?.endsWith('@fus.ma')) ||
+            (!existing.photo_url && s.photo_url) ||
+            (!existing.phone && s.phone) ||
+            ((s.assigned_categories?.length || 0) > (existing.assigned_categories?.length || 0));
+
+          if (isMoreOfficial) {
+            const idx = result.indexOf(existing);
+            if (idx !== -1) {
+              result[idx] = { ...existing, ...s };
+              if (idKey) byId.set(idKey, result[idx]);
+              if (emailKey) byEmail.set(emailKey, result[idx]);
+              if (nameKey) byName.set(nameKey, result[idx]);
             }
           }
-        } else if (s.id && !byId.has(s.id)) {
-          byId.set(s.id, s);
         }
       });
-      return [...Array.from(byEmail.values()), ...Array.from(byId.values())];
+      return result;
     };
 
     try {
@@ -676,7 +696,45 @@ export const recruitmentService = {
       updated_at: new Date().toISOString(),
     };
 
+    // Vérification anti-doublon d'email et de nom
+    const normalizedName = scout.full_name?.trim().toLowerCase().replace(/\s+/g, ' ');
+    const existingScouts = getLocal<Scout[]>(KEY_SCOUTS, []);
+    const isDuplicateEmail = existingScouts.some(
+      s => s.email && s.email.toLowerCase().trim() === login.toLowerCase().trim()
+    );
+    const isDuplicateName = normalizedName
+      ? existingScouts.some(s => s.full_name && s.full_name.trim().toLowerCase().replace(/\s+/g, ' ') === normalizedName)
+      : false;
+    if (isDuplicateEmail) {
+      throw new Error(`Un membre du personnel existe déjà avec l'adresse email "${login}".`);
+    }
+    if (isDuplicateName) {
+      throw new Error(`Un membre du personnel existe déjà avec le nom "${scout.full_name}".`);
+    }
+
     try {
+      // Vérification anti-doublon directement sur Supabase par email et par nom
+      const { data: existingDb } = await supabase
+        .from('scouts')
+        .select('id, full_name')
+        .ilike('email', login.trim())
+        .limit(1);
+
+      if (existingDb && existingDb.length > 0) {
+        throw new Error(`Un membre du personnel existe déjà avec l'adresse email "${login}" (${existingDb[0].full_name}).`);
+      }
+
+      if (normalizedName) {
+        const { data: existingNameDb } = await supabase
+          .from('scouts')
+          .select('id, full_name, email')
+          .ilike('full_name', scout.full_name.trim())
+          .limit(1);
+
+        if (existingNameDb && existingNameDb.length > 0) {
+          throw new Error(`Un membre du personnel existe déjà avec le nom "${existingNameDb[0].full_name}" (${existingNameDb[0].email}).`);
+        }
+      }
       const { data, error } = await supabase
         .from('scouts')
         .insert([newScout])

@@ -80,7 +80,7 @@ export const ScoutManagementView: React.FC<ScoutManagementViewProps> = ({
   // Règle US-DASH-25 : Pour le Super Admin, supervision complète de toute la cellule et de chaque scout (y compris Scout Admin)
   // Pour le Scout Admin (US-DASH-21) : Le compte administrateur est géré via "Mon Profil" et masqué de l'effectif subordonné
   const visibleScouts = useMemo(() => {
-    return scouts.filter(s => {
+    const roleFiltered = scouts.filter(s => {
       if (isSuperAdmin) {
         return true;
       }
@@ -98,6 +98,29 @@ export const ScoutManagementView: React.FC<ScoutManagementViewProps> = ({
       if (sysRole === 'scout_admin' || sysRole === 'admin' || sysRole === 'super_admin') {
         return false;
       }
+      return true;
+    });
+
+    // Protection anti-doublons défensive par ID, email et nom complet
+    const seenEmails = new Set<string>();
+    const seenIds = new Set<string>();
+    const seenNames = new Set<string>();
+    return roleFiltered.filter(s => {
+      if (s.id && seenIds.has(s.id)) return false;
+      if (s.id) seenIds.add(s.id);
+
+      const emailKey = (s.email || '').toLowerCase().trim();
+      if (emailKey && seenEmails.has(emailKey)) {
+        return false;
+      }
+      if (emailKey) seenEmails.add(emailKey);
+
+      const nameKey = (s.full_name || '').toLowerCase().trim().replace(/\s+/g, ' ');
+      if (nameKey && seenNames.has(nameKey)) {
+        return false;
+      }
+      if (nameKey) seenNames.add(nameKey);
+
       return true;
     });
   }, [scouts, isSuperAdmin]);

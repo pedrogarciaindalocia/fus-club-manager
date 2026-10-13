@@ -231,12 +231,7 @@ export const resolvePresenceStatus = (
   userId: string | null,
   email: string | null
 ): PresenceStatus => {
-  const cleanEmail = email ? email.toLowerCase().trim() : '';
-  const entry =
-    (userId ? snapshot.get(userId) : undefined) ||
-    (cleanEmail ? snapshot.get(cleanEmail) : undefined);
-  if (!entry) return 'OFFLINE';
-  return entry.state === 'active' ? 'ONLINE' : 'IDLE';
+  return resolveUserPresenceDetails(snapshot, userId, email).status;
 };
 
 export const resolveUserPresenceDetails = (
@@ -245,9 +240,24 @@ export const resolveUserPresenceDetails = (
   email: string | null
 ): { status: PresenceStatus; platform: PresencePlatform | null } => {
   const cleanEmail = email ? email.toLowerCase().trim() : '';
-  const entry =
+  let entry =
     (userId ? snapshot.get(userId) : undefined) ||
     (cleanEmail ? snapshot.get(cleanEmail) : undefined);
+
+  // Recherche tolérante si non trouvé directement (préfixe email identique ex: badr.belabes vs badr.belabbes)
+  if (!entry && cleanEmail) {
+    const emailPrefix = cleanEmail.split('@')[0].replace(/[^a-z0-9]/g, '');
+    for (const val of snapshot.values()) {
+      if (val.email) {
+        const valPrefix = val.email.toLowerCase().trim().split('@')[0].replace(/[^a-z0-9]/g, '');
+        if (emailPrefix === valPrefix && emailPrefix.length > 2) {
+          entry = val;
+          break;
+        }
+      }
+    }
+  }
+
   if (!entry) return { status: 'OFFLINE', platform: null };
   return {
     status: entry.state === 'active' ? 'ONLINE' : 'IDLE',

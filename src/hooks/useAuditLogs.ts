@@ -293,14 +293,15 @@ export const useAuditLogs = () => {
         const uEmail = u.email ? u.email.toLowerCase().trim() : '';
         if (isGuestEntry(uEmail, null)) return;
         if ((uId && !userAccountsSet.has(uId)) && (uEmail && !userAccountsSet.has(uEmail))) {
-          userAccountsSet.add(uId || uEmail);
+          if (uId) userAccountsSet.add(uId);
+          if (uEmail) userAccountsSet.add(uEmail);
           const p = uId ? profileById.get(uId) : null;
           combinedSessions.push({
             id: `NO_SESSION-${uId || uEmail}`,
             session_id: `NO_SESSION-${uId || uEmail}`,
             user_id: uId,
             user_email: u.email || 'Utilisateur',
-            user_role: p?.system_role || u.role || 'collaborateur',
+            user_role: p?.system_role || u.system_role || u.role || 'collaborateur',
             ip_address: 'N/A',
             user_agent: '',
             device: 'N/A',
@@ -320,12 +321,66 @@ export const useAuditLogs = () => {
         if (isGuestEntry(pEmail, null)) return;
         if (pId && !userAccountsSet.has(pId) && (!pEmail || !userAccountsSet.has(pEmail))) {
           userAccountsSet.add(pId);
+          if (pEmail) userAccountsSet.add(pEmail);
           combinedSessions.push({
             id: `NO_SESSION-${pId}`,
             session_id: `NO_SESSION-${pId}`,
             user_id: pId,
-            user_email: p.email || 'Utilisateur',
+            user_email: p.email || (p.full_name ? `${p.full_name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@fus.ma` : 'Utilisateur'),
             user_role: p.system_role || 'collaborateur',
+            ip_address: 'N/A',
+            user_agent: '',
+            device: 'N/A',
+            status: 'LOGGED_OUT',
+            login_at: new Date(0).toISOString(),
+            logout_at: null,
+            last_activity_at: new Date(0).toISOString(),
+            created_at: new Date(0).toISOString(),
+            event_count: 0
+          });
+        }
+      });
+
+      // Inclure également Staff & Scouts conformément à la règle multi-table
+      (dbStaff || []).forEach(st => {
+        const sId = st.id;
+        const sEmail = st.email ? st.email.toLowerCase().trim() : '';
+        if (isGuestEntry(sEmail, null)) return;
+        if ((sId && !userAccountsSet.has(sId)) && (!sEmail || !userAccountsSet.has(sEmail))) {
+          if (sId) userAccountsSet.add(sId);
+          if (sEmail) userAccountsSet.add(sEmail);
+          combinedSessions.push({
+            id: `NO_SESSION-${sId || sEmail}`,
+            session_id: `NO_SESSION-${sId || sEmail}`,
+            user_id: sId,
+            user_email: st.email || 'Utilisateur',
+            user_role: st.role || 'staff',
+            ip_address: 'N/A',
+            user_agent: '',
+            device: 'N/A',
+            status: 'LOGGED_OUT',
+            login_at: new Date(0).toISOString(),
+            logout_at: null,
+            last_activity_at: new Date(0).toISOString(),
+            created_at: new Date(0).toISOString(),
+            event_count: 0
+          });
+        }
+      });
+
+      (dbScouts || []).forEach(sc => {
+        const scId = sc.id;
+        const scEmail = sc.email ? sc.email.toLowerCase().trim() : '';
+        if (isGuestEntry(scEmail, null)) return;
+        if ((scId && !userAccountsSet.has(scId)) && (!scEmail || !userAccountsSet.has(scEmail))) {
+          if (scId) userAccountsSet.add(scId);
+          if (scEmail) userAccountsSet.add(scEmail);
+          combinedSessions.push({
+            id: `NO_SESSION-${scId || scEmail}`,
+            session_id: `NO_SESSION-${scId || scEmail}`,
+            user_id: scId,
+            user_email: sc.email || 'Utilisateur',
+            user_role: 'scout',
             ip_address: 'N/A',
             user_agent: '',
             device: 'N/A',

@@ -1047,6 +1047,36 @@ Direction Générale — FUS Rabat`;
         }
       });
 
+      // 8. Intégrer les membres du staff technique (Staff) non encore répertoriés
+      dbStaff.forEach((st: any) => {
+        if (!st) return;
+        const stEmail = (typeof st.email === 'string' && st.email.trim())
+          ? st.email.trim().toLowerCase()
+          : (st.full_name ? `${st.full_name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@fusc.ma` : `staff-${st.id}@fusc.ma`);
+        const stName = typeof st.full_name === 'string' ? st.full_name.trim().toLowerCase() : '';
+
+        const alreadyInList = existingUserIds.has(st.id) ||
+          (stEmail && existingEmails.has(stEmail)) ||
+          (stName && existingNames.has(stName));
+
+        if (!alreadyInList) {
+          existingUserIds.add(st.id);
+          if (stEmail) existingEmails.add(stEmail);
+          mappedUsers.push({
+            id: st.id,
+            email: st.email || (st.full_name ? `${st.full_name.toLowerCase().replace(/[^a-z0-9]/g, '.')}@fusc.ma` : `staff-${st.id}@fusc.ma`),
+            full_name: st.full_name || 'Staff',
+            avatar_url: st.photo_url || null,
+            system_role: st.role || 'manager',
+            job_title: st.role || 'Staff Technique',
+            phone_number: null,
+            is_active: true,
+            categories: ['Senior'],
+            permissions_overrides: {}
+          });
+        }
+      });
+
       // Retenir l'intégralité des utilisateurs (actifs et inactifs)
       setUsers(mappedUsers);
 

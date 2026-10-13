@@ -198,9 +198,14 @@ class AuditLoggerService {
 
     // Persister dans Supabase
     try {
-      await supabase.from('user_sessions').insert([{
+      const isValidUuid = (val?: string | null) =>
+        Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
+      const sanitizedUserId = isValidUuid(newSession.user_id) ? newSession.user_id : null;
+
+      const { error: insertErr } = await supabase.from('user_sessions').insert([{
         session_id: newSession.session_id,
-        user_id: newSession.user_id,
+        user_id: sanitizedUserId,
         user_email: newSession.user_email,
         user_role: newSession.user_role,
         ip_address: newSession.ip_address,
@@ -210,14 +215,19 @@ class AuditLoggerService {
         login_at: newSession.login_at,
         last_activity_at: newSession.last_activity_at
       }]);
+      if (insertErr) {
+        console.warn('[AuditLogger] Échec insertion user_sessions Supabase:', insertErr);
+        this.cacheSessionLocally(newSession);
+      }
     } catch (err) {
+      console.warn('[AuditLogger] Exception insertion user_sessions:', err);
       this.cacheSessionLocally(newSession);
     }
 
     // Mettre à jour directement le statut ONLINE dans user_profiles
     if (userId) {
       try {
-        await supabase
+        const { error: upErr } = await supabase
           .from('user_profiles')
           .update({
             biometric_device_id: 'ONLINE:web:💻 Web Dashboard',
@@ -225,6 +235,9 @@ class AuditLoggerService {
             updated_at: newSession.login_at
           })
           .eq('id', userId);
+        if (upErr) {
+          console.warn('[AuditLogger] Échec maj user_profiles ONLINE:', upErr);
+        }
       } catch (_) {}
     }
 

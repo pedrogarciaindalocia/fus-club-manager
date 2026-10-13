@@ -225,6 +225,57 @@ export const AuditLogsPage: React.FC = () => {
       }
     });
 
+    // 1b. Inclure dynamiquement TOUT collaborateur connecté en direct via Supabase Realtime Presence
+    // Même s'il n'a pas encore de session archivée dans user_sessions ou est en session privée
+    presenceSnapshot.forEach((presEntry, presKey) => {
+      if (!presEntry || (!presEntry.user_id && !presEntry.email)) return;
+      if (isGuestEntry(presEntry.email, null)) return;
+
+      const userKey = presEntry.user_id || (presEntry.email ? presEntry.email.toLowerCase().trim() : presKey);
+      const emailLower = presEntry.email ? presEntry.email.toLowerCase().trim() : null;
+
+      // Vérifier si l'utilisateur est déjà présent par ID ou par email
+      const alreadyExists = Array.from(userMap.values()).some(item => 
+        (presEntry.user_id && item.userId === presEntry.user_id) ||
+        (emailLower && item.userEmail && item.userEmail.toLowerCase().trim() === emailLower)
+      );
+
+      if (!alreadyExists && userKey) {
+        // Résolution du nom formaté
+        const rawName = presEntry.email ? presEntry.email.split('@')[0].replace(/[._]/g, ' ') : 'Collaborateur';
+        const formattedName = rawName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+        // Détection du poste probable
+        let detectedJob = 'Collaborateur';
+        const lowerEmail = presEntry.email ? presEntry.email.toLowerCase() : '';
+        if (lowerEmail.includes('admin') || lowerEmail.includes('badr')) detectedJob = 'Admin Club';
+        else if (lowerEmail.includes('scout')) detectedJob = 'Scout';
+
+        userMap.set(userKey, {
+          userId: presEntry.user_id,
+          userEmail: presEntry.email,
+          userName: formattedName,
+          userAvatar: null,
+          jobTitle: detectedJob,
+          status: presEntry.state === 'idle' ? 'IDLE' : 'ACTIVE',
+          activePlatform: presEntry.platform || 'web',
+          lastPlatform: presEntry.platform || 'web',
+          latestAction: {
+            action: 'LOGIN',
+            module: 'AUTH',
+            description: `Session active en temps réel (${presEntry.platform === 'mobile' ? 'Fus-App Mobile' : 'Web Dashboard'})`,
+            timestamp: presEntry.online_at || new Date().toISOString(),
+            platform: presEntry.platform || 'web'
+          },
+          lastActivity: presEntry.online_at || new Date().toISOString(),
+          totalSessions: 1,
+          totalEvents: 1,
+          sessions: [],
+          logs: []
+        });
+      }
+    });
+
     // Associer les logs d'audit à chaque utilisateur
     logs.forEach(l => {
       if (isGuestEntry(l.user_email, l.session_id)) return;
