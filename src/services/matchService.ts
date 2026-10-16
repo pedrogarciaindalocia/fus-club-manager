@@ -118,6 +118,7 @@ export const matchService = {
         delete safePayload.referee_assistant1_id;
         delete safePayload.referee_assistant2_id;
         delete safePayload.referee_fourth_id;
+        delete safePayload.referee_commissaire_id;
         delete safePayload.referees_assigned;
 
         const { data: retryData, error: retryError } = await supabase
@@ -180,6 +181,7 @@ export const matchService = {
         delete sanitized.referee_assistant1_id;
         delete sanitized.referee_assistant2_id;
         delete sanitized.referee_fourth_id;
+        delete sanitized.referee_commissaire_id;
         delete sanitized.referees_assigned;
         delete sanitized.opponent_lineup;
         delete sanitized.opponent_subs;

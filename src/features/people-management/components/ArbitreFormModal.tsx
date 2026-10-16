@@ -329,6 +329,7 @@ export const ArbitreFormModal: React.FC<ArbitreFormModalProps> = ({
                   >
                     <option value="central">Arbitre Principal</option>
                     <option value="assistant">Arbitre Assistant</option>
+                    <option value="commissaire">Commissaire du Match / Délégué</option>
                     <option value="var">Arbitre VAR (Vidéo Assistance)</option>
                     <option value="quatrieme">4ème Officiel / Arbitre Quatrième</option>
                   </select>

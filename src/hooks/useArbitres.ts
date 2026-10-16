@@ -127,6 +127,7 @@ export function useArbitres() {
       centraux: arbitres.filter((a) => a.role_principal === 'central').length,
       principaux: arbitres.filter((a) => a.role_principal === 'central').length,
       assistants: arbitres.filter((a) => a.role_principal === 'assistant').length,
+      commissaires: arbitres.filter((a) => a.role_principal === 'commissaire').length,
       fifa: arbitres.filter((a) => a.grade === 'FIFA').length,
     };
   }, [arbitres]);

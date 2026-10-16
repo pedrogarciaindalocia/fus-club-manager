@@ -51,6 +51,7 @@ export const ArbitreDetailModal: React.FC<ArbitreDetailModalProps> = ({
     switch (role) {
       case 'central': return 'Arbitre Principal';
       case 'assistant': return 'Arbitre Assistant';
+      case 'commissaire': return 'Commissaire du Match / Délégué';
       case 'var': return 'Arbitre VAR (Vidéo Assistance)';
       case 'quatrieme': return '4ème Officiel / Arbitre Quatrième';
       default: return role ? `Arbitre ${role}` : 'Arbitre';
@@ -67,10 +68,12 @@ export const ArbitreDetailModal: React.FC<ArbitreDetailModalProps> = ({
       const ass1 = (m as any).referee_assistant1_id === id || (m as any).referees_assigned?.assistant1_id === id;
       const ass2 = (m as any).referee_assistant2_id === id || (m as any).referees_assigned?.assistant2_id === id;
       const fourth = (m as any).referee_fourth_id === id || (m as any).referees_assigned?.fourth_id === id;
-      return central || ass1 || ass2 || fourth;
+      const commissaire = (m as any).referee_commissaire_id === id || (m as any).referees_assigned?.commissaire_id === id;
+      return central || ass1 || ass2 || fourth || commissaire;
     }).map(m => {
       let roleInMatch = 'Arbitre Principal';
-      if ((m as any).referee_assistant1_id === id || (m as any).referees_assigned?.assistant1_id === id) roleInMatch = 'Arbitre Assistant 1';
+      if ((m as any).referee_commissaire_id === id || (m as any).referees_assigned?.commissaire_id === id) roleInMatch = 'Commissaire du Match';
+      else if ((m as any).referee_assistant1_id === id || (m as any).referees_assigned?.assistant1_id === id) roleInMatch = 'Arbitre Assistant 1';
       else if ((m as any).referee_assistant2_id === id || (m as any).referees_assigned?.assistant2_id === id) roleInMatch = 'Arbitre Assistant 2';
       else if ((m as any).referee_fourth_id === id || (m as any).referees_assigned?.fourth_id === id) roleInMatch = '4ème Officiel';
 

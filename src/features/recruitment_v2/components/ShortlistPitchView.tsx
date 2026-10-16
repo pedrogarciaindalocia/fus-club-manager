@@ -195,11 +195,16 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
   const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // US-DASH-35 : Récupération des informations de session pour le cloisonnement Scout Manager
-  const { authState } = usePermissions();
+  const { authState, canManageCategory } = usePermissions();
   const currentUserId = authState?.user?.id;
   const currentUserName = authState?.user?.full_name?.trim();
   const currentUserEmail = authState?.user?.email?.trim();
   const currentUserRole = authState?.user?.system_role;
+
+  const visibleCategories = useMemo(() => {
+    const allowed = RECRUITMENT_AGE_CATEGORIES.filter(cat => canManageCategory(cat));
+    return allowed.length > 0 ? allowed : RECRUITMENT_AGE_CATEGORIES;
+  }, [canManageCategory]);
 
   const isScoutManager = Boolean(
     currentUserRole === 'scout_manager' ||
@@ -231,6 +236,12 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
   // Le terrain est STRICTEMENT VIDE tant qu'un scout ET une catégorie ne sont pas choisis
   const [scoutFilter, setScoutFilter] = useState<string>('ALL'); // 'ALL' = tous les scouts (Base Complète Club)
   const [categoryFilter, setCategoryFilter] = useState<string>(''); // '' = aucune catégorie sélectionnée (VIDE)
+
+  React.useEffect(() => {
+    if (visibleCategories.length === 1 && !categoryFilter) {
+      setCategoryFilter(visibleCategories[0]);
+    }
+  }, [visibleCategories, categoryFilter]);
 
   const [minScoreFilter, setMinScoreFilter] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -849,6 +860,12 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
     return false;
   };
 
+  const normalizeCat = (c?: string | null): string => (c || '').trim().toUpperCase().replace(/[-\s]/g, '');
+  const isCandidateMatchingCategory = (candCat?: string | null, filterCat?: string | null): boolean => {
+    if (!filterCat || filterCat === 'ALL') return true;
+    return normalizeCat(candCat) === normalizeCat(filterCat);
+  };
+
   // Tous les candidats de la catégorie sélectionnée (filtrés selon scout s'il est spécifié)
   const categoryCandidates = useMemo(() => {
     // Si pas de catégorie sélectionnée -> SHORTLIST VIDE !
@@ -857,8 +874,8 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
     }
 
     return scopedCandidates.filter(cand => {
-      // 1. Filtrage par catégorie (sauf si 'ALL')
-      if (categoryFilter !== 'ALL' && cand.age_category !== categoryFilter) {
+      // 1. Filtrage strict par catégorie (sauf si 'ALL')
+      if (categoryFilter !== 'ALL' && !isCandidateMatchingCategory(cand.age_category, categoryFilter)) {
         return false;
       }
 
@@ -1054,16 +1071,28 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
       map[idx] = [];
     });
 
+    // RÈGLE STRICTE : Si aucune catégorie n'est sélectionnée, le terrain reste STRICTEMENT VIDE !
+    if (!categoryFilter) {
+      return map;
+    }
+
     const excludedIds = new Set(customSlotOrder._excluded_candidate_ids || []);
 
+    // Index des candidats éligibles pour cette catégorie et ce scout
+    const eligibleCandidatesMap = new Map<string, TrialCandidate>();
+    categoryCandidates.forEach(cand => {
+      eligibleCandidatesMap.set(cand.id, cand);
+    });
+
     // 1. Affecter en priorité absolue les joueurs assignés explicitement à un slot dans customSlotOrder
+    // CONDITION STRICTE : Seuls les candidats éligibles de la catégorie sélectionnée sont positionnés !
     const assignedIds = new Set<string>();
 
     activeFormation.slots.forEach((slot, slotIdx) => {
       const explicitIds = customSlotOrder[slot.label] || customSlotOrder[`slot_${slotIdx}`] || [];
       explicitIds.forEach(candId => {
         if (excludedIds.has(candId) || assignedIds.has(candId)) return;
-        const cand = scopedCandidates.find(c => c.id === candId);
+        const cand = eligibleCandidatesMap.get(candId);
         if (cand && cand.pipeline_stage !== 'prospect') {
           map[slotIdx].push(cand);
           assignedIds.add(cand.id);
@@ -1149,7 +1178,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
     }
 
     return map;
-  }, [categoryCandidates, activeFormation, onlyBestScorePerPosition, customSlotOrder, pitchSortOption, playerEvaluationsMap]);
+  }, [categoryCandidates, categoryFilter, scoutFilter, activeFormation, onlyBestScorePerPosition, customSlotOrder, pitchSortOption, playerEvaluationsMap]);
 
   // Handlers pour le Drag & Drop et la réorganisation dans le tiroir latéral
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -1392,12 +1421,17 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
 
       // 1. CONDITION DE LA CATÉGORIE SÉLECTIONNÉE (Désactivée en mode all_categories ou si categoryFilter === ALL)
       if (positionFilterMode !== 'all_categories' && categoryFilter !== 'ALL') {
-        if (cand.age_category !== categoryFilter) {
+        if (!isCandidateMatchingCategory(cand.age_category, categoryFilter)) {
           return false;
         }
       }
 
-      // 2. Filtrage par position selon le mode sélectionné
+      // 2. Filtrage strict par scout détecteur (sauf si 'ALL')
+      if (scoutFilter && scoutFilter !== 'ALL' && !isCandidateDetectedBySelectedScout(cand, scoutFilter)) {
+        return false;
+      }
+
+      // 3. Filtrage par position selon le mode sélectionné
       if (positionFilterMode === 'matching') {
         if (!isPlayerPositionMatchingSlot(cand, slotForAddingPlayer)) {
           return false;
@@ -1529,8 +1563,10 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
       if (scoutFilter && scoutFilter !== 'ALL' && !isCandidateDetectedBySelectedScout(c, scoutFilter)) {
         return;
       }
-      const cat = c.age_category || 'Inconnue';
-      counts[cat] = (counts[cat] || 0) + 1;
+      const rawCat = (c.age_category || '').trim();
+      if (!rawCat) return;
+      const matchedCat = RECRUITMENT_AGE_CATEGORIES.find(rc => normalizeCat(rc) === normalizeCat(rawCat)) || rawCat;
+      counts[matchedCat] = (counts[matchedCat] || 0) + 1;
     });
     return counts;
   }, [scopedCandidates, scoutFilter]);
@@ -2007,29 +2043,31 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
-              <button
-                type="button"
-                onClick={() => {
-                  setCategoryFilter(prev => prev === 'ALL' ? '' : 'ALL');
-                  setSelectedSlotForDrawer(null);
-                }}
-                className={cn(
-                  "px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer shadow-xs",
-                  categoryFilter === 'ALL'
-                    ? "bg-primary text-white shadow-primary/25 font-black scale-105 ring-2 ring-primary/30"
-                    : "bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 font-black"
-                )}
-                title="Afficher tous les joueurs du vivier club toutes catégories confondues"
-              >
-                <span>{isScoutManager ? "🌟 Tous mes Joueurs" : "🌟 Tout le Club"}</span>
-                <span className={cn(
-                  "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                  categoryFilter === 'ALL' ? "bg-white/25 text-white" : "bg-amber-300 text-amber-950"
-                )}>
-                  {scopedCandidates.filter(c => c.pipeline_stage !== 'archived' && c.status !== 'archived').length}
-                </span>
-              </button>
-              {RECRUITMENT_AGE_CATEGORIES.map(cat => {
+              {visibleCategories.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCategoryFilter(prev => prev === 'ALL' ? '' : 'ALL');
+                    setSelectedSlotForDrawer(null);
+                  }}
+                  className={cn(
+                    "px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer shadow-xs",
+                    categoryFilter === 'ALL'
+                      ? "bg-primary text-white shadow-primary/25 font-black scale-105 ring-2 ring-primary/30"
+                      : "bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 font-black"
+                  )}
+                  title="Afficher tous les joueurs du vivier club toutes catégories confondues"
+                >
+                  <span>{isScoutManager ? "🌟 Tous mes Joueurs" : "🌟 Tout le Club"}</span>
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+                    categoryFilter === 'ALL' ? "bg-white/25 text-white" : "bg-amber-300 text-amber-950"
+                  )}>
+                    {scopedCandidates.filter(c => c.pipeline_stage !== 'archived' && c.status !== 'archived').length}
+                  </span>
+                </button>
+              )}
+              {visibleCategories.map(cat => {
                 const count = categoryCounts[cat] || 0;
                 const isSelected = categoryFilter === cat;
 

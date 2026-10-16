@@ -4,8 +4,11 @@ import {
   ArrowLeft, Trash2, Download, Copy, Eye, MoreVertical,
   Check, Loader2, Sparkles, Image as ImageIcon, HardDrive,
   FileImage, Edit2, AlertCircle, X, ExternalLink,
-  FolderInput, Move, ShieldAlert, Lock
+  FolderInput, Move, ShieldAlert, Lock, FolderDown, FileArchive,
+  CheckSquare, Square, FolderUp
 } from 'lucide-react';
+import JSZip from 'jszip';
+import { supabase } from '../../lib/supabase';
 import { mediaService, validateFileSecurity } from '../../services/mediaService';
 import type { MediaFolder, MediaFile } from '../../services/mediaService';
 import { Button } from '../../components/ui/button';
@@ -29,6 +32,19 @@ export const MediaManagementPage: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // 📸 Sélection multiple style Google Photos
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
+  const [downloadingZip, setDownloadingZip] = useState(false);
+  const [zipProgress, setZipProgress] = useState<{
+    active: boolean;
+    current: number;
+    total: number;
+    percentage: number;
+    label: string;
+  } | null>(null);
+  const [batchDeleteModalOpen, setBatchDeleteModalOpen] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   // Drag & Drop state
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -56,9 +72,11 @@ export const MediaManagementPage: React.FC = () => {
   const [moving, setMoving] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setSelectedFileIds(new Set());
     loadData();
   }, [currentFolderId]);
 
@@ -101,7 +119,7 @@ export const MediaManagementPage: React.FC = () => {
 
   const currentFolder = currentFolderId ? allFolders.find(f => f.id === currentFolderId) : null;
 
-  // Gestion de l'upload de fichiers avec filtrage de sécurité strict
+  // Gestion de l'upload de fichiers individuels
   const handleUploadFiles = async (fileList: FileList | File[]) => {
     if (!canCreate) {
       toast.error("Vous ne disposez pas de la permission d'importer des fichiers (Create)");
@@ -115,7 +133,7 @@ export const MediaManagementPage: React.FC = () => {
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
         
-        // 🛡️ Vérification de sécurité stricte (rejet .js, .php, exécutables)
+        // 🛡️ Vérification de sécurité stricte
         const validation = validateFileSecurity(file);
         if (!validation.isValid) {
           toast.error(validation.error || `Fichier "${file.name}" refusé pour des raisons de sécurité.`);
@@ -135,6 +153,94 @@ export const MediaManagementPage: React.FC = () => {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Helper pour trouver ou créer récursivement les dossiers lors de l'upload d'un dossier complet
+  const resolveTargetFolderId = async (
+    pathSegments: string[],
+    baseFolderId: string | null,
+    folderCache: Map<string, string>
+  ): Promise<string | null> => {
+    let parentId = baseFolderId;
+    let accumulatedPath = baseFolderId ? `folder_${baseFolderId}` : 'root';
+
+    for (const segment of pathSegments) {
+      const cleanSeg = segment.trim();
+      if (!cleanSeg) continue;
+      accumulatedPath += `/${cleanSeg}`;
+
+      if (folderCache.has(accumulatedPath)) {
+        parentId = folderCache.get(accumulatedPath)!;
+        continue;
+      }
+
+      // Chercher si le dossier existe déjà sous ce parent
+      const allCurrentFolders = await mediaService.getAllFolders();
+      const existing = allCurrentFolders.find(
+        f => f.name.toLowerCase() === cleanSeg.toLowerCase() && (parentId ? f.parent_id === parentId : !f.parent_id)
+      );
+
+      if (existing) {
+        parentId = existing.id;
+        folderCache.set(accumulatedPath, existing.id);
+      } else {
+        const created = await mediaService.createFolder(cleanSeg, parentId);
+        parentId = created.id;
+        folderCache.set(accumulatedPath, created.id);
+      }
+    }
+
+    return parentId;
+  };
+
+  // Gestion de l'upload d'un dossier complet (ou plusieurs dossiers avec arborescence)
+  const handleUploadFolderTree = async (filesWithPaths: { file: File; relativePath?: string }[]) => {
+    if (!canCreate) {
+      toast.error("Vous ne disposez pas de la permission d'importer des dossiers (Create)");
+      return;
+    }
+    if (!filesWithPaths || filesWithPaths.length === 0) return;
+
+    setUploading(true);
+    let successCount = 0;
+    const folderCache = new Map<string, string>();
+
+    try {
+      for (const item of filesWithPaths) {
+        const { file, relativePath } = item;
+        const validation = validateFileSecurity(file);
+        if (!validation.isValid) {
+          continue;
+        }
+
+        let targetFolderId = currentFolderId;
+
+        if (relativePath) {
+          const parts = relativePath.split('/').filter(Boolean);
+          // Le dernier élément est le nom du fichier, les précédents sont les sous-dossiers
+          const folderParts = parts.slice(0, -1);
+          if (folderParts.length > 0) {
+            targetFolderId = await resolveTargetFolderId(folderParts, currentFolderId, folderCache);
+          }
+        }
+
+        await mediaService.uploadFile(file, targetFolderId);
+        successCount++;
+      }
+
+      if (successCount > 0) {
+        toast.success(`Arborescence importée avec succès : ${successCount} image(s) classée(s) dans leurs dossiers respectifs !`);
+        await loadData();
+      } else {
+        toast.info("Aucune image valide trouvée dans le(s) dossier(s) sélectionné(s).");
+      }
+    } catch (err: any) {
+      console.error('Erreur import de dossier:', err);
+      toast.error(err.message || "Erreur lors de l'import du dossier");
+    } finally {
+      setUploading(false);
+      if (folderInputRef.current) folderInputRef.current.value = '';
     }
   };
 
@@ -184,11 +290,73 @@ export const MediaManagementPage: React.FC = () => {
     setIsDraggingOver(false);
   };
 
+  // Lecture récursive d'un dossier déposé par Drag & Drop via l'API WebKit
+  const scanDroppedEntry = async (
+    entry: any,
+    currentPath = ''
+  ): Promise<{ file: File; relativePath: string }[]> => {
+    if (!entry) return [];
+    if (entry.isFile) {
+      return new Promise((resolve) => {
+        entry.file((file: File) => {
+          resolve([{ file, relativePath: currentPath ? `${currentPath}/${file.name}` : file.name }]);
+        }, () => resolve([]));
+      });
+    } else if (entry.isDirectory) {
+      const dirReader = entry.createReader();
+      const nextPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+      const allEntries: any[] = [];
+
+      const readBatch = (): Promise<void> => {
+        return new Promise((resolve) => {
+          dirReader.readEntries(async (entries: any[]) => {
+            if (!entries || entries.length === 0) {
+              resolve();
+            } else {
+              allEntries.push(...entries);
+              await readBatch();
+              resolve();
+            }
+          }, () => resolve());
+        });
+      };
+
+      await readBatch();
+
+      const results: { file: File; relativePath: string }[] = [];
+      for (const child of allEntries) {
+        const childFiles = await scanDroppedEntry(child, nextPath);
+        results.push(...childFiles);
+      }
+      return results;
+    }
+    return [];
+  };
+
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingOver(false);
 
+    // 1. Détection des dossiers déposés via webkitGetAsEntry
+    const items = e.dataTransfer.items;
+    if (items && items.length > 0 && typeof items[0].webkitGetAsEntry === 'function') {
+      const extracted: { file: File; relativePath: string }[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry();
+        if (entry) {
+          const filesFromEntry = await scanDroppedEntry(entry);
+          extracted.push(...filesFromEntry);
+        }
+      }
+
+      if (extracted.length > 0) {
+        await handleUploadFolderTree(extracted);
+        return;
+      }
+    }
+
+    // 2. Repli standard sur dataTransfer.files
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       await handleUploadFiles(e.dataTransfer.files);
     }
@@ -297,6 +465,314 @@ export const MediaManagementPage: React.FC = () => {
     document.body.removeChild(a);
   };
 
+  // 🛡️ Récupération résiliente du Blob d'un fichier média (Storage bucket ou fallback public_url)
+  const fetchMediaBlob = async (file: MediaFile): Promise<{ blob: Blob; fileName: string } | null> => {
+    let cleanPath = file.storage_path ? file.storage_path.trim() : '';
+    if (cleanPath.includes('/medias/')) {
+      cleanPath = cleanPath.split('/medias/').pop() || cleanPath;
+    }
+    cleanPath = cleanPath.replace(/^\/+/, '');
+
+    if (cleanPath) {
+      try {
+        const { data, error } = await supabase.storage.from('medias').download(cleanPath);
+        if (!error && data) {
+          return { blob: data, fileName: file.name };
+        }
+      } catch (e) {
+        console.warn(`[Download] Storage download échoué pour ${cleanPath}, tentative fetch:`, e);
+      }
+    }
+
+    if (file.public_url) {
+      try {
+        const res = await fetch(file.public_url);
+        if (res.ok) {
+          const blob = await res.blob();
+          return { blob, fileName: file.name };
+        }
+      } catch (e) {
+        console.warn(`[Download] Fetch échoué pour ${file.public_url}:`, e);
+      }
+    }
+
+    return null;
+  };
+
+  // Déclencher le téléchargement direct d'un Blob dans le navigateur
+  const triggerBlobDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+  // Récupérer récursivement tous les fichiers d'un dossier et de ses sous-dossiers avec chemins relatifs
+  const collectFolderFilesRecursive = (
+    targetFolderId: string,
+    foldersList: MediaFolder[],
+    filesList: MediaFile[]
+  ): { file: MediaFile; relativePath: string }[] => {
+    const targetFolder = foldersList.find(f => f.id === targetFolderId);
+    const results: { file: MediaFile; relativePath: string }[] = [];
+
+    const folderPaths = new Map<string, string>();
+    if (targetFolder) {
+      folderPaths.set(targetFolder.id, '');
+    }
+
+    const crawl = (parentId: string, currentPrefix: string) => {
+      const children = foldersList.filter(f => f.parent_id === parentId);
+      for (const child of children) {
+        const pathPrefix = currentPrefix ? `${currentPrefix}/${child.name}` : child.name;
+        folderPaths.set(child.id, pathPrefix);
+        crawl(child.id, pathPrefix);
+      }
+    };
+
+    crawl(targetFolderId, '');
+
+    for (const f of filesList) {
+      if (f.folder_id && folderPaths.has(f.folder_id)) {
+        const prefix = folderPaths.get(f.folder_id) || '';
+        const relativePath = prefix ? `${prefix}/${f.name}` : f.name;
+        results.push({ file: f, relativePath });
+      }
+    }
+
+    return results;
+  };
+
+  // Basculer la sélection d'un fichier (style Google Photos)
+  const toggleSelectFile = (fileId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedFileIds(prev => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
+      return next;
+    });
+  };
+
+  // Tout sélectionner / Tout désélectionner
+  const handleToggleSelectAll = () => {
+    const allSelected = displayedFiles.length > 0 && displayedFiles.every(f => selectedFileIds.has(f.id));
+    setSelectedFileIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        displayedFiles.forEach(f => next.delete(f.id));
+      } else {
+        displayedFiles.forEach(f => next.add(f.id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedFileIds(new Set());
+
+  // Télécharger la sélection courante en archive ZIP
+  const handleDownloadSelectedAsZip = async () => {
+    if (selectedFileIds.size === 0 || downloadingZip) return;
+
+    const selectedFiles = allFiles.filter(f => selectedFileIds.has(f.id));
+    if (selectedFiles.length === 0) return;
+
+    setDownloadingZip(true);
+    setZipProgress({
+      active: true,
+      current: 0,
+      total: selectedFiles.length,
+      percentage: 0,
+      label: 'Initialisation de l\'archive ZIP...'
+    });
+
+    try {
+      const zip = new JSZip();
+      let processed = 0;
+      const usedNames = new Set<string>();
+
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        setZipProgress({
+          active: true,
+          current: i + 1,
+          total: selectedFiles.length,
+          percentage: Math.round(((i + 1) / selectedFiles.length) * 85),
+          label: file.name
+        });
+
+        const fetched = await fetchMediaBlob(file);
+        if (fetched) {
+          let finalName = fetched.fileName;
+          if (usedNames.has(finalName)) {
+            const parts = finalName.split('.');
+            const ext = parts.length > 1 ? '.' + parts.pop() : '';
+            const base = parts.join('.');
+            let count = 1;
+            while (usedNames.has(`${base}_${count}${ext}`)) {
+              count++;
+            }
+            finalName = `${base}_${count}${ext}`;
+          }
+          usedNames.add(finalName);
+          zip.file(finalName, fetched.blob);
+          processed++;
+        }
+      }
+
+      if (processed === 0) {
+        toast.error("Impossible de récupérer les fichiers pour l'archive.");
+        return;
+      }
+
+      setZipProgress({
+        active: true,
+        current: selectedFiles.length,
+        total: selectedFiles.length,
+        percentage: 90,
+        label: 'Compression finale de l\'archive ZIP...'
+      });
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+        setZipProgress({
+          active: true,
+          current: selectedFiles.length,
+          total: selectedFiles.length,
+          percentage: Math.min(99, 90 + Math.round(metadata.percent / 10)),
+          label: 'Finalisation de l\'archive ZIP...'
+        });
+      });
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      triggerBlobDownload(zipBlob, `medias-selection-${dateStr}.zip`);
+      toast.success(`${processed} média(s) téléchargé(s) avec succès dans l'archive ZIP !`);
+    } catch (err: any) {
+      console.error('Erreur téléchargement ZIP:', err);
+      toast.error(err.message || 'Erreur lors de la création de l\'archive ZIP');
+    } finally {
+      setDownloadingZip(false);
+      setZipProgress(null);
+    }
+  };
+
+  // Télécharger l'intégralité d'un dossier en ZIP
+  const handleDownloadFolderAsZip = async (folder: MediaFolder) => {
+    if (downloadingZip) return;
+    const items = collectFolderFilesRecursive(folder.id, allFolders, allFiles);
+
+    if (items.length === 0) {
+      toast.info(`Le dossier « ${folder.name} » ne contient aucun fichier média à télécharger.`);
+      return;
+    }
+
+    setDownloadingZip(true);
+    setZipProgress({
+      active: true,
+      current: 0,
+      total: items.length,
+      percentage: 0,
+      label: `Lecture du dossier ${folder.name}...`
+    });
+
+    try {
+      const zip = new JSZip();
+      let processed = 0;
+      const usedZipPaths = new Set<string>();
+
+      for (let i = 0; i < items.length; i++) {
+        const { file, relativePath } = items[i];
+        setZipProgress({
+          active: true,
+          current: i + 1,
+          total: items.length,
+          percentage: Math.round(((i + 1) / items.length) * 85),
+          label: file.name
+        });
+
+        const fetched = await fetchMediaBlob(file);
+        if (fetched) {
+          let finalPath = relativePath;
+          if (usedZipPaths.has(finalPath)) {
+            const parts = finalPath.split('/');
+            const fileName = parts.pop() || '';
+            const dir = parts.length > 0 ? parts.join('/') + '/' : '';
+            const nameParts = fileName.split('.');
+            const ext = nameParts.length > 1 ? '.' + nameParts.pop() : '';
+            const base = nameParts.join('.');
+            let count = 1;
+            while (usedZipPaths.has(`${dir}${base}_${count}${ext}`)) {
+              count++;
+            }
+            finalPath = `${dir}${base}_${count}${ext}`;
+          }
+          usedZipPaths.add(finalPath);
+          zip.file(finalPath, fetched.blob);
+          processed++;
+        }
+      }
+
+      if (processed === 0) {
+        toast.error("Impossible de récupérer les fichiers du dossier pour l'archive.");
+        return;
+      }
+
+      setZipProgress({
+        active: true,
+        current: items.length,
+        total: items.length,
+        percentage: 90,
+        label: `Compression du dossier ${folder.name}...`
+      });
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+        setZipProgress({
+          active: true,
+          current: items.length,
+          total: items.length,
+          percentage: Math.min(99, 90 + Math.round(metadata.percent / 10)),
+          label: 'Finalisation de l\'archive du dossier...'
+        });
+      });
+
+      const cleanFolderName = folder.name.replace(/[^a-zA-Z0-9_\-\u00C0-\u017F]/g, '_');
+      triggerBlobDownload(zipBlob, `${cleanFolderName}.zip`);
+      toast.success(`Dossier « ${folder.name} » téléchargé en ZIP (${processed} fichier${processed > 1 ? 's' : ''}) !`);
+    } catch (err: any) {
+      console.error('Erreur téléchargement ZIP dossier:', err);
+      toast.error(err.message || 'Erreur lors de la création de l\'archive ZIP');
+    } finally {
+      setDownloadingZip(false);
+      setZipProgress(null);
+    }
+  };
+
+  // Suppression groupée définitive des médias sélectionnés
+  const handleConfirmBatchDelete = async () => {
+    if (selectedFileIds.size === 0) return;
+    if (!canDelete) {
+      toast.error("Vous ne disposez pas de la permission de suppression");
+      return;
+    }
+
+    setBatchDeleting(true);
+    try {
+      const count = await mediaService.deleteFiles(Array.from(selectedFileIds));
+      toast.success(`${count} média(s) supprimé(s) définitivement du bucket et de la base.`);
+      setSelectedFileIds(new Set());
+      setBatchDeleteModalOpen(false);
+      await loadData();
+    } catch (err: any) {
+      console.error('Erreur suppression groupée:', err);
+      toast.error(err.message || 'Erreur lors de la suppression groupée');
+    } finally {
+      setBatchDeleting(false);
+    }
+  };
+
   // Filtrage par recherche
   const displayedFiles = searchQuery.trim()
     ? allFiles.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -330,6 +806,74 @@ export const MediaManagementPage: React.FC = () => {
         </div>
       )}
 
+      {/* 🚀 Barre d'action flottante Google Photos (Sélection multiple active) */}
+      {selectedFileIds.size > 0 && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-2xl bg-[#1c1c1e]/95 backdrop-blur-2xl border border-primary/40 shadow-2xl shadow-primary/25 rounded-3xl p-3 sm:px-6 sm:py-3.5 flex items-center justify-between gap-3 animate-in slide-in-from-top-6 duration-200">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={clearSelection}
+              className="p-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+              title="Désélectionner tout"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-full bg-primary text-white font-black text-xs flex items-center justify-center shadow-md">
+                {selectedFileIds.size}
+              </span>
+              <span className="text-xs sm:text-sm font-bold text-white hidden sm:inline">
+                sélectionné{selectedFileIds.size > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="h-5 w-px bg-white/15 hidden sm:block mx-1" />
+            <button
+              onClick={handleToggleSelectAll}
+              className="text-xs font-bold text-white/70 hover:text-primary transition-colors hidden sm:inline-block"
+            >
+              {displayedFiles.length > 0 && displayedFiles.every(f => selectedFileIds.has(f.id))
+                ? 'Tout désélectionner'
+                : `Tout sélectionner (${displayedFiles.length})`}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Télécharger en ZIP */}
+            <Button
+              onClick={handleDownloadSelectedAsZip}
+              disabled={downloadingZip}
+              className="gap-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold h-10 px-4 text-xs shadow-lg shadow-emerald-600/25"
+            >
+              {downloadingZip ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileArchive className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">Télécharger en ZIP</span>
+              <span className="sm:hidden">ZIP</span>
+              <span className="text-[10px] bg-black/25 px-1.5 py-0.5 rounded-full font-mono">
+                {selectedFileIds.size}
+              </span>
+            </Button>
+
+            {/* Supprimer tout */}
+            {canDelete && (
+              <Button
+                onClick={() => setBatchDeleteModalOpen(true)}
+                disabled={downloadingZip || batchDeleting}
+                className="gap-2 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-bold h-10 px-4 text-xs shadow-lg shadow-rose-600/25"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Supprimer tout</span>
+                <span className="sm:hidden">Suppr.</span>
+                <span className="text-[10px] bg-black/25 px-1.5 py-0.5 rounded-full font-mono">
+                  {selectedFileIds.size}
+                </span>
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* En-tête Principal */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-white/10">
         <div>
@@ -353,11 +897,30 @@ export const MediaManagementPage: React.FC = () => {
 
         {/* Boutons d'Action & Upload */}
         <div className="flex flex-wrap items-center gap-3">
+          {/* Input pour fichiers individuels */}
           <input
             type="file"
             ref={fileInputRef}
             onChange={(e) => e.target.files && handleUploadFiles(e.target.files)}
             accept="image/jpeg,image/png,image/webp,image/gif,image/avif,.heic,.heif,image/heic,image/heif"
+            multiple
+            className="hidden"
+          />
+
+          {/* Input pour dossier(s) complet(s) avec sous-arborescence */}
+          <input
+            type="file"
+            ref={folderInputRef}
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                const filesList = Array.from(e.target.files).map(f => ({
+                  file: f,
+                  relativePath: (f as any).webkitRelativePath || f.name,
+                }));
+                handleUploadFolderTree(filesList);
+              }
+            }}
+            {...({ webkitdirectory: '', directory: '' } as any)}
             multiple
             className="hidden"
           />
@@ -371,6 +934,17 @@ export const MediaManagementPage: React.FC = () => {
               >
                 <FolderPlus className="w-4 h-4 text-primary" />
                 Nouveau Dossier
+              </Button>
+
+              <Button
+                onClick={() => folderInputRef.current?.click()}
+                disabled={uploading}
+                variant="outline"
+                className="gap-2 rounded-2xl border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-bold h-12 px-5 text-sm"
+                title="Importer un ou plusieurs dossiers avec conservation de l'arborescence"
+              >
+                <FolderUp className="w-4 h-4 text-amber-400" />
+                Importer un Dossier
               </Button>
 
               <Button
@@ -465,6 +1039,24 @@ export const MediaManagementPage: React.FC = () => {
               </React.Fragment>
             );
           })}
+
+          {/* Bouton Télécharger le dossier en ZIP */}
+          {currentFolder && (
+            <button
+              type="button"
+              onClick={() => handleDownloadFolderAsZip(currentFolder)}
+              disabled={downloadingZip}
+              className="ml-2 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm disabled:opacity-50"
+              title={`Télécharger tout le contenu du dossier « ${currentFolder.name} » en archive ZIP`}
+            >
+              {downloadingZip ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FolderDown className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">Télécharger le dossier (.zip)</span>
+            </button>
+          )}
         </div>
 
         {/* Recherche et commutation Grille / Liste */}
@@ -578,17 +1170,37 @@ export const MediaManagementPage: React.FC = () => {
                             const isDefault = folder.id === 'a0000000-0000-0000-0000-000000000001' || folder.name.toLowerCase() === 'default' || folder.path === '/default';
                             if (isDefault) {
                               return (
-                                <span
-                                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold tracking-wider bg-amber-400/10 text-amber-400/90 flex items-center gap-1 border border-amber-400/20"
-                                  title="Dossier système protégé (réception de tous les uploads directs, non supprimable)"
-                                >
-                                  <Lock className="w-3 h-3" /> Défaut
-                                </span>
+                                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadFolderAsZip(folder)}
+                                    disabled={downloadingZip}
+                                    className="p-1 rounded-lg hover:bg-emerald-500/20 text-white/60 hover:text-emerald-400 transition-colors"
+                                    title="Télécharger ce dossier en archive ZIP"
+                                  >
+                                    <FolderDown className="w-3.5 h-3.5" />
+                                  </button>
+                                  <span
+                                    className="px-2 py-0.5 rounded-lg text-[10px] font-bold tracking-wider bg-amber-400/10 text-amber-400/90 flex items-center gap-1 border border-amber-400/20"
+                                    title="Dossier système protégé (réception de tous les uploads directs, non supprimable)"
+                                  >
+                                    <Lock className="w-3 h-3" /> Défaut
+                                  </span>
+                                </div>
                               );
                             }
 
                             return (
                               <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadFolderAsZip(folder)}
+                                  disabled={downloadingZip}
+                                  className="p-1 rounded-lg hover:bg-emerald-500/20 text-white/60 hover:text-emerald-400 transition-colors"
+                                  title="Télécharger ce dossier en archive ZIP"
+                                >
+                                  <FolderDown className="w-3.5 h-3.5" />
+                                </button>
                                 {canUpdate && (
                                   <>
                                     <button
@@ -674,105 +1286,146 @@ export const MediaManagementPage: React.FC = () => {
             ) : viewMode === 'grid' ? (
               /* Vue Grille */
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                {displayedFiles.map(file => (
-                  <div
-                    key={file.id}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('text/media-file-id', file.id);
-                      setDraggedFileId(file.id);
-                    }}
-                    onDragEnd={() => setDraggedFileId(null)}
-                    onClick={() => setPreviewFile(file)}
-                    className={`group relative aspect-square rounded-2xl overflow-hidden bg-[#141414] border border-white/10 hover:border-primary/50 transition-all cursor-pointer shadow-lg ${
-                      draggedFileId === file.id ? 'opacity-40 scale-95 border-amber-500/50' : ''
-                    }`}
-                  >
-                    <img
-                      src={file.public_url}
-                      alt={file.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      loading="lazy"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        const fallback = e.currentTarget.parentElement?.querySelector('.heic-fallback') as HTMLElement;
-                        if (fallback) fallback.style.display = 'flex';
+                {displayedFiles.map(file => {
+                  const isSelected = selectedFileIds.has(file.id);
+                  const hasSelection = selectedFileIds.size > 0;
+                  return (
+                    <div
+                      key={file.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/media-file-id', file.id);
+                        setDraggedFileId(file.id);
                       }}
-                    />
-                    <div className="heic-fallback hidden w-full h-full flex-col items-center justify-center bg-white/5 text-white/50 p-4 text-center">
-                      <FileImage className="w-10 h-10 text-primary mb-2 opacity-70" />
-                      <span className="text-[11px] font-bold truncate max-w-full text-white/80">{file.name}</span>
-                      <span className="text-[9px] text-primary uppercase font-black tracking-wider mt-1 px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">
-                        {file.name.split('.').pop()?.toUpperCase() || 'MÉDIA'}
-                      </span>
-                    </div>
+                      onDragEnd={() => setDraggedFileId(null)}
+                      onClick={() => {
+                        if (hasSelection) {
+                          toggleSelectFile(file.id);
+                        } else {
+                          setPreviewFile(file);
+                        }
+                      }}
+                      className={`group relative aspect-square rounded-2xl overflow-hidden bg-[#141414] border transition-all cursor-pointer shadow-lg ${
+                        isSelected
+                          ? 'ring-2 ring-primary ring-offset-2 ring-offset-[#0d0d0d] border-primary scale-[0.98]'
+                          : 'border-white/10 hover:border-primary/50'
+                      } ${draggedFileId === file.id ? 'opacity-40 scale-95 border-amber-500/50' : ''}`}
+                    >
+                      {/* Cercle de sélection multiple style Google Photos */}
+                      <button
+                        type="button"
+                        onClick={(e) => toggleSelectFile(file.id, e)}
+                        className={`absolute top-2.5 left-2.5 z-20 w-6 h-6 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-primary text-white shadow-md ring-2 ring-white/70 scale-105'
+                            : hasSelection
+                            ? 'bg-black/60 border-2 border-white/70 hover:border-primary hover:scale-110 text-white'
+                            : 'opacity-0 group-hover:opacity-100 bg-black/50 border-2 border-white/70 hover:border-primary hover:scale-110 text-white'
+                        }`}
+                        title={isSelected ? 'Désélectionner' : 'Sélectionner ce média'}
+                      >
+                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      </button>
 
-                    {/* Overlay d'actions rapides au survol */}
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
-                      <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
-                        <button
-                          onClick={() => handleCopyUrl(file.public_url)}
-                          className="p-1.5 rounded-xl bg-black/70 hover:bg-primary text-white transition-colors"
-                          title="Copier le lien public"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDownload(file.public_url, file.name)}
-                          className="p-1.5 rounded-xl bg-black/70 hover:bg-emerald-600 text-white transition-colors"
-                          title="Télécharger"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                        {canUpdate && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setRenameTarget({ type: 'file', id: file.id, name: file.name });
-                                setRenamedName(file.name);
-                              }}
-                              className="p-1.5 rounded-xl bg-black/70 hover:bg-blue-600 text-white transition-colors"
-                              title="Renommer le fichier"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setMoveItemTarget({
-                                  type: 'file',
-                                  id: file.id,
-                                  name: file.name,
-                                  currentParentId: file.folder_id,
-                                });
-                                setSelectedDestinationFolderId(file.folder_id);
-                              }}
-                              className="p-1.5 rounded-xl bg-black/70 hover:bg-amber-500 text-white transition-colors"
-                              title="Déplacer vers un autre dossier"
-                            >
-                              <FolderInput className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                        {canDelete && (
+                      <img
+                        src={file.public_url}
+                        alt={file.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fallback = e.currentTarget.parentElement?.querySelector('.heic-fallback') as HTMLElement;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                      <div className="heic-fallback hidden w-full h-full flex-col items-center justify-center bg-white/5 text-white/50 p-4 text-center">
+                        <FileImage className="w-10 h-10 text-primary mb-2 opacity-70" />
+                        <span className="text-[11px] font-bold truncate max-w-full text-white/80">{file.name}</span>
+                        <span className="text-[9px] text-primary uppercase font-black tracking-wider mt-1 px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">
+                          {file.name.split('.').pop()?.toUpperCase() || 'MÉDIA'}
+                        </span>
+                      </div>
+
+                      {/* Overlay d'actions rapides au survol */}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
+                        <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
                           <button
-                            onClick={() => setDeleteConfirmTarget({ type: 'file', id: file.id, name: file.name, path: file.storage_path })}
-                            className="p-1.5 rounded-xl bg-black/70 hover:bg-rose-600 text-white transition-colors"
-                            title="Supprimer"
+                            type="button"
+                            onClick={() => setPreviewFile(file)}
+                            className="p-1.5 rounded-xl bg-black/70 hover:bg-primary text-white transition-colors"
+                            title="Aperçu grand format"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
-                        )}
-                      </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyUrl(file.public_url)}
+                            className="p-1.5 rounded-xl bg-black/70 hover:bg-primary text-white transition-colors"
+                            title="Copier le lien public"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownload(file.public_url, file.name)}
+                            className="p-1.5 rounded-xl bg-black/70 hover:bg-emerald-600 text-white transition-colors"
+                            title="Télécharger"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          {canUpdate && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRenameTarget({ type: 'file', id: file.id, name: file.name });
+                                  setRenamedName(file.name);
+                                }}
+                                className="p-1.5 rounded-xl bg-black/70 hover:bg-blue-600 text-white transition-colors"
+                                title="Renommer le fichier"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMoveItemTarget({
+                                    type: 'file',
+                                    id: file.id,
+                                    name: file.name,
+                                    currentParentId: file.folder_id,
+                                  });
+                                  setSelectedDestinationFolderId(file.folder_id);
+                                }}
+                                className="p-1.5 rounded-xl bg-black/70 hover:bg-amber-500 text-white transition-colors"
+                                title="Déplacer vers un autre dossier"
+                              >
+                                <FolderInput className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmTarget({ type: 'file', id: file.id, name: file.name, path: file.storage_path })}
+                              className="p-1.5 rounded-xl bg-black/70 hover:bg-rose-600 text-white transition-colors"
+                              title="Supprimer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
 
-                      <div>
-                        <p className="text-xs font-bold text-white truncate drop-shadow">{file.name}</p>
-                        <p className="text-[10px] text-white/70">
-                          {(file.file_size / 1024).toFixed(0)} Ko
-                        </p>
+                        <div>
+                          <p className="text-xs font-bold text-white truncate drop-shadow">{file.name}</p>
+                          <p className="text-[10px] text-white/70">
+                            {(file.file_size / 1024).toFixed(0)} Ko
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               /* Vue Tableau */
@@ -780,6 +1433,24 @@ export const MediaManagementPage: React.FC = () => {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-[#181818] border-b border-white/10 text-white/50 font-black uppercase tracking-wider">
                     <tr>
+                      <th className="py-3 px-3 w-10 text-center">
+                        <button
+                          type="button"
+                          onClick={handleToggleSelectAll}
+                          className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                          title={
+                            displayedFiles.length > 0 && displayedFiles.every(f => selectedFileIds.has(f.id))
+                              ? 'Tout désélectionner'
+                              : 'Tout sélectionner'
+                          }
+                        >
+                          {displayedFiles.length > 0 && displayedFiles.every(f => selectedFileIds.has(f.id)) ? (
+                            <CheckSquare className="w-4 h-4 text-primary" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </th>
                       <th className="py-3 px-4">Aperçu</th>
                       <th className="py-3 px-4">Nom du fichier</th>
                       <th className="py-3 px-4">Taille</th>
@@ -788,96 +1459,136 @@ export const MediaManagementPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {displayedFiles.map(file => (
-                      <tr
-                        key={file.id}
-                        className="hover:bg-white/5 transition-colors cursor-pointer"
-                        onClick={() => setPreviewFile(file)}
-                      >
-                        <td className="py-3 px-4">
-                          <div className="relative w-10 h-10">
-                            <img
-                              src={file.public_url}
-                              alt=""
-                              className="w-10 h-10 rounded-xl object-cover border border-white/10"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                                const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                                if (fallback) fallback.style.display = 'flex';
-                              }}
-                            />
-                            <div className="hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 items-center justify-center text-primary">
-                              <FileImage className="w-5 h-5" />
+                    {displayedFiles.map(file => {
+                      const isSelected = selectedFileIds.has(file.id);
+                      return (
+                        <tr
+                          key={file.id}
+                          className={`transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-primary/15 hover:bg-primary/20 border-l-2 border-primary'
+                              : 'hover:bg-white/5'
+                          }`}
+                          onClick={() => {
+                            if (selectedFileIds.size > 0) {
+                              toggleSelectFile(file.id);
+                            } else {
+                              setPreviewFile(file);
+                            }
+                          }}
+                        >
+                          <td className="py-3 px-3 text-center" onClick={e => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={(e) => toggleSelectFile(file.id, e)}
+                              className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                              title={isSelected ? 'Désélectionner' : 'Sélectionner'}
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="w-4 h-4 text-primary" />
+                              ) : (
+                                <Square className="w-4 h-4 text-white/30" />
+                              )}
+                            </button>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="relative w-10 h-10">
+                              <img
+                                src={file.public_url}
+                                alt=""
+                                className="w-10 h-10 rounded-xl object-cover border border-white/10"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                                  if (fallback) fallback.style.display = 'flex';
+                                }}
+                              />
+                              <div className="hidden w-10 h-10 rounded-xl bg-white/5 border border-white/10 items-center justify-center text-primary">
+                                <FileImage className="w-5 h-5" />
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 font-bold text-white">
-                          {file.name}
-                        </td>
-                        <td className="py-3 px-4 text-white/60">
-                          {(file.file_size / 1024).toFixed(0)} Ko
-                        </td>
-                        <td className="py-3 px-4 text-white/40">
-                          {file.created_at ? new Date(file.created_at).toLocaleDateString() : '-'}
-                        </td>
-                        <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => handleCopyUrl(file.public_url)}
-                              className="p-1.5 rounded-lg bg-white/5 hover:bg-primary text-white/70 hover:text-white transition-colors"
-                              title="Copier le lien"
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDownload(file.public_url, file.name)}
-                              className="p-1.5 rounded-lg bg-white/5 hover:bg-emerald-600 text-white/70 hover:text-white transition-colors"
-                              title="Télécharger"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                            {canUpdate && (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    setRenameTarget({ type: 'file', id: file.id, name: file.name });
-                                    setRenamedName(file.name);
-                                  }}
-                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-blue-600 text-white/70 hover:text-white transition-colors"
-                                  title="Renommer le fichier"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setMoveItemTarget({
-                                      type: 'file',
-                                      id: file.id,
-                                      name: file.name,
-                                      currentParentId: file.folder_id,
-                                    });
-                                    setSelectedDestinationFolderId(file.folder_id);
-                                  }}
-                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-amber-500 text-white/70 hover:text-white transition-colors"
-                                  title="Déplacer vers un autre dossier"
-                                >
-                                  <FolderInput className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
-                            {canDelete && (
+                          </td>
+                          <td className="py-3 px-4 font-bold text-white">
+                            {file.name}
+                          </td>
+                          <td className="py-3 px-4 text-white/60">
+                            {(file.file_size / 1024).toFixed(0)} Ko
+                          </td>
+                          <td className="py-3 px-4 text-white/40">
+                            {file.created_at ? new Date(file.created_at).toLocaleDateString() : '-'}
+                          </td>
+                          <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-2">
                               <button
-                                onClick={() => setDeleteConfirmTarget({ type: 'file', id: file.id, name: file.name, path: file.storage_path })}
-                                className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-600 text-rose-400 hover:text-white transition-colors"
-                                title="Supprimer"
+                                type="button"
+                                onClick={() => setPreviewFile(file)}
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-primary text-white/70 hover:text-white transition-colors"
+                                title="Aperçu grand format"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Eye className="w-3.5 h-3.5" />
                               </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              <button
+                                type="button"
+                                onClick={() => handleCopyUrl(file.public_url)}
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-primary text-white/70 hover:text-white transition-colors"
+                                title="Copier le lien"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDownload(file.public_url, file.name)}
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-emerald-600 text-white/70 hover:text-white transition-colors"
+                                title="Télécharger"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                              {canUpdate && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRenameTarget({ type: 'file', id: file.id, name: file.name });
+                                      setRenamedName(file.name);
+                                    }}
+                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-blue-600 text-white/70 hover:text-white transition-colors"
+                                    title="Renommer le fichier"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setMoveItemTarget({
+                                        type: 'file',
+                                        id: file.id,
+                                        name: file.name,
+                                        currentParentId: file.folder_id,
+                                      });
+                                      setSelectedDestinationFolderId(file.folder_id);
+                                    }}
+                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-amber-500 text-white/70 hover:text-white transition-colors"
+                                    title="Déplacer vers un autre dossier"
+                                  >
+                                    <FolderInput className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                              {canDelete && (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmTarget({ type: 'file', id: file.id, name: file.name, path: file.storage_path })}
+                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-600 text-rose-400 hover:text-white transition-colors"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1251,6 +1962,86 @@ export const MediaManagementPage: React.FC = () => {
               >
                 {moving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderInput className="w-4 h-4" />}
                 <span>Confirmer le déplacement</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📦 Pill flottant de progression Téléchargement ZIP */}
+      {zipProgress && zipProgress.active && (
+        <div className="fixed bottom-6 right-6 z-[120] bg-[#1a1a1a]/95 border border-primary/40 rounded-3xl p-4 shadow-2xl backdrop-blur-xl flex items-center gap-4 animate-in slide-in-from-bottom-5">
+          <div className="w-11 h-11 rounded-2xl bg-primary/20 flex items-center justify-center text-primary shrink-0">
+            <Loader2 className="w-5 h-5 animate-spin" />
+          </div>
+          <div className="space-y-1.5 min-w-48 max-w-xs">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-bold text-white">Génération du ZIP...</span>
+              <span className="text-xs font-black text-primary font-mono">{zipProgress.percentage}%</span>
+            </div>
+            <p className="text-[11px] text-white/60 truncate">{zipProgress.label}</p>
+            <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-primary to-emerald-400 transition-all duration-300"
+                style={{ width: `${zipProgress.percentage}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🗑️ MODALE : Confirmation de Suppression Groupée (Multi-sélection) */}
+      {batchDeleteModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-lg bg-[#181818] border border-rose-500/20 rounded-3xl p-6 shadow-2xl">
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 mx-auto flex items-center justify-center mb-4">
+              <Trash2 className="w-7 h-7" />
+            </div>
+            <h3 className="text-lg font-black text-white text-center mb-2">
+              Supprimer {selectedFileIds.size} média{selectedFileIds.size > 1 ? 's' : ''} ?
+            </h3>
+            <p className="text-xs text-white/60 text-center mb-5">
+              Êtes-vous sûr de vouloir supprimer définitivement ces{' '}
+              <strong className="text-white font-bold">{selectedFileIds.size} fichiers</strong> ?
+              <br />
+              Cette action les purgera immédiatement du stockage physique (bucket <span className="text-primary font-mono">medias</span>) et de la base de données.
+            </p>
+
+            {/* Mini grille d'aperçu des éléments sélectionnés */}
+            <div className="max-h-40 overflow-y-auto grid grid-cols-4 sm:grid-cols-6 gap-2 p-2 bg-black/40 rounded-2xl border border-white/5 mb-6">
+              {allFiles
+                .filter(f => selectedFileIds.has(f.id))
+                .slice(0, 12)
+                .map(f => (
+                  <div key={f.id} className="relative aspect-square rounded-xl overflow-hidden bg-white/5 border border-white/10">
+                    <img src={f.public_url} alt="" className="w-full h-full object-cover" />
+                  </div>
+                ))}
+              {selectedFileIds.size > 12 && (
+                <div className="aspect-square rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xs font-black text-white/60">
+                  +{selectedFileIds.size - 12}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={batchDeleting}
+                onClick={() => setBatchDeleteModalOpen(false)}
+                className="rounded-xl border-white/10 text-white text-xs font-bold h-11 px-6"
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                disabled={batchDeleting}
+                onClick={handleConfirmBatchDelete}
+                className="rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold h-11 px-6 shadow-lg shadow-rose-600/25 flex items-center gap-2"
+              >
+                {batchDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>Supprimer tout ({selectedFileIds.size})</span>
               </Button>
             </div>
           </div>

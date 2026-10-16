@@ -4,8 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
-import { Camera, Save, Globe, Building2, Palette, Sparkles, KeySquare, Target, ShieldCheck, ImageIcon, Trash2 } from 'lucide-react';
+import { Camera, Save, Globe, Building2, Palette, Sparkles, KeySquare, Target, ShieldCheck, ImageIcon, Trash2, Smartphone, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { storageService } from '../../services/storageService';
 import { Skeleton } from '../../components/ui/skeleton';
 import { MetricsManagement } from './components/MetricsManagement';
@@ -25,6 +26,7 @@ const ClubSettings: React.FC = () => {
     pagination_limit: 10,
     preferred_view_mode: 'list' as 'grid' | 'list',
     session_timeout_minutes: 30,
+    show_fan_button: true,
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -44,6 +46,7 @@ const ClubSettings: React.FC = () => {
         pagination_limit: mainClub.settings?.pagination_limit || 10,
         preferred_view_mode: (mainClub.settings?.preferred_view_mode as any) || 'list',
         session_timeout_minutes: currentPlugins.session_timeout_minutes ?? (mainClub.settings as any)?.session_timeout_minutes ?? 30,
+        show_fan_button: currentPlugins.show_fan_button !== false,
       });
     }
   }, [mainClub]);
@@ -72,6 +75,29 @@ const ClubSettings: React.FC = () => {
     }
   };
 
+  const handleToggleFanButton = async (value: boolean) => {
+    setFormData(prev => ({ ...prev, show_fan_button: value }));
+
+    if (mainClub) {
+      try {
+        const currentPlugins = (mainClub.settings as any)?.plugins || {};
+        await updateMainClub({
+          id: mainClub.id,
+          data: {
+            plugins: {
+              ...currentPlugins,
+              show_fan_button: value,
+            }
+          }
+        });
+        toast.success(`Bouton Fan (${value ? 'Activé' : 'Désactivé'}) pour l'application mobile fus-app`);
+      } catch (err: any) {
+        console.error(err);
+        toast.error('Erreur lors de la mise à jour du paramètre');
+      }
+    }
+  };
+
   const handleSave = async () => {
     if (!mainClub) return;
     setIsSaving(true);
@@ -88,7 +114,8 @@ const ClubSettings: React.FC = () => {
         preferred_view_mode: formData.preferred_view_mode,
         plugins: {
           ...currentPlugins,
-          session_timeout_minutes: Number(formData.session_timeout_minutes)
+          session_timeout_minutes: Number(formData.session_timeout_minutes),
+          show_fan_button: formData.show_fan_button,
         }
       };
       await updateMainClub({ id: mainClub.id, data: sanitizedData });
@@ -332,6 +359,62 @@ const ClubSettings: React.FC = () => {
                     <p className="text-xs text-muted-foreground pt-1">
                       🔒 En cas d'inactivité prolongée (aucun clic, saisie ou navigation), l'utilisateur sera automatiquement déconnecté et sa session d'audit sera clôturée.
                     </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Configuration Mobile fus-app : Bouton Fan */}
+              <Card className="border shadow-sm rounded-[2.5rem] overflow-hidden">
+                <CardHeader className="border-b bg-secondary/10 p-8">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <CardTitle className="text-lg flex items-center gap-3 font-black uppercase tracking-tighter">
+                      <Smartphone className="w-6 h-6 text-primary" /> Application Mobile (fus-app)
+                    </CardTitle>
+                    <Badge variant="outline" className={`w-fit font-bold text-xs py-1 px-3 rounded-full flex items-center gap-1.5 ${
+                      formData.show_fan_button
+                        ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                        : 'bg-rose-500/10 text-rose-600 border-rose-500/20'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${formData.show_fan_button ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                      {formData.show_fan_button ? 'Bouton Fan : Activé' : 'Bouton Fan : Désactivé'}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-8 space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-secondary/20 border border-secondary/40">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-primary" />
+                        <h4 className="font-black text-sm uppercase tracking-wide">
+                          Bouton d'Accès « Pour les fans »
+                        </h4>
+                      </div>
+                      <p className="text-xs text-muted-foreground max-w-xl">
+                        Contrôle l'affichage du bouton dédié aux supporters et fans sur l'écran d'accueil de l'application mobile. Si désactivé, le bouton disparaît et l'accès est strictement réservé aux comptes Pro / Staff.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs font-bold text-muted-foreground">
+                        {formData.show_fan_button ? 'Affiché' : 'Masqué'}
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={formData.show_fan_button}
+                        onClick={() => handleToggleFanButton(!formData.show_fan_button)}
+                        className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none shadow-inner ${
+                          formData.show_fan_button ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-700'
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            formData.show_fan_button ? 'translate-x-6' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

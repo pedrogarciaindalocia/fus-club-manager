@@ -84,7 +84,7 @@ const TeamManagement: React.FC = () => {
   const { players, addPlayer, updatePlayer } = usePlayers();
   const { matches } = useMatches();
   const { mainClub, opponentClubs, isLoading: clubLoading } = useClubData();
-  const { can } = usePermissions();
+  const { can, canManageCategory, allowedCategories } = usePermissions();
   const { surclassements } = useSurclassements();
 
   const [viewState, setViewState] = useState<'LIST' | 'FORM' | 'ROSTER' | 'STATS'>('LIST');
@@ -94,6 +94,27 @@ const TeamManagement: React.FC = () => {
   const [rosterTeam, setRosterTeam] = useState<Team | null>(null);
   const [statsTeam, setStatsTeam] = useState<Team | null>(null);
   const [isAssignMode, setIsAssignMode] = useState(false);
+
+  const visibleCategoryFilters = useMemo(() => {
+    const allowed = PLAYER_CATEGORIES.filter(cat => canManageCategory(cat));
+    if (allowed.length < PLAYER_CATEGORIES.length && allowed.length > 0) {
+      return allowed.length === 1 ? allowed : ['ALL', ...allowed];
+    }
+    return ['ALL', ...PLAYER_CATEGORIES];
+  }, [canManageCategory]);
+
+  const formCategories = useMemo(() => {
+    const allowed = PLAYER_CATEGORIES.filter(cat => canManageCategory(cat));
+    return allowed.length > 0 ? allowed : PLAYER_CATEGORIES;
+  }, [canManageCategory]);
+
+  useEffect(() => {
+    if (allowedCategories && allowedCategories.length === 1) {
+      const single = normalizeAgeCategory(allowedCategories[0]);
+      setCategoryFilter(single);
+      setFormData(prev => ({ ...prev, category: single }));
+    }
+  }, [allowedCategories]);
 
   // Match events state for full automated analytics
   const [matchEvents, setMatchEvents] = useState<any[]>([]);
@@ -136,13 +157,15 @@ const TeamManagement: React.FC = () => {
 
   const filteredTeams = useMemo(() => {
     return teams.filter(t => {
+      const normCat = normalizeAgeCategory(t.category);
+      if (!canManageCategory(normCat)) return false;
       const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             t.category.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCategory = categoryFilter === 'ALL' || normalizeAgeCategory(t.category) === categoryFilter;
+      const matchesCategory = categoryFilter === 'ALL' || normCat === categoryFilter;
       
       return matchesSearch && matchesCategory;
     });
-  }, [teams, searchTerm, categoryFilter]);
+  }, [teams, searchTerm, categoryFilter, canManageCategory]);
 
   const paginatedTeams = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -518,7 +541,7 @@ const TeamManagement: React.FC = () => {
                 
                 {/* Category Filter Tabs */}
                 <div className="flex bg-secondary/30 p-1.5 rounded-2xl w-full lg:w-auto overflow-x-auto no-scrollbar gap-1">
-                  {CATEGORY_FILTERS.map((cat) => (
+                  {visibleCategoryFilters.map((cat) => (
                     <button
                       key={cat}
                       onClick={() => setCategoryFilter(cat)}
@@ -775,7 +798,7 @@ const TeamManagement: React.FC = () => {
                               onChange={e => setFormData({...formData, category: e.target.value})}
                               className="w-full h-16 px-8 rounded-2xl bg-secondary/30 border border-transparent font-bold text-base outline-none appearance-none cursor-pointer focus:bg-background focus:ring-2 ring-primary/20 text-foreground"
                             >
-                               {FORM_CATEGORIES.map(cat => (
+                               {formCategories.map(cat => (
                                  <option key={cat} value={cat}>Catégorie {cat}</option>
                                ))}
                             </select>

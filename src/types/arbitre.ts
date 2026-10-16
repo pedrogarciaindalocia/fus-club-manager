@@ -1,4 +1,4 @@
-export type RolePrincipalArbitre = 'central' | 'assistant' | 'var' | 'quatrieme';
+export type RolePrincipalArbitre = 'central' | 'assistant' | 'var' | 'quatrieme' | 'commissaire';
 export type GradeArbitre = 'FIFA' | 'National 1' | 'Régional' | 'District';
 export type StatutArbitre = 'actif' | 'inactif' | 'suspendu' | 'retraite';
 
@@ -38,6 +38,7 @@ export interface MatchRefereeAssignment {
   assistant1_id?: number | null;
   assistant2_id?: number | null;
   fourth_id?: number | null;
+  commissaire_id?: number | null;
 }
 
 /** Helper function to calculate age dynamically from date_naissance */

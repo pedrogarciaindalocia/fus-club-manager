@@ -18,30 +18,44 @@ export const competitionService = {
       if (error.code === 'PGRST204' || error.code === 'PGRST205') return [];
       throw error;
     }
-    return data || [];
+    return (data || []).map((s: any) => ({
+      ...s,
+      image_url: s.photo_url || s.image_url || null,
+    }));
   },
 
-  async addStadium(stadium: Omit<Inserts<'stadiums'>, 'id'>): Promise<Stadium> {
+  async addStadium(stadium: Omit<Inserts<'stadiums'>, 'id'> & { image_url?: string | null }): Promise<Stadium> {
     const clubId = await getMyClubId();
+    const payload = { ...stadium } as any;
+    if (payload.image_url !== undefined && !payload.photo_url) {
+      payload.photo_url = payload.image_url;
+    }
+    delete payload.image_url;
 
     const { data, error } = await supabase
       .from('stadiums')
-      .insert([{ ...stadium, club_id: clubId }])
+      .insert([{ ...payload, club_id: clubId }])
       .select()
       .single();
     if (error) throw error;
-    return data;
+    return data ? { ...data, image_url: (data as any).photo_url } as Stadium : data;
   },
 
-  async updateStadium(id: string, stadium: Partial<Stadium>): Promise<Stadium> {
+  async updateStadium(id: string, stadium: Partial<Stadium> & { image_url?: string | null }): Promise<Stadium> {
+    const payload = { ...stadium } as any;
+    if (payload.image_url !== undefined && !payload.photo_url) {
+      payload.photo_url = payload.image_url;
+    }
+    delete payload.image_url;
+
     const { data, error } = await supabase
       .from('stadiums')
-      .update(stadium)
+      .update(payload)
       .eq('id', id)
       .select()
       .single();
     if (error) throw error;
-    return data;
+    return data ? { ...data, image_url: (data as any).photo_url } as Stadium : data;
   },
 
   async deleteStadium(id: string): Promise<void> {

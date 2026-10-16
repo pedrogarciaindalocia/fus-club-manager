@@ -209,6 +209,7 @@ export const ArbitresPage: React.FC = () => {
             { value: 'all', label: 'TOUS' },
             { value: 'central', label: 'ARBITRE PRINCIPAL' },
             { value: 'assistant', label: 'ARBITRE ASSISTANT' },
+            { value: 'commissaire', label: 'COMMISSAIRE DU MATCH' },
           ].map((r) => (
             <button
               key={r.value}

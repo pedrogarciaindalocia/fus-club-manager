@@ -4,6 +4,17 @@ import type { Inserts, Updates } from '../types/supabase';
 import { getMyClubId } from './_helpers';
 import { storageService } from './storageService';
 
+let hasCelebrationColumn: boolean | null = null;
+
+function sanitizePlayerPayload<T extends Record<string, any>>(payload: T): T {
+  const clean = { ...payload };
+  // If celebration_photo_url is empty, or if we know DB doesn't have the column yet, omit it to prevent Postgres 42703 / HTTP 400
+  if (!clean.celebration_photo_url || hasCelebrationColumn === false) {
+    delete clean.celebration_photo_url;
+  }
+  return clean;
+}
+
 export const playerService = {
   async getPlayers(teamId?: string): Promise<Player[]> {
     const clubId = await getMyClubId();
@@ -29,37 +40,71 @@ export const playerService = {
 
   async addPlayer(player: Omit<Inserts<'players'>, 'id'>): Promise<Player> {
     const clubId = await getMyClubId();
+    const cleanPlayer = sanitizePlayerPayload(player);
 
-    const { data, error } = await supabase
-      .from('players')
-      .insert([{ ...player, club_id: clubId }])
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('players')
+        .insert([{ ...cleanPlayer, club_id: clubId }])
+        .select()
+        .single();
 
-    if (error) {
+      if (error) throw error;
+      if (player.celebration_photo_url) hasCelebrationColumn = true;
+      return data;
+    } catch (error: any) {
+      if (error.code === '42703' && (error.message?.includes('celebration_photo_url') || error.details?.includes('celebration_photo_url'))) {
+        hasCelebrationColumn = false;
+        console.warn('Colonne celebration_photo_url absente, repli automatique sans ce champ.');
+        const { celebration_photo_url, ...withoutCelebration } = cleanPlayer as any;
+        const { data: fallbackData, error: retryErr } = await supabase
+          .from('players')
+          .insert([{ ...withoutCelebration, club_id: clubId }])
+          .select()
+          .single();
+        if (retryErr) throw retryErr;
+        return fallbackData;
+      }
       if (error.code === '23505' || (error as any).status === 409) {
         throw new Error('Ce numéro de maillot est déjà utilisé dans cette équipe.');
       }
       throw error;
     }
-    return data;
   },
 
   async updatePlayer(id: string, updates: Updates<'players'>): Promise<Player> {
-    const { data, error } = await supabase
-      .from('players')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+    const cleanUpdates = sanitizePlayerPayload(updates);
 
-    if (error) {
+    try {
+      const { data, error } = await supabase
+        .from('players')
+        .update(cleanUpdates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (updates.celebration_photo_url) hasCelebrationColumn = true;
+      return data;
+    } catch (error: any) {
+      if (error.code === '42703' && (error.message?.includes('celebration_photo_url') || error.details?.includes('celebration_photo_url'))) {
+        hasCelebrationColumn = false;
+        console.warn('Colonne celebration_photo_url absente, repli automatique sans ce champ.');
+        const { celebration_photo_url, ...withoutCelebration } = cleanUpdates as any;
+        const { data: fallbackData, error: retryErr } = await supabase
+          .from('players')
+          .update(withoutCelebration)
+          .eq('id', id)
+          .select()
+          .single();
+        if (retryErr) throw retryErr;
+        return fallbackData;
+      }
       if (error.code === '23505') {
         throw new Error('Ce numéro de maillot est déjà utilisé dans cette équipe.');
       }
       throw error;
     }
-    return data;
   },
 
   async deletePlayer(id: string): Promise<void> {

@@ -65,9 +65,9 @@ const StadiumManagement: React.FC = () => {
     setEditingId(s.id);
     setFormData({
       name:      s.name,
-      city:      s.city,
+      city:      s.city || '',
       capacity:  s.capacity?.toString() || '',
-      image_url: s.image_url || '',
+      image_url: s.photo_url || (s as any).image_url || '',
     });
     setShowForm(true);
   };
@@ -99,11 +99,12 @@ const StadiumManagement: React.FC = () => {
     setSaving(true);
     try {
       const cleanCapacity = formData.capacity.replace(/\s/g, '');
+      const photo = formData.image_url.trim() || null;
       const payload: any = {
         name:      formData.name.trim(),
         city:      formData.city.trim(),
         capacity:  cleanCapacity ? parseInt(cleanCapacity, 10) : null,
-        image_url: formData.image_url.trim() || null,
+        photo_url: photo,
       };
 
       if (editingId) {
@@ -241,7 +242,7 @@ const StadiumManagement: React.FC = () => {
                       <Card className="group relative overflow-hidden border-secondary hover:border-primary/20 hover:shadow-2xl hover:shadow-primary/5 transition-all duration-500 bg-white rounded-[2rem]">
                         <div className="h-52 bg-secondary relative overflow-hidden">
                           <img 
-                            src={(stadium.image_url && stadium.image_url !== 'null') ? stadium.image_url : `https://images.unsplash.com/photo-1540747913346-19e3adcc174d?auto=format&fit=crop&q=80&w=800`} 
+                            src={((stadium.photo_url || stadium.image_url) && (stadium.photo_url || stadium.image_url) !== 'null') ? (stadium.photo_url || stadium.image_url)! : `https://images.unsplash.com/photo-1540747913346-19e3adcc174d?auto=format&fit=crop&q=80&w=800`} 
                             alt={stadium.name} 
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
                           />

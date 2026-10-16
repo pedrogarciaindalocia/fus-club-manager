@@ -219,6 +219,7 @@ export interface Database {
           position: string | null;
           jersey_number: number | null;
           photo_url: string | null;
+          celebration_photo_url: string | null;
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -236,6 +237,7 @@ export interface Database {
           position?: string | null;
           jersey_number?: number | null;
           photo_url?: string | null;
+          celebration_photo_url?: string | null;
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;

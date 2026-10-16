@@ -14,12 +14,17 @@ export type QueueEntry = {
   matchId?: string;
   createdAt: number;
   synced: boolean;
+  retries?: number;
 };
 
 export function loadQueue(): QueueEntry[] {
   try {
     const raw = localStorage.getItem(QUEUE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Discard any poison entries that have already failed repeatedly
+    return parsed.filter((e: any) => e && e.op && e.op.kind && (e.retries || 0) < 3);
   } catch {
     return [];
   }
@@ -37,6 +42,7 @@ export function enqueue(op: QueuedOperation, matchId?: string): void {
     matchId,
     createdAt: Date.now(),
     synced: false,
+    retries: 0,
   });
   saveQueue(queue);
 }
@@ -57,8 +63,33 @@ export async function syncQueue(): Promise<{ synced: number; failed: number }> {
       await applyOperation(entry.op);
       entry.synced = true;
       synced++;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to sync operation:', entry.op, err);
+      entry.retries = (entry.retries || 0) + 1;
+
+      const status = err?.status || err?.statusCode || (err?.code === 'PGRST204' ? 400 : 0);
+      const code = String(err?.code || '');
+      const msg = String(err?.message || '').toLowerCase();
+
+      // Permanent non-retryable errors (e.g. 400 Bad Request, schema/column errors, foreign key violations, invalid uuid)
+      const isPermanentError =
+        status === 400 ||
+        status === 404 ||
+        code === 'PGRST204' ||
+        code === 'PGRST205' ||
+        code === '22P02' ||
+        code === '42703' ||
+        code === '23503' ||
+        msg.includes('schema cache') ||
+        msg.includes('could not find the') ||
+        msg.includes('invalid input syntax') ||
+        entry.retries >= 3;
+
+      if (isPermanentError) {
+        console.warn('[OfflineQueue] Dropping unrecoverable operation to avoid infinite error loop:', entry.op);
+        entry.synced = true; // Mark as done to remove from pending queue
+      }
+
       failed++;
     }
   }
@@ -77,7 +108,13 @@ const commandRegistry: {
   [K in QueuedOperation['kind']]: CommandExecutor<Extract<QueuedOperation, { kind: K }>>;
 } = {
   insert_event: async (op) => {
-    const { localId: _, ...payload } = op.payload;
+    const { localId: _, ...payload } = (op.payload || {}) as Record<string, any>;
+    if (typeof payload.id === 'string' && payload.id.startsWith('local_')) {
+      delete payload.id;
+    }
+    ['player_id', 'assist_player_id', 'sub_in_player_id', 'sub_out_player_id'].forEach(f => {
+      if (payload[f] === '') payload[f] = null;
+    });
     const { error } = await supabase.from('match_events').insert([payload]);
     if (error) throw error;
   },
@@ -90,8 +127,53 @@ const commandRegistry: {
     if (error) throw error;
   },
   update_match: async (op) => {
-    const { error } = await supabase.from('matches').update(op.updates).eq('id', op.matchId);
-    if (error) throw error;
+    const sanitized: Record<string, any> = { ...(op.updates || {}) };
+
+    // Strip relation / joined / non-column properties
+    const ignoredFields = [
+      'id', 'created_at', 'match_players', 'match_staff',
+      'team', 'opponent', 'league', 'stadium',
+      'referee_central', 'referee_assistant1', 'referee_assistant2', 'referee_fourth', 'referee_commissaire'
+    ];
+    ignoredFields.forEach(f => delete sanitized[f]);
+
+    // Handle lineup / format if nested
+    if (sanitized.lineup) {
+      sanitized.lineup = {
+        ...sanitized.lineup,
+        match_type: sanitized.match_type || sanitized.lineup.match_type,
+        match_format: sanitized.match_format || sanitized.lineup.match_format,
+      };
+    }
+    delete sanitized.match_type;
+    delete sanitized.match_format;
+
+    // Convert empty string UUIDs to null
+    ['opponent_id', 'league_id', 'stadium_id', 'team_id', 'club_id', 'referee_central_id', 'referee_assistant1_id', 'referee_assistant2_id', 'referee_fourth_id', 'referee_commissaire_id'].forEach(f => {
+      if (sanitized[f] === '') sanitized[f] = null;
+    });
+
+    const { error } = await supabase.from('matches').update(sanitized).eq('id', op.matchId);
+    if (error) {
+      const isColumnError = error.code === 'PGRST204' || error.code === 'PGRST205' ||
+        error.message?.includes('referee_') || error.message?.includes('opponent_lineup') ||
+        error.message?.includes('column') || (error as any)?.status === 400;
+
+      if (isColumnError) {
+        delete sanitized.referee_central_id;
+        delete sanitized.referee_assistant1_id;
+        delete sanitized.referee_assistant2_id;
+        delete sanitized.referee_fourth_id;
+        delete sanitized.referee_commissaire_id;
+        delete sanitized.referees_assigned;
+        delete sanitized.opponent_lineup;
+        delete sanitized.opponent_subs;
+        const { error: retryError } = await supabase.from('matches').update(sanitized).eq('id', op.matchId);
+        if (retryError) throw retryError;
+        return;
+      }
+      throw error;
+    }
   },
 };
 

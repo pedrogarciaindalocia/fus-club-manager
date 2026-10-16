@@ -24,10 +24,10 @@ export interface PlayerPosition {
 }
 
 export const PLAYER_POSITIONS: readonly PlayerPosition[] = [
-  { code: 'GK',  label: 'Gardien',           category: 'GK', categoryLabel: 'Gardiens',    badgeBg: 'bg-amber-500/15 text-amber-500 border-amber-500/30' },
+  { code: 'GK',  label: 'Gardien de but',    category: 'GK', categoryLabel: 'Gardiens',    badgeBg: 'bg-amber-500/15 text-amber-500 border-amber-500/30' },
   { code: 'CB',  label: 'Défenseur central', category: 'DF', categoryLabel: 'Défenseurs',   badgeBg: 'bg-blue-500/15 text-blue-500 border-blue-500/30' },
-  { code: 'LB',  label: 'Arrière gauche',    category: 'DF', categoryLabel: 'Défenseurs',   badgeBg: 'bg-sky-500/15 text-sky-500 border-sky-500/30' },
-  { code: 'RB',  label: 'Arrière droit',     category: 'DF', categoryLabel: 'Défenseurs',   badgeBg: 'bg-cyan-500/15 text-cyan-500 border-cyan-500/30' },
+  { code: 'LB',  label: 'Latéral gauche',    category: 'DF', categoryLabel: 'Défenseurs',   badgeBg: 'bg-sky-500/15 text-sky-500 border-sky-500/30' },
+  { code: 'RB',  label: 'Latéral droit',     category: 'DF', categoryLabel: 'Défenseurs',   badgeBg: 'bg-cyan-500/15 text-cyan-500 border-cyan-500/30' },
   { code: 'CDM', label: 'Milieu défensif',   category: 'MF', categoryLabel: 'Milieux',      badgeBg: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30' },
   { code: 'CM',  label: 'Milieu central',    category: 'MF', categoryLabel: 'Milieux',      badgeBg: 'bg-teal-500/15 text-teal-500 border-teal-500/30' },
   { code: 'CAM', label: 'Milieu offensif',   category: 'MF', categoryLabel: 'Milieux',      badgeBg: 'bg-indigo-500/15 text-indigo-500 border-indigo-500/30' },
@@ -77,10 +77,10 @@ export const getPositionDetails = (rawPos?: string | null) => {
     return { code: 'CB', label: 'Défenseur central', category: 'DF' as const, badgeBg: 'bg-blue-500/15 text-blue-500 border-blue-500/30', short: 'CB' };
   }
   if (lower.includes('gauche') && (lower.includes('arrière') || lower.includes('latéral') || clean === 'DG' || clean === 'LB')) {
-    return { code: 'LB', label: 'Arrière gauche', category: 'DF' as const, badgeBg: 'bg-sky-500/15 text-sky-500 border-sky-500/30', short: 'LB' };
+    return { code: 'LB', label: 'Latéral gauche', category: 'DF' as const, badgeBg: 'bg-sky-500/15 text-sky-500 border-sky-500/30', short: 'LB' };
   }
   if (lower.includes('droit') && (lower.includes('arrière') || lower.includes('latéral') || clean === 'DD' || clean === 'RB')) {
-    return { code: 'RB', label: 'Arrière droit', category: 'DF' as const, badgeBg: 'bg-cyan-500/15 text-cyan-500 border-cyan-500/30', short: 'RB' };
+    return { code: 'RB', label: 'Latéral droit', category: 'DF' as const, badgeBg: 'bg-cyan-500/15 text-cyan-500 border-cyan-500/30', short: 'RB' };
   }
   if (clean === 'DF' || lower.includes('défenseur')) {
     return { code: 'DF', label: 'Défenseur', category: 'DF' as const, badgeBg: 'bg-blue-500/15 text-blue-500 border-blue-500/30', short: 'DF' };

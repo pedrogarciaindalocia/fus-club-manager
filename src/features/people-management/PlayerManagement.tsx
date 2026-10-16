@@ -327,10 +327,13 @@ const PlayerManagement: React.FC = () => {
   );
   const defaultCategory = (allowedCategories[0] || 'U13') as any;
 
-  // Catégories visibles dans les filtres : Permet de filtrer l'ensemble de l'effectif pour consultation
+  // Catégories visibles dans les filtres : Strictement limité aux catégories autorisées
   const visibleFilterCategories = useMemo(() => {
+    if (authState.userCategories && authState.userCategories.length > 0) {
+      return allowedCategories.length === 1 ? allowedCategories : ['ALL', ...allowedCategories];
+    }
     return ['ALL', ...PLAYER_CATEGORIES];
-  }, []);
+  }, [allowedCategories, authState.userCategories]);
 
   const { mainClub, opponentClubs = [], isLoading: clubLoading } = useClubData();
   const [departurePlayer, setDeparturePlayer] = useState<Player | null>(null);
@@ -521,8 +524,12 @@ const PlayerManagement: React.FC = () => {
   });
   useEffect(() => {
     const cat = searchParams.get('category');
-    if (cat) setCategoryFilter(cat.toUpperCase());
-  }, [searchParams]);
+    if (cat) {
+      setCategoryFilter(cat.toUpperCase());
+    } else if (authState.userCategories && authState.userCategories.length === 1) {
+      setCategoryFilter(normalizeAgeCategory(authState.userCategories[0]));
+    }
+  }, [searchParams, authState.userCategories]);
 
   const [viewState, setViewState] = useState<'LIST' | 'FORM' | 'VIEW' | 'STATS' | 'PLANNING' | 'BULK_ADD'>('LIST');
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
@@ -534,11 +541,31 @@ const PlayerManagement: React.FC = () => {
   const { positions: dynamicPositions } = useMetrics();
   const availablePositions = React.useMemo(() => {
     if (dynamicPositions && dynamicPositions.length > 0) {
-      return dynamicPositions.map(p => ({
-        code: p.code,
-        label: p.name,
-        emoji: p.emoji || '👤'
-      }));
+      const list: Array<{ code: string; label: string; emoji: string }> = [];
+      dynamicPositions.forEach(p => {
+        if (p.code === 'RB/LB' || p.id === 'RB_LB') {
+          if (!list.some(x => x.code === 'RB')) {
+            list.push({ code: 'RB', label: 'Latéral droit', emoji: p.emoji || '🛡️' });
+          }
+          if (!list.some(x => x.code === 'LB')) {
+            list.push({ code: 'LB', label: 'Latéral gauche', emoji: p.emoji || '🛡️' });
+          }
+        } else {
+          list.push({
+            code: p.code,
+            label: p.name,
+            emoji: p.emoji || '👤'
+          });
+        }
+      });
+      // Garantir la présence de RB et LB comme sélections autonomes
+      if (!list.some(p => p.code === 'RB')) {
+        list.splice(2, 0, { code: 'RB', label: 'Latéral droit', emoji: '🛡️' });
+      }
+      if (!list.some(p => p.code === 'LB')) {
+        list.splice(2, 0, { code: 'LB', label: 'Latéral gauche', emoji: '🛡️' });
+      }
+      return list;
     }
     return PLAYER_POSITIONS.map(p => ({
       code: p.code,
@@ -658,6 +685,8 @@ const PlayerManagement: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [mediaPickerTarget, setMediaPickerTarget] = useState<'photo_url' | 'celebration_photo_url'>('photo_url');
+  const [cropTarget, setCropTarget] = useState<'photo_url' | 'celebration_photo_url'>('photo_url');
   const [selectedFileUrl, setSelectedFileUrl] = useState<string | null>(null);
 
   // Player Stats State
@@ -1000,6 +1029,7 @@ const PlayerManagement: React.FC = () => {
     weight: 50,
     preferred_foot: 'right',
     photo_url: '',
+    celebration_photo_url: '',
     category: 'U13',
     team_id: ''
   });
@@ -1013,15 +1043,19 @@ const PlayerManagement: React.FC = () => {
       // 2. Filtrer par poste
       const matchesPosition = matchesPositionFilter(p.position, positionFilter);
 
-      // 3. Filtrer par catégorie selon le sélecteur
-      // Conformément à la gouvernance US-DASH-58 : Tous les joueurs de l'effectif sont consultables (lecture),
-      // mais les actions de modification/gestion restent cloisonnées à la catégorie assignée de l'utilisateur.
+      // 3. Filtrer par catégorie selon le sélecteur :
+      // RÈGLE STRICTE : Si l'utilisateur possède des catégories assignées,
+      // SEULES ces catégories sont visibles ("ne m'affiche pas les autres").
       const playerCategory = getPlayerCategory(p);
+      if (!canManageCategory(playerCategory)) {
+        return false;
+      }
+
       const matchesCategory = categoryFilter === 'ALL' || normalizeAgeCategory(playerCategory || '') === categoryFilter.toUpperCase();
 
       return matchesSearch && matchesPosition && matchesCategory;
     });
-  }, [players, searchQuery, positionFilter, categoryFilter, teams]);
+  }, [players, searchQuery, positionFilter, categoryFilter, teams, canManageCategory]);
 
   const paginatedPlayers = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -1055,7 +1089,11 @@ const PlayerManagement: React.FC = () => {
       return;
     }
     setSelectedPlayer(player);
-    setFormData(player);
+    setFormData({
+      ...player,
+      photo_url: player.photo_url || '',
+      celebration_photo_url: (player as any).celebration_photo_url || '',
+    });
     setViewState('FORM');
   };
 
@@ -1084,15 +1122,17 @@ const PlayerManagement: React.FC = () => {
       weight: 45,
       preferred_foot: 'right',
       photo_url: '',
+      celebration_photo_url: '',
       category: defaultCategory,
       team_id: allowedTeams[0]?.id || ''
     });
     setViewState('FORM');
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'photo_url' | 'celebration_photo_url' = 'photo_url') => {
     const file = e.target.files?.[0];
     if (file) {
+      setCropTarget(target);
       const url = URL.createObjectURL(file);
       setSelectedFileUrl(url);
       setCropModalOpen(true);
@@ -1103,12 +1143,13 @@ const PlayerManagement: React.FC = () => {
     setCropModalOpen(false);
     setIsUploading(true);
     try {
-      const fileName = `player-${Date.now()}.png`;
+      const fileName = `player-${cropTarget}-${Date.now()}.png`;
       const file = new File([croppedBlob], fileName, { type: 'image/png' });
       const publicUrl = await storageService.uploadFile(file, 'players');
-      setFormData({ ...formData, photo_url: publicUrl });
+      setFormData(prev => ({ ...prev, [cropTarget]: publicUrl }));
     } catch (error: any) {
       console.error(error);
+      toast.error("Erreur lors de l'enregistrement de l'image");
     } finally {
       setIsUploading(false);
       if (selectedFileUrl) {
@@ -1995,186 +2036,332 @@ const PlayerManagement: React.FC = () => {
             </div>
 
             <Card className="border-none shadow-2xl rounded-[3.5rem] bg-white overflow-hidden">
-              <CardContent className="p-10 space-y-12">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-10 items-start">
-                  {/* Photo Upload Area */}
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Photo Officielle</label>
-                    <div className="relative group">
-                      <input
-                        type="file"
-                        id="player-photo"
-                        className="hidden"
-                        accept="image/*"
-                        onChange={handlePhotoUpload}
-                      />
-                      <label
-                        htmlFor="player-photo"
-                        className="block aspect-square w-full rounded-[2.5rem] bg-secondary/30 border-2 border-dashed border-secondary hover:border-primary/50 transition-all cursor-pointer overflow-hidden group shadow-inner"
-                      >
-                        {(formData.photo_url && formData.photo_url !== 'null') ? (
-                          <img src={formData.photo_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Preview" />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-                            <Camera className={`w-10 h-10 ${isUploading ? 'animate-bounce text-primary' : 'text-muted-foreground opacity-30'}`} />
-                            <span className="text-[10px] font-black uppercase tracking-widest opacity-40">{isUploading ? 'Transfert...' : 'Choisir une photo'}</span>
-                          </div>
-                        )}
-                      </label>
-                    </div>
+              <CardContent className="p-10 space-y-10">
+                {/* ── SECTION PHOTOS : 2 Photos côte à côte (Officielle & Célébration) ── */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-4 rounded-full bg-primary" />
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-700">
+                      Photographies Officielles & Célébration
+                    </h3>
+                  </div>
 
-                    {/* Actions Rapides Photo : Médiathèque & Upload Direct */}
-                    <div className="flex flex-col gap-2 pt-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setMediaPickerOpen(true)}
-                        className="w-full gap-2 rounded-xl text-xs font-bold border-slate-200 hover:border-primary/40 bg-slate-50 hover:bg-primary/10 text-slate-800 h-10 shadow-sm"
-                      >
-                        <ImageIcon className="w-4 h-4 text-primary" />
-                        Choisir dans la Médiathèque
-                      </Button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* 1. Photo Officielle */}
+                    <div className="space-y-4 p-6 rounded-3xl bg-slate-50/90 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-black uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                          <UserIcon className="w-3.5 h-3.5 text-primary" />
+                          Photo Officielle
+                        </label>
+                        <span className="text-[9px] font-bold text-slate-600 uppercase bg-slate-200/90 px-2.5 py-0.5 rounded-full">Profil</span>
+                      </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="relative group">
+                        <input
+                          type="file"
+                          id="player-photo"
+                          className="hidden"
+                          accept="image/*"
+                          onChange={(e) => handlePhotoUpload(e, 'photo_url')}
+                        />
                         <label
                           htmlFor="player-photo"
-                          className="flex-1 cursor-pointer flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-700 transition-all border border-slate-200 h-9"
+                          className="block aspect-4/3 w-full rounded-2xl bg-white border-2 border-dashed border-slate-200 hover:border-primary/50 transition-all cursor-pointer overflow-hidden group shadow-inner"
+                        >
+                          {(formData.photo_url && formData.photo_url !== 'null') ? (
+                            <img src={formData.photo_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Officielle" />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-slate-400">
+                              <Camera className={`w-8 h-8 ${isUploading && cropTarget === 'photo_url' ? 'animate-bounce text-primary' : 'opacity-40'}`} />
+                              <span className="text-[10px] font-bold uppercase tracking-wider opacity-60">Choisir la photo officielle</span>
+                            </div>
+                          )}
+                        </label>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setMediaPickerTarget('photo_url');
+                            setMediaPickerOpen(true);
+                          }}
+                          className="flex-1 gap-1.5 rounded-xl text-[11px] font-bold border-slate-200 hover:border-primary/40 bg-white hover:bg-primary/10 text-slate-800 h-9 shadow-xs cursor-pointer"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5 text-primary" />
+                          Médiathèque
+                        </Button>
+                        <label
+                          htmlFor="player-photo"
+                          className="flex-1 cursor-pointer flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-700 transition-all border border-slate-200 h-9 shadow-xs"
                         >
                           <Camera className="w-3.5 h-3.5 text-primary" />
-                          Uploader un fichier
+                          Uploader
                         </label>
                         {formData.photo_url && (
                           <button
                             type="button"
                             onClick={() => setFormData({ ...formData, photo_url: '' })}
-                            className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors h-9 w-9 flex items-center justify-center border border-rose-200"
-                            title="Retirer la photo"
+                            className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors h-9 w-9 flex items-center justify-center border border-rose-200 cursor-pointer"
+                            title="Retirer la photo officielle"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
                     </div>
+
+                    {/* 2. Photo de Célébration (But pour joueurs de champ, Arrêt pour gardiens) */}
+                    {(() => {
+                      const isGk = ['GK', 'G', 'GB', 'GARDIEN', 'GARDIEN DE BUT'].includes((formData.position || '').toUpperCase());
+                      return (
+                        <div className={`space-y-4 p-6 rounded-3xl border shadow-xs flex flex-col justify-between transition-all ${
+                          isGk
+                            ? 'bg-emerald-50/60 border-emerald-200'
+                            : 'bg-rose-50/60 border-rose-200'
+                        }`}>
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-black uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                              {isGk ? <Shield className="w-3.5 h-3.5 text-emerald-600" /> : <Flame className="w-3.5 h-3.5 text-rose-600" />}
+                              {isGk ? "Célébration Arrêt Décisif" : "Célébration But"}
+                            </label>
+                            <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                              isGk
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-rose-100 text-rose-800 border border-rose-200'
+                            }`}>
+                              {isGk ? '🧤 Penalty Arrêté' : '⚽ But / Penalty'}
+                            </span>
+                          </div>
+
+                          <div className="relative group">
+                            <input
+                              type="file"
+                              id="player-celebration-photo"
+                              className="hidden"
+                              accept="image/*"
+                              onChange={(e) => handlePhotoUpload(e, 'celebration_photo_url')}
+                            />
+                            <label
+                              htmlFor="player-celebration-photo"
+                              className={`block aspect-4/3 w-full rounded-2xl bg-white border-2 border-dashed transition-all cursor-pointer overflow-hidden group shadow-inner ${
+                                isGk ? 'border-emerald-200 hover:border-emerald-400' : 'border-rose-200 hover:border-rose-400'
+                              }`}
+                            >
+                              {(formData.celebration_photo_url && formData.celebration_photo_url !== 'null') ? (
+                                <div className="relative w-full h-full">
+                                  <img src={formData.celebration_photo_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="Célébration" />
+                                  <div className="absolute top-2 right-2 px-2.5 py-0.5 rounded-md text-[9px] font-black text-white bg-black/60 backdrop-blur-xs">
+                                    {isGk ? '🧤 ARRÊT' : '⚽ BUT'}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-slate-400">
+                                  {isGk ? (
+                                    <Shield className={`w-8 h-8 ${isUploading && cropTarget === 'celebration_photo_url' ? 'animate-bounce text-emerald-600' : 'text-emerald-400/60'}`} />
+                                  ) : (
+                                    <Flame className={`w-8 h-8 ${isUploading && cropTarget === 'celebration_photo_url' ? 'animate-bounce text-rose-600' : 'text-rose-400/60'}`} />
+                                  )}
+                                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-60">Choisir la photo de célébration</span>
+                                </div>
+                              )}
+                            </label>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => {
+                                setMediaPickerTarget('celebration_photo_url');
+                                setMediaPickerOpen(true);
+                              }}
+                              className={`flex-1 gap-1.5 rounded-xl text-[11px] font-bold bg-white h-9 shadow-xs cursor-pointer ${
+                                isGk
+                                  ? 'border-emerald-200 hover:bg-emerald-50 text-emerald-800'
+                                  : 'border-rose-200 hover:bg-rose-50 text-rose-800'
+                              }`}
+                            >
+                              <ImageIcon className={`w-3.5 h-3.5 ${isGk ? 'text-emerald-600' : 'text-rose-600'}`} />
+                              Médiathèque
+                            </Button>
+                            <label
+                              htmlFor="player-celebration-photo"
+                              className="flex-1 cursor-pointer flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-700 transition-all border border-slate-200 h-9 shadow-xs"
+                            >
+                              <Camera className="w-3.5 h-3.5 text-primary" />
+                              Uploader
+                            </label>
+                            {formData.celebration_photo_url && (
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, celebration_photo_url: '' })}
+                                className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors h-9 w-9 flex items-center justify-center border border-rose-200 cursor-pointer"
+                                title="Retirer la photo de célébration"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* ── SECTION IDENTITÉ & AFFECTATION SPORTIVE ── */}
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-4 rounded-full bg-primary" />
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-700">
+                      Identité & Affectation Sportive
+                    </h3>
                   </div>
 
-                  <div className="md:col-span-2 space-y-8">
-                    <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Nom Complet de l'Athlète */}
+                    <div className="md:col-span-2 space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Nom Complet de l'Athlète</label>
                       <Input
                         value={formData.full_name}
                         onChange={e => setFormData({ ...formData, full_name: e.target.value })}
                         placeholder="ex. Cristiano Ronaldo"
-                        className="h-16 px-8 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20"
+                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20"
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-6">
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Numéro de Dossard</label>
-                        <Input
-                          type="number"
-                          value={formData.jersey_number}
-                          onChange={e => setFormData({ ...formData, jersey_number: parseInt(e.target.value) || 0 })}
-                          className="h-16 px-8 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20"
-                        />
-                      </div>
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Catégorie d'Âge</label>
-                        <select
-                          value={formData.category}
-                          onChange={e => setFormData({ ...formData, category: e.target.value as any, team_id: '' })}
-                          className="w-full h-16 rounded-2xl bg-secondary/30 border-none font-bold px-8 text-lg outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20"
-                        >
-                          {allowedCategories.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                          ))}
-                        </select>
-                      </div>
+                    {/* Numéro de Dossard */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Numéro de Dossard</label>
+                      <Input
+                        type="number"
+                        value={formData.jersey_number}
+                        onChange={e => setFormData({ ...formData, jersey_number: parseInt(e.target.value) || 0 })}
+                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Catégorie d'Âge */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Catégorie d'Âge</label>
+                      <select
+                        value={formData.category}
+                        onChange={e => setFormData({ ...formData, category: e.target.value as any, team_id: '' })}
+                        className="w-full h-16 rounded-2xl bg-secondary/30 border-none font-bold px-6 text-base outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20"
+                      >
+                        {allowedCategories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Affectation Équipe */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Affectation Équipe</label>
+                      <select
+                        value={(formData as any).team_id || ''}
+                        onChange={e => setFormData({ ...formData, team_id: e.target.value })}
+                        className="w-full h-16 rounded-2xl bg-primary/5 border border-primary/20 text-primary font-bold px-6 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20 text-base"
+                      >
+                        <option value="">-- Sans Équipe (Agent Libre) --</option>
+                        {allowedTeams.filter(t => t.category === formData.category).map(t => (
+                          <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Nationalité (Liste Déroulante) */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Nationalité (Liste Déroulante)</label>
+                      <select
+                        value={formData.nationality || 'Maroc'}
+                        onChange={e => setFormData({ ...formData, nationality: e.target.value })}
+                        className="w-full h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20 appearance-none outline-none cursor-pointer"
+                      >
+                        {NATIONALITIES.map(nat => (
+                          <option key={nat} value={nat}>{nat}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Affectation Équipe</label>
-                    <select
-                      value={(formData as any).team_id || ''}
-                      onChange={e => setFormData({ ...formData, team_id: e.target.value })}
-                      className="w-full h-16 rounded-2xl bg-primary/5 border-primary/20 text-primary font-bold px-8 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20"
-                    >
-                      <option value="">-- Sans Équipe (Agent Libre) --</option>
-                      {allowedTeams.filter(t => t.category === formData.category).map(t => (
-                        <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
-                      ))}
-                    </select>
+                {/* ── SECTION PROFIL TERRAIN & CARACTÉRISTIQUES PHYSIQUES ── */}
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-4 rounded-full bg-primary" />
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-700">
+                      Profil Terrain & Caractéristiques Physiques
+                    </h3>
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Nationalité (Liste Déroulante)</label>
-                    <select
-                      value={formData.nationality || 'Maroc'}
-                      onChange={e => setFormData({ ...formData, nationality: e.target.value })}
-                      className="w-full h-16 px-8 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20 appearance-none outline-none cursor-pointer"
-                    >
-                      {NATIONALITIES.map(nat => (
-                        <option key={nat} value={nat}>{nat}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Date de Naissance</label>
-                    <Input
-                      type="date"
-                      value={formData.birth_date}
-                      onChange={e => setFormData({ ...formData, birth_date: e.target.value })}
-                      className="h-16 px-8 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20"
-                    />
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Poste Tactique</label>
-                    <select
-                      value={formData.position}
-                      onChange={e => setFormData({ ...formData, position: e.target.value as any })}
-                      className="w-full h-16 rounded-2xl bg-secondary/30 border-none font-bold px-8 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20"
-                    >
-                      {availablePositions.map(pos => (
-                        <option key={pos.code} value={pos.code}>
-                          {pos.emoji ? `${pos.emoji} ` : ''}{pos.code} — {pos.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Taille (cm)</label>
-                    <Input
-                      type="number"
-                      value={formData.height}
-                      onChange={e => setFormData({ ...formData, height: parseFloat(e.target.value) || 0 })}
-                      className="h-16 px-8 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20"
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Poids (kg)</label>
-                    <Input
-                      type="number"
-                      value={formData.weight}
-                      onChange={e => setFormData({ ...formData, weight: parseFloat(e.target.value) || 0 })}
-                      className="h-16 px-8 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20"
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Pied de Prédilection</label>
-                    <select
-                      value={formData.preferred_foot}
-                      onChange={e => setFormData({ ...formData, preferred_foot: e.target.value as any })}
-                      className="w-full h-16 rounded-2xl bg-secondary/30 border-none font-bold px-8 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20"
-                    >
-                      <option value="Right">Droitier</option>
-                      <option value="Left">Gaucher</option>
-                      <option value="Both">Ambidextre</option>
-                    </select>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+                    {/* Poste Tactique */}
+                    <div className="space-y-2 col-span-2 md:col-span-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Poste Tactique</label>
+                      <select
+                        value={formData.position}
+                        onChange={e => setFormData({ ...formData, position: e.target.value as any })}
+                        className="w-full h-16 rounded-2xl bg-secondary/30 border-none font-bold px-6 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20 text-base"
+                      >
+                        {availablePositions.map(pos => (
+                          <option key={pos.code} value={pos.code}>
+                            {pos.emoji ? `${pos.emoji} ` : ''}{pos.code} — {pos.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Date de Naissance */}
+                    <div className="space-y-2 col-span-2 md:col-span-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Date de Naissance</label>
+                      <Input
+                        type="date"
+                        value={formData.birth_date}
+                        onChange={e => setFormData({ ...formData, birth_date: e.target.value })}
+                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
+                      />
+                    </div>
+
+                    {/* Taille (cm) */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Taille (cm)</label>
+                      <Input
+                        type="number"
+                        value={formData.height}
+                        onChange={e => setFormData({ ...formData, height: parseFloat(e.target.value) || 0 })}
+                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
+                      />
+                    </div>
+
+                    {/* Poids (kg) */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Poids (kg)</label>
+                      <Input
+                        type="number"
+                        value={formData.weight}
+                        onChange={e => setFormData({ ...formData, weight: parseFloat(e.target.value) || 0 })}
+                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
+                      />
+                    </div>
+
+                    {/* Pied de Prédilection */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Pied Fort</label>
+                      <select
+                        value={formData.preferred_foot}
+                        onChange={e => setFormData({ ...formData, preferred_foot: e.target.value as any })}
+                        className="w-full h-16 rounded-2xl bg-secondary/30 border-none font-bold px-6 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20 text-base"
+                      >
+                        <option value="Right">Droitier</option>
+                        <option value="Left">Gaucher</option>
+                        <option value="Both">Ambidextre</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
@@ -3958,8 +4145,8 @@ const PlayerManagement: React.FC = () => {
       <MediaPickerModal
         isOpen={mediaPickerOpen}
         onClose={() => setMediaPickerOpen(false)}
-        onSelect={(url) => setFormData(prev => ({ ...prev, photo_url: url }))}
-        title="Affecter une photo depuis la Médiathèque"
+        onSelect={(url) => setFormData(prev => ({ ...prev, [mediaPickerTarget]: url }))}
+        title={mediaPickerTarget === 'celebration_photo_url' ? "Affecter la photo de célébration (But / Arrêt)" : "Affecter la photo officielle depuis la Médiathèque"}
       />
 
       {/* Generate 22 Fake Players Modal */}

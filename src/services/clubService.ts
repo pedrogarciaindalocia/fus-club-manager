@@ -18,7 +18,18 @@ export const clubService = {
     ]);
 
     if (clubErr) throw clubErr;
-    return club ? { ...club, settings: settings ?? null } : null;
+
+    let finalSettings = settings;
+    if (!finalSettings) {
+      const { data: fallbackSettings } = await supabase
+        .from('settings')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+      finalSettings = fallbackSettings;
+    }
+
+    return club ? { ...club, settings: finalSettings ?? null } : null;
   },
 
   /** Met à jour la config globale (clubs et settings liés) */
@@ -51,13 +62,68 @@ export const clubService = {
     }
 
     if (Object.keys(settingsUpdates).length > 0) {
-      const { data, error } = await supabase
+      // 1. Rechercher l'enregistrement settings existant (par club_id ou premier enregistrement)
+      const { data: existingSettings } = await supabase
         .from('settings')
-        .upsert({ ...settingsUpdates, club_id: clubId }, { onConflict: 'club_id' })
-        .select()
-        .single();
+        .select('id')
+        .eq('club_id', clubId)
+        .maybeSingle();
 
-      if (error) throw error;
+      let targetId = existingSettings?.id;
+
+      if (!targetId) {
+        const { data: firstSettings } = await supabase
+          .from('settings')
+          .select('id')
+          .limit(1)
+          .maybeSingle();
+        targetId = firstSettings?.id;
+      }
+
+      let data: any = null;
+      let error: any = null;
+
+      if (targetId) {
+        // Mise à jour ciblée par ID primaire : 100% fiable, évite l'erreur HTTP 400 on_conflict
+        const res = await supabase
+          .from('settings')
+          .update({ ...settingsUpdates, club_id: clubId, updated_at: new Date().toISOString() })
+          .eq('id', targetId)
+          .select()
+          .maybeSingle();
+        data = res.data;
+        error = res.error;
+      } else {
+        // Insertion simple si aucun enregistrement préalable
+        const res = await supabase
+          .from('settings')
+          .insert([{ ...settingsUpdates, club_id: clubId }])
+          .select()
+          .maybeSingle();
+        data = res.data;
+        error = res.error;
+      }
+
+      // Si erreur liée à la colonne plugins sur base distante non migrée, réessayer sans plugins
+      if (error && error.message && error.message.toLowerCase().includes('plugins')) {
+        const safeUpdates = { ...settingsUpdates };
+        delete safeUpdates.plugins;
+        if (targetId) {
+          const retryRes = await supabase
+            .from('settings')
+            .update({ ...safeUpdates, club_id: clubId })
+            .eq('id', targetId)
+            .select()
+            .maybeSingle();
+          data = retryRes.data;
+          error = retryRes.error;
+        }
+      }
+
+      if (error) {
+        console.warn('[clubService] Erreur mise à jour settings:', error);
+        throw error;
+      }
       return data;
     }
     

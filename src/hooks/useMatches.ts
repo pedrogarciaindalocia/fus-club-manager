@@ -40,7 +40,8 @@ export const useMatches = () => {
     },
     onError: (err: any, variables, context: any) => {
       if (isNetworkError(err)) {
-        enqueue({ kind: 'update_match', matchId: context.id, updates: context.data }, context.id);
+        const { match_players, match_staff, ...cleanData } = (context.data || {}) as any;
+        enqueue({ kind: 'update_match', matchId: context.id, updates: cleanData }, context.id);
         toast.success('Modification de match sauvegardée hors ligne');
       } else {
         queryClient.setQueryData(['matches'], context.previousMatches);

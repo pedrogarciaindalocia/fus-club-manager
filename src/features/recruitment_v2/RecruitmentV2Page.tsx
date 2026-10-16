@@ -437,17 +437,20 @@ export const RecruitmentV2Page: React.FC = () => {
   // - Utilisateurs avec catégories assignées (ex: U15, U17) : Affiche TOUTE la database des candidats appartenant à leurs catégories assignées (ainsi que les candidats créés ou assignés à ce scout)
   // - Utilisateurs sans restriction de catégorie : Affiche TOUTE la database (candidates)
   const scopedCandidates = React.useMemo(() => {
-    // 1. Les administrateurs de détection, la direction générale ET les Scout Managers ont accès à toute la base (Database globale)
-    if (isRecruitmentAdmin || isScoutManager) {
-      return candidates;
-    }
-
     const userCats = (authState?.userCategories || []).map(c => normalizeAgeCategory(c));
     const hasAssignedCats = userCats.length > 0;
 
-    // 2. Si aucune catégorie spécifique n'a été restreinte pour cet utilisateur et qu'il a accès à Détection V2 :
-    // On lui affiche toute la database
-    if (!hasAssignedCats) {
+    // Règle Stricte : Si des catégories spécifiques sont assignées à l'utilisateur,
+    // il a UNIQUEMENT accès aux candidats de ces catégories (aucune autre catégorie ne s'affiche).
+    if (hasAssignedCats) {
+      return candidates.filter(c => {
+        const candCat = normalizeAgeCategory(c.age_category || '');
+        return !!candCat && userCats.includes(candCat);
+      });
+    }
+
+    // 1. Les administrateurs de détection, la direction générale ET les Scout Managers ont accès à toute la base (Database globale)
+    if (isRecruitmentAdmin || isScoutManager) {
       return candidates;
     }
 
@@ -456,12 +459,6 @@ export const RecruitmentV2Page: React.FC = () => {
     const userId = authState?.user?.id;
 
     return candidates.filter(c => {
-      // Règle Maîtresse : TOUTE la database qui appartient aux catégories assignées de l'utilisateur !
-      const candCat = normalizeAgeCategory(c.age_category || '');
-      if (candCat && userCats.includes(candCat)) {
-        return true;
-      }
-
       // Également inclure les joueurs créés ou assignés à ce scout
       if (userId && (c as any).created_by === userId) return true;
       if (userId && (c as any).user_id === userId) return true;
@@ -494,7 +491,7 @@ export const RecruitmentV2Page: React.FC = () => {
 
       return false;
     });
-  }, [candidates, isRecruitmentAdmin, authState?.userCategories, currentScout, authState?.user?.id, authState?.user?.full_name, evaluations, observations]);
+  }, [candidates, authState?.userCategories, isRecruitmentAdmin, isScoutManager, currentScout, authState?.user?.id, authState?.user?.full_name, evaluations, observations]);
 
   // Cellule scouts : Seuls les administrateurs gèrent l'ensemble du personnel
   // Le Scout Manager ne gère que son propre compte personnel
@@ -727,6 +724,20 @@ export const RecruitmentV2Page: React.FC = () => {
   const [scoutFilter, setScoutFilter] = useState('ALL');
   const [bestScorePerPositionFilter, setBestScorePerPositionFilter] = useState(false);
   const [myPlayersOnly, setMyPlayersOnly] = useState(false);
+
+  const visibleRecruitmentCategories = React.useMemo(() => {
+    const allowed = RECRUITMENT_AGE_CATEGORIES.filter(cat => canManageCategory(cat));
+    if (allowed.length < RECRUITMENT_AGE_CATEGORIES.length && allowed.length > 0) {
+      return allowed;
+    }
+    return RECRUITMENT_AGE_CATEGORIES;
+  }, [canManageCategory]);
+
+  React.useEffect(() => {
+    if (authState?.userCategories && authState.userCategories.length === 1) {
+      setCategoryFilter(normalizeAgeCategory(authState.userCategories[0]));
+    }
+  }, [authState?.userCategories]);
 
   const isAnyFilterActive = Boolean(
     searchQuery.trim() ||
@@ -1250,7 +1261,7 @@ export const RecruitmentV2Page: React.FC = () => {
       {activeTab === 'scouts' && canAccessTab('scouts') && (
         <ScoutManagementView
           scouts={scopedScouts}
-          candidates={scopedCandidates}
+          candidates={candidates}
           evaluations={evaluations}
           observations={observations}
           isAdmin={isRecruitmentAdmin}
@@ -1444,8 +1455,10 @@ export const RecruitmentV2Page: React.FC = () => {
                       : "border-slate-200 bg-white text-slate-700"
                   )}
                 >
-                  <option value="ALL">Toutes les catégories</option>
-                  {RECRUITMENT_AGE_CATEGORIES.map(cat => (
+                  {visibleRecruitmentCategories.length > 1 && (
+                    <option value="ALL">Toutes les catégories</option>
+                  )}
+                  {visibleRecruitmentCategories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>

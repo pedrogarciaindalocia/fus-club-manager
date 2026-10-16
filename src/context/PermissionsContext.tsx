@@ -50,6 +50,8 @@ interface PermissionsContextType {
   hasModuleAccess: (module: string, action?: 'create' | 'read' | 'update' | 'delete') => boolean;
   hasSubModuleAccess: (subModule: string, action?: 'create' | 'read' | 'update' | 'delete' | 'stats' | 'surclasser' | 'departure' | 'drive_link' | string, parentModule?: string) => boolean;
   canManageCategory: (category: string | null | undefined) => boolean;
+  hasCategoryRestriction: boolean;
+  allowedCategories: string[];
   logout: () => Promise<void>;
   loginAs: (role: string, jobTitle?: string, categories?: string[]) => void;
 }
@@ -321,28 +323,48 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return false; 
   };
 
+  // Écoute en temps réel des mises à jour de catégories depuis UserManagement
+  useEffect(() => {
+    const handleCategoriesUpdated = (e: any) => {
+      const { userId, categories } = e.detail || {};
+      if (userId && authState.user?.id && userId === authState.user.id && Array.isArray(categories)) {
+        setAuthState(prev => ({
+          ...prev,
+          userCategories: categories,
+        }));
+      }
+    };
+    window.addEventListener('fusc_user_categories_updated', handleCategoriesUpdated);
+    return () => {
+      window.removeEventListener('fusc_user_categories_updated', handleCategoriesUpdated);
+    };
+  }, [authState.user?.id]);
+
+  const hasCategoryRestriction = Boolean(authState.userCategories && authState.userCategories.length > 0);
+  const allowedCategories = hasCategoryRestriction
+    ? authState.userCategories.map(c => normalizeAgeCategory(c))
+    : ['U7', 'U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U21', 'Senior', 'PRO'];
+
   const canManageCategory = (category: string | null | undefined): boolean => {
+    // 1. RÈGLE STRICTE : Si l'utilisateur possède des catégories assignées explicites (userCategories.length > 0),
+    // SEULES CES CATÉGORIES sont autorisées à être gérées et visualisées !
+    // Même avec un rôle admin ou direction, le périmètre reste strictement confiné aux catégories cochées.
+    if (authState.userCategories && authState.userCategories.length > 0) {
+      if (!category) return false;
+      const normCategory = normalizeAgeCategory(category);
+      return authState.userCategories.some(c => normalizeAgeCategory(c) === normCategory);
+    }
+
+    // 2. Si AUCUNE catégorie spécifique n'a été restreinte/cochée pour ce compte :
+    // Les administrateurs généraux (super_admin, admin, direction) ont accès à tout par défaut.
     const role = authState.user?.system_role?.toLowerCase() || '';
     const isSuperAdmin = role === 'super_admin' || authState.isRealSuperAdmin;
-
-    // 1. Les administrateurs de direction générale peuvent tout gérer
     if (isSuperAdmin || role === 'admin' || role === 'direction') {
       return true;
     }
 
-    // 2. Si aucune catégorie spécifique n'est assignée à cet utilisateur opérationnel :
-    // Il ne peut gérer arbitrairement aucune catégorie par défaut
-    if (!authState.userCategories || authState.userCategories.length === 0) {
-      return false;
-    }
-
-    // 3. Si l'administrateur a assigné des catégories précises à ce compte utilisateur :
-    // IL NE PEUT GÉRER (Écriture, Modification, Suppression, Surclassement, Départ) QUE SES CATÉGORIES ASSIGNÉES !
-    if (!category) return false;
-    const normCategory = normalizeAgeCategory(category);
-    return authState.userCategories.some(c => {
-      return normalizeAgeCategory(c) === normCategory;
-    });
+    // Pour les autres rôles opérationnels sans catégorie assignée : aucun accès arbitraire
+    return false;
   };
 
   const loginAs = (role: string, jobTitle?: string, categories?: string[]) => {
@@ -370,7 +392,17 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   return (
-    <PermissionsContext.Provider value={{ authState, can, hasModuleAccess, hasSubModuleAccess, canManageCategory, logout, loginAs }}>
+    <PermissionsContext.Provider value={{
+      authState,
+      can,
+      hasModuleAccess,
+      hasSubModuleAccess,
+      canManageCategory,
+      hasCategoryRestriction,
+      allowedCategories,
+      logout,
+      loginAs
+    }}>
       {children}
     </PermissionsContext.Provider>
   );

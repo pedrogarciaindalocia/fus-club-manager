@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMatches } from '../../hooks/useMatches';
 import { useClubData } from '../../hooks/useClubData';
@@ -40,7 +40,8 @@ import {
    Edit3,
    Eye,
    Check,
-   GripVertical
+   GripVertical,
+   UserCheck
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '../../components/ui/input';
@@ -255,6 +256,12 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
                      <Video className="w-3.5 h-3.5" />
                   </div>
                )}
+               {(Boolean(match.referee_central_id || (match.referees_assigned as any)?.central_id || (match as any).referee_commissaire_id || (match.referees_assigned as any)?.commissaire_id)) && (
+                  <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 px-2 py-1 rounded-md border border-slate-200" title="Officiels désignés pour ce match">
+                     <UserCheck className="w-3 h-3 text-primary shrink-0" />
+                     <span className="hidden sm:inline">{(match as any).referee_commissaire_id || (match.referees_assigned as any)?.commissaire_id ? 'Arbitres + Commissaire' : 'Arbitré'}</span>
+                  </div>
+               )}
                {/* Live button for upcoming matches */}
                {variant === 'upcoming' && onStartLive && (
                   <Button
@@ -305,7 +312,7 @@ const MatchManagementPage: React.FC = () => {
    const { matches, deleteMatch, updateMatch, isLoading: matchesLoading, refetch } = useMatches();
    const { mainClub, opponentClubs, isLoading: clubLoading } = useClubData();
    const { leagues } = useCompetitions();
-   const { can, canManageCategory } = usePermissions();
+   const { can, canManageCategory, authState } = usePermissions();
    
    const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
    const [selectedMatchIds, setSelectedMatchIds] = useState<Set<string>>(new Set());
@@ -323,6 +330,20 @@ const MatchManagementPage: React.FC = () => {
       bulkIds: [],
    });
    const [categoryFilter, setCategoryFilter] = useState<string>('All');
+
+   const availableCategoryFilters = useMemo(() => {
+      const allowed = PLAYER_CATEGORIES.filter(cat => canManageCategory(cat));
+      if (allowed.length < PLAYER_CATEGORIES.length && allowed.length > 0) {
+         return allowed.length === 1 ? allowed : ['All', ...allowed];
+      }
+      return ['All', ...PLAYER_CATEGORIES];
+   }, [canManageCategory, authState.userCategories]);
+
+   useEffect(() => {
+      if (authState.userCategories && authState.userCategories.length === 1) {
+         setCategoryFilter(normalizeAgeCategory(authState.userCategories[0]));
+      }
+   }, [authState.userCategories]);
    const [leagueFilter, setLeagueFilter] = useState<string>('All');
    const [dateFilter, setDateFilter] = useState<string>('');
    const [editingVideoUrl, setEditingVideoUrl] = useState<string>('');
@@ -536,6 +557,9 @@ const MatchManagementPage: React.FC = () => {
       let friendlyCount = 0;
       let internalCount = 0;
       matches.forEach(m => {
+         const normCat = normalizeAgeCategory(m.category);
+         if (!canManageCategory(normCat)) return;
+
          const isInternal = (m as any).match_type === 'internal_scrimmage'
             || (m.lineup as any)?.internal_opposition?.is_internal_scrimmage
             || (m.notes && m.notes.includes('[Opposition Interne]'))
@@ -551,22 +575,25 @@ const MatchManagementPage: React.FC = () => {
          }
       });
       return { counts, friendlyCount, internalCount };
-   }, [matches, mainClub]);
+   }, [matches, mainClub, canManageCategory]);
 
    const categoryCounts = useMemo(() => {
       const counts: Record<string, number> = {};
       matches.forEach(m => {
+         const normCat = normalizeAgeCategory(m.category);
+         if (!canManageCategory(normCat)) return;
          // If a league filter is active, only count categories for that league
          if (!matchBelongsToLeague(m, leagueFilter)) return;
-         const normCat = normalizeAgeCategory(m.category);
          counts[normCat] = (counts[normCat] || 0) + 1;
       });
       return counts;
-   }, [matches, leagueFilter, mainClub]);
+   }, [matches, leagueFilter, mainClub, canManageCategory]);
 
    const filteredMatches = useMemo(() => {
       return matches.filter(m => {
          const normCat = normalizeAgeCategory(m.category);
+         if (!canManageCategory(normCat)) return false;
+
          const matchCategory = categoryFilter === 'All' || normCat === categoryFilter;
          if (!matchCategory) return false;
 
@@ -586,7 +613,7 @@ const MatchManagementPage: React.FC = () => {
          }
          return m.status === listFilter;
       });
-   }, [matches, categoryFilter, listFilter, leagueFilter, dateFilter, mainClub]);
+   }, [matches, categoryFilter, listFilter, leagueFilter, dateFilter, mainClub, canManageCategory]);
 
    const isAllSelected = useMemo(() => {
       return filteredMatches.length > 0 && filteredMatches.every(m => selectedMatchIds.has(m.id));
@@ -900,7 +927,7 @@ const MatchManagementPage: React.FC = () => {
                            Catégorie d'âge
                         </span>
                         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0">
-                           {['All', ...PLAYER_CATEGORIES].map(cat => {
+                           {availableCategoryFilters.map(cat => {
                               const count = cat === 'All' ? filteredMatches.length : (categoryCounts[cat] || 0);
                               return (
                               <Button
@@ -1042,6 +1069,7 @@ const MatchManagementPage: React.FC = () => {
                          <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
                             {calendarDays.map(({ date, isCurrentMonth, formattedDate }, idx) => {
                                const dayMatches = matches.filter(m => {
+                                  if (!canManageCategory(m.category)) return false;
                                   if (m.match_date !== formattedDate) return false;
                                   if (categoryFilter !== 'All' && normalizeAgeCategory(m.category) !== categoryFilter) return false;
                                   return matchBelongsToLeague(m, leagueFilter);
@@ -1179,6 +1207,7 @@ const MatchManagementPage: React.FC = () => {
                         <AnimatePresence>
                         {calendarSelectedDate && (() => {
                            const panelMatches = matches.filter(m => {
+                              if (!canManageCategory(m.category)) return false;
                               if (m.match_date !== calendarSelectedDate) return false;
                               if (categoryFilter !== 'All' && normalizeAgeCategory(m.category) !== categoryFilter) return false;
                               return matchBelongsToLeague(m, leagueFilter);

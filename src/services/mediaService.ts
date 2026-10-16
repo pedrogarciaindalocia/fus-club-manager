@@ -810,6 +810,50 @@ export const mediaService = {
     saveLocalFiles(local.filter(f => f.id !== fileId));
   },
 
+  /** Supprimer plusieurs fichiers médias en lot (Storage + Base de données + Caches locaux) */
+  async deleteFiles(fileIds: string[]): Promise<number> {
+    if (!fileIds || fileIds.length === 0) return 0;
+
+    const allFiles = await this.getAllFiles();
+    const targets = allFiles.filter(f => fileIds.includes(f.id));
+    const pathsToRemove: string[] = [];
+
+    targets.forEach(f => {
+      let cleanPath = f.storage_path ? f.storage_path.trim() : '';
+      if (cleanPath.includes('/medias/')) {
+        cleanPath = cleanPath.split('/medias/').pop() || cleanPath;
+      }
+      cleanPath = cleanPath.replace(/^\/+/, '');
+      if (cleanPath) pathsToRemove.push(cleanPath);
+    });
+
+    // 1. Suppression physique en lot dans le bucket Storage
+    if (pathsToRemove.length > 0) {
+      try {
+        const { error: storageError } = await supabase.storage.from('medias').remove(pathsToRemove);
+        if (storageError) {
+          console.warn('[MediaService] Erreur suppression physique en lot Storage:', storageError);
+        }
+      } catch (err) {
+        console.warn('[MediaService] Exception suppression en lot Storage:', err);
+      }
+    }
+
+    // 2. Suppression en lot en base de données PostgreSQL
+    try {
+      await supabase.from('media_files').delete().in('id', fileIds);
+    } catch (err) {
+      console.warn('[MediaService] Suppression DB en lot media_files:', err);
+    }
+
+    // 3. Nettoyage du cache local
+    const local = getLocalFiles();
+    const remaining = local.filter(f => !fileIds.includes(f.id));
+    saveLocalFiles(remaining);
+
+    return targets.length;
+  },
+
   /** Déplacer un fichier vers un autre dossier avec synchronisation Storage et DB */
   async moveFile(fileId: string, targetFolderId: string | null): Promise<MediaFile | null> {
     const allFiles = await this.getAllFiles();

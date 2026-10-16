@@ -27,6 +27,7 @@ export const ArbitreCard: React.FC<ArbitreCardProps> = ({
     switch (role) {
       case 'central': return 'Arbitre Principal';
       case 'assistant': return 'Arbitre Assistant';
+      case 'commissaire': return 'Commissaire du Match';
       case 'var': return 'Arbitre VAR';
       case 'quatrieme': return '4ème Officiel';
       default: return `Arbitre ${role}`;
@@ -39,10 +40,12 @@ export const ArbitreCard: React.FC<ArbitreCardProps> = ({
         return 'bg-primary/10 text-primary border-primary/20';
       case 'assistant':
         return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20';
+      case 'commissaire':
+        return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
       case 'var':
         return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20';
       case 'quatrieme':
-        return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+        return 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20';
       default:
         return 'bg-secondary text-muted-foreground border-border';
     }

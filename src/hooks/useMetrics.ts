@@ -20,6 +20,59 @@ export interface MetricPosition {
   };
 }
 
+function normalizePositionsList(list: MetricPosition[]): MetricPosition[] {
+  const result: MetricPosition[] = [];
+  list.forEach(item => {
+    if (item.code === 'RB/LB' || item.id === 'RB_LB') {
+      if (!list.some(x => x.code === 'RB')) {
+        result.push({
+          id: 'RB',
+          code: 'RB',
+          name: 'Latéral droit',
+          emoji: item.emoji || '',
+          category: 'DF',
+          criteria: item.criteria
+        });
+      }
+      if (!list.some(x => x.code === 'LB')) {
+        result.push({
+          id: 'LB',
+          code: 'LB',
+          name: 'Latéral gauche',
+          emoji: item.emoji || '',
+          category: 'DF',
+          criteria: item.criteria
+        });
+      }
+    } else {
+      result.push(item);
+    }
+  });
+
+  if (!result.some(p => p.code === 'RB')) {
+    result.push({
+      id: 'RB',
+      code: 'RB',
+      name: 'Latéral droit',
+      emoji: '',
+      category: 'DF',
+      criteria: SCOUT_POSITION_CONFIGS.RB.criteria
+    });
+  }
+  if (!result.some(p => p.code === 'LB')) {
+    result.push({
+      id: 'LB',
+      code: 'LB',
+      name: 'Latéral gauche',
+      emoji: '',
+      category: 'DF',
+      criteria: SCOUT_POSITION_CONFIGS.LB.criteria
+    });
+  }
+
+  return result;
+}
+
 export function useMetrics() {
   const queryClient = useQueryClient();
 
@@ -34,8 +87,9 @@ export function useMetrics() {
           .order('name', { ascending: true });
 
         if (!error && data && data.length > 0) {
-          localStorage.setItem('fus_metric_positions_cache', JSON.stringify(data));
-          return data as MetricPosition[];
+          const normalized = normalizePositionsList(data as MetricPosition[]);
+          localStorage.setItem('fus_metric_positions_cache', JSON.stringify(normalized));
+          return normalized;
         }
         if (error) {
           console.warn("Table metric_positions Supabase non disponible ou permissions manquantes :", error.message);
@@ -48,13 +102,15 @@ export function useMetrics() {
       const cached = localStorage.getItem('fus_metric_positions_cache');
       if (cached) {
         try {
-          return JSON.parse(cached) as MetricPosition[];
+          const parsed = JSON.parse(cached) as MetricPosition[];
+          const normalized = normalizePositionsList(parsed);
+          return normalized;
         } catch (e) {
           console.error("Erreur lecture cache local:", e);
         }
       }
 
-      return Object.values(SCOUT_POSITION_CONFIGS) as unknown as MetricPosition[];
+      return Object.values(SCOUT_POSITION_CONFIGS).filter(p => p.id !== 'RB_LB') as unknown as MetricPosition[];
     }
   });
 
@@ -63,6 +119,16 @@ export function useMetrics() {
     
     const clean = code.trim().toUpperCase();
     const lower = code.toLowerCase();
+
+    // 0. Traitement prioritaire pour Latéral droit et Latéral gauche
+    if (clean === 'RB' || clean === 'DD' || (lower.includes('droit') && (lower.includes('latéral') || lower.includes('arrière')))) {
+      const matchRB = positions.find(p => p.code === 'RB' || p.name.toLowerCase().includes('droit'));
+      if (matchRB) return matchRB;
+    }
+    if (clean === 'LB' || clean === 'DG' || (lower.includes('gauche') && (lower.includes('latéral') || lower.includes('arrière')))) {
+      const matchLB = positions.find(p => p.code === 'LB' || p.name.toLowerCase().includes('gauche'));
+      if (matchLB) return matchLB;
+    }
 
     // 1. Exact match sur code ou nom
     let match = positions.find(p => p.code.toUpperCase() === clean || p.name.toUpperCase() === clean);

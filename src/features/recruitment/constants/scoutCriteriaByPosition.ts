@@ -106,6 +106,82 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
     },
   },
 
+  RB: {
+    id: 'RB',
+    code: 'RB',
+    name: 'Latéral droit',
+    emoji: '',
+    category: 'DF',
+    criteria: {
+      technique: [
+        'Contrôle & première touche (orienté, sous pression, tous types)',
+        'Passe & relance (courte/longue, dosée, remises/déviations, soutien à la relance)',
+        'Dribbles & duels 1v1 (offensifs/défensifs, feintes, conservation)',
+        'Centres & jeu de tête (offensif & défensif)',
+        'Frappe & tirs (variété, efficacité)',
+        'Défense individuelle (cadrage, interceptions, tacles/charges, défense haute)',
+      ],
+      tactique: [
+        'Transitions & pressing (B+ ↔ B-, réactivité, repli, pressing intelligent)',
+        'Positionnement & discipline (alignement, replacement, marquage individuel/couverture)',
+        'Lecture & compréhension du jeu (anticipation pertes/profondeur, conscience espace-temps, gestion infériorité)',
+        'Verticalité & largeur (appels en profondeur, participation offensive, dédoublements couloir droit)',
+        'Créativité & relance (fixation, circulation, apporter des solutions)',
+      ],
+      physique: [
+        'Vitesse & accélération (profondeur, transitions)',
+        'Explosivité & détente (appuis, impulsion, duels aériens)',
+        'Puissance & engagement (force dans les duels, intensité physique)',
+        'Endurance & mobilité (répétition d’efforts, couverture terrain)',
+        'Agilité & coordination (souplesse, équilibre, changements de direction)',
+      ],
+      mental: [
+        'Vision & intelligence de jeu (lecture, anticipation, perception → analyse → décision)',
+        'Détermination & agressivité (courage, intensité, dépassement de soi)',
+        'Concentration & constance (répétition d’efforts, justesse sous pression)',
+        'Confiance & leadership (communication, influence, bon état d’esprit)',
+      ],
+    },
+  },
+
+  LB: {
+    id: 'LB',
+    code: 'LB',
+    name: 'Latéral gauche',
+    emoji: '',
+    category: 'DF',
+    criteria: {
+      technique: [
+        'Contrôle & première touche (orienté, sous pression, tous types)',
+        'Passe & relance (courte/longue, dosée, remises/déviations, soutien à la relance)',
+        'Dribbles & duels 1v1 (offensifs/défensifs, feintes, conservation)',
+        'Centres & jeu de tête (offensif & défensif)',
+        'Frappe & tirs (variété, efficacité)',
+        'Défense individuelle (cadrage, interceptions, tacles/charges, défense haute)',
+      ],
+      tactique: [
+        'Transitions & pressing (B+ ↔ B-, réactivité, repli, pressing intelligent)',
+        'Positionnement & discipline (alignement, replacement, marquage individuel/couverture)',
+        'Lecture & compréhension du jeu (anticipation pertes/profondeur, conscience espace-temps, gestion infériorité)',
+        'Verticalité & largeur (appels en profondeur, participation offensive, dédoublements couloir gauche)',
+        'Créativité & relance (fixation, circulation, apporter des solutions)',
+      ],
+      physique: [
+        'Vitesse & accélération (profondeur, transitions)',
+        'Explosivité & détente (appuis, impulsion, duels aériens)',
+        'Puissance & engagement (force dans les duels, intensité physique)',
+        'Endurance & mobilité (répétition d’efforts, couverture terrain)',
+        'Agilité & coordination (souplesse, équilibre, changements de direction)',
+      ],
+      mental: [
+        'Vision & intelligence de jeu (lecture, anticipation, perception → analyse → décision)',
+        'Détermination & agressivité (courage, intensité, dépassement de soi)',
+        'Concentration & constance (répétition d’efforts, justesse sous pression)',
+        'Confiance & leadership (communication, influence, bon état d’esprit)',
+      ],
+    },
+  },
+
   RB_LB: {
     id: 'RB_LB',
     code: 'RB/LB',
@@ -482,20 +558,40 @@ export function getScoutPositionConfig(rawPosition?: string | null): ScoutPositi
     return configs.CB || SCOUT_POSITION_CONFIGS.CB || defaultFallback;
   }
 
-  // 3. Latéral droit/gauche — RB/LB
+  // 3. Latéral droit — RB / DD / RWB
   if (
     clean === 'RB' ||
-    clean === 'LB' ||
-    clean === 'RWB' ||
-    clean === 'LWB' ||
     clean === 'DD' ||
+    clean === 'RWB' ||
+    clean.includes('RB') ||
+    clean.includes('DD') ||
+    (lower.includes('droit') && (lower.includes('latéral') || lower.includes('lateral') || lower.includes('arrière') || lower.includes('arriere')))
+  ) {
+    return configs.RB || SCOUT_POSITION_CONFIGS.RB || configs.RB_LB || SCOUT_POSITION_CONFIGS.RB_LB || defaultFallback;
+  }
+
+  // 3bis. Latéral gauche — LB / DG / LWB
+  if (
+    clean === 'LB' ||
     clean === 'DG' ||
+    clean === 'LWB' ||
+    clean.includes('LB') ||
+    clean.includes('DG') ||
+    (lower.includes('gauche') && (lower.includes('latéral') || lower.includes('lateral') || lower.includes('arrière') || lower.includes('arriere')))
+  ) {
+    return configs.LB || SCOUT_POSITION_CONFIGS.LB || configs.RB_LB || SCOUT_POSITION_CONFIGS.RB_LB || defaultFallback;
+  }
+
+  // 3ter. Latéral générique / fallback
+  if (
+    clean.includes('RB/LB') ||
+    clean.includes('RB_LB') ||
     lower.includes('latéral') ||
     lower.includes('lateral') ||
     lower.includes('arrière') ||
     lower.includes('arriere')
   ) {
-    return configs.RB_LB || SCOUT_POSITION_CONFIGS.RB_LB || defaultFallback;
+    return configs.RB || configs.LB || configs.RB_LB || SCOUT_POSITION_CONFIGS.RB || defaultFallback;
   }
 
   // 4. Milieu défensif — CDM / 6

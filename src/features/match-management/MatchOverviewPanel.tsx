@@ -416,6 +416,79 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     return list.slice(0, 4);
   }, [allMatches, match.id]);
 
+  // Assigned Referees & Match Officials (including Commissaire de match)
+  const assignedOfficials = useMemo(() => {
+    if (!match) return [];
+    const list: {
+      id: number;
+      prenom: string;
+      nom: string;
+      grade: string;
+      numero_licence: string;
+      photo_url: string | null;
+      initials: string;
+      roleKey: string;
+      roleLabel: string;
+      badgeClass: string;
+    }[] = [];
+
+    const refAssigned = (match.referees_assigned || {}) as any;
+
+    const slots: { key: string; idVal: any; roleLabel: string; badgeClass: string }[] = [
+      {
+        key: 'central',
+        idVal: match.referee_central_id || refAssigned.central_id,
+        roleLabel: 'Arbitre Principal',
+        badgeClass: 'bg-primary/10 text-primary border-primary/20',
+      },
+      {
+        key: 'assistant1',
+        idVal: match.referee_assistant1_id || refAssigned.assistant1_id,
+        roleLabel: 'Arbitre Assistant 1',
+        badgeClass: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+      },
+      {
+        key: 'assistant2',
+        idVal: match.referee_assistant2_id || refAssigned.assistant2_id,
+        roleLabel: 'Arbitre Assistant 2',
+        badgeClass: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+      },
+      {
+        key: 'fourth',
+        idVal: match.referee_fourth_id || refAssigned.fourth_id,
+        roleLabel: '4ème Officiel',
+        badgeClass: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+      },
+      {
+        key: 'commissaire',
+        idVal: (match as any).referee_commissaire_id || refAssigned.commissaire_id,
+        roleLabel: 'Commissaire du Match',
+        badgeClass: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30',
+      },
+    ];
+
+    slots.forEach(slot => {
+      if (!slot.idVal) return;
+      const found = (arbitres || []).find(a => String(a.id) === String(slot.idVal));
+      if (found) {
+        list.push({
+          id: found.id,
+          prenom: found.prenom,
+          nom: found.nom,
+          grade: found.grade,
+          numero_licence: found.numero_licence,
+          photo_url: found.photo_url,
+          initials: `${found.prenom?.[0] || ''}${found.nom?.[0] || ''}`.toUpperCase() || 'ARB',
+          roleKey: slot.key,
+          roleLabel: slot.roleLabel,
+          badgeClass: slot.badgeClass,
+        });
+      }
+    });
+
+    return list;
+  }, [match, arbitres]);
+
 
 
 
@@ -957,6 +1030,52 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               <StatBar label="Cartons Jaunes" icon="🟨" home={ourYellows} away={advYellows} />
               <StatBar label="Cartons Rouges" icon="🟥" home={ourReds} away={advReds} />
             </div>
+          </div>
+
+          {/* ── CARD CORPS D'ARBITRAGE & COMMISSAIRE DU MATCH ── */}
+          <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-1.5 text-slate-900 font-black text-[11px] uppercase tracking-wider">
+                <UserCheck className="w-4 h-4 text-primary" />
+                <span>Corps d'Arbitrage & Officiels</span>
+              </div>
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 uppercase">
+                {assignedOfficials.length} désigné{assignedOfficials.length > 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {assignedOfficials.length === 0 ? (
+              <div className="py-4 text-center text-slate-400 text-[10px] font-medium italic">
+                Aucun arbitre ou commissaire désigné
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {assignedOfficials.map((off, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-slate-200 overflow-hidden shrink-0 border border-slate-300 flex items-center justify-center">
+                        {off.photo_url && off.photo_url !== 'null' ? (
+                          <img src={off.photo_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-[9px] font-black text-slate-600">{off.initials}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold text-slate-900 truncate">
+                          {off.prenom} {off.nom}
+                        </p>
+                        <p className="text-[9px] font-medium text-slate-500">
+                          {off.grade || 'Officiel'} {off.numero_licence ? `• Lic. ${off.numero_licence}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider shrink-0 border ${off.badgeClass}`}>
+                      {off.roleLabel}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ── CARD MATCHS À VENIR (Real DB Fixtures) ── */}

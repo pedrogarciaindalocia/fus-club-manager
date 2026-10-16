@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { usePlayers } from '../../hooks/usePlayers';
+import { useSurclassements } from '../../hooks/useSurclassements';
+import { normalizeAgeCategory } from '../../constants';
 import { useRecruitment } from '../recruitment/hooks/useRecruitment';
 import { useMatches } from '../../hooks/useMatches';
 import PlayerRadarChart from '../recruitment/components/PlayerRadarChart';
@@ -260,6 +262,7 @@ export const OfficialShortlistPage: React.FC = () => {
   const { players: squadPlayers = [], isLoading: playersLoading } = usePlayers();
   const { candidates = [], evaluations: recruitmentEvals = [] } = useRecruitment();
   const { matches = [] } = useMatches();
+  const { surclassements = [] } = useSurclassements();
 
   const [selectedFormationKey, setSelectedFormationKey] = useState<string>('4-3-3');
   const [pitchHeight, setPitchHeight] = useState<'standard' | 'tall' | 'extra'>('tall');
@@ -388,6 +391,7 @@ export const OfficialShortlistPage: React.FC = () => {
       const ratingInfo = playerRatingsMap.get(p.id);
       const hasRealEval = !!ratingInfo;
       const rating = ratingInfo?.lastRating ?? ratingInfo?.avgRating ?? (p.rating || 7.0);
+      const surclass = surclassements.find(s => s.player_id === p.id && s.status === 'active');
 
       const pillars = ratingInfo?.pillars || {
         technical: Number(Math.min(10, rating + 0.2).toFixed(1)),
@@ -404,7 +408,8 @@ export const OfficialShortlistPage: React.FC = () => {
         position: p.position || 'CM',
         roleCode: normalizeRole(p.position),
         age_category: (p.category || ratingInfo?.category || 'PRO').toUpperCase(),
-        jersey_number: p.jersey_number,
+        jersey_number: surclass?.target_jersey_number ?? p.jersey_number,
+        surclassement: surclass || null,
         photo_url: p.photo_url,
         is_trial: false,
         status: 'signe',
@@ -435,6 +440,7 @@ export const OfficialShortlistPage: React.FC = () => {
           roleCode: normalizeRole(c.primary_position),
           age_category: (c.age_category || 'U19').toUpperCase(),
           jersey_number: 99,
+          surclassement: null,
           photo_url: c.photo_url,
           is_trial: true,
           status: 'en_cours_de_test',
@@ -454,15 +460,17 @@ export const OfficialShortlistPage: React.FC = () => {
       });
 
     return list;
-  }, [squadPlayers, candidates, playerRatingsMap, recruitmentEvals]);
+  }, [squadPlayers, candidates, playerRatingsMap, recruitmentEvals, surclassements]);
 
   // Filtered players
   const filteredPlayers = useMemo(() => {
     return unifiedPlayers.filter(p => {
       // Category filter
       if (categoryFilter !== 'ALL') {
-        const cat = (p.age_category || '').toUpperCase();
-        if (cat !== categoryFilter.toUpperCase()) return false;
+        const cat = normalizeAgeCategory(p.age_category || '');
+        const targetCat = p.surclassement ? normalizeAgeCategory(p.surclassement.target_category) : null;
+        const normFilter = normalizeAgeCategory(categoryFilter);
+        if (cat !== normFilter && targetCat !== normFilter) return false;
       }
 
       // Only evaluated filter
@@ -819,6 +827,14 @@ export const OfficialShortlistPage: React.FC = () => {
 
                         {/* Player Circle Avatar + Score Badge wrapper (relative, NO overflow-hidden here) */}
                         <div className="relative">
+                          {player.surclassement && (
+                            <span
+                              title={`Surclassé depuis ${player.surclassement.original_category}`}
+                              className="absolute -top-1.5 -left-1.5 z-30 bg-amber-400 text-slate-950 h-4 w-4 rounded-full flex items-center justify-center p-0 border border-white text-[8px] font-black shadow-md cursor-help"
+                            >
+                              ⭐
+                            </span>
+                          )}
                           <div
                             className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-xs text-white shadow-lg border-2 transition-all overflow-hidden ${
                               player.has_evaluation
@@ -862,7 +878,11 @@ export const OfficialShortlistPage: React.FC = () => {
                           <span className="text-[10px] font-bold text-white bg-black/60 px-1.5 py-0.2 rounded-md truncate max-w-[80px] block shadow-xs">
                             {player.short_name}
                           </span>
-                          {player.has_evaluation ? (
+                          {player.surclassement ? (
+                            <span className="text-[7.5px] font-black text-amber-300 bg-amber-950/90 px-1 rounded-sm mt-0.5 block border border-amber-500/40">
+                              ⭐ {player.surclassement.original_category}
+                            </span>
+                          ) : player.has_evaluation ? (
                             <span className="text-[7.5px] font-extrabold text-emerald-300 bg-emerald-950/90 px-1 rounded-sm mt-0.5 block border border-emerald-500/40">
                               Évalué ({player.rating})
                             </span>

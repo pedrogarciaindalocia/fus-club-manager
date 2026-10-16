@@ -1035,7 +1035,7 @@ Direction Générale — FUS Rabat`;
             job_title: scout.role_title || 'Scout',
             phone_number: scout.phone || null,
             is_active: scout.status !== 'inactive',
-            categories: scout.assigned_categories || ['Senior'],
+            categories: scout.assigned_categories || [],
             permissions_overrides: (() => {
               const sp: Record<string, boolean> = {};
               permAssignments?.filter(pa => pa.user_id === scout.id).forEach(pa => {
@@ -1071,7 +1071,7 @@ Direction Générale — FUS Rabat`;
             job_title: st.role || 'Staff Technique',
             phone_number: null,
             is_active: true,
-            categories: ['Senior'],
+            categories: [],
             permissions_overrides: {}
           });
         }
@@ -1173,7 +1173,7 @@ Direction Générale — FUS Rabat`;
             phone: formData.phone_number || undefined,
             role_title: 'Scout',
             recruitment_region: 'Rabat-Salé-Kénitra',
-            assigned_categories: formData.categories.length > 0 ? formData.categories : ['U15', 'U17', 'U19'],
+            assigned_categories: formData.categories,
             assigned_teams: ['Académie FUS'],
             status: 'active',
             recruited_date: new Date().toISOString().split('T')[0],
@@ -1190,7 +1190,7 @@ Direction Générale — FUS Rabat`;
               phone: formData.phone_number || '',
               role_title: 'Scout',
               recruitment_region: 'Rabat-Salé-Kénitra',
-              assigned_categories: formData.categories.length > 0 ? formData.categories : ['U15', 'U17', 'U19'],
+              assigned_categories: formData.categories,
               assigned_teams: ['Académie FUS'],
               status: 'active',
               recruited_date: new Date().toISOString().split('T')[0],
@@ -1411,7 +1411,7 @@ Direction Générale — FUS Rabat`;
             phone: formData.phone_number || undefined,
             role_title: 'Scout',
             recruitment_region: 'Rabat-Salé-Kénitra',
-            assigned_categories: formData.categories.length > 0 ? formData.categories : ['U15', 'U17', 'U19'],
+            assigned_categories: formData.categories,
             assigned_teams: ['Académie FUS'],
             status: formData.is_active !== false ? 'active' : 'inactive',
             ...(finalAvatarUrl ? { photo_url: finalAvatarUrl } : {})
@@ -1432,7 +1432,7 @@ Direction Générale — FUS Rabat`;
                   full_name: formData.full_name,
                   role_title: 'Scout',
                   phone: formData.phone_number || localScouts[idx].phone,
-                  assigned_categories: formData.categories.length > 0 ? formData.categories : localScouts[idx].assigned_categories,
+                  assigned_categories: formData.categories,
                   status: formData.is_active !== false ? 'active' : 'inactive',
                   ...(finalAvatarUrl ? { photo_url: finalAvatarUrl } : {})
                 };
@@ -1445,7 +1445,7 @@ Direction Générale — FUS Rabat`;
                   phone: formData.phone_number || '',
                   role_title: 'Scout',
                   recruitment_region: 'Rabat-Salé-Kénitra',
-                  assigned_categories: formData.categories.length > 0 ? formData.categories : ['U15', 'U17', 'U19'],
+                  assigned_categories: formData.categories,
                   assigned_teams: ['Académie FUS'],
                   status: formData.is_active !== false ? 'active' : 'inactive',
                   recruited_date: new Date().toISOString().split('T')[0],
@@ -1493,6 +1493,12 @@ Direction Générale — FUS Rabat`;
           }
         }
         localStorage.setItem(`fusc_user_categories_${currentUserId}`, JSON.stringify(formData.categories));
+        window.dispatchEvent(new CustomEvent('fusc_user_categories_updated', {
+          detail: {
+            userId: currentUserId,
+            categories: formData.categories,
+          }
+        }));
       } catch (catErr: any) {
         console.warn('User categories update notice:', catErr);
       }
