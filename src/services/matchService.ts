@@ -370,6 +370,9 @@ export const matchService = {
   async addEvent(event: Omit<Inserts<'match_events'>, 'id'>): Promise<void> {
     const { error } = await supabase.from('match_events').insert([event]);
     if (error) throw error;
+    try {
+      supabase.functions.invoke('send-match-push', { body: { record: event } }).catch(() => {});
+    } catch {}
   },
 
   async updateEvent(id: string, updates: Updates<'match_events'>): Promise<void> {

@@ -12,6 +12,18 @@ export function isHigherCategory(current: string, target: string): boolean {
   return (CATEGORY_ORDER[target] ?? 0) > (CATEGORY_ORDER[current] ?? 0);
 }
 
+export function isLowerCategory(current: string, target: string): boolean {
+  return (CATEGORY_ORDER[target] ?? 0) < (CATEGORY_ORDER[current] ?? 0);
+}
+
+export type MobilityType = 'surclassement' | 'sous_classement';
+
+export function getMobilityType(current: string, target: string): MobilityType {
+  const origRank = CATEGORY_ORDER[current] ?? 0;
+  const targetRank = CATEGORY_ORDER[target] ?? 0;
+  return targetRank < origRank ? 'sous_classement' : 'surclassement';
+}
+
 export type SurclassementWithDetails = PlayerSurclassement & {
   player: { full_name: string; photo_url: string | null; jersey_number: number | null };
   original_team: { name: string; category: string };

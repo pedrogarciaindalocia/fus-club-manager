@@ -11,12 +11,13 @@ import { Card, CardContent } from '../../../components/ui/card';
 import { 
   X, Plus, Edit2, Trash2, Camera, Search, User, Shield, 
   Loader2, Filter, CheckCircle2, Ruler, Weight, Globe, Footprints, Sparkles, AlertCircle,
-  ImageIcon
+  ImageIcon, Scissors
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../../../lib/utils';
 import { build22FakeOpponentPlayers } from '../../../utils/generateFakeOpponentPlayers';
 import { MediaPickerModal } from '../../media-management/components/MediaPickerModal';
+import ImageCropperModal from '../../../components/ImageCropperModal';
 
 export const OPPONENT_CATEGORIES = [
   'TOUTES',
@@ -60,6 +61,8 @@ export const OpponentSquadModal: React.FC<OpponentSquadModalProps> = ({ isOpen, 
   const [isDeleting, setIsDeleting] = useState(false);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [selectedFileUrl, setSelectedFileUrl] = useState<string | null>(null);
 
   const executeGenerate22Players = async () => {
     setIsGenerating(true);
@@ -194,18 +197,51 @@ export const OpponentSquadModal: React.FC<OpponentSquadModalProps> = ({ isOpen, 
   };
 
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setSelectedFileUrl(url);
+      setCropModalOpen(true);
+    }
+    e.target.value = '';
+  };
+
+  const handleEditExistingPhoto = async () => {
+    if (!formData.photo_url) return;
     setIsUploading(true);
     try {
+      const res = await fetch(formData.photo_url);
+      const blob = await res.blob();
+      const localUrl = URL.createObjectURL(blob);
+      setSelectedFileUrl(localUrl);
+      setCropModalOpen(true);
+    } catch {
+      setSelectedFileUrl(formData.photo_url);
+      setCropModalOpen(true);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    setCropModalOpen(false);
+    setIsUploading(true);
+    try {
+      const fileName = `opponent-player-${Date.now()}.png`;
+      const file = new File([croppedBlob], fileName, { type: 'image/png' });
       const url = await storageService.uploadFile(file, 'players');
       setFormData(prev => ({ ...prev, photo_url: url }));
+      toast.success('Photo du joueur adverse recadrée avec succès');
     } catch (err) {
       console.error('Failed to upload photo', err);
       toast.error('Erreur lors du téléversement de la photo');
     } finally {
       setIsUploading(false);
+      if (selectedFileUrl && selectedFileUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(selectedFileUrl);
+      }
+      setSelectedFileUrl(null);
     }
   };
 
@@ -373,6 +409,19 @@ export const OpponentSquadModal: React.FC<OpponentSquadModalProps> = ({ isOpen, 
                       <ImageIcon className="w-3.5 h-3.5 text-primary" />
                       <span>Médiathèque</span>
                     </Button>
+                    {formData.photo_url && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleEditExistingPhoto}
+                        className="h-8 px-2.5 rounded-xl text-xs font-bold gap-1.5 border-primary/30 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary"
+                        title="Recadrer et zoomer la photo existante"
+                      >
+                        <Scissors className="w-3.5 h-3.5 text-primary" />
+                        <span>Recadrer</span>
+                      </Button>
+                    )}
                     {formData.photo_url && (
                       <Button
                         type="button"
@@ -717,6 +766,16 @@ export const OpponentSquadModal: React.FC<OpponentSquadModalProps> = ({ isOpen, 
         onClose={() => setMediaPickerOpen(false)}
         onSelect={(url) => setFormData(prev => ({ ...prev, photo_url: url }))}
         title="Affecter une photo depuis la Médiathèque"
+      />
+
+      {/* Recadreur & Zoomer d'Image */}
+      <ImageCropperModal
+        isOpen={cropModalOpen}
+        onClose={() => setCropModalOpen(false)}
+        imageSrc={selectedFileUrl}
+        onCropComplete={handleCropComplete}
+        title="Recadrer la Photo du Joueur Adverse"
+        description="Ajustez le zoom et positionnez le joueur adverse"
       />
     </div>
   );

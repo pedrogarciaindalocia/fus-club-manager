@@ -28,6 +28,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { usePlayers } from '../../hooks/usePlayers';
 import { useSurclassements } from '../../hooks/useSurclassements';
+import { isLowerCategory } from '../../services/surclassementService';
 import { normalizeAgeCategory } from '../../constants';
 import { useRecruitment } from '../recruitment/hooks/useRecruitment';
 import { useMatches } from '../../hooks/useMatches';
@@ -827,14 +828,19 @@ export const OfficialShortlistPage: React.FC = () => {
 
                         {/* Player Circle Avatar + Score Badge wrapper (relative, NO overflow-hidden here) */}
                         <div className="relative">
-                          {player.surclassement && (
-                            <span
-                              title={`Surclassé depuis ${player.surclassement.original_category}`}
-                              className="absolute -top-1.5 -left-1.5 z-30 bg-amber-400 text-slate-950 h-4 w-4 rounded-full flex items-center justify-center p-0 border border-white text-[8px] font-black shadow-md cursor-help"
-                            >
-                              ⭐
-                            </span>
-                          )}
+                          {player.surclassement && (() => {
+                            const isSousClass = isLowerCategory(player.surclassement.original_category, player.surclassement.target_category);
+                            return (
+                              <span
+                                title={isSousClass ? `Sous-classé depuis ${player.surclassement.original_category}` : `Surclassé depuis ${player.surclassement.original_category}`}
+                                className={`absolute -top-1.5 -left-1.5 z-30 h-4 w-4 rounded-full flex items-center justify-center p-0 border border-white text-[8px] font-black shadow-md cursor-help ${
+                                  isSousClass ? 'bg-sky-500 text-white' : 'bg-amber-400 text-slate-950'
+                                }`}
+                              >
+                                {isSousClass ? '⬇️' : '⭐'}
+                              </span>
+                            );
+                          })()}
                           <div
                             className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-xs text-white shadow-lg border-2 transition-all overflow-hidden ${
                               player.has_evaluation
@@ -878,11 +884,18 @@ export const OfficialShortlistPage: React.FC = () => {
                           <span className="text-[10px] font-bold text-white bg-black/60 px-1.5 py-0.2 rounded-md truncate max-w-[80px] block shadow-xs">
                             {player.short_name}
                           </span>
-                          {player.surclassement ? (
-                            <span className="text-[7.5px] font-black text-amber-300 bg-amber-950/90 px-1 rounded-sm mt-0.5 block border border-amber-500/40">
-                              ⭐ {player.surclassement.original_category}
-                            </span>
-                          ) : player.has_evaluation ? (
+                          {player.surclassement ? (() => {
+                            const isSousClass = isLowerCategory(player.surclassement.original_category, player.surclassement.target_category);
+                            return (
+                              <span className={`text-[7.5px] font-black px-1 rounded-sm mt-0.5 block border ${
+                                isSousClass
+                                  ? 'text-sky-300 bg-sky-950/90 border-sky-500/40'
+                                  : 'text-amber-300 bg-amber-950/90 border-amber-500/40'
+                              }`}>
+                                {isSousClass ? '⬇️' : '⭐'} {player.surclassement.original_category}
+                              </span>
+                            );
+                          })() : player.has_evaluation ? (
                             <span className="text-[7.5px] font-extrabold text-emerald-300 bg-emerald-950/90 px-1 rounded-sm mt-0.5 block border border-emerald-500/40">
                               Évalué ({player.rating})
                             </span>

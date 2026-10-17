@@ -9,7 +9,8 @@ import {
   Sparkles, 
   Loader2,
   ImageIcon,
-  Trash2
+  Trash2,
+  Scissors
 } from 'lucide-react';
 import type { Club } from '../../../types';
 import { storageService } from '../../../services/storageService';
@@ -17,6 +18,7 @@ import { MediaPickerModal } from '../../media-management/components/MediaPickerM
 import { opponentPlayerService } from '../../../services/opponentPlayerService';
 import { build22FakeOpponentPlayers } from '../../../utils/generateFakeOpponentPlayers';
 import { toast } from 'sonner';
+import ImageCropperModal from '../../../components/ImageCropperModal';
 import { cn } from '../../../lib/utils';
 import { GEOGRAPHY_DATA } from '../../../constants/geography';
 
@@ -51,6 +53,8 @@ export const OpponentClubFormModal: React.FC<OpponentClubFormModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [autoGenerate22, setAutoGenerate22] = useState(true);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [selectedFileUrl, setSelectedFileUrl] = useState<string | null>(null);
 
   // Sync form state with incoming club or initialName
   useEffect(() => {
@@ -94,20 +98,51 @@ export const OpponentClubFormModal: React.FC<OpponentClubFormModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setIsUploading(true);
-      try {
-        const publicUrl = await storageService.uploadFile(file, 'clubs');
-        setFormData(prev => ({ ...prev, logo_url: publicUrl }));
-        toast.success('Logo du club téléversé avec succès !');
-      } catch (error) {
-        console.error('Failed to upload logo:', error);
-        toast.error('Erreur lors du téléversement du logo');
-      } finally {
-        setIsUploading(false);
+      const url = URL.createObjectURL(file);
+      setSelectedFileUrl(url);
+      setCropModalOpen(true);
+    }
+    e.target.value = '';
+  };
+
+  const handleEditExistingLogo = async () => {
+    if (!formData.logo_url) return;
+    setIsUploading(true);
+    try {
+      const res = await fetch(formData.logo_url);
+      const blob = await res.blob();
+      const localUrl = URL.createObjectURL(blob);
+      setSelectedFileUrl(localUrl);
+      setCropModalOpen(true);
+    } catch {
+      setSelectedFileUrl(formData.logo_url);
+      setCropModalOpen(true);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    setCropModalOpen(false);
+    setIsUploading(true);
+    try {
+      const fileName = `opponent-club-logo-${Date.now()}.png`;
+      const file = new File([croppedBlob], fileName, { type: 'image/png' });
+      const publicUrl = await storageService.uploadFile(file, 'clubs');
+      setFormData(prev => ({ ...prev, logo_url: publicUrl }));
+      toast.success('Logo du club recadré et téléversé avec succès !');
+    } catch (error) {
+      console.error('Failed to upload logo:', error);
+      toast.error('Erreur lors du téléversement du logo');
+    } finally {
+      setIsUploading(false);
+      if (selectedFileUrl && selectedFileUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(selectedFileUrl);
       }
+      setSelectedFileUrl(null);
     }
   };
 
@@ -245,6 +280,19 @@ export const OpponentClubFormModal: React.FC<OpponentClubFormModalProps> = ({
                   <ImageIcon className="w-3.5 h-3.5 text-primary" />
                   <span>Médiathèque</span>
                 </Button>
+                {formData.logo_url && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleEditExistingLogo}
+                    className="h-8 px-2.5 rounded-xl text-xs font-bold gap-1.5 border-primary/30 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary"
+                    title="Recadrer et zoomer le logo existant"
+                  >
+                    <Scissors className="w-3.5 h-3.5 text-primary" />
+                    <span>Recadrer</span>
+                  </Button>
+                )}
                 {formData.logo_url && (
                   <Button
                     type="button"
@@ -404,6 +452,15 @@ export const OpponentClubFormModal: React.FC<OpponentClubFormModalProps> = ({
         onClose={() => setMediaPickerOpen(false)}
         onSelect={(url) => setFormData(prev => ({ ...prev, logo_url: url }))}
         title="Affecter un logo depuis la Médiathèque"
+      />
+
+      <ImageCropperModal
+        isOpen={cropModalOpen}
+        onClose={() => setCropModalOpen(false)}
+        imageSrc={selectedFileUrl}
+        onCropComplete={handleCropComplete}
+        title="Recadrer le Logo du Club"
+        description="Ajustez le zoom et cadrez l'écusson du club adverse"
       />
     </div>
   );

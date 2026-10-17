@@ -46,6 +46,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { Team } from '../../services/teamService';
 import type { Player, Match } from '../../types';
 import { useSurclassements } from '../../hooks/useSurclassements';
+import { isLowerCategory } from '../../services/surclassementService';
 import { Skeleton } from '../../components/ui/skeleton';
 import { supabase } from '../../lib/supabase';
 import { PLAYER_CATEGORIES, normalizeAgeCategory } from '../../constants';
@@ -1352,11 +1353,18 @@ const TeamManagement: React.FC = () => {
                                        <div className="flex-1 min-w-0">
                                           <div className="flex items-center gap-1.5 flex-wrap">
                                             <h4 className="font-black text-sm uppercase truncate leading-tight text-foreground">{player.full_name}</h4>
-                                            {isSurclasse && (
-                                              <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-100 border border-amber-200 text-amber-700 text-[8px] font-black uppercase">
-                                                ↑ {originCat}
-                                              </span>
-                                            )}
+                                            {isSurclasse && (() => {
+                                              const isSousClasse = isLowerCategory(originCat, rosterTeam?.category ?? '');
+                                              return (
+                                                <span className={`shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border ${
+                                                  isSousClasse
+                                                    ? 'bg-sky-100 border-sky-200 text-sky-700'
+                                                    : 'bg-amber-100 border-amber-200 text-amber-700'
+                                                }`}>
+                                                  {isSousClasse ? '↓' : '↑'} {originCat}
+                                                </span>
+                                              );
+                                            })()}
                                           </div>
                                           <div className="flex items-center gap-2 mt-1.5">
                                              {isEditingJersey ? (

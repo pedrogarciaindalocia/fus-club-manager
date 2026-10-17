@@ -24,6 +24,7 @@ import {
   Search,
   Trash2,
   Edit2,
+  Scissors,
   Eye,
   Calendar,
   CalendarDays,
@@ -54,6 +55,7 @@ import {
   CheckCircle2,
   NotebookPen,
   ArrowUpCircle,
+  ArrowDownCircle,
   RotateCcw,
   Sparkles,
   ArrowLeft,
@@ -79,6 +81,7 @@ import { useMetrics } from '../../hooks/useMetrics';
 
 import ErrorEmptyState from '../../components/ErrorEmptyState';
 import { useSurclassements, usePlayerSurclassements } from '../../hooks/useSurclassements';
+import { isLowerCategory } from '../../services/surclassementService';
 import SurclassementModal from './SurclassementModal';
 import { usePermissions } from '../../context/PermissionsContext';
 import { isScoutBranch } from '../../constants/roles';
@@ -1137,6 +1140,26 @@ const PlayerManagement: React.FC = () => {
       setSelectedFileUrl(url);
       setCropModalOpen(true);
     }
+    e.target.value = '';
+  };
+
+  const handleEditExistingPhoto = async (target: 'photo_url' | 'celebration_photo_url') => {
+    const currentUrl = formData[target];
+    if (!currentUrl) return;
+    setCropTarget(target);
+    setIsUploading(true);
+    try {
+      const res = await fetch(currentUrl);
+      const blob = await res.blob();
+      const localUrl = URL.createObjectURL(blob);
+      setSelectedFileUrl(localUrl);
+      setCropModalOpen(true);
+    } catch {
+      setSelectedFileUrl(currentUrl);
+      setCropModalOpen(true);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleCropComplete = async (croppedBlob: Blob) => {
@@ -1152,10 +1175,10 @@ const PlayerManagement: React.FC = () => {
       toast.error("Erreur lors de l'enregistrement de l'image");
     } finally {
       setIsUploading(false);
-      if (selectedFileUrl) {
+      if (selectedFileUrl && selectedFileUrl.startsWith('blob:')) {
         URL.revokeObjectURL(selectedFileUrl);
-        setSelectedFileUrl(null);
       }
+      setSelectedFileUrl(null);
     }
   };
 
@@ -1738,15 +1761,27 @@ const PlayerManagement: React.FC = () => {
                               </span>
                             </div>
 
-                            {/* Badge surclassement actif */}
-                            {activeByPlayerId[player.id] && (
-                              <div className="mb-3 flex items-center justify-center gap-1.5 bg-orange-50 border border-orange-200 rounded-xl px-3 py-1.5">
-                                <ArrowUpCircle className="w-3 h-3 text-orange-500" />
-                                <span className="text-[10px] font-black text-orange-600 uppercase tracking-widest">
-                                  SURCLASSÉ → {activeByPlayerId[player.id].target_category}
-                                </span>
-                              </div>
-                            )}
+                            {/* Badge surclassement ou sous-classement actif */}
+                            {activeByPlayerId[player.id] && (() => {
+                              const activeMob = activeByPlayerId[player.id];
+                              const isSousClass = isLowerCategory(activeMob.original_category, activeMob.target_category);
+                              return (
+                                <div className={`mb-3 flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 border ${
+                                  isSousClass
+                                    ? 'bg-sky-50 border-sky-200 text-sky-700'
+                                    : 'bg-orange-50 border-orange-200 text-orange-600'
+                                }`}>
+                                  {isSousClass ? (
+                                    <ArrowDownCircle className="w-3 h-3 text-sky-600" />
+                                  ) : (
+                                    <ArrowUpCircle className="w-3 h-3 text-orange-500" />
+                                  )}
+                                  <span className="text-[10px] font-black uppercase tracking-widest">
+                                    {isSousClass ? 'SOUS-CLASSÉ' : 'SURCLASSÉ'} → {activeMob.target_category}
+                                  </span>
+                                </div>
+                              );
+                            })()}
 
                             <div className="flex items-center justify-between pt-4 border-t border-secondary">
                               <div className="flex gap-2">
@@ -1763,23 +1798,29 @@ const PlayerManagement: React.FC = () => {
                                     <Edit2 className="w-4 h-4" />
                                   </Button>
                                 )}
-                                {canSurclassPlayer && canManageCategory(getPlayerCategory(player)) && (
-                                  <Button
-                                    variant="secondary"
-                                    size="icon"
-                                    onClick={() => handleOpenSurclassement(player)}
-                                    title={activeByPlayerId[player.id] ? 'Réintégrer' : 'Surclasser'}
-                                    className={`h-9 w-9 rounded-xl transition-all ${activeByPlayerId[player.id]
-                                      ? 'bg-orange-100 text-orange-600 hover:bg-orange-200'
-                                      : 'bg-secondary/50 hover:bg-orange-500 hover:text-white'
-                                      }`}
-                                  >
-                                    {activeByPlayerId[player.id]
-                                      ? <RotateCcw className="w-4 h-4" />
-                                      : <ArrowUpCircle className="w-4 h-4" />
-                                    }
-                                  </Button>
-                                )}
+                                {canSurclassPlayer && canManageCategory(getPlayerCategory(player)) && (() => {
+                                  const activeMob = activeByPlayerId[player.id];
+                                  const isSousClass = activeMob ? isLowerCategory(activeMob.original_category, activeMob.target_category) : false;
+                                  return (
+                                    <Button
+                                      variant="secondary"
+                                      size="icon"
+                                      onClick={() => handleOpenSurclassement(player)}
+                                      title={activeMob ? 'Réintégrer' : 'Surclasser / Sous-classer'}
+                                      className={`h-9 w-9 rounded-xl transition-all ${activeMob
+                                        ? isSousClass
+                                          ? 'bg-sky-100 text-sky-700 hover:bg-sky-200'
+                                          : 'bg-orange-100 text-orange-600 hover:bg-orange-200'
+                                        : 'bg-secondary/50 hover:bg-orange-500 hover:text-white'
+                                        }`}
+                                    >
+                                      {activeMob
+                                        ? <RotateCcw className="w-4 h-4" />
+                                        : <ArrowUpCircle className="w-4 h-4" />
+                                      }
+                                    </Button>
+                                  );
+                                })()}
                               </div>
                               {selectionMode ? (
                                 canDeletePlayer && canManageCategory(getPlayerCategory(player)) ? (
@@ -1877,12 +1918,24 @@ const PlayerManagement: React.FC = () => {
                             <Badge variant="outline" className="text-[9px] font-black border-primary/20 text-primary uppercase">
                               {getPlayerCategory(player)}
                             </Badge>
-                            {activeByPlayerId[player.id] && (
-                              <Badge className="bg-orange-100 text-orange-600 border-orange-200 text-[9px] font-black uppercase gap-1 border">
-                                <ArrowUpCircle className="w-2.5 h-2.5" />
-                                {activeByPlayerId[player.id].target_category}
-                              </Badge>
-                            )}
+                            {activeByPlayerId[player.id] && (() => {
+                              const activeMob = activeByPlayerId[player.id];
+                              const isSousClass = isLowerCategory(activeMob.original_category, activeMob.target_category);
+                              return (
+                                <Badge className={`text-[9px] font-black uppercase gap-1 border ${
+                                  isSousClass
+                                    ? 'bg-sky-100 text-sky-700 border-sky-200'
+                                    : 'bg-orange-100 text-orange-600 border-orange-200'
+                                }`}>
+                                  {isSousClass ? (
+                                    <ArrowDownCircle className="w-2.5 h-2.5 text-sky-600" />
+                                  ) : (
+                                    <ArrowUpCircle className="w-2.5 h-2.5 text-orange-500" />
+                                  )}
+                                  {activeMob.target_category}
+                                </Badge>
+                              );
+                            })()}
                           </div>
                         </td>
                         <td className="px-8 py-3 text-right">
@@ -1922,23 +1975,30 @@ const PlayerManagement: React.FC = () => {
                                         <Edit2 className="w-4 h-4" />
                                       </Button>
                                     )}
-                                    {canSurclassPlayer && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleOpenSurclassement(player)}
-                                        title={activeByPlayerId[player.id] ? 'Réintégrer' : 'Surclasser'}
-                                        className={`h-9 w-9 rounded-xl transition-all ${activeByPlayerId[player.id]
-                                          ? 'text-orange-500 bg-orange-50 hover:bg-orange-100'
-                                          : 'text-muted-foreground hover:text-orange-500 hover:bg-orange-50'
+                                    {canSurclassPlayer && (() => {
+                                      const activeMob = activeByPlayerId[player.id];
+                                      const isSousClass = activeMob ? isLowerCategory(activeMob.original_category, activeMob.target_category) : false;
+                                      return (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => handleOpenSurclassement(player)}
+                                          title={activeMob ? 'Réintégrer' : 'Surclasser / Sous-classer'}
+                                          className={`h-9 w-9 rounded-xl transition-all ${
+                                            activeMob
+                                              ? isSousClass
+                                                ? 'text-sky-600 bg-sky-50 hover:bg-sky-100'
+                                                : 'text-orange-500 bg-orange-50 hover:bg-orange-100'
+                                              : 'text-muted-foreground hover:text-orange-500 hover:bg-orange-50'
                                           }`}
-                                      >
-                                        {activeByPlayerId[player.id]
-                                          ? <RotateCcw className="w-4 h-4" />
-                                          : <ArrowUpCircle className="w-4 h-4" />
-                                        }
-                                      </Button>
-                                    )}
+                                        >
+                                          {activeMob
+                                            ? <RotateCcw className="w-4 h-4" />
+                                            : <ArrowUpCircle className="w-4 h-4" />
+                                          }
+                                        </Button>
+                                      );
+                                    })()}
                                     {canDeparturePlayer && (
                                       <Button variant="ghost" size="icon" onClick={() => handleOpenDeparture(player)} title="Sortie / Transfert du club" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-red-50 transition-all">
                                         <X className="w-4 h-4 text-red-500" />
@@ -2100,6 +2160,18 @@ const PlayerManagement: React.FC = () => {
                           <Camera className="w-3.5 h-3.5 text-primary" />
                           Uploader
                         </label>
+                        {(formData.photo_url && formData.photo_url !== 'null') && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleEditExistingPhoto('photo_url')}
+                            className="flex-1 gap-1.5 rounded-xl text-[11px] font-bold border-primary/30 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary h-9 shadow-xs cursor-pointer"
+                            title="Recadrer et zoomer la photo officielle existante"
+                          >
+                            <Scissors className="w-3.5 h-3.5 text-primary" />
+                            Recadrer
+                          </Button>
+                        )}
                         {formData.photo_url && (
                           <button
                             type="button"
@@ -2194,6 +2266,22 @@ const PlayerManagement: React.FC = () => {
                               <Camera className="w-3.5 h-3.5 text-primary" />
                               Uploader
                             </label>
+                            {(formData.celebration_photo_url && formData.celebration_photo_url !== 'null') && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => handleEditExistingPhoto('celebration_photo_url')}
+                                className={`flex-1 gap-1.5 rounded-xl text-[11px] font-bold h-9 shadow-xs cursor-pointer ${
+                                  isGk
+                                    ? 'border-emerald-300 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                                    : 'border-rose-300 hover:border-rose-500 bg-rose-50 hover:bg-rose-100 text-rose-800'
+                                }`}
+                                title="Recadrer et zoomer la photo de célébration existante"
+                              >
+                                <Scissors className={`w-3.5 h-3.5 ${isGk ? 'text-emerald-600' : 'text-rose-600'}`} />
+                                Recadrer
+                              </Button>
+                            )}
                             {formData.celebration_photo_url && (
                               <button
                                 type="button"
@@ -4139,6 +4227,8 @@ const PlayerManagement: React.FC = () => {
         onClose={() => setCropModalOpen(false)}
         imageSrc={selectedFileUrl}
         onCropComplete={handleCropComplete}
+        title={cropTarget === 'celebration_photo_url' ? "Recadrer la Photo de Célébration" : "Recadrer le Portrait du Joueur"}
+        description="Ajustez le zoom et positionnez le joueur pour un rendu parfait"
       />
 
       {/* Sélecteur de Médias Centralisé (Bucket 'medias') */}

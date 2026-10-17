@@ -23,7 +23,8 @@ import {
   List as ListIcon,
   ChevronLeft,
   ChevronRight,
-  ImageIcon
+  ImageIcon,
+  Scissors
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { StaffMember } from '../types';
@@ -138,21 +139,41 @@ const StaffManagement: React.FC = () => {
       setSelectedFileUrl(url);
       setCropModalOpen(true);
     }
+    e.target.value = '';
+  };
+
+  const handleEditExistingPhoto = async () => {
+    if (!formData.photo_url) return;
+    setIsUploading(true);
+    try {
+      const res = await fetch(formData.photo_url);
+      const blob = await res.blob();
+      const localUrl = URL.createObjectURL(blob);
+      setSelectedFileUrl(localUrl);
+      setCropModalOpen(true);
+    } catch {
+      setSelectedFileUrl(formData.photo_url);
+      setCropModalOpen(true);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleCropComplete = async (croppedBlob: Blob) => {
     setCropModalOpen(false);
     setIsUploading(true);
     try {
-      const fileName = `staff-${Date.now()}.jpg`;
-      const file = new File([croppedBlob], fileName, { type: 'image/jpeg' });
+      const fileName = `staff-${Date.now()}.png`;
+      const file = new File([croppedBlob], fileName, { type: 'image/png' });
       const publicUrl = await storageService.uploadFile(file, 'staff');
       setFormData({ ...formData, photo_url: publicUrl });
     } catch (error: any) {
       console.error(error);
     } finally {
       setIsUploading(false);
-      if (selectedFileUrl) URL.revokeObjectURL(selectedFileUrl);
+      if (selectedFileUrl && selectedFileUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(selectedFileUrl);
+      }
       setSelectedFileUrl(null);
     }
   };
@@ -559,6 +580,18 @@ const StaffManagement: React.FC = () => {
                      {formData.photo_url && (
                        <Button
                          type="button"
+                         variant="outline"
+                         onClick={handleEditExistingPhoto}
+                         className="gap-1.5 rounded-xl text-xs font-bold border-primary/30 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary h-9 shadow-sm"
+                         title="Recadrer et zoomer la photo existante"
+                       >
+                         <Scissors className="w-3.5 h-3.5 text-primary" />
+                         Recadrer
+                       </Button>
+                     )}
+                     {formData.photo_url && (
+                       <Button
+                         type="button"
                          variant="ghost"
                          onClick={() => setFormData({ ...formData, photo_url: '' })}
                          className="text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 h-9 px-2"
@@ -712,6 +745,8 @@ const StaffManagement: React.FC = () => {
         onClose={() => setCropModalOpen(false)}
         imageSrc={selectedFileUrl}
         onCropComplete={handleCropComplete}
+        title="Recadrer la Photo du Staff"
+        description="Ajustez le zoom et le cadrage pour la fiche officielle du staff"
       />
 
       <MediaPickerModal

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { X, ArrowUpCircle, RotateCcw, Clock, CheckCircle2, AlertTriangle, ChevronUp } from 'lucide-react';
+import { X, ArrowUpCircle, ArrowDownCircle, RotateCcw, Clock, CheckCircle2, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { motion, AnimatePresence } from 'framer-motion';
-import { isHigherCategory } from '../../services/surclassementService';
+import { isHigherCategory, isLowerCategory } from '../../services/surclassementService';
 import type { Player, Team, PlayerSurclassement } from '../../types';
 import type { SurclassementWithDetails } from '../../services/surclassementService';
 
@@ -60,21 +60,43 @@ export default function SurclassementModal({
   onConfirmRevert,
   onClose,
 }: Props) {
-  // Si le joueur est déjà surclassé, son team_id pointe vers l'équipe cible ;
-  // on utilise originalTeam (passé par le wrapper) comme référence réelle.
+  // Si le joueur est déjà surclassé/sous-classé, on utilise originalTeam comme référence réelle.
   const currentTeam = originalTeam ?? teams.find(t => t.id === player.team_id);
   const currentCategory = currentTeam?.category ?? '';
 
-  // Équipes cibles : strictement catégorie supérieure, exclu l'équipe actuelle
-  const eligibleTeams = teams.filter(
-    t => t.id !== player.team_id && isHigherCategory(currentCategory, t.category)
-  );
+  // Détection si l'affectation active est un sous-classement (descend en catégorie inférieure)
+  const isActiveSousClassement = activeSurclassement
+    ? isLowerCategory(activeSurclassement.original_category, activeSurclassement.target_category)
+    : false;
+
+  // Mode de création : Surclassement (supérieur ↗) ou Sous-classement (inférieur ↘)
+  const [mobilityMode, setMobilityMode] = useState<'surclassement' | 'sous_classement'>('surclassement');
+
+  // Filtrage des équipes selon le mode choisi
+  const eligibleTeams = teams.filter(t => {
+    if (t.id === player.team_id) return false;
+    return mobilityMode === 'surclassement'
+      ? isHigherCategory(currentCategory, t.category)
+      : isLowerCategory(currentCategory, t.category);
+  });
 
   const [targetTeamId, setTargetTeamId] = useState(eligibleTeams[0]?.id ?? '');
   const [notes, setNotes] = useState('');
   const [targetJerseyNumber, setTargetJerseyNumber] = useState<string>('');
   const [tab, setTab] = useState<'action' | 'history'>('action');
   const [confirmRevert, setConfirmRevert] = useState(false);
+
+  // Bascule de mode
+  const handleModeChange = (newMode: 'surclassement' | 'sous_classement') => {
+    setMobilityMode(newMode);
+    const filtered = teams.filter(t => {
+      if (t.id === player.team_id) return false;
+      return newMode === 'surclassement'
+        ? isHigherCategory(currentCategory, t.category)
+        : isLowerCategory(currentCategory, t.category);
+    });
+    setTargetTeamId(filtered[0]?.id ?? '');
+  };
 
   const targetTeam = teams.find(t => t.id === targetTeamId);
 
@@ -83,6 +105,10 @@ export default function SurclassementModal({
     const jersey = targetJerseyNumber !== '' ? parseInt(targetJerseyNumber, 10) : null;
     onConfirmSurclasser(targetTeamId, notes, jersey);
   };
+
+  const isCurrentSousClassement = activeSurclassement
+    ? isActiveSousClassement
+    : mobilityMode === 'sous_classement';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -94,7 +120,11 @@ export default function SurclassementModal({
         className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden"
       >
         {/* Header */}
-        <div className="relative bg-gradient-to-br from-orange-500 to-amber-500 p-6 pb-8">
+        <div className={`relative p-6 pb-8 transition-colors duration-300 ${
+          isCurrentSousClassement
+            ? 'bg-gradient-to-br from-sky-600 to-indigo-700'
+            : 'bg-gradient-to-br from-orange-500 to-amber-500'
+        }`}>
           <button
             onClick={onClose}
             className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all"
@@ -115,8 +145,16 @@ export default function SurclassementModal({
               />
             </div>
             <div>
-              <p className="text-white/70 text-[10px] font-black uppercase tracking-widest">
-                {activeSurclassement ? 'Surclassement actif' : 'Surclassement'}
+              <p className="text-white/70 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                {activeSurclassement ? (
+                  isActiveSousClassement ? (
+                    <><ArrowDownCircle className="w-3 h-3 text-sky-200" /> Sous-classement actif</>
+                  ) : (
+                    <><ArrowUpCircle className="w-3 h-3 text-amber-200" /> Surclassement actif</>
+                  )
+                ) : (
+                  'Mobilité Catégorie Joueur'
+                )}
               </p>
               <h3 className="text-white font-black text-xl uppercase tracking-tight leading-tight">
                 {player.full_name}
@@ -127,7 +165,11 @@ export default function SurclassementModal({
                 </span>
                 {activeSurclassement && (
                   <>
-                    <ChevronUp className="w-3 h-3 text-white/70" />
+                    {isActiveSousClassement ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-white/90" />
+                    ) : (
+                      <ChevronUp className="w-3.5 h-3.5 text-white/90" />
+                    )}
                     <span className={`text-[10px] font-black text-white px-2 py-0.5 rounded-full ${catColor(activeSurclassement.target_category)} bg-opacity-80`}>
                       {activeSurclassement.target_category}
                     </span>
@@ -146,7 +188,9 @@ export default function SurclassementModal({
               onClick={() => setTab(t)}
               className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest transition-all ${
                 tab === t
-                  ? 'text-orange-500 border-b-2 border-orange-500 bg-white'
+                  ? isCurrentSousClassement
+                    ? 'text-sky-600 border-b-2 border-sky-600 bg-white'
+                    : 'text-orange-500 border-b-2 border-orange-500 bg-white'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -161,21 +205,33 @@ export default function SurclassementModal({
             {tab === 'action' ? (
               <motion.div key="action" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}>
 
-                {/* ── Surclassement actif → proposer réintégration ── */}
+                {/* ── Surclassement ou Sous-classement actif → proposer réintégration ── */}
                 {activeSurclassement ? (
                   <div className="space-y-5">
-                    <div className="rounded-2xl bg-orange-50 border border-orange-200 p-4 space-y-3">
+                    <div className={`rounded-2xl p-4 space-y-3 border ${
+                      isActiveSousClassement
+                        ? 'bg-sky-50 border-sky-200'
+                        : 'bg-orange-50 border-orange-200'
+                    }`}>
                       <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-                        <p className="text-[11px] font-black uppercase tracking-widest text-orange-600">
-                          Surclassé depuis le {fmtDate(activeSurclassement.promoted_at)}
+                        <div className={`w-2 h-2 rounded-full animate-pulse ${
+                          isActiveSousClassement ? 'bg-sky-500' : 'bg-orange-500'
+                        }`} />
+                        <p className={`text-[11px] font-black uppercase tracking-widest ${
+                          isActiveSousClassement ? 'text-sky-700' : 'text-orange-700'
+                        }`}>
+                          {isActiveSousClassement ? 'Sous-classé' : 'Surclassé'} depuis le {fmtDate(activeSurclassement.promoted_at)}
                         </p>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className={`text-xs font-black text-white px-3 py-1 rounded-xl ${catColor(activeSurclassement.original_category)}`}>
                           {activeSurclassement.original_category}
                         </span>
-                        <ArrowUpCircle className="w-4 h-4 text-orange-400" />
+                        {isActiveSousClassement ? (
+                          <ArrowDownCircle className="w-4 h-4 text-sky-500" />
+                        ) : (
+                          <ArrowUpCircle className="w-4 h-4 text-orange-400" />
+                        )}
                         <span className={`text-xs font-black text-white px-3 py-1 rounded-xl ${catColor(activeSurclassement.target_category)}`}>
                           {activeSurclassement.target_category}
                         </span>
@@ -188,7 +244,7 @@ export default function SurclassementModal({
                     {!confirmRevert ? (
                       <Button
                         onClick={() => setConfirmRevert(true)}
-                        className="w-full h-12 rounded-2xl font-black uppercase tracking-widest text-xs gap-2 bg-slate-700 hover:bg-slate-800 text-white"
+                        className="w-full h-12 rounded-2xl font-black uppercase tracking-widest text-xs gap-2 bg-slate-700 hover:bg-slate-800 text-white shadow-md"
                       >
                         <RotateCcw className="w-4 h-4" />
                         Réintégrer dans {activeSurclassement.original_category}
@@ -198,7 +254,7 @@ export default function SurclassementModal({
                         <div className="rounded-2xl bg-red-50 border border-red-200 p-4 flex gap-3">
                           <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                           <p className="text-xs text-red-700 font-semibold">
-                            Confirmer la réintégration de <strong>{player.full_name}</strong> dans la catégorie <strong>{activeSurclassement.original_category}</strong> ?
+                            Confirmer la réintégration de <strong>{player.full_name}</strong> dans sa catégorie d'origine <strong>{activeSurclassement.original_category}</strong> ?
                           </p>
                         </div>
                         <div className="flex gap-3">
@@ -225,16 +281,48 @@ export default function SurclassementModal({
                     )}
                   </div>
                 ) : (
-                  /* ── Pas de surclassement actif → formulaire de création ── */
+                  /* ── Pas de mobilité active → formulaire de création ── */
                   <div className="space-y-5">
+                    {/* Switcher Surclasser vs Sous-classer */}
+                    <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleModeChange('surclassement')}
+                        className={`py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                          mobilityMode === 'surclassement'
+                            ? 'bg-orange-500 text-white shadow-md'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <ArrowUpCircle className="w-3.5 h-3.5" />
+                        Surclasser (↗)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleModeChange('sous_classement')}
+                        className={`py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                          mobilityMode === 'sous_classement'
+                            ? 'bg-sky-600 text-white shadow-md'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <ArrowDownCircle className="w-3.5 h-3.5" />
+                        Sous-classer (↘)
+                      </button>
+                    </div>
+
                     {eligibleTeams.length === 0 ? (
                       <div className="rounded-2xl bg-slate-50 border border-slate-200 p-6 text-center space-y-2">
-                        <p className="text-2xl">🚫</p>
-                        <p className="text-sm font-bold text-slate-500">
-                          Aucune équipe de catégorie supérieure disponible.
+                        <p className="text-2xl">{mobilityMode === 'surclassement' ? '🔝' : '🔻'}</p>
+                        <p className="text-sm font-bold text-slate-700">
+                          {mobilityMode === 'surclassement'
+                            ? 'Aucune équipe de catégorie supérieure disponible.'
+                            : 'Aucune équipe de catégorie inférieure disponible.'}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Créez d'abord une équipe dans une catégorie au-dessus de <strong>{currentCategory || 'N/A'}</strong>.
+                          {mobilityMode === 'surclassement'
+                            ? `Le joueur est actuellement dans la catégorie la plus élevée (${currentCategory || 'N/A'}).`
+                            : `Le joueur est actuellement dans la catégorie la plus jeune (${currentCategory || 'N/A'}).`}
                         </p>
                       </div>
                     ) : (
@@ -242,7 +330,9 @@ export default function SurclassementModal({
                         {/* Équipe cible */}
                         <div className="space-y-2">
                           <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                            Équipe cible (catégorie supérieure)
+                            {mobilityMode === 'surclassement'
+                              ? 'Équipe cible (catégorie supérieure ↗)'
+                              : 'Équipe cible (catégorie inférieure ↘ - temps de jeu / reprise)'}
                           </label>
                           <div className="grid grid-cols-1 gap-2 max-h-44 overflow-y-auto pr-1">
                             {eligibleTeams.map(team => (
@@ -251,7 +341,9 @@ export default function SurclassementModal({
                                 onClick={() => setTargetTeamId(team.id)}
                                 className={`flex items-center gap-3 p-3 rounded-2xl border-2 text-left transition-all ${
                                   targetTeamId === team.id
-                                    ? 'border-orange-400 bg-orange-50'
+                                    ? mobilityMode === 'surclassement'
+                                      ? 'border-orange-400 bg-orange-50'
+                                      : 'border-sky-400 bg-sky-50'
                                     : 'border-slate-100 hover:border-slate-300 bg-white'
                                 }`}
                               >
@@ -261,20 +353,24 @@ export default function SurclassementModal({
                                   {team.category}
                                 </span>
                                 {targetTeamId === team.id && (
-                                  <CheckCircle2 className="w-4 h-4 text-orange-500" />
+                                  <CheckCircle2 className={`w-4 h-4 ${mobilityMode === 'surclassement' ? 'text-orange-500' : 'text-sky-600'}`} />
                                 )}
                               </button>
                             ))}
                           </div>
                         </div>
 
-                        {/* Flèche promotion */}
+                        {/* Flèche transition visuelle */}
                         {targetTeam && (
                           <div className="flex items-center justify-center gap-3 py-2">
                             <span className={`text-xs font-black text-white px-3 py-1.5 rounded-xl ${catColor(currentCategory)}`}>
                               {currentCategory}
                             </span>
-                            <ArrowUpCircle className="w-5 h-5 text-orange-400" />
+                            {mobilityMode === 'surclassement' ? (
+                              <ArrowUpCircle className="w-5 h-5 text-orange-400" />
+                            ) : (
+                              <ArrowDownCircle className="w-5 h-5 text-sky-500" />
+                            )}
                             <span className={`text-xs font-black text-white px-3 py-1.5 rounded-xl ${catColor(targetTeam.category)}`}>
                               {targetTeam.category}
                             </span>
@@ -299,7 +395,11 @@ export default function SurclassementModal({
                                 value={targetJerseyNumber}
                                 onChange={e => setTargetJerseyNumber(e.target.value)}
                                 placeholder="N° cible"
-                                className="w-28 px-4 py-2 rounded-xl border border-slate-200 text-sm font-black text-center focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all"
+                                className={`w-28 px-4 py-2 rounded-xl border border-slate-200 text-sm font-black text-center focus:outline-none transition-all ${
+                                  mobilityMode === 'surclassement'
+                                    ? 'focus:border-orange-400 focus:ring-2 focus:ring-orange-100'
+                                    : 'focus:border-sky-400 focus:ring-2 focus:ring-sky-100'
+                                }`}
                               />
                             </div>
                             {targetJerseyNumber && (
@@ -324,9 +424,17 @@ export default function SurclassementModal({
                           <textarea
                             value={notes}
                             onChange={e => setNotes(e.target.value)}
-                            placeholder="Ex : blessé du titulaire, besoin de renforts…"
+                            placeholder={
+                              mobilityMode === 'surclassement'
+                                ? 'Ex : surclassé pour potentiel remarquable, besoin de renforts…'
+                                : 'Ex : descente de catégorie pour reprise post-blessure, temps de jeu…'
+                            }
                             rows={3}
-                            className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm font-medium resize-none focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all"
+                            className={`w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm font-medium resize-none focus:outline-none transition-all ${
+                              mobilityMode === 'surclassement'
+                                ? 'focus:border-orange-400 focus:ring-2 focus:ring-orange-100'
+                                : 'focus:border-sky-400 focus:ring-2 focus:ring-sky-100'
+                            }`}
                           />
                         </div>
 
@@ -334,15 +442,21 @@ export default function SurclassementModal({
                         <Button
                           onClick={handleSubmit}
                           disabled={!targetTeamId || isCreating}
-                          className="w-full h-12 rounded-2xl font-black uppercase tracking-widest text-xs gap-2 bg-orange-500 hover:bg-orange-600 text-white shadow-lg shadow-orange-200"
+                          className={`w-full h-12 rounded-2xl font-black uppercase tracking-widest text-xs gap-2 text-white shadow-lg ${
+                            mobilityMode === 'surclassement'
+                              ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-200'
+                              : 'bg-sky-600 hover:bg-sky-700 shadow-sky-200'
+                          }`}
                         >
                           {isCreating ? (
                             <span className="flex items-center gap-2">
                               <span className="w-3 h-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
                               Enregistrement…
                             </span>
+                          ) : mobilityMode === 'surclassement' ? (
+                            <><ArrowUpCircle className="w-4 h-4" />Surclasser le joueur (↗)</>
                           ) : (
-                            <><ArrowUpCircle className="w-4 h-4" />Surclasser le joueur</>
+                            <><ArrowDownCircle className="w-4 h-4" />Sous-classer le joueur (↘)</>
                           )}
                         </Button>
                       </>
@@ -362,58 +476,71 @@ export default function SurclassementModal({
                 ) : history.length === 0 ? (
                   <div className="text-center py-10 space-y-2">
                     <p className="text-3xl">📋</p>
-                    <p className="text-sm font-bold text-muted-foreground">Aucun surclassement enregistré</p>
+                    <p className="text-sm font-bold text-muted-foreground">Aucune mobilité enregistrée</p>
                   </div>
                 ) : (
                   <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                    {history.map(s => (
-                      <div
-                        key={s.id}
-                        className={`rounded-2xl p-4 border ${
-                          s.status === 'active'
-                            ? 'bg-orange-50 border-orange-200'
-                            : 'bg-slate-50 border-slate-200 opacity-70'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-[10px] font-black text-white px-2 py-0.5 rounded-full ${catColor(s.original_category)}`}>
-                              {s.original_category}
+                    {history.map(s => {
+                      const isSousClass = isLowerCategory(s.original_category, s.target_category);
+                      return (
+                        <div
+                          key={s.id}
+                          className={`rounded-2xl p-4 border ${
+                            s.status === 'active'
+                              ? isSousClass
+                                ? 'bg-sky-50 border-sky-200'
+                                : 'bg-orange-50 border-orange-200'
+                              : 'bg-slate-50 border-slate-200 opacity-70'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-[10px] font-black text-white px-2 py-0.5 rounded-full ${catColor(s.original_category)}`}>
+                                {s.original_category}
+                              </span>
+                              {isSousClass ? (
+                                <ArrowDownCircle className="w-3 h-3 text-sky-500" />
+                              ) : (
+                                <ArrowUpCircle className="w-3 h-3 text-orange-400" />
+                              )}
+                              <span className={`text-[10px] font-black text-white px-2 py-0.5 rounded-full ${catColor(s.target_category)}`}>
+                                {s.target_category}
+                              </span>
+                              {s.status === 'active' ? (
+                                <Badge className={`border-none text-[9px] font-black uppercase ${
+                                  isSousClass
+                                    ? 'bg-sky-100 text-sky-700'
+                                    : 'bg-orange-100 text-orange-700'
+                                }`}>
+                                  {isSousClass ? 'Sous-classé Actif' : 'Surclassé Actif'}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[9px] font-black uppercase text-slate-500">
+                                  Réintégré
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground font-semibold">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              Affecté le {fmtDate(s.promoted_at)}
                             </span>
-                            <ArrowUpCircle className="w-3 h-3 text-slate-400" />
-                            <span className={`text-[10px] font-black text-white px-2 py-0.5 rounded-full ${catColor(s.target_category)}`}>
-                              {s.target_category}
-                            </span>
-                            {s.status === 'active' ? (
-                              <Badge className="bg-orange-100 text-orange-600 border-none text-[9px] font-black uppercase">
-                                Actif
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[9px] font-black uppercase text-slate-500">
-                                Réintégré
-                              </Badge>
+                            {s.reverted_at && (
+                              <span className="flex items-center gap-1">
+                                <RotateCcw className="w-3 h-3" />
+                                Réintégré le {fmtDate(s.reverted_at)}
+                              </span>
                             )}
                           </div>
-                        </div>
 
-                        <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground font-semibold">
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            Promu le {fmtDate(s.promoted_at)}
-                          </span>
-                          {s.reverted_at && (
-                            <span className="flex items-center gap-1">
-                              <RotateCcw className="w-3 h-3" />
-                              Réintégré le {fmtDate(s.reverted_at)}
-                            </span>
+                          {s.notes && (
+                            <p className="mt-2 text-[11px] text-slate-500 italic">"{s.notes}"</p>
                           )}
                         </div>
-
-                        {s.notes && (
-                          <p className="mt-2 text-[11px] text-slate-500 italic">"{s.notes}"</p>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </motion.div>
@@ -424,3 +551,4 @@ export default function SurclassementModal({
     </div>
   );
 }
+

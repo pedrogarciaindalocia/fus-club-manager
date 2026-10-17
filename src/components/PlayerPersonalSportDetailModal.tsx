@@ -31,6 +31,7 @@ import type { Player, Match, MatchEvent, AgeCategory } from '../types';
 import { useMatches } from '../hooks/useMatches';
 import { useAdvancedDashboardStats } from '../hooks/useAdvancedDashboardStats';
 import { useSurclassements } from '../hooks/useSurclassements';
+import { isLowerCategory } from '../services/surclassementService';
 import PlayerRadarChart from '../features/recruitment/components/PlayerRadarChart';
 import type { CandidateEvaluation } from '../features/recruitment/types/recruitment';
 import { getPositionDetails } from '../constants';
@@ -141,7 +142,7 @@ export const PlayerPersonalSportDetailModal: React.FC<PlayerPersonalSportDetailM
   // Check surclassement status
   const playerSurclassement = useMemo(() => {
     if (!player) return null;
-    return surclassements.find(s => s.player_id === player.id && s.is_active);
+    return surclassements.find(s => s.player_id === player.id && (s.status === 'active' || (s as any).is_active));
   }, [player, surclassements]);
 
   // Generate harmonized 4-pillar evaluation for the Radar chart
@@ -337,11 +338,16 @@ export const PlayerPersonalSportDetailModal: React.FC<PlayerPersonalSportDetailM
                     {(player as any).category}
                   </Badge>
                 )}
-                {playerSurclassement && (
-                  <Badge className="bg-amber-400 text-slate-950 font-black text-[9px] sm:text-[10px] uppercase">
-                    ⭐ Surclassé {playerSurclassement.target_category}
-                  </Badge>
-                )}
+                {playerSurclassement && (() => {
+                  const isSousClass = isLowerCategory(playerSurclassement.original_category, playerSurclassement.target_category);
+                  return (
+                    <Badge className={`font-black text-[9px] sm:text-[10px] uppercase ${
+                      isSousClass ? 'bg-sky-500 text-white' : 'bg-amber-400 text-slate-950'
+                    }`}>
+                      {isSousClass ? '⬇️ Sous-classé' : '⭐ Surclassé'} {playerSurclassement.target_category}
+                    </Badge>
+                  );
+                })()}
               </div>
               <p className="text-[11px] sm:text-xs text-slate-300 mt-1 flex items-center gap-1.5 sm:gap-2 flex-wrap">
                 <span>Club : <strong>FUS Rabat</strong></span>
@@ -723,17 +729,31 @@ export const PlayerPersonalSportDetailModal: React.FC<PlayerPersonalSportDetailM
                   </div>
                 </div>
 
-                {playerSurclassement && (
-                  <div className="relative">
-                    <div className="absolute -left-[31px] top-0 w-4 h-4 rounded-full bg-amber-400 border-2 border-white dark:border-slate-900 shadow" />
-                    <div className="bg-amber-500/10 p-3 rounded-xl border border-amber-500/30 space-y-1">
-                      <span className="font-bold text-amber-900 dark:text-amber-300 block">Surclassement Catégorie Supérieure</span>
-                      <p className="text-amber-800/90 dark:text-amber-400 text-[11px]">
-                        Surclassé en {playerSurclassement.target_category} (Raison : {playerSurclassement.reason || 'Performance remarquable'}).
-                      </p>
+                {playerSurclassement && (() => {
+                  const isSousClass = isLowerCategory(playerSurclassement.original_category, playerSurclassement.target_category);
+                  return (
+                    <div className="relative">
+                      <div className={`absolute -left-[31px] top-0 w-4 h-4 rounded-full border-2 border-white dark:border-slate-900 shadow ${
+                        isSousClass ? 'bg-sky-500' : 'bg-amber-400'
+                      }`} />
+                      <div className={`p-3 rounded-xl border space-y-1 ${
+                        isSousClass
+                          ? 'bg-sky-500/10 border-sky-500/30'
+                          : 'bg-amber-500/10 border-amber-500/30'
+                      }`}>
+                        <span className={`font-bold block ${isSousClass ? 'text-sky-900 dark:text-sky-300' : 'text-amber-900 dark:text-amber-300'}`}>
+                          {isSousClass ? 'Sous-classement Catégorie Inférieure' : 'Surclassement Catégorie Supérieure'}
+                        </span>
+                        <p className={`text-[11px] ${isSousClass ? 'text-sky-800/90 dark:text-sky-400' : 'text-amber-800/90 dark:text-amber-400'}`}>
+                          {isSousClass
+                            ? `Sous-classé en ${playerSurclassement.target_category} (Raison : ${playerSurclassement.notes || 'Reprise post-blessure / Temps de jeu'}).`
+                            : `Surclassé en ${playerSurclassement.target_category} (Raison : ${playerSurclassement.notes || 'Performance remarquable'}).`
+                          }
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             </div>
           )}

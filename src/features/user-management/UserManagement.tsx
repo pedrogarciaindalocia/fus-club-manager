@@ -19,6 +19,7 @@ import {
   Search, 
   Trash2, 
   Edit2, 
+  Scissors,
   X,
   ShieldCheck,
   Loader2,
@@ -58,6 +59,7 @@ import {
   Video
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ImageCropperModal from '../../components/ImageCropperModal';
 import { AuditLogger } from '../../services/auditLogger';
 import { PLAYER_CATEGORIES } from '../../constants';
 import { getRoleConfig, OFFICIAL_JOB_TITLES, type OfficialJobTitle } from '../../constants/roles';
@@ -623,6 +625,8 @@ const UserManagement: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [selectedFileUrl, setSelectedFileUrl] = useState<string | null>(null);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [dbErrors, setDbErrors] = useState<string[]>([]);
 
@@ -1894,9 +1898,37 @@ Direction Générale — FUS Rabat`;
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setAvatarFile(file);
-      setAvatarPreview(URL.createObjectURL(file));
+      const url = URL.createObjectURL(file);
+      setSelectedFileUrl(url);
+      setCropModalOpen(true);
     }
+    e.target.value = '';
+  };
+
+  const handleEditExistingAvatar = async () => {
+    const currentUrl = avatarPreview || formData.avatar_url;
+    if (!currentUrl) return;
+    try {
+      const res = await fetch(currentUrl);
+      const blob = await res.blob();
+      const localUrl = URL.createObjectURL(blob);
+      setSelectedFileUrl(localUrl);
+      setCropModalOpen(true);
+    } catch {
+      setSelectedFileUrl(currentUrl);
+      setCropModalOpen(true);
+    }
+  };
+
+  const handleCropComplete = (croppedBlob: Blob) => {
+    setCropModalOpen(false);
+    const croppedFile = new File([croppedBlob], `avatar-${Date.now()}.png`, { type: 'image/png' });
+    setAvatarFile(croppedFile);
+    setAvatarPreview(URL.createObjectURL(croppedBlob));
+    if (selectedFileUrl && selectedFileUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(selectedFileUrl);
+    }
+    setSelectedFileUrl(null);
   };
 
   const toggleCategory = (cat: string) => {
@@ -2940,6 +2972,19 @@ Direction Générale — FUS Rabat`;
                                         <ImageIcon className="w-3 h-3 text-primary" />
                                         Média
                                       </Button>
+                                      {(avatarPreview || formData.avatar_url) && (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={handleEditExistingAvatar}
+                                          className="h-7 px-2 text-[10px] font-bold rounded-lg gap-1 border-primary/30 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary"
+                                          title="Recadrer et zoomer l'avatar existant"
+                                        >
+                                          <Scissors className="w-3 h-3 text-primary" />
+                                          Recadrer
+                                        </Button>
+                                      )}
                                       {(avatarPreview || formData.avatar_url) && (
                                         <Button
                                           type="button"
@@ -4011,6 +4056,16 @@ Direction Générale — FUS Rabat`;
           setAvatarFile(null);
         }}
         title="Affecter une photo depuis la Médiathèque"
+      />
+
+      <ImageCropperModal
+        isOpen={cropModalOpen}
+        onClose={() => setCropModalOpen(false)}
+        imageSrc={selectedFileUrl}
+        onCropComplete={handleCropComplete}
+        cropShape="round"
+        title="Recadrer l'Avatar Utilisateur"
+        description="Ajustez le zoom et cadrez le visage pour la photo de profil"
       />
     </div>
   );

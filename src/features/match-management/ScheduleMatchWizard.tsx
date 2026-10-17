@@ -12,6 +12,7 @@ import { usePermissions } from '../../context/PermissionsContext';
 import type { OpponentPlayer } from '../../types';
 import { PLAYER_CATEGORIES, normalizeAgeCategory } from '../../constants';
 import { useSurclassements } from '../../hooks/useSurclassements';
+import { isLowerCategory } from '../../services/surclassementService';
 import { Skeleton } from '../../components/ui/skeleton';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '../../components/ui/button';
@@ -1864,12 +1865,25 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                         Effectif disponible
                       </span>
-                      <div className="flex items-center gap-1.5">
-                        {surclassedTargetMap.size > 0 && (
-                          <Badge className="text-[9px] font-black bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300">
-                            ⭐ {surclassedTargetMap.size} surclassé{surclassedTargetMap.size > 1 ? 's' : ''}
-                          </Badge>
-                        )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(() => {
+                          const surclassedCount = Array.from(surclassedTargetMap.values()).filter(s => !isLowerCategory(s.original_category, s.target_category)).length;
+                          const sousclassedCount = Array.from(surclassedTargetMap.values()).filter(s => isLowerCategory(s.original_category, s.target_category)).length;
+                          return (
+                            <>
+                              {surclassedCount > 0 && (
+                                <Badge className="text-[9px] font-black bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300">
+                                  ⭐ {surclassedCount} surclassé{surclassedCount > 1 ? 's' : ''}
+                                </Badge>
+                              )}
+                              {sousclassedCount > 0 && (
+                                <Badge className="text-[9px] font-black bg-sky-100 text-sky-800 border-sky-300 dark:bg-sky-950/40 dark:text-sky-300">
+                                  ⬇️ {sousclassedCount} sous-classé{sousclassedCount > 1 ? 's' : ''}
+                                </Badge>
+                              )}
+                            </>
+                          );
+                        })()}
                         <Badge variant="outline" className="text-[10px] font-black bg-slate-50 border-slate-200">
                           {matchPlayers.length} joueur{matchPlayers.length > 1 ? 's' : ''}
                         </Badge>
@@ -1902,6 +1916,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                 const surclass = surclassedTargetMap.get(p.id);
                                 const originSurclass = !surclass ? activeSurclassementByPlayerId.get(p.id) : null;
                                 const displayJersey = surclass?.target_jersey_number ?? p.jersey_number;
+                                const isSousClass = surclass ? isLowerCategory(surclass.original_category, surclass.target_category) : false;
                                 return (
                                   <motion.div
                                     key={p.id}
@@ -1914,14 +1929,20 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                         : isSub
                                         ? 'border-emerald-400 bg-emerald-50/20'
                                         : surclass
-                                        ? 'border-amber-300 dark:border-amber-700/60 bg-amber-50/30 dark:bg-amber-950/20'
+                                        ? isSousClass
+                                          ? 'border-sky-300 dark:border-sky-700/60 bg-sky-50/30 dark:bg-sky-950/20'
+                                          : 'border-amber-300 dark:border-amber-700/60 bg-amber-50/30 dark:bg-amber-950/20'
                                         : 'border-secondary bg-white'
                                     }`}
                                   >
                                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs overflow-hidden border-2 border-white relative ${isStarter ? 'bg-white/20' : 'bg-secondary'}`}>
                                       <img src={(p.photo_url && p.photo_url !== 'null') ? p.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random&color=fff&size=200`} className="w-full h-full object-cover" />
                                       {surclass && (
-                                        <span className="absolute bottom-0 right-0 bg-amber-400 text-slate-950 text-[7px] font-black px-0.5 rounded-tl shadow-xs">⭐</span>
+                                        <span className={`absolute bottom-0 right-0 text-white text-[7px] font-black px-0.5 rounded-tl shadow-xs ${
+                                          isSousClass ? 'bg-sky-600' : 'bg-amber-400 !text-slate-950'
+                                        }`}>
+                                          {isSousClass ? '⬇️' : '⭐'}
+                                        </span>
                                       )}
                                     </div>
                                     <div className="flex-1 min-w-0">
@@ -1930,21 +1951,26 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                         {surclass && (
                                           <span className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${
                                             isStarter
-                                              ? 'bg-amber-400 text-slate-950 shadow-xs'
+                                              ? isSousClass ? 'bg-sky-500 text-white shadow-xs' : 'bg-amber-400 text-slate-950 shadow-xs'
+                                              : isSousClass
+                                              ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-700/60'
                                               : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60'
                                           }`}>
-                                            ⭐ Surclassé ({surclass.original_category})
+                                            {isSousClass ? '⬇️ Sous-classé' : '⭐ Surclassé'} ({surclass.original_category})
                                           </span>
                                         )}
-                                        {originSurclass && (
-                                          <span className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${
-                                            isStarter
-                                              ? 'bg-white/20 text-white'
-                                              : 'bg-secondary text-muted-foreground'
-                                          }`}>
-                                            ↑ {originSurclass.target_category}
-                                          </span>
-                                        )}
+                                        {originSurclass && (() => {
+                                          const isOriginSousClass = isLowerCategory(originSurclass.original_category, originSurclass.target_category);
+                                          return (
+                                            <span className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${
+                                              isStarter
+                                                ? 'bg-white/20 text-white'
+                                                : 'bg-secondary text-muted-foreground'
+                                            }`}>
+                                              {isOriginSousClass ? '↓' : '↑'} {originSurclass.target_category}
+                                            </span>
+                                          );
+                                        })()}
                                       </div>
                                       <p className={`text-[8px] font-bold opacity-60 ${isStarter ? 'text-white/80' : 'text-muted-foreground'}`}>
                                         #{displayJersey} • {p.position} {surclass ? `• Origine : ${surclass.original_category}` : ''}
@@ -1993,6 +2019,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                         if (!p) return null;
                         const surclass = surclassedTargetMap.get(p.id);
                         const displayJersey = surclass?.target_jersey_number ?? p.jersey_number;
+                        const isSousClass = surclass ? isLowerCategory(surclass.original_category, surclass.target_category) : false;
                         return (
                           <motion.div
                             key={sid}
@@ -2000,14 +2027,20 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                             onDragStart={(e) => { e.dataTransfer.setData('playerId', sid); }}
                             className={`flex items-center gap-2.5 p-2 pr-4 rounded-2xl border-2 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:scale-105 ${
                               surclass 
-                                ? 'border-amber-400 bg-amber-50/40 dark:bg-amber-950/30' 
+                                ? isSousClass
+                                  ? 'border-sky-400 bg-sky-50/40 dark:bg-sky-950/30'
+                                  : 'border-amber-400 bg-amber-50/40 dark:bg-amber-950/30' 
                                 : 'border-emerald-400 bg-white'
                             }`}
                           >
                             <div className="w-8 h-8 rounded-lg bg-secondary overflow-hidden border border-secondary shadow-inner relative shrink-0">
                               <img src={(p.photo_url && p.photo_url !== 'null') ? p.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random&color=fff&size=200`} className="w-full h-full object-cover" />
                               {surclass && (
-                                <span className="absolute bottom-0 right-0 bg-amber-400 text-slate-950 text-[7px] leading-none px-0.5 py-0.5 rounded-tl font-black">⭐</span>
+                                <span className={`absolute bottom-0 right-0 text-[7px] leading-none px-0.5 py-0.5 rounded-tl font-black ${
+                                  isSousClass ? 'bg-sky-600 text-white' : 'bg-amber-400 text-slate-950'
+                                }`}>
+                                  {isSousClass ? '⬇️' : '⭐'}
+                                </span>
                               )}
                             </div>
                             <div className="flex flex-col min-w-0">
@@ -2015,8 +2048,10 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                               <div className="flex items-center gap-1">
                                 <span className="text-[8px] font-bold text-muted-foreground">#{displayJersey}</span>
                                 {surclass && (
-                                  <span className="text-[7.5px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-tight">
-                                    ⭐ {surclass.original_category}
+                                  <span className={`text-[7.5px] font-black uppercase tracking-tight ${
+                                    isSousClass ? 'text-sky-700 dark:text-sky-400' : 'text-amber-700 dark:text-amber-400'
+                                  }`}>
+                                    {isSousClass ? '⬇️' : '⭐'} {surclass.original_category}
                                   </span>
                                 )}
                               </div>
@@ -2993,14 +3028,19 @@ const Pitch: React.FC<{
                         className="w-full h-full rounded-full object-cover p-0.5"
                       />
                       <Badge className="absolute -top-1 -right-1 bg-black text-white h-6 w-6 rounded-full flex items-center justify-center p-0 border-2 border-white text-[10px] font-black">{p.jersey_number}</Badge>
-                      {surclass && (
-                        <span
-                          title={`Surclassé depuis ${surclass.original_category}`}
-                          className="absolute -top-1 -left-1 bg-amber-400 text-slate-950 h-5 w-5 rounded-full flex items-center justify-center p-0 border-2 border-white text-[9px] font-black shadow-md z-20 cursor-help"
-                        >
-                          ⭐
-                        </span>
-                      )}
+                      {surclass && (() => {
+                        const isPitchSousClass = isLowerCategory(surclass.original_category, surclass.target_category);
+                        return (
+                          <span
+                            title={isPitchSousClass ? `Sous-classé depuis ${surclass.original_category}` : `Surclassé depuis ${surclass.original_category}`}
+                            className={`absolute -top-1 -left-1 h-5 w-5 rounded-full flex items-center justify-center p-0 border-2 border-white text-[9px] font-black shadow-md z-20 cursor-help ${
+                              isPitchSousClass ? 'bg-sky-500 text-white' : 'bg-amber-400 text-slate-950'
+                            }`}
+                          >
+                            {isPitchSousClass ? '⬇️' : '⭐'}
+                          </span>
+                        );
+                      })()}
                     </>
                   ) : (isOpponent && oppJersey) ? (
                     <>
@@ -3028,15 +3068,28 @@ const Pitch: React.FC<{
                 )}
               </div>
 
-              <div className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase backdrop-blur-md border shadow-lg transition-all
-            ${p ? 'bg-black/80 text-white border-white/20 scale-105 max-w-[130px]' : (isOpponent && oppJersey) ? 'bg-slate-900/90 text-white border-white/20 scale-105 max-w-[130px]' : 'bg-white/10 text-white/30 border-white/10 max-w-[90px]'}`}
-                title={p ? `${p.full_name}${surclass ? ` (⭐ Surclassé depuis ${surclass.original_category})` : ''}` : (isOpponent && oppJersey) ? oppName : pos.label}>
-                <div className="flex items-center gap-1 justify-center truncate">
-                  {surclass && <span className="text-amber-400 text-[9px] shrink-0">⭐</span>}
-                  <span className="truncate">{p ? (p.full_name.length > 10 ? p.full_name.substring(0, 10) + '…' : p.full_name) : (isOpponent && oppJersey) ? (oppName.length > 13 ? oppName.substring(0, 13) + '…' : oppName) : pos.label}</span>
-                  {surclass && <span className="text-[7.5px] text-amber-300 font-bold shrink-0">({surclass.original_category})</span>}
-                </div>
-              </div>
+              {(() => {
+                const isPitchSousClass = surclass ? isLowerCategory(surclass.original_category, surclass.target_category) : false;
+                return (
+                  <div className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase backdrop-blur-md border shadow-lg transition-all
+                ${p ? 'bg-black/80 text-white border-white/20 scale-105 max-w-[130px]' : (isOpponent && oppJersey) ? 'bg-slate-900/90 text-white border-white/20 scale-105 max-w-[130px]' : 'bg-white/10 text-white/30 border-white/10 max-w-[90px]'}`}
+                    title={p ? `${p.full_name}${surclass ? ` (${isPitchSousClass ? '⬇️ Sous-classé' : '⭐ Surclassé'} depuis ${surclass.original_category})` : ''}` : (isOpponent && oppJersey) ? oppName : pos.label}>
+                    <div className="flex items-center gap-1 justify-center truncate">
+                      {surclass && (
+                        <span className={`text-[9px] shrink-0 ${isPitchSousClass ? 'text-sky-300' : 'text-amber-400'}`}>
+                          {isPitchSousClass ? '⬇️' : '⭐'}
+                        </span>
+                      )}
+                      <span className="truncate">{p ? (p.full_name.length > 10 ? p.full_name.substring(0, 10) + '…' : p.full_name) : (isOpponent && oppJersey) ? (oppName.length > 13 ? oppName.substring(0, 13) + '…' : oppName) : pos.label}</span>
+                      {surclass && (
+                        <span className={`text-[7.5px] font-bold shrink-0 ${isPitchSousClass ? 'text-sky-300' : 'text-amber-300'}`}>
+                          ({surclass.original_category})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </motion.div>
           );
         })}

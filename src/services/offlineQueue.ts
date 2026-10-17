@@ -117,6 +117,9 @@ const commandRegistry: {
     });
     const { error } = await supabase.from('match_events').insert([payload]);
     if (error) throw error;
+    try {
+      supabase.functions.invoke('send-match-push', { body: { record: payload } }).catch(() => {});
+    } catch {}
   },
   update_event: async (op) => {
     const { error } = await supabase.from('match_events').update(op.updates).eq('id', op.eventId);
