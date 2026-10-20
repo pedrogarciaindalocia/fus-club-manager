@@ -4,7 +4,7 @@ import {
   HeartHandshake, AlertCircle, Sparkles, Building2, Plus, Briefcase,
   Edit3, ShieldCheck, ShieldAlert, Clock, UserCheck, Zap, Star, XCircle,
   Target, Globe, Compass, Video, ExternalLink, Camera, Upload, Trash2, Loader2, Image as ImageIcon, Check, Users,
-  FileSpreadsheet, Search, CheckCircle2, Flame, Eye, Trophy, RotateCcw, Info
+  FileSpreadsheet, Search, CheckCircle2, Flame, Eye, Trophy, RotateCcw, Info, Calendar
 } from 'lucide-react';
 import type { TrialCandidate, CandidateStatus, FootType, RecommendationPriority, Scout, CandidateEvaluation, AdministrativeDocument } from '../types/recruitment';
 import { RECRUITMENT_AGE_CATEGORIES, REFERENCE_PLAYER_STYLES } from '../types/recruitment';
@@ -90,6 +90,12 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     }
   }, [mode, initialTab]);
 
+  useEffect(() => {
+    if (mode === 'report_only' && scoutStateDecision === 'recruit_now' && activeSection !== 'sport') {
+      setActiveSection('sport');
+    }
+  }, [mode, scoutStateDecision, activeSection]);
+
   const { authState, hasSubModuleAccess, canManageCategory } = usePermissions();
   const userRoles = [
     ...(authState?.roles || []),
@@ -101,6 +107,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
   const canCreateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'create'));
   const canUpdateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'update'));
+  const canEditDriveLink = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'drive_link'));
 
   const allowedCategories = useMemo(() => {
     if (isSuperAdmin || isAdmin) return RECRUITMENT_AGE_CATEGORIES;
@@ -367,6 +374,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [discoveryCity, setDiscoveryCity] = useState('Rabat');
   const [discoveryCustomCity, setDiscoveryCustomCity] = useState('');
   const [discoveryLocation, setDiscoveryLocation] = useState('Rabat, Maroc');
+  const [discoveryDate, setDiscoveryDate] = useState<string>(
+    candidate?.discovery_date || new Date().toISOString().split('T')[0]
+  );
 
   const [discoveryMatch, setDiscoveryMatch] = useState('');
   const [priority, setPriority] = useState<RecommendationPriority>('high');
@@ -550,6 +560,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         setDiscoveryLocation('Rabat, Maroc');
       }
 
+      setDiscoveryDate(candidate.discovery_date || candidate.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]);
       setDiscoveryMatch(candidate.discovery_match || '');
       setPriority(candidate.recommendation_priority || 'high');
       setInitialScore(candidate.initial_scout_score || 8.0);
@@ -704,6 +715,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setAdministrativeDocuments([]);
       setContractType('Convention de formation');
       setAdminNotes('');
+      setDiscoveryDate(new Date().toISOString().split('T')[0]);
       setSelectedDbPlayerId('');
       setPlayerSourceMode('manual');
 
@@ -1288,9 +1300,10 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       selectedScout;
 
     // En mode player_only (Ajouter / Modifier un joueur), AUCUN rapport/évaluation ne doit être généré.
-    // L'évaluation n'est incluse que si on est en mode 'report_only' ou si un vrai titre/contenu de rapport a été renseigné.
+    // L'évaluation n'est incluse que si on est en mode 'report_only', si 'À recruter immédiatement' est coché, ou si un vrai titre/contenu de rapport a été renseigné.
     const hasEvalData = mode === 'player_only' ? false : (
       mode === 'report_only' ||
+      scoutStateDecision === 'recruit_now' ||
       Boolean(
         reportTitle.trim() ||
         techReport.trim() ||
@@ -1309,7 +1322,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       evaluator_name: selectedScout?.full_name || 'Scout',
       evaluator_role: selectedScout?.role_title || 'Scout',
       evaluation_date: new Date().toISOString().split('T')[0],
-      report_title: reportTitle.trim() || undefined,
+      scout_state_decision: scoutStateDecision,
+      report_title: reportTitle.trim() || (scoutStateDecision === 'recruit_now' ? 'Signalement : À recruter immédiatement' : undefined),
       position_evaluated: positionConfig.code || primaryPosition,
       report_data: {
         scout_state_decision: scoutStateDecision,
@@ -1413,7 +1427,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         performance_rating: Number(performanceRating),
         is_starter: isStarter,
         team_formation: teamFormation.trim() || undefined,
-        scout_state_decision: scoutStateDecision,
+        scout_state_decision: mode === 'player_only' ? candidate?.scout_state_decision : scoutStateDecision,
         information_source: informationSource,
         information_source_person: informationSourcePerson.trim() || undefined,
 
@@ -1430,14 +1444,15 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         discovering_scout_name: selectedScout?.full_name || (discoveringScoutId && discoveringScoutId !== '' ? discoveringScoutId : (candidate?.discovering_scout_name || 'Scout FUS')),
         recruiter_id: selectedRecruiter?.id || recruiterId || selectedScout?.id || discoveringScoutId || undefined,
         recruiter_name: selectedRecruiter?.full_name || selectedScout?.full_name || (recruiterId && recruiterId !== '' ? recruiterId : (candidate?.recruiter_name || 'Direction Recrutement')),
+        discovery_date: discoveryDate || new Date().toISOString().split('T')[0],
         discovery_location: discoveryLocation || undefined,
         discovery_match: discoveryMatch || undefined,
         recommendation_priority: priority,
         initial_scout_score: Number(initialScore),
         scout_recommendation_notes: scoutNotes || undefined,
 
-        video_type: videoType,
-        video_url: videoUrl.trim() || undefined,
+        video_type: mode === 'player_only' ? (candidate?.video_type || 'none') : videoType,
+        video_url: mode === 'player_only' ? (candidate?.video_url || undefined) : (videoUrl.trim() || undefined),
 
         reference_player_style: referencePlayerStyle || undefined,
         administrative_documents: administrativeDocuments.length > 0 ? administrativeDocuments : undefined,
@@ -1446,7 +1461,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
         preferred_locations: preferredLocations.length > 0 ? preferredLocations : undefined,
 
-        pipeline_stage: candidate?.pipeline_stage || 'prospect',
+        pipeline_stage: candidate?.pipeline_stage || 'shortlisted',
         status,
       }, evaluationPayload);
       onClose();
@@ -1497,11 +1512,13 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         {mode !== 'player_only' && (
           <div className="flex border-b bg-white px-6 overflow-x-auto gap-2 py-2.5">
             {(mode === 'report_only'
-              ? [
-                { id: 'sport', label: '1. Observation Terrain', icon: FileSpreadsheet },
-                { id: 'evaluation', label: '2. Qualités', icon: Star },
-                { id: 'report', label: '3. Rapport de Scout', icon: FileText },
-              ]
+              ? (scoutStateDecision === 'recruit_now'
+                ? [{ id: 'sport', label: '1. Décision (Recrutement Immédiat)', icon: FileSpreadsheet }]
+                : [
+                  { id: 'sport', label: '1. Observation Terrain', icon: FileSpreadsheet },
+                  { id: 'evaluation', label: '2. Qualités', icon: Star },
+                  { id: 'report', label: '3. Rapport de Scout', icon: FileText },
+                ])
               : [
                 { id: 'civil', label: '1. Profil Joueur & Contacts', icon: User },
                 { id: 'sport', label: '2. Observation Terrain', icon: FileSpreadsheet },
@@ -1560,7 +1577,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     )}
                   </div>
 
-                  <div className="pt-1">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
                     <ScoutSelect
                       scouts={scouts}
                       value={discoveringScoutId}
@@ -1568,11 +1585,27 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                         setDiscoveringScoutId(scoutId);
                         setRecruiterId(scoutId);
                       }}
-                      label="Scout"
+                      label="Scout Découvreur"
                       placeholder="Rechercher ou sélectionner un scout (nom, région, rôle)..."
                       helperText="Le profil et les futures évaluations de ce joueur seront automatiquement comptabilisés dans le bilan de ce scout."
                       required={false}
                     />
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                        Date de Détection *
+                      </label>
+                      <input
+                        type="date"
+                        value={discoveryDate}
+                        onChange={(e) => setDiscoveryDate(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all bg-white"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Date à laquelle le joueur a été supervisé ou repéré pour la première fois.
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -2267,169 +2300,6 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     </div>
                   </div>
                 </div>
-
-                {/* ── CARTE 7 : VIDÉO HIGHLIGHTS (GOOGLE DRIVE) ── */}
-                <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 space-y-4 shadow-lg text-white">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-700/80">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-                        <Video className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black text-white uppercase tracking-wider">
-                          7. Vidéo Highlights & Détection
-                        </h4>
-                        <p className="text-[11px] text-slate-400">
-                          Rattachez le lien Google Drive du joueur pour visionnage direct depuis la base de données.
-                        </p>
-                      </div>
-                    </div>
-                    {videoUrl && (
-                      <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/40 flex items-center gap-1">
-                        <Check className="w-3 h-3 text-emerald-400" />
-                        Lien configuré
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <input
-                        type="url"
-                        value={videoUrl}
-                        onChange={(e) => handleVideoUrlChange(e.target.value)}
-                        placeholder="https://drive.google.com/file/d/.../view?usp=sharing"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-mono text-white placeholder:text-slate-500 pr-28 focus:ring-2 ring-emerald-500/30 outline-none focus:border-emerald-500 transition-colors"
-                      />
-                      {videoUrl && (
-                        <a
-                          href={videoUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[10px] font-bold text-white flex items-center gap-1 transition-colors cursor-pointer"
-                        >
-                          <ExternalLink className="w-3 h-3" /> Ouvrir
-                        </a>
-                      )}
-                    </div>
-
-                    <p className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                      <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span>Collez votre lien de partage Google Drive avec accès lecteur. Un lecteur intégré s'affichera directement ci-dessous et dans la Database.</span>
-                    </p>
-
-                    {/* Google Drive Preview Embed */}
-                    {videoUrl && videoUrl.includes('drive.google.com') && (
-                      <div className="rounded-xl overflow-hidden border border-slate-700 bg-black w-full shadow-inner mt-2" style={{ aspectRatio: '16/9' }}>
-                        <iframe
-                          src={videoUrl.replace('/view', '/preview').replace('?usp=sharing', '')}
-                          title="Aperçu Google Drive Joueur"
-                          className="w-full h-full border-0"
-                          allow="autoplay"
-                          allowFullScreen
-                        />
-                      </div>
-                    )}
-
-                    {/* Fallback YouTube si saisi */}
-                    {videoUrl && (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) && extractYouTubeId(videoUrl) && (
-                      <div className="rounded-xl overflow-hidden border border-slate-700 bg-black w-full shadow-inner mt-2" style={{ aspectRatio: '16/9' }}>
-                        <iframe
-                          src={`https://www.youtube.com/embed/${extractYouTubeId(videoUrl)}?rel=0&modestbranding=1`}
-                          title="Aperçu YouTube Joueur"
-                          className="w-full h-full border-0"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* ── CARTE 8 : DÉCISION DE DÉTECTION & RECRUTEMENT ── */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                        <Target className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                          8. Décision / Statut de Détection *
-                        </h4>
-                        <p className="text-[11px] text-slate-500">
-                          Orientation immédiate suite à la détection ou à l'observation.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Boutons de décision avec 'À recruter immédiatement' au tout début */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    {[
-                      {
-                        id: 'recruit_now' as const,
-                        label: 'À recruter immédiatement',
-                        sub: 'Priorité absolue, potentiel exceptionnel validé',
-                        icon: Flame,
-                        activeClass: 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-500/40 shadow-sm'
-                      },
-                      {
-                        id: 'invitation_test' as const,
-                        label: 'Invitation Test',
-                        sub: 'Convoquer pour match d’essai / test académie',
-                        icon: Zap,
-                        activeClass: 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-400/40 shadow-sm'
-                      },
-                      {
-                        id: 'to_follow' as const,
-                        label: 'À suivre',
-                        sub: 'Conserver en veille active & prochaines échéances',
-                        icon: Eye,
-                        activeClass: 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-500/40 shadow-sm'
-                      },
-                    ].map((dec) => {
-                      const Icon = dec.icon;
-                      const isSelected = scoutStateDecision === dec.id;
-                      return (
-                        <button
-                          key={dec.id}
-                          type="button"
-                          onClick={() => setScoutStateDecision(dec.id)}
-                          className={cn(
-                            "p-3 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 cursor-pointer",
-                            isSelected
-                              ? dec.activeClass
-                              : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50/80"
-                          )}
-                        >
-                          <div className="flex items-center justify-between w-full">
-                            <span className="text-xs font-black flex items-center gap-1.5">
-                              <Icon className={cn("w-3.5 h-3.5", isSelected ? "text-white" : "text-primary")} />
-                              {dec.label}
-                            </span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
-                          </div>
-                          <p className={cn("text-[10px] leading-tight", isSelected ? "text-white/90" : "text-muted-foreground")}>
-                            {dec.sub}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* ── CARTE 9 : FORMULAIRE ADMINISTRATIF & PIÈCES JOINTES PDF (DÉCLENCHÉ POUR 'À RECRUTER IMMÉDIATEMENT') ── */}
-                {(scoutStateDecision === 'recruit_now' || administrativeDocuments.length > 0) && (
-                  <AdministrativeDossierForm
-                    documents={administrativeDocuments}
-                    onDocumentsChange={setAdministrativeDocuments}
-                    contractType={contractType}
-                    onContractTypeChange={setContractType}
-                    adminNotes={adminNotes}
-                    onAdminNotesChange={setAdminNotes}
-                  />
-                )}
               </div>
             )}
 
@@ -2490,69 +2360,120 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {[
-                        {
-                          id: 'recruit_now' as const,
-                          label: 'À recruter immédiatement',
-                          sub: 'Priorité absolue, potentiel exceptionnel validé',
-                          icon: Flame,
-                          activeClass: 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-500/40 shadow-sm'
-                        },
-                        {
-                          id: 'invitation_test' as const,
-                          label: 'Invitation Test',
-                          sub: 'Convoquer pour match d’essai / test académie',
-                          icon: Zap,
-                          activeClass: 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-400/40 shadow-sm'
-                        },
-                        {
-                          id: 'to_follow' as const,
-                          label: 'À suivre',
-                          sub: 'Conserver en veille active & prochaines échéances',
-                          icon: Eye,
-                          activeClass: 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-500/40 shadow-sm'
-                        },
-                      ].map((dec) => {
-                        const Icon = dec.icon;
-                        const isSelected = scoutStateDecision === dec.id;
-                        return (
-                          <button
-                            key={dec.id}
-                            type="button"
-                            onClick={() => setScoutStateDecision(dec.id)}
-                            className={cn(
-                              "p-3 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 cursor-pointer",
-                              isSelected
-                                ? dec.activeClass
-                                : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50/80"
-                            )}
-                          >
-                            <div className="flex items-center justify-between w-full">
-                              <span className="text-xs font-black flex items-center gap-1.5">
-                                <Icon className={cn("w-3.5 h-3.5", isSelected ? "text-white" : "text-primary")} />
-                                {dec.label}
+                    {/* ── TOGGLE : À RECRUTER IMMÉDIATEMENT ── */}
+                    <div className={cn(
+                      "p-4 rounded-2xl border transition-all duration-300",
+                      scoutStateDecision === 'recruit_now'
+                        ? "bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/5 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/20"
+                        : "bg-white border-slate-200"
+                    )}>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
+                            scoutStateDecision === 'recruit_now'
+                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/20"
+                              : "bg-slate-100 text-slate-500"
+                          )}>
+                            <Flame className={cn("w-5 h-5", scoutStateDecision === 'recruit_now' ? "fill-white" : "")} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                                À recruter immédiatement
                               </span>
-                              {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                              {scoutStateDecision === 'recruit_now' && (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider animate-pulse">
+                                  Priorité Absolue
+                                </span>
+                              )}
                             </div>
-                            <p className={cn("text-[10px] leading-tight", isSelected ? "text-white/90" : "text-muted-foreground")}>
-                              {dec.sub}
+                            <p className="text-[11px] text-slate-500">
+                              Enclenche la procédure prioritaire. Les champs d'évaluation de rapport ne sont pas obligatoires.
                             </p>
-                          </button>
-                        );
-                      })}
+                          </div>
+                        </div>
+
+                        {/* Switch Toggle */}
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={scoutStateDecision === 'recruit_now'}
+                          onClick={() => {
+                            const next = scoutStateDecision === 'recruit_now' ? 'invitation_test' : 'recruit_now';
+                            setScoutStateDecision(next);
+                            if (next === 'recruit_now') {
+                              toast.success("Notification émise à la Direction Administrative : procédure de recrutement immédiat enclenchée !");
+                            }
+                          }}
+                          className={cn(
+                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                            scoutStateDecision === 'recruit_now' ? "bg-emerald-600" : "bg-slate-300"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
+                              scoutStateDecision === 'recruit_now' ? "translate-x-5" : "translate-x-0"
+                            )}
+                          />
+                        </button>
+                      </div>
+
+                      {scoutStateDecision === 'recruit_now' && (
+                        <div className="mt-3 pt-3 border-t border-emerald-500/20 flex items-center gap-2 text-xs font-bold text-emerald-800 bg-emerald-500/10 p-2.5 rounded-xl animate-in fade-in duration-200">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Notification émise à la Direction Administrative : la fiche du joueur est directement orientée en recrutement immédiat.</span>
+                        </div>
+                      )}
                     </div>
 
-                    {(scoutStateDecision === 'recruit_now' || administrativeDocuments.length > 0) && (
-                      <div className="pt-3">
-                        <AdministrativeDossierForm
-                          documents={administrativeDocuments}
-                          onDocumentsChange={setAdministrativeDocuments}
-                          contractType={contractType}
-                          onContractTypeChange={setContractType}
-                          adminNotes={adminNotes}
-                          onAdminNotesChange={setAdminNotes}
-                        />
+                    {/* Orientations alternatives si le toggle immédiat est désactivé */}
+                    {scoutStateDecision !== 'recruit_now' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                        {[
+                          {
+                            id: 'invitation_test' as const,
+                            label: 'Invitation Test',
+                            sub: 'Convoquer pour match d’essai / test académie',
+                            icon: Zap,
+                            activeClass: 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-400/40 shadow-sm'
+                          },
+                          {
+                            id: 'to_follow' as const,
+                            label: 'À suivre',
+                            sub: 'Conserver en veille active & prochaines échéances',
+                            icon: Eye,
+                            activeClass: 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-500/40 shadow-sm'
+                          },
+                        ].map((dec) => {
+                          const Icon = dec.icon;
+                          const isSelected = scoutStateDecision === dec.id;
+                          return (
+                            <button
+                              key={dec.id}
+                              type="button"
+                              onClick={() => setScoutStateDecision(dec.id)}
+                              className={cn(
+                                "p-3 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 cursor-pointer",
+                                isSelected
+                                  ? dec.activeClass
+                                  : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50/80"
+                              )}
+                            >
+                              <div className="flex items-center justify-between w-full">
+                                <span className="text-xs font-black flex items-center gap-1.5">
+                                  <Icon className={cn("w-3.5 h-3.5", isSelected ? "text-white" : "text-primary")} />
+                                  {dec.label}
+                                </span>
+                                {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                              </div>
+                              <p className={cn("text-[10px] leading-tight", isSelected ? "text-white/90" : "text-muted-foreground")}>
+                                {dec.sub}
+                              </p>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2621,8 +2542,41 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   </div>
                 </div>
 
-                {/* 2. SURCLASSEMENT DU JOUEUR (Catégorie principale éliminée de ce bloc) */}
-                <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4">
+                {/* Information Recrutement Immédiat (court-circuite la suite du formulaire) */}
+                {scoutStateDecision === 'recruit_now' && (
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/5 border border-emerald-500/30 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                          <Flame className="w-5 h-5 fill-white" />
+                        </div>
+                        <div>
+                          <h5 className="text-xs font-black text-emerald-950 uppercase tracking-tight">
+                            Procédure de Recrutement Immédiat Activée
+                          </h5>
+                          <p className="text-[11px] text-emerald-800">
+                            La suite des formulaires d'évaluation (surclassement, temps de jeu, qualités et rapport de scout) n'est pas requise. Vous pouvez enregistrer directement ce rapport.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <AdministrativeDossierForm
+                      documents={administrativeDocuments}
+                      onDocumentsChange={setAdministrativeDocuments}
+                      contractType={contractType}
+                      onContractTypeChange={setContractType}
+                      adminNotes={adminNotes}
+                      onAdminNotesChange={setAdminNotes}
+                    />
+                  </div>
+                )}
+
+                {/* La suite des formulaires d'observation : uniquement si recrutement immédiat non activé */}
+                {scoutStateDecision !== 'recruit_now' && (
+                  <>
+                    {/* 2. SURCLASSEMENT DU JOUEUR (Catégorie principale éliminée de ce bloc) */}
+                    <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4">
                   <div className="flex items-center justify-between border-b pb-2.5">
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-indigo-600" />
@@ -3265,8 +3219,10 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     </div>
                   </div>
                 </div>
-              </div>
+              </>
             )}
+          </div>
+        )}
 
             {/* ONGLET SCOUT */}
             {activeSection === 'scout' && (
@@ -3576,7 +3532,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   Annuler
                 </button>
 
-                {mode === 'report_only' && activeSection === 'sport' && (
+                {mode === 'report_only' && activeSection === 'sport' && scoutStateDecision !== 'recruit_now' && (
                   <button
                     type="button"
                     onClick={() => setActiveSection('evaluation')}
@@ -3596,20 +3552,25 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   </button>
                 )}
 
-                {(mode !== 'report_only' || activeSection === 'report') && (
+                {(mode !== 'report_only' || activeSection === 'report' || (mode === 'report_only' && scoutStateDecision === 'recruit_now')) && (
                   <button
                     type="submit"
                     disabled={isSubmitting || (mode !== 'report_only' && (candidate ? !canUpdateCandidate : !canCreateCandidate))}
                     title={mode !== 'report_only' && (candidate ? !canUpdateCandidate : !canCreateCandidate) ? "Vous n'avez pas la permission CRUD requise" : undefined}
-                    className="px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
+                    className="px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow hover:bg-primary/90 disabled:opacity-50 cursor-pointer flex items-center gap-2"
                   >
-                    {isSubmitting
-                      ? 'Enregistrement...'
-                      : mode === 'report_only'
-                        ? (evaluation ? 'Mettre à jour le rapport' : 'Enregistrer le rapport')
-                        : candidate
-                          ? 'Mettre à jour la Fiche'
-                          : 'Enregistrer le Joueur'}
+                    {scoutStateDecision === 'recruit_now' && <Flame className="w-4 h-4 fill-white text-white" />}
+                    <span>
+                      {isSubmitting
+                        ? 'Enregistrement...'
+                        : mode === 'report_only'
+                          ? (scoutStateDecision === 'recruit_now'
+                            ? (evaluation ? 'Mettre à jour (Recrutement Immédiat)' : 'Enregistrer (Recrutement Immédiat)')
+                            : (evaluation ? 'Mettre à jour le rapport' : 'Enregistrer le rapport'))
+                          : candidate
+                            ? 'Mettre à jour la Fiche'
+                            : 'Enregistrer le Joueur'}
+                    </span>
                   </button>
                 )}
               </div>

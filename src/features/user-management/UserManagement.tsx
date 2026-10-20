@@ -56,7 +56,9 @@ import {
   BarChart3,
   ArrowUpCircle,
   Power,
-  Video
+  Video,
+  Flame,
+  ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ImageCropperModal from '../../components/ImageCropperModal';
@@ -341,6 +343,10 @@ export const CANDIDATE_SPECIFIC_ACTIONS: {
   badgeClass: string;
 }[] = [
   { key: 'drive_link', label: 'Lien Vidéo Drive', sublabel: 'Ajouter / Modifier le lien Google Drive', icon: Video, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
+  { key: 'assign_mission', label: 'Assigner une mission', sublabel: 'Assignation de joueur et mission à un scout', icon: UserPlus, badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-300' },
+  { key: 'recruit_now', label: 'À recruter immédiatement', sublabel: 'Traitement de la procédure administrative', icon: Flame, badgeClass: 'bg-rose-500/20 text-rose-700 dark:text-rose-300' },
+  { key: 'manage_reports', label: 'Gestion de rapport', sublabel: 'Consulter, rédiger et gérer les rapports d\'évaluation', icon: ClipboardList, badgeClass: 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' },
+  { key: 'edit_player', label: 'Modifier un joueur', sublabel: 'Modifier les informations du joueur', icon: Edit2, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
 ];
 
 export const DASHBOARD_PERMISSIONS: PermissionDefinition[] = [
@@ -3937,7 +3943,7 @@ Direction Générale — FUS Rabat`;
                                                               Permissions Dédiées
                                                             </span>
                                                           </div>
-                                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                                                             {CANDIDATE_SPECIFIC_ACTIONS.map(action => {
                                                               const permKey = `sub:candidates:${action.key}`;
                                                               const isChecked = Boolean(formData.permissions_overrides[permKey]);

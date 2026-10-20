@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Bell, ChevronDown, Settings, Calendar,
-  Search, LogOut, Shield, User, Radio, Swords, X
+  Search, LogOut, Shield, User, Radio, Swords, X, Eye
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
@@ -14,6 +14,8 @@ import { toast } from 'sonner';
 import defaultClubLogo from '../assets/fus-logo.png';
 import { getRoleConfig, isScoutBranch } from '../constants/roles';
 import UserProfileModal from './UserProfileModal';
+import CollaborativeCursorsWidget from './collaborative/CollaborativeCursorsWidget';
+import { useLiveCursors } from '../context/LiveCursorsContext';
 
 interface HeaderProps {
   title: string;
@@ -29,6 +31,10 @@ const Header: React.FC<HeaderProps> = ({ title, onMobileMenuClick, sidebarCollap
 
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
   const isScout = isScoutBranch(currentRole, authState.user?.job_title);
+  const { selectedUserId, allOnlineUsers, setSelectedUserId } = useLiveCursors();
+  const targetedUser = (authState.isRealSuperAdmin || currentRole === 'super_admin') && selectedUserId
+    ? (allOnlineUsers.find(u => u.userId === selectedUserId) || null)
+    : null;
 
   // Detect mobile viewport
   useEffect(() => {
@@ -172,7 +178,25 @@ const Header: React.FC<HeaderProps> = ({ title, onMobileMenuClick, sidebarCollap
 
       {/* Titre + date / match du jour */}
       <div className="flex-1 flex flex-col min-w-0 ml-0.5 sm:ml-2">
-        <h1 className="text-base sm:text-xl md:text-2xl font-extrabold text-foreground tracking-tight truncate leading-tight">{title}</h1>
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <h1 className="text-base sm:text-xl md:text-2xl font-extrabold text-foreground tracking-tight truncate leading-tight">{title}</h1>
+          {targetedUser && (
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/35 text-amber-800 text-[11px] font-bold shadow-xs">
+              <Eye className="w-3.5 h-3.5 text-amber-600 animate-pulse shrink-0" />
+              <span className="truncate max-w-[210px]">
+                Vue Miroir : <strong>{targetedUser.name}</strong> ({targetedUser.role})
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedUserId(null)}
+                className="ml-1 text-amber-700 hover:text-amber-950 font-black text-[9.5px] uppercase underline cursor-pointer shrink-0"
+                title="Rétablir la vue complète Super Admin"
+              >
+                Rétablir
+              </button>
+            </div>
+          )}
+        </div>
         {todayMatch && opponent ? (
           <button
             onClick={() => navigate('/matchday')}
@@ -244,6 +268,9 @@ const Header: React.FC<HeaderProps> = ({ title, onMobileMenuClick, sidebarCollap
             onBlur={() => setIsSearchFocused(false)}
           />
         </form>
+
+        {/* Suivi Collaboratif des Curseurs (X, Y) */}
+        <CollaborativeCursorsWidget />
 
         {/* Notifications */}
         <div className="flex items-center">

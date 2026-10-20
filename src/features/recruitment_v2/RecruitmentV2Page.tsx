@@ -6,13 +6,14 @@ import {
   TrendingUp, Trash2, Edit3, CheckCircle2, Clock, AlertCircle,
   Eye, UserCheck, LayoutList, Kanban, HeartHandshake, Briefcase, User, RotateCcw, X, Lock, MapPin, Trophy, Crown,
   Sliders, LayoutGrid, List, ClipboardList, Archive, RefreshCw, FileText, UserPlus, Target, Compass, History, Loader2,
-  Globe, Play, Flame, Video, Star, Bookmark, BookmarkCheck
+  Globe, Play, Flame, Video, Bookmark, BookmarkCheck, ArrowRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePermissions } from '../../context/PermissionsContext';
 import { useRecruitment, RECRUITMENT_KEYS } from './hooks/useRecruitment';
 import { recruitmentService } from './services/recruitmentService';
+import { supabase } from '../../lib/supabase';
 import type {
   TrialCandidate,
   CandidateEvaluation,
@@ -43,6 +44,7 @@ import MissionsManagementView from './components/MissionsManagementView';
 import { ScoutAvatar } from './components/ScoutAvatar';
 import { PlayerVideoModal } from './components/PlayerVideoModal';
 import { CandidateDriveLinkModal } from './components/CandidateDriveLinkModal';
+import { AdministrativeProcedureModal } from './components/AdministrativeProcedureModal';
 import { getFrenchPositionLabel } from './constants/scoutCriteriaByPosition';
 import { cn } from '../../lib/utils';
 const FOOT_OPTIONS = [
@@ -59,6 +61,90 @@ const VERDICT_OPTIONS = [
   { id: 'reserve', label: 'Réservé (Doute)' },
   { id: 'non_retenu', label: 'Non retenu' },
 ];
+
+// Mots-clés pour la détection de la nationalité Marocaine
+const MOROCCAN_KEYWORDS = [
+  'maroc', 'marocain', 'marocaine', 'morocco', 'moroccan', 'mar', 'ma'
+];
+
+// Mots-clés pour la détection des nationalités du continent Africain (hors exclusivement Maroc)
+const AFRICAN_KEYWORDS = [
+  'africain', 'africaine', 'african', 'afrique', 'africa',
+  // Afrique du Nord
+  'algérie', 'algerie', 'algérien', 'algerien', 'algérienne', 'algerienne', 'algeria', 'algerian', 'dza',
+  'tunisie', 'tunisien', 'tunisienne', 'tunisia', 'tunisian', 'tun',
+  'égypte', 'egypte', 'égyptien', 'egyptien', 'égyptienne', 'egyptienne', 'egypt', 'egyptian', 'egy',
+  'libye', 'libyen', 'libyenne', 'libya', 'libyan', 'lby',
+  'mauritanie', 'mauritanien', 'mauritanienne', 'mauritania', 'mauritanian', 'mrt',
+  'soudan', 'soudanais', 'soudanaise', 'sudan', 'sudanese', 'sdn', 'ssd',
+  // Afrique de l'Ouest
+  'sénégal', 'senegal', 'sénégalais', 'senegalais', 'sénégalaise', 'senegalaise', 'senegalese', 'sen',
+  'mali', 'malien', 'malienne', 'malian', 'mli',
+  'côte d\'ivoire', 'cote d\'ivoire', 'ivoirien', 'ivoirienne', 'ivory coast', 'ivorian', 'civ',
+  'guinée', 'guinee', 'guinéen', 'guineen', 'guinéenne', 'guineenne', 'guinea', 'guinean', 'gin', 'gnb',
+  'cameroun', 'camerounais', 'camerounaise', 'cameroon', 'cameroonian', 'cmr',
+  'ghana', 'ghanéen', 'ghaneen', 'ghanéenne', 'ghaneenne', 'ghanaian', 'gha',
+  'nigéria', 'nigeria', 'nigérian', 'nigerian', 'nigériane', 'nigeriane', 'nga',
+  'niger', 'nigérien', 'nigerien', 'nigérienne', 'nigerienne', 'ner',
+  'burkina faso', 'burkina', 'burkinabè', 'burkinabe', 'bfa',
+  'togo', 'togolais', 'togolaise', 'togolese', 'tgo',
+  'bénin', 'benin', 'béninois', 'beninois', 'béninoise', 'beninoise', 'ben',
+  'gambie', 'gambia', 'gambien', 'gambienne', 'gambian', 'gmb',
+  'sierra leone', 'sle', 'libéria', 'liberia', 'lbr', 'cap-vert', 'cape verde', 'cpv',
+  // Afrique Centrale
+  'congo', 'congolais', 'congolaise', 'congolese', 'cog', 'cod', 'rdc', 'dr congo',
+  'gabon', 'gabonais', 'gabonaise', 'gabonese', 'gab',
+  'tchad', 'chad', 'tcd', 'centrafrique', 'caf', 'guinée équatoriale', 'gnq',
+  // Afrique de l'Est
+  'éthiopie', 'ethiopie', 'ethiopian', 'eth', 'kenya', 'kenyan', 'ken',
+  'ouganda', 'uganda', 'uga', 'rwanda', 'rwandais', 'rwa', 'burundi', 'bdi',
+  'tanzanie', 'tanzania', 'tza', 'somalie', 'somalia', 'som', 'djibouti', 'dji', 'érythrée', 'eri',
+  // Afrique Australe
+  'afrique du sud', 'south africa', 'zaf', 'angola', 'ago', 'zambie', 'zmb',
+  'zimbabwe', 'zwe', 'mozambique', 'moz', 'madagascar', 'mdg', 'namibie', 'nam',
+  'botswana', 'bwa', 'malawi', 'mwi', 'comores', 'com', 'maurice', 'mus'
+];
+
+export type NationalityTag = 'marocains' | 'africains' | 'all' | 'autres';
+
+export function isCandidateMoroccan(c: TrialCandidate): boolean {
+  const nat = (c.nationality || '').toLowerCase().trim();
+  const country = (c.country || '').toLowerCase().trim();
+  const text = `${nat} ${country}`.trim();
+  // Par défaut au club FUS, une absence de nationalité explicite équivaut à marocaine
+  if (!text) return true;
+  return MOROCCAN_KEYWORDS.some(k => text.includes(k));
+}
+
+export function isCandidateAfrican(c: TrialCandidate): boolean {
+  const nat = (c.nationality || '').toLowerCase().trim();
+  const country = (c.country || '').toLowerCase().trim();
+  const text = `${nat} ${country}`.trim();
+  if (!text) return false;
+  return AFRICAN_KEYWORDS.some(k => text.includes(k));
+}
+
+export function matchesCandidateNationality(c: TrialCandidate, filter: NationalityTag): boolean {
+  if (filter === 'all') return true;
+  const isMoroccan = isCandidateMoroccan(c);
+  const isAfrican = isCandidateAfrican(c);
+
+  if (filter === 'marocains') {
+    return isMoroccan;
+  }
+  if (filter === 'africains') {
+    // Joueurs africains hors profil exclusivement marocain (ou binationaux avec nation africaine)
+    const nat = (c.nationality || '').toLowerCase().trim();
+    const country = (c.country || '').toLowerCase().trim();
+    const text = `${nat} ${country}`.trim();
+    const hasExplicitAfrican = text.includes('afric') || AFRICAN_KEYWORDS.some(k => !MOROCCAN_KEYWORDS.includes(k) && text.includes(k));
+    return hasExplicitAfrican || (!isMoroccan && isAfrican);
+  }
+  if (filter === 'autres') {
+    return !isMoroccan && !isAfrican;
+  }
+  return true;
+}
 
 export const RecruitmentV2Page: React.FC = () => {
   const queryClient = useQueryClient();
@@ -101,8 +187,47 @@ export const RecruitmentV2Page: React.FC = () => {
   // Les Scout Managers et Scouts de terrain sont des utilisateurs opérationnels de terrain.
   const isRecruitmentAdmin = Boolean((isSuperAdmin || isScoutAdmin) && !isScoutManager);
 
-  // US-DASH-31: Seule la Direction (Super Admin et Scout Admin) a le pouvoir d'assigner des joueurs et d'ordonner des missions.
-  const canAssignMissions = Boolean(isRecruitmentAdmin);
+  // US-DASH-31: Seule la Direction (Super Admin et Scout Admin) ou les profils avec permission spécifique ont le pouvoir d'assigner des joueurs et d'ordonner des missions.
+  const canAssignMissions = Boolean(
+    isSuperAdmin ||
+    isScoutAdmin ||
+    isRecruitmentAdmin ||
+    hasSubModuleAccess('candidates', 'assign_mission')
+  );
+
+
+  const userJobTitle = (authState?.user?.job_title || '').trim().toLowerCase();
+  const isDirecteurAdministratif = Boolean(
+    userJobTitle === 'directeur administratif' ||
+    userJobTitle === 'directrice administrative' ||
+    userJobTitle.includes('directeur administratif') ||
+    userJobTitle.includes('administratif') ||
+    authState?.user?.role === 'direction' ||
+    authState?.user?.system_role === 'direction'
+  );
+
+  // Permission de traitement de la procédure administrative de recrutement immédiat
+  const canProcessRecruitNow = Boolean(
+    isSuperAdmin ||
+    isRecruitmentAdmin ||
+    isDirecteurAdministratif ||
+    hasSubModuleAccess('candidates', 'recruit_now')
+  );
+
+  // Détermine si l'utilisateur a pour rôle exclusif / ciblé le traitement du recrutement immédiat
+  // (Directeur Administratif ou utilisateur doté de la permission spécifique 'recruit_now' sans être Super Admin ni Scout Admin)
+  const isOnlyRecruitNowUser = Boolean(
+    isDirecteurAdministratif ||
+    (hasSubModuleAccess('candidates', 'recruit_now') && !isSuperAdmin && !isRecruitmentAdmin)
+  );
+
+  // US-DASH-60: Permission spécifique de gestion des rapports d'observation
+  const canManageReports = Boolean(
+    isSuperAdmin ||
+    isRecruitmentAdmin ||
+    hasSubModuleAccess('candidates', 'manage_reports') ||
+    hasSubModuleAccess('candidates', 'reports')
+  );
 
   // Vérification granulaire des accès aux sous-rubriques Détection V2
   const canAccessTab = React.useCallback((tabKey: string): boolean => {
@@ -176,6 +301,47 @@ export const RecruitmentV2Page: React.FC = () => {
     acknowledgeMission
   } = useRecruitment();
 
+  // Détermination de la décision du candidat via son DERNIER RAPPORT d'évaluation
+  const getCandidateLatestEvaluation = React.useCallback((c: TrialCandidate): CandidateEvaluation | undefined => {
+    if (!c?.id) return undefined;
+    const candEvals = [
+      ...evaluations.filter(e => e.candidate_id === c.id),
+      ...(c.evaluations || [])
+    ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+
+    if (candEvals.length === 0) return undefined;
+
+    return candEvals.slice().sort((a, b) => {
+      const dateA = new Date(a.evaluation_date || a.created_at || 0).getTime();
+      const dateB = new Date(b.evaluation_date || b.created_at || 0).getTime();
+      return dateB - dateA;
+    })[0];
+  }, [evaluations]);
+
+  const getCandidateLatestDecision = React.useCallback((c: TrialCandidate): 'recruit_now' | 'invitation_test' | 'to_follow' | null => {
+    const latestEval = getCandidateLatestEvaluation(c);
+    if (!latestEval) {
+      // Aucun rapport : pas de décision de rapport, en observation
+      return null;
+    }
+    const dec = (latestEval as any).scout_state_decision || latestEval.report_data?.scout_state_decision;
+    if (dec === 'recruit_now' || dec === 'invitation_test' || dec === 'to_follow') {
+      return dec;
+    }
+    if (latestEval.verdict === 'sign') return 'recruit_now';
+    if (latestEval.verdict === 'trial') return 'invitation_test';
+    if (latestEval.verdict === 'follow') return 'to_follow';
+    return (c.scout_state_decision as any) || null;
+  }, [getCandidateLatestEvaluation]);
+
+  // Helper pour vérifier si un candidat est marqué pour un recrutement immédiat via son dernier rapport
+  const isCandidateRecruitNow = React.useCallback((c: TrialCandidate): boolean => {
+    const latestDec = getCandidateLatestDecision(c);
+    if (latestDec === 'recruit_now') return true;
+    return (c as any).status === 'recruit_now' ||
+      (c as any).pipeline_stage === 'recruit_now';
+  }, [getCandidateLatestDecision]);
+
   const todayStr = new Date().toLocaleDateString('en-CA');
 
   // Modals state
@@ -218,6 +384,15 @@ export const RecruitmentV2Page: React.FC = () => {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [playerToWatchVideo, setPlayerToWatchVideo] = useState<TrialCandidate | null>(null);
   const [candidateForDriveLink, setCandidateForDriveLink] = useState<TrialCandidate | null>(null);
+  const [candidateForAdminProcedure, setCandidateForAdminProcedure] = useState<TrialCandidate | null>(null);
+
+  const handleOpenAdminProcedure = (candidate: TrialCandidate) => {
+    if (!canProcessRecruitNow) {
+      toast.error("Accès restreint : Seule la Direction Administrative ou les profils habilités peuvent traiter cette procédure.");
+      return;
+    }
+    setCandidateForAdminProcedure(candidate);
+  };
   // Scout Report Wizard state
   const [isReportWizardOpen, setIsReportWizardOpen] = useState(false);
   const [reportWizardCandidate, setReportWizardCandidate] = useState<TrialCandidate | null>(null);
@@ -255,13 +430,26 @@ export const RecruitmentV2Page: React.FC = () => {
       missionDescription: string;
       priority: 'low' | 'medium' | 'high' | 'urgent';
       dueDate?: string;
-    }
+    },
+    candidateObj?: TrialCandidate
   ) => {
     if (!canAssignMissions) {
-      toast.error("Action non autorisée : seuls les Scout Admins peuvent assigner des missions.");
+      toast.error("Action non autorisée : seuls le Super Admin et les Scout Admins peuvent assigner des missions.");
       return;
     }
-    const targetCandidate = candidates.find(c => c.id === candidateId);
+    let targetCandidate = candidateObj || candidates.find(c => c.id === candidateId);
+    if (!targetCandidate) {
+      try {
+        const { data: dbCand } = await supabase
+          .from('trial_candidates')
+          .select('*')
+          .eq('id', candidateId)
+          .single();
+        if (dbCand) {
+          targetCandidate = recruitmentService.transformCandidateFromDB(dbCand);
+        }
+      } catch {}
+    }
     if (!targetCandidate) {
       toast.error("Joueur introuvable pour l'assignation.");
       return;
@@ -314,6 +502,41 @@ export const RecruitmentV2Page: React.FC = () => {
         active_mission: newMission,
         mission_history: fullHistory,
       });
+
+      // Synchroniser le cache React Query immédiatement pour que la mission apparaisse tout de suite
+      queryClient.setQueryData<TrialCandidate[]>(RECRUITMENT_KEYS.candidates, (old = []) => {
+        const updated = {
+          ...targetCandidate!,
+          discovering_scout_id: targetCandidate!.discovering_scout_id || assignerId,
+          discovering_scout_name: targetCandidate!.discovering_scout_name || assignerName,
+          assigned_scout_id: targetScout.id,
+          assigned_scout_name: targetScout.full_name,
+          active_mission: newMission,
+          mission_history: fullHistory,
+        };
+        const exists = old.some(c => c.id === targetCandidate!.id);
+        return exists ? old.map(c => c.id === targetCandidate!.id ? updated : c) : [updated, ...old];
+      });
+      queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.candidates });
+
+      // Diffuser la notification en temps réel pour le scout / scout manager ciblé
+      try {
+        await supabase.channel('scouting_missions_broadcast_alerts').send({
+          type: 'broadcast',
+          event: 'mission_assigned',
+          payload: {
+            scoutId: targetScout.id,
+            scoutName: targetScout.full_name,
+            candidateId: targetCandidate.id,
+            candidateName: `${targetCandidate.first_name} ${targetCandidate.last_name}`,
+            missionTitle: missionData.missionTitle,
+            missionDescription: missionData.missionDescription,
+            assignedBy: assignerName,
+          },
+        });
+      } catch (broadcastErr) {
+        console.warn('Notice broadcast mission notification:', broadcastErr);
+      }
 
       try {
         await recruitmentService.addTimelineEvent({
@@ -493,63 +716,28 @@ export const RecruitmentV2Page: React.FC = () => {
     });
   }, [candidates, authState?.userCategories, isRecruitmentAdmin, isScoutManager, currentScout, authState?.user?.id, authState?.user?.full_name, evaluations, observations]);
 
-  // Cellule scouts : Seuls les administrateurs gèrent l'ensemble du personnel
-  // Le Scout Manager ne gère que son propre compte personnel
-  // Règle Métier US-DASH-21 : Ne pas afficher le compte Scout Admin parmi les recruteurs de terrain
-  // Si l'administrateur souhaite mettre à jour ses informations personnelles, il utilise la rubrique "Mon Profil".
+  // Cellule scouts & personnel : Les administrateurs et managers apparaissent ensemble dans la cellule personnel
   const scopedScouts = React.useMemo(() => {
-    if (!isRecruitmentAdmin) {
-      if (currentScout) return [currentScout];
-      if (authState?.user) {
-        return [{
-          id: authState.user.id,
-          full_name: authState.user.full_name || 'Scout FUS',
-          email: authState.user.email || '',
-          phone: '',
-          role_title: isScoutManager ? 'Scout Manager' : 'Scout',
-          recruitment_region: 'Rabat-Salé-Kénitra',
-          assigned_categories: ['U15', 'U17', 'U19'],
-          assigned_teams: [],
-          status: 'active' as const,
-          recruited_date: '2024-01-01',
-        }];
-      }
-      return [];
-    }
-
-    // Le Super Admin supervise l'ensemble du club et doit voir l'intégralité des scouts et leurs statuts
-    if (isSuperAdmin) {
+    if (scouts && scouts.length > 0) {
       return scouts;
     }
-
-    const adminEmail = authState?.user?.email?.toLowerCase().trim();
-    const adminId = authState?.user?.id;
-
-    return scouts.filter(s => {
-      // 1. Exclure le compte admin connecté
-      if (adminEmail && s.email?.toLowerCase().trim() === adminEmail) return false;
-      if (adminId && (s.id === adminId || (s as any).user_id === adminId)) return false;
-
-      // 2. Exclure les profils explicitement identifiés comme Scout Admin / Admin
-      const roleTitle = (s.role_title || '').toLowerCase().trim();
-      if (
-        roleTitle === 'scout admin' ||
-        roleTitle === 'scout_admin' ||
-        roleTitle === 'admin' ||
-        roleTitle === 'super admin' ||
-        roleTitle.includes('scout admin')
-      ) {
-        return false;
-      }
-
-      const sysRole = ((s as any).system_role || '').toLowerCase().trim();
-      if (sysRole === 'scout_admin' || sysRole === 'admin' || sysRole === 'super_admin') {
-        return false;
-      }
-
-      return true;
-    });
-  }, [scouts, isAdmin, isSuperAdmin, currentScout, authState?.user?.email, authState?.user?.id]);
+    if (currentScout) return [currentScout];
+    if (authState?.user) {
+      return [{
+        id: authState.user.id,
+        full_name: authState.user.full_name || 'Membre Cellule',
+        email: authState.user.email || '',
+        phone: '',
+        role_title: isScoutManager ? 'Scout Manager' : isAdmin ? 'Administrateur' : 'Scout',
+        recruitment_region: 'Rabat-Salé-Kénitra',
+        assigned_categories: ['U15', 'U17', 'U19'],
+        assigned_teams: [],
+        status: 'active' as const,
+        recruited_date: '2024-01-01',
+      }];
+    }
+    return [];
+  }, [scouts, currentScout, authState?.user, isScoutManager, isAdmin]);
 
   // US-DASH-59: Permission spécifique d'ajout/modification du lien vidéo Google Drive
   const canEditDriveLink = Boolean(
@@ -633,6 +821,7 @@ export const RecruitmentV2Page: React.FC = () => {
   const canAddReportForCandidate = (cand: TrialCandidate): boolean => {
     if (!cand) return false;
     if (isSuperAdmin || isAdmin) return true;
+    if (!canManageReports) return false;
     if (!canManageCategory(cand.age_category)) return false;
     if (!canCreateCandidate) return false;
 
@@ -644,6 +833,7 @@ export const RecruitmentV2Page: React.FC = () => {
   const canEditEvaluation = (ev: CandidateEvaluation): boolean => {
     if (!ev) return false;
     if (isSuperAdmin || isAdmin) return true;
+    if (!canManageReports) return false;
     if (!hasSubModuleAccess('candidates', 'update')) return false;
     return isEvaluationAuthoredByScout(ev);
   };
@@ -653,15 +843,17 @@ export const RecruitmentV2Page: React.FC = () => {
   const canDeleteEvaluation = (ev: CandidateEvaluation): boolean => {
     if (!ev) return false;
     if (isSuperAdmin || isAdmin) return true;
+    if (!canManageReports) return false;
     if (!hasSubModuleAccess('candidates', 'delete')) return false;
     return isEvaluationAuthoredByScout(ev);
   };
 
   // Vérifie si l'utilisateur a le droit d'ajouter/modifier le lien Drive pour ce candidat
   const canAddDriveLinkForCandidate = (cand: TrialCandidate): boolean => {
-    if (isSuperAdmin || isAdmin) return true;
-    if (!canManageCategory(cand.age_category)) return false;
+    if (isSuperAdmin) return true;
     if (!canEditDriveLink) return false;
+    if (isAdmin) return true;
+    if (!canManageCategory(cand.age_category)) return false;
     // Règle Scout et Scout Manager : la main CRUD (y compris Drive) est réservée aux joueurs qu'il a introduits
     if (!isCandidateIntroducedByScout(cand)) return false;
     return true;
@@ -669,8 +861,13 @@ export const RecruitmentV2Page: React.FC = () => {
 
   // Vérifie si l'utilisateur a le droit de modifier l'intégralité de la fiche du candidat (accès au formulaire complet)
   const canUpdateCandidateFull = (cand: TrialCandidate): boolean => {
-    if (isSuperAdmin || isAdmin) return true;
-    if (!hasSubModuleAccess('candidates', 'update')) return false;
+    if (isSuperAdmin) return true;
+
+    // Vérification de la permission dédiée 'Modifier un joueur' (sub:candidates:edit_player) ou update général
+    const hasEditPermission = hasSubModuleAccess('candidates', 'edit_player') || hasSubModuleAccess('candidates', 'update');
+    if (!hasEditPermission) return false;
+
+    if (isAdmin) return true;
 
     // Si le joueur a été introduit par le scout connecté : modification autorisée
     if (isCandidateIntroducedByScout(cand)) {
@@ -724,6 +921,10 @@ export const RecruitmentV2Page: React.FC = () => {
   const [scoutFilter, setScoutFilter] = useState('ALL');
   const [bestScorePerPositionFilter, setBestScorePerPositionFilter] = useState(false);
   const [myPlayersOnly, setMyPlayersOnly] = useState(false);
+  // Filtre de nationalité sous forme de tags (Marocains par défaut)
+  const [nationalityTagFilter, setNationalityTagFilter] = useState<NationalityTag>('marocains');
+  // Filtre de statut / décision scout
+  const [decisionFilter, setDecisionFilter] = useState<'ALL' | 'recruit_now' | 'invitation_test' | 'to_follow'>('ALL');
 
   const visibleRecruitmentCategories = React.useMemo(() => {
     const allowed = RECRUITMENT_AGE_CATEGORIES.filter(cat => canManageCategory(cat));
@@ -739,6 +940,29 @@ export const RecruitmentV2Page: React.FC = () => {
     }
   }, [authState?.userCategories]);
 
+  // Calcul dynamique des effectifs par tag de nationalité
+  const nationalityCounts = React.useMemo(() => {
+    let morocCount = 0;
+    let afriCount = 0;
+    let otherCount = 0;
+
+    scopedCandidates.forEach(c => {
+      if (c.pipeline_stage === 'archived' || c.status === 'archived') return;
+      if (matchesCandidateNationality(c, 'marocains')) morocCount++;
+      if (matchesCandidateNationality(c, 'africains')) afriCount++;
+      if (matchesCandidateNationality(c, 'autres')) otherCount++;
+    });
+
+    const activeList = scopedCandidates.filter(c => c.pipeline_stage !== 'archived' && c.status !== 'archived');
+
+    return {
+      morocCount,
+      afriCount,
+      otherCount,
+      totalCount: activeList.length,
+    };
+  }, [scopedCandidates]);
+
   const isAnyFilterActive = Boolean(
     searchQuery.trim() ||
     categoryFilter !== 'ALL' ||
@@ -746,7 +970,9 @@ export const RecruitmentV2Page: React.FC = () => {
     footFilter !== 'ALL' ||
     scoutFilter !== 'ALL' ||
     bestScorePerPositionFilter ||
-    myPlayersOnly
+    myPlayersOnly ||
+    decisionFilter !== 'ALL' ||
+    nationalityTagFilter !== 'all'
   );
 
   const handleResetAllFilters = () => {
@@ -757,6 +983,8 @@ export const RecruitmentV2Page: React.FC = () => {
     setScoutFilter('ALL');
     setBestScorePerPositionFilter(false);
     setMyPlayersOnly(false);
+    setNationalityTagFilter('all');
+    setDecisionFilter('ALL');
   };
 
   const setTab = (tab: string) => {
@@ -834,6 +1062,27 @@ export const RecruitmentV2Page: React.FC = () => {
         if (!matches) return false;
       }
 
+      // Filtre Nationalité par tags (Marocains par défaut, Africains, Tous, Autres)
+      if (nationalityTagFilter !== 'all') {
+        if (!matchesCandidateNationality(c, nationalityTagFilter)) {
+          return false;
+        }
+      }
+
+      // Règle Directeur Administratif / Permission Recruter Immédiatement :
+      // Afficher exclusivement les profils à recruter immédiatement
+      if (isOnlyRecruitNowUser && !isCandidateRecruitNow(c)) {
+        return false;
+      }
+
+      // Filtre Décision Scout / Statut (si activé manuellement) : déterminé par le DERNIER RAPPORT
+      const candDecision = getCandidateLatestDecision(c);
+      if (decisionFilter === 'recruit_now' && !isCandidateRecruitNow(c)) {
+        return false;
+      } else if (decisionFilter !== 'ALL' && decisionFilter !== 'recruit_now' && candDecision !== decisionFilter) {
+        return false;
+      }
+
       // Filtre "Mes Joueurs Uniquement" (introduits / découverts par l'utilisateur connecté)
       if (myPlayersOnly && !isCandidateIntroducedByScout(c)) {
         return false;
@@ -865,7 +1114,7 @@ export const RecruitmentV2Page: React.FC = () => {
     }
 
     return list;
-  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, bestScorePerPositionFilter, myPlayersOnly, currentScout, authState?.user]);
+  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, bestScorePerPositionFilter, myPlayersOnly, currentScout, authState?.user, nationalityTagFilter, decisionFilter, isOnlyRecruitNowUser, isCandidateRecruitNow, getCandidateLatestDecision]);
 
   // 1b. Filtrage des candidats archivés pour l'onglet Archives
   const filteredArchivedCandidates = React.useMemo(() => {
@@ -1051,7 +1300,14 @@ export const RecruitmentV2Page: React.FC = () => {
   // Sélection du dossier candidat en mode pleine page (non modal)
   const candidateIdParam = searchParams.get('candidateId');
   const detailTabParam = searchParams.get('detailTab') as any;
-  const activeCandidate = detailCandidate || (candidateIdParam ? candidates.find(c => c.id === candidateIdParam) : null);
+  const activeCandidate = candidateIdParam ? (candidates.find(c => c.id === candidateIdParam) || detailCandidate) : null;
+
+  // Si l'utilisateur clique sur une rubrique (Database, Shadow list, etc.) sans candidateId, refermer automatiquement le dossier
+  useEffect(() => {
+    if (!candidateIdParam && detailCandidate) {
+      setDetailCandidate(null);
+    }
+  }, [candidateIdParam, detailCandidate]);
 
   const openCandidateDetail = (candidate: TrialCandidate, initialDetailTab?: 'scout' | 'personal' | 'sport' | 'evaluations' | 'report') => {
     setDetailCandidate(candidate);
@@ -1092,6 +1348,7 @@ export const RecruitmentV2Page: React.FC = () => {
           tests={tests}
           timeline={timeline}
           scouts={scouts}
+          canManageReports={canManageReports}
           onScheduleTest={canCreateCandidate ? (cand) => {
             handleOpenScheduleTestForCandidate(cand);
           } : undefined}
@@ -1348,14 +1605,16 @@ export const RecruitmentV2Page: React.FC = () => {
                     Ajouter Joueur
                   </button>
 
-                  <button
-                    onClick={() => navigate('/recruitment-v2/add-report')}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md hover:bg-indigo-500 active:scale-95 transition-all cursor-pointer"
-                    title="Rédiger un rapport scout pour un candidat"
-                  >
-                    <ClipboardList className="w-4 h-4" />
-                    Ajouter un rapport
-                  </button>
+                  {canManageReports && (
+                    <button
+                      onClick={() => navigate('/recruitment-v2/add-report')}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md hover:bg-indigo-500 active:scale-95 transition-all cursor-pointer"
+                      title="Rédiger un rapport scout pour un candidat"
+                    >
+                      <ClipboardList className="w-4 h-4" />
+                      Ajouter un rapport
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -1363,6 +1622,225 @@ export const RecruitmentV2Page: React.FC = () => {
 
           {/* Barre de Filtre Complet (Placée directement au-dessus du tableau) */}
           <div className="bg-white rounded-3xl p-4 md:p-5 border shadow-sm space-y-3">
+            {/* LIGNE 0 : Tags de Nationalité (Marocains par défaut, Africains, Tous) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 mr-1">
+                  Nationalité :
+                </span>
+                <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 gap-1 flex-wrap">
+                  {/* Tag 1 : Marocains */}
+                  <button
+                    type="button"
+                    onClick={() => setNationalityTagFilter(prev => prev === 'marocains' ? 'all' : 'marocains')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                      nationalityTagFilter === 'marocains'
+                        ? "bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-400/40"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                    )}
+                    title={nationalityTagFilter === 'marocains' ? "Cliquez pour supprimer le filtre Marocains" : "Afficher les joueurs de nationalité marocaine"}
+                  >
+                    <span>Marocains</span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                      nationalityTagFilter === 'marocains'
+                        ? "bg-white/20 text-white"
+                        : "bg-slate-200 text-slate-700"
+                    )}>
+                      {nationalityCounts.morocCount}
+                    </span>
+                    {nationalityTagFilter === 'marocains' && (
+                      <span
+                        role="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNationalityTagFilter('all');
+                        }}
+                        className="ml-0.5 hover:bg-white/20 rounded-full p-0.5 transition-colors"
+                        title="Supprimer le filtre Marocains"
+                      >
+                        <X className="w-3 h-3 text-white" />
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Tag 2 : Africains */}
+                  <button
+                    type="button"
+                    onClick={() => setNationalityTagFilter(prev => prev === 'africains' ? 'all' : 'africains')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                      nationalityTagFilter === 'africains'
+                        ? "bg-amber-500 text-slate-950 font-black shadow-xs ring-2 ring-amber-400/40"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                    )}
+                    title={nationalityTagFilter === 'africains' ? "Cliquez pour supprimer le filtre Africains" : "Afficher les joueurs et recrues d'origine ou nationalité africaine"}
+                  >
+                    <span>Africains</span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                      nationalityTagFilter === 'africains'
+                        ? "bg-slate-950/20 text-slate-950"
+                        : "bg-slate-200 text-slate-700"
+                    )}>
+                      {nationalityCounts.afriCount}
+                    </span>
+                    {nationalityTagFilter === 'africains' && (
+                      <span
+                        role="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNationalityTagFilter('all');
+                        }}
+                        className="ml-0.5 hover:bg-slate-950/20 rounded-full p-0.5 transition-colors"
+                        title="Supprimer le filtre Africains"
+                      >
+                        <X className="w-3 h-3 text-slate-950" />
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Tag 3 : Tous */}
+                  <button
+                    type="button"
+                    onClick={() => setNationalityTagFilter('all')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                      nationalityTagFilter === 'all'
+                        ? "bg-slate-950 text-white font-black shadow-xs ring-2 ring-slate-700/40"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                    )}
+                    title="Afficher l'intégralité des joueurs sans filtre de nationalité"
+                  >
+                    <span>Tous</span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                      nationalityTagFilter === 'all'
+                        ? "bg-white/20 text-white"
+                        : "bg-slate-200 text-slate-700"
+                    )}>
+                      {nationalityCounts.totalCount}
+                    </span>
+                  </button>
+
+                  {/* Tag 4 : Autres */}
+                  {nationalityCounts.otherCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setNationalityTagFilter(prev => prev === 'autres' ? 'all' : 'autres')}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                        nationalityTagFilter === 'autres'
+                          ? "bg-indigo-600 text-white font-black shadow-xs ring-2 ring-indigo-400/40"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                      )}
+                      title={nationalityTagFilter === 'autres' ? "Cliquez pour supprimer le filtre Autres" : "Afficher les autres nationalités internationales"}
+                    >
+                      <span>Autres</span>
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                        nationalityTagFilter === 'autres'
+                          ? "bg-white/20 text-white"
+                          : "bg-slate-200 text-slate-700"
+                      )}>
+                        {nationalityCounts.otherCount}
+                      </span>
+                      {nationalityTagFilter === 'autres' && (
+                        <span
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNationalityTagFilter('all');
+                          }}
+                          className="ml-0.5 hover:bg-white/20 rounded-full p-0.5 transition-colors"
+                          title="Supprimer le filtre Autres"
+                        >
+                          <X className="w-3 h-3 text-white" />
+                        </span>
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtre Rapide : À recruter immédiatement */}
+                <div className="inline-flex items-center p-1 bg-rose-50 rounded-2xl border border-rose-200/80">
+                  <button
+                    type="button"
+                    onClick={() => setDecisionFilter(prev => prev === 'recruit_now' ? 'ALL' : 'recruit_now')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                      decisionFilter === 'recruit_now'
+                        ? "bg-rose-600 text-white font-black shadow-xs ring-2 ring-rose-400/40"
+                        : "text-rose-700 hover:bg-white"
+                    )}
+                    title="Filtrer uniquement les talents signalés à recruter immédiatement"
+                  >
+                    <Flame className="w-3.5 h-3.5 fill-current text-current" />
+                    <span>À recruter immédiatement</span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                      decisionFilter === 'recruit_now'
+                        ? "bg-white/20 text-white"
+                        : "bg-rose-200 text-rose-800"
+                    )}>
+                      {scopedCandidates.filter(c => isCandidateRecruitNow(c)).length}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Indicateur de filtre actif avec bouton de suppression */}
+              <div className="text-[11px] text-slate-500 font-medium">
+                {nationalityTagFilter === 'marocains' && (
+                  <span className="inline-flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200/80 font-bold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Filtre actif : Marocains</span>
+                    <button
+                      type="button"
+                      onClick={() => setNationalityTagFilter('all')}
+                      className="ml-1 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-200/60 rounded-full p-0.5 transition-colors cursor-pointer"
+                      title="Supprimer le filtre Marocains"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {nationalityTagFilter === 'africains' && (
+                  <span className="inline-flex items-center gap-1.5 text-amber-900 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200/80 font-bold">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    <span>Filtre actif : Africains</span>
+                    <button
+                      type="button"
+                      onClick={() => setNationalityTagFilter('all')}
+                      className="ml-1 text-amber-800 hover:text-amber-950 hover:bg-amber-200/60 rounded-full p-0.5 transition-colors cursor-pointer"
+                      title="Supprimer le filtre Africains"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {nationalityTagFilter === 'all' && (
+                  <span className="inline-flex items-center gap-1.5 text-slate-600 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200 font-bold">
+                    Toutes nationalités confondues
+                  </span>
+                )}
+                {nationalityTagFilter === 'autres' && (
+                  <span className="inline-flex items-center gap-1.5 text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200/80 font-bold">
+                    <span>Autres nationalités</span>
+                    <button
+                      type="button"
+                      onClick={() => setNationalityTagFilter('all')}
+                      className="ml-1 text-indigo-700 hover:text-indigo-950 hover:bg-indigo-200/60 rounded-full p-0.5 transition-colors cursor-pointer"
+                      title="Supprimer le filtre Autres"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+              </div>
+            </div>
+
             {/* LIGNE 1 : Recherche + Compteur de talents + Reset */}
             <div className="flex flex-col md:flex-row items-center justify-between gap-3">
               <div className="relative w-full md:flex-1">
@@ -1549,6 +2027,20 @@ export const RecruitmentV2Page: React.FC = () => {
                   Filtres actifs :
                 </span>
 
+                {nationalityTagFilter !== 'all' && (
+                  <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 font-semibold border border-emerald-200 flex items-center gap-1">
+                    Nationalité : {nationalityTagFilter === 'marocains' ? 'Marocains' : nationalityTagFilter === 'africains' ? 'Africains' : 'Autres'}
+                    <button
+                      type="button"
+                      onClick={() => setNationalityTagFilter('all')}
+                      className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer"
+                      title="Supprimer le filtre de nationalité"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+
                 {searchQuery && (
                   <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800 font-semibold border border-slate-200 flex items-center gap-1">
                     Recherche : "{searchQuery}"
@@ -1589,6 +2081,14 @@ export const RecruitmentV2Page: React.FC = () => {
                     <Crown className="w-3 h-3 text-amber-600 fill-amber-600" />
                     Top 1 par poste (Dernières Évaluations)
                     <button onClick={() => setBestScorePerPositionFilter(false)} className="hover:text-rose-600 font-bold ml-0.5">×</button>
+                  </span>
+                )}
+
+                {decisionFilter !== 'ALL' && (
+                  <span className="px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 font-bold border border-rose-300 flex items-center gap-1">
+                    <Flame className="w-3 h-3 text-rose-600 fill-rose-600" />
+                    Statut : À recruter immédiatement
+                    <button onClick={() => setDecisionFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
                   </span>
                 )}
               </div>
@@ -1639,6 +2139,24 @@ export const RecruitmentV2Page: React.FC = () => {
             </div>
           )}
 
+          {/* Bannière Dédiée : Directeur Administratif / Recrutement Immédiat Exclusif */}
+          {isOnlyRecruitNowUser && (
+            <div className="p-4 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-emerald-500/10 border border-rose-200/80 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Flame className="w-5 h-5 fill-white text-white animate-pulse" />
+                </div>
+                <div>
+                  <p className="font-black text-slate-900">Espace Procédure Administrative de Recrutement Immédiat</p>
+                  <p className="text-slate-500 text-[11px]">Affichage exclusif des profils ayant le statut à recruter immédiatement.</p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-xl bg-white border border-rose-200 text-rose-700 font-black text-xs shadow-2xs whitespace-nowrap">
+                {filteredCandidates.length} joueur{filteredCandidates.length > 1 ? 's' : ''} à traiter
+              </span>
+            </div>
+          )}
+
           {filteredCandidates.length === 0 ? (
             <div className="bg-white rounded-3xl p-12 border shadow-sm text-center space-y-2">
               <Users className="w-8 h-8 text-muted-foreground mx-auto" />
@@ -1667,12 +2185,47 @@ export const RecruitmentV2Page: React.FC = () => {
                       <th className="py-3.5 px-4">Joueur</th>
                       <th className="py-3.5 px-3">Scout Référent</th>
                       <th className="py-3.5 px-3">Score 4 Piliers</th>
-                      <th className="py-3.5 px-4 text-right">Actions</th>
+                      <th className="py-3.5 px-3">Statut</th>
+                      <th className={cn("py-3.5 px-4 text-right", isOnlyRecruitNowUser ? "min-w-[200px]" : "min-w-[360px]")}>Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {filteredCandidates.map((c) => {
-                      const evalData = evaluations.find(e => e.candidate_id === c.id);
+                      // Agrégation résiliente des rapports/évaluations du joueur
+                      const candEvalsList = [
+                        ...evaluations.filter(e => e.candidate_id === c.id),
+                        ...(c.evaluations || [])
+                      ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+
+                      const sortedEvals = [...candEvalsList].sort((a, b) => {
+                        const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
+                        const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
+                        return tB - tA;
+                      });
+                      // Dernier rapport d'évaluation rédigé
+                      const latestEval = sortedEvals[0];
+
+                      // 1. Scores des 4 piliers individuels (Technique, Tactique, Physique, Mental) issus du DERNIER RAPPORT
+                      const getScoreVal = (val: any) => {
+                        if (val == null || val === '') return null;
+                        const num = Number(val);
+                        return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                      };
+
+                      const techScore = getScoreVal(latestEval?.technical_score ?? (latestEval as any)?.tech_score ?? (latestEval as any)?.technical_rating);
+                      const tactScore = getScoreVal(latestEval?.tactical_score ?? (latestEval as any)?.tact_score ?? (latestEval as any)?.tactical_rating);
+                      const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
+                      const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
+
+                      // 2. Dernier potentiel du joueur (issu du dernier rapport, sinon note de profil)
+                      const potentialScore: number | null = (latestEval?.potential_rating != null && !isNaN(Number(latestEval.potential_rating)))
+                        ? Math.round(Number(latestEval.potential_rating) * 10) / 10
+                        : (c.potential_rating != null && !isNaN(Number(c.potential_rating)))
+                          ? Math.round(Number(c.potential_rating) * 10) / 10
+                          : (c.initial_scout_score != null && !isNaN(Number(c.initial_scout_score)))
+                            ? Math.round(Number(c.initial_scout_score) * 10) / 10
+                            : null;
+
                       const candTests = tests.filter(t => t.candidate_id === c.id);
                       const isSelected = selectedCandidateIds.includes(c.id);
 
@@ -1698,19 +2251,18 @@ export const RecruitmentV2Page: React.FC = () => {
                           {/* Joueur (avec l'intégralité du profil, poste en français et caractéristiques) */}
                           <td className="py-3 px-4">
                             <div className="flex items-start gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-black text-slate-700 text-xs shrink-0 overflow-hidden border border-slate-200 shadow-2xs mt-0.5">
-                                {c.photo_url ? (
-                                  <img
-                                    src={c.photo_url}
-                                    alt={`${c.first_name} ${c.last_name}`}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      (e.target as HTMLElement).style.display = 'none';
-                                    }}
-                                  />
-                                ) : (
-                                  `${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`
-                                )}
+                              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs mt-0.5">
+                                <img
+                                  src={c.photo_url || '/assets/avatar.svg'}
+                                  alt={`${c.first_name} ${c.last_name}`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    if (!target.src.endsWith('/assets/avatar.svg')) {
+                                      target.src = '/assets/avatar.svg';
+                                    }
+                                  }}
+                                />
                               </div>
                               <div className="space-y-1.5 min-w-[220px]">
                                 <span
@@ -1728,7 +2280,7 @@ export const RecruitmentV2Page: React.FC = () => {
                                   <span className="font-bold text-slate-900 text-xs tracking-tight">
                                     {getFrenchPositionLabel(c.primary_position)}
                                   </span>
-                                  {c.scout_state_decision === 'recruit_now' && (
+                                  {isCandidateRecruitNow(c) && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
                                       <Flame className="w-3 h-3 text-emerald-600" />
                                       À recruter
@@ -1764,15 +2316,11 @@ export const RecruitmentV2Page: React.FC = () => {
                                     </>
                                   )}
 
-                                  {c.nationality && (
-                                    <>
-                                      {(c.preferred_foot || c.height_cm || c.weight_kg) && <span className="text-slate-300">•</span>}
-                                      <span className="inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px] border border-emerald-100" title="Nationalité">
-                                        <Globe className="w-2.5 h-2.5 text-emerald-600" />
-                                        {c.nationality}
-                                      </span>
-                                    </>
-                                  )}
+                                  {(c.preferred_foot || c.height_cm || c.weight_kg) && <span className="text-slate-300">•</span>}
+                                  <span className="inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px] border border-emerald-100" title="Nationalité">
+                                    <Globe className="w-2.5 h-2.5 text-emerald-600" />
+                                    {c.nationality || 'Marocaine'}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -1794,136 +2342,256 @@ export const RecruitmentV2Page: React.FC = () => {
                             )}
                           </td>
 
-                          {/* Score 4 Piliers (sans écriture SHORTLIST) */}
+                          {/* Score 4 Piliers + Dernier Potentiel (Dernier Rapport) : TOUJOURS PRÉSENT */}
                           <td className="py-3 px-3">
-                            {evalData ? (
-                              <div className="flex items-center gap-2">
-                                <span className="px-2.5 py-1 rounded-xl bg-rose-50 text-primary font-black border border-rose-200 text-xs shadow-2xs whitespace-nowrap">
-                                  {Number(evalData.overall_score).toFixed(1)}
+                            <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200/90 shadow-2xs w-fit">
+                              {/* 1. Technique */}
+                              <div
+                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[34px]"
+                                title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}
+                              >
+                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">TEC</span>
+                                <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
+                                  {techScore != null ? techScore.toFixed(1) : '-'}
                                 </span>
                               </div>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 italic">Non évalué</span>
-                            )}
-                          </td>
 
-                          {/* Actions */}
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              {/* Bouton Play Vidéo (Google Drive) */}
-                              {c.video_url && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPlayerToWatchVideo(c)}
-                                  className="p-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center gap-1.5 text-xs font-black shadow-2xs cursor-pointer active:scale-95"
-                                  title="Visionner la vidéo du joueur (Google Drive)"
-                                >
-                                  <Play className="w-3.5 h-3.5 fill-current" />
-                                  <span>Play</span>
-                                </button>
-                              )}
+                              <div className="h-5 w-px bg-slate-200" />
 
-                              {/* Bouton Rapide Dédié : Ajouter / Modifier Lien Drive (US-DASH-59) */}
-                              {canAddDriveLinkForCandidate(c) && (
-                                <button
-                                  type="button"
-                                  onClick={() => setCandidateForDriveLink(c)}
-                                  className={cn(
-                                    "p-1.5 px-2 rounded-lg border transition-all flex items-center gap-1 text-xs font-bold shadow-2xs cursor-pointer",
-                                    c.video_url
-                                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20"
-                                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600"
-                                  )}
-                                  title={c.video_url ? "Modifier le lien vidéo Google Drive" : "Ajouter un lien vidéo Google Drive"}
-                                >
-                                  <Video className="w-3.5 h-3.5" />
-                                  <span className="hidden xl:inline">{c.video_url ? 'Lien Drive' : '+ Lien Drive'}</span>
-                                </button>
-                              )}
-
-                              {(() => {
-                                const candEvals = evaluations.filter(e => e.candidate_id === c.id);
-                                const count = candEvals.length;
-                                return (
-                                  <button
-                                    onClick={() => openCandidateDetail(c, 'report')}
-                                    className="p-1.5 px-2.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition-colors flex items-center gap-1.5 text-xs font-bold shadow-2xs"
-                                    title={`Consulter les rapports (${count} rapport${count > 1 ? 's' : ''})`}
-                                  >
-                                    <Eye className="w-3.5 h-3.5 text-primary" />
-                                    <span>Rapport{count > 0 ? ` (${count})` : ''}</span>
-                                  </button>
-                                );
-                              })()}
-
-                              {(() => {
-                                return (
-                                  <button
-                                    type="button"
-                                    disabled={!canAssignMissions}
-                                    onClick={() => canAssignMissions && openAssignModal(c)}
-                                    className={cn(
-                                      "p-1.5 rounded-lg border transition-colors",
-                                      !canAssignMissions
-                                        ? "border-slate-200 bg-slate-50 text-slate-400 opacity-60 cursor-not-allowed"
-                                        : "border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer"
-                                    )}
-                                    title={!canAssignMissions ? "Assignation de joueur et mission réservée à la Direction (Scout Admin et Super Admin)" : "Assigner à un scout & confier une mission"}
-                                  >
-                                    {!canAssignMissions ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <UserPlus className="w-3.5 h-3.5" />}
-                                  </button>
-                                );
-                              })()}
-
-                              {/* Modifier la fiche complète (protégé par CRUD update et catégorie) */}
-                              {canUpdateCandidateFull(c) && (
-                                <button
-                                  onClick={() => {
-                                    navigate(`/recruitment-v2/add-player?editId=${c.id}&returnTab=${activeTab}`);
-                                  }}
-                                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                                  title="Modifier la fiche complète du joueur"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-
-                              {/* Bouton Shadow List / Shortlist */}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleShortlist(c);
-                                }}
-                                className={cn(
-                                  "p-1.5 rounded-lg border transition-all cursor-pointer",
-                                  ['shortlisted', 'shortlist'].includes(c.pipeline_stage)
-                                    ? "bg-amber-50 text-amber-600 border-amber-300 hover:bg-amber-100 shadow-xs"
-                                    : "border-slate-200 text-slate-400 hover:text-amber-600 hover:bg-amber-50/50"
-                                )}
-                                title={['shortlisted', 'shortlist'].includes(c.pipeline_stage) ? "Retirer de la Shortlist (Shadow List)" : "Ajouter à la Shortlist (Shadow List)"}
+                              {/* 2. Tactique */}
+                              <div
+                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[34px]"
+                                title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}
                               >
-                                <Star className={cn("w-3.5 h-3.5", ['shortlisted', 'shortlist'].includes(c.pipeline_stage) ? "fill-amber-500 text-amber-500" : "")} />
-                              </button>
-
-                              {canDeleteCandidate(c) ? (
-                                <button
-                                  onClick={() => setCandidateToDelete(c)}
-                                  className="p-1.5 rounded-lg border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                  title="Supprimer ou archiver le joueur"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              ) : (
-                                <span
-                                  className="p-1.5 rounded-lg border border-slate-100 text-slate-300 bg-slate-50/80 cursor-not-allowed inline-flex items-center justify-center"
-                                  title="Profil créé par l'administration : modification autorisée, suppression réservée aux administrateurs"
-                                >
-                                  <Lock className="w-3.5 h-3.5" />
+                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">TAC</span>
+                                <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
+                                  {tactScore != null ? tactScore.toFixed(1) : '-'}
                                 </span>
-                              )}
+                              </div>
+
+                              <div className="h-5 w-px bg-slate-200" />
+
+                              {/* 3. Physique */}
+                              <div
+                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[34px]"
+                                title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}
+                              >
+                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">PHY</span>
+                                <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
+                                  {physScore != null ? physScore.toFixed(1) : '-'}
+                                </span>
+                              </div>
+
+                              <div className="h-5 w-px bg-slate-200" />
+
+                              {/* 4. Mental */}
+                              <div
+                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[34px]"
+                                title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}
+                              >
+                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">MEN</span>
+                                <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
+                                  {mentScore != null ? mentScore.toFixed(1) : '-'}
+                                </span>
+                              </div>
+
+                              <div className="h-5 w-px bg-slate-200" />
+
+                              {/* 5. Potentiel */}
+                              <div
+                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px] bg-emerald-50 border border-emerald-200/80 rounded-md"
+                                title={`Dernier Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}
+                              >
+                                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700">POT</span>
+                                <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-950" : "text-slate-300")}>
+                                  {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                                </span>
+                              </div>
                             </div>
                           </td>
+
+                          {/* Colonne Statut du joueur */}
+                          <td className="py-3 px-3">
+                            {(() => {
+                              const candDecision = getCandidateLatestDecision(c);
+                              if (isCandidateRecruitNow(c) || candDecision === 'recruit_now') {
+                                return (
+                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500/10 to-amber-500/10 border border-rose-500/20 text-rose-700 w-fit shadow-2xs">
+                                    <Flame className="w-3.5 h-3.5 text-rose-600 animate-pulse shrink-0" />
+                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">Recrutement Immédiat</span>
+                                  </div>
+                                );
+                              }
+                              if (candDecision === 'invitation_test') {
+                                return (
+                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-700 w-fit shadow-2xs">
+                                    <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">Convocation Test</span>
+                                  </div>
+                                );
+                              }
+                              if (candDecision === 'to_follow') {
+                                return (
+                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 w-fit shadow-2xs">
+                                    <Eye className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">À suivre</span>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 w-fit">
+                                  <span className="text-[11px] font-semibold capitalize whitespace-nowrap">
+                                    {c.pipeline_stage === 'shortlisted' ? 'Shortlisté' :
+                                     c.pipeline_stage === 'signed' ? 'Signé' :
+                                     c.pipeline_stage === 'trial' ? 'À l\'essai' :
+                                     c.pipeline_stage === 'eliminated' ? 'Éliminé' : 'En observation'}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </td>
+
+                          {/* Actions : Si Directeur Administratif / utilisateur recrutement immédiat exclusif -> SEULEMENT le bouton 'À recruter immédiatement' */}
+                          {isOnlyRecruitNowUser ? (
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAdminProcedure(c)}
+                                  className="h-8.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95 transition-all shrink-0"
+                                  title="Ouvrir la procédure administrative pour ce recrutement immédiat"
+                                >
+                                  <Flame className="w-4 h-4 fill-white text-white animate-pulse" />
+                                  <span>À recruter immédiatement</span>
+                                  <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                                </button>
+                              </div>
+                            </td>
+                          ) : (
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-2.5">
+                                {/* Bouton 'À recruter immédiatement' si le statut est recruit_now et canProcessRecruitNow */}
+                                {isCandidateRecruitNow(c) && canProcessRecruitNow && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAdminProcedure(c)}
+                                    className="h-8 px-3.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95 transition-all shrink-0 whitespace-nowrap"
+                                    title="Ouvrir la procédure administrative pour ce recrutement immédiat"
+                                  >
+                                    <Flame className="w-3.5 h-3.5 fill-white text-white animate-pulse" />
+                                    <span>À recruter immédiatement</span>
+                                    <ArrowRight className="w-3 h-3 ml-0.5" />
+                                  </button>
+                                )}
+
+                                {/* Bouton Vidéo Google Drive */}
+                                {c.video_url ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPlayerToWatchVideo(c)}
+                                    className="w-[115px] h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs cursor-pointer active:scale-95 shrink-0 whitespace-nowrap"
+                                    title="Visionner la vidéo du joueur (Google Drive)"
+                                  >
+                                    <Play className="w-3.5 h-3.5 fill-current" />
+                                    <span>Play</span>
+                                  </button>
+                                ) : canAddDriveLinkForCandidate(c) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCandidateForDriveLink(c)}
+                                    className="w-[115px] h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs cursor-pointer shrink-0 whitespace-nowrap"
+                                    title="Ajouter un lien vidéo Google Drive"
+                                  >
+                                    <Video className="w-3.5 h-3.5" />
+                                    <span>+ Lien Drive</span>
+                                  </button>
+                                ) : (
+                                  <div className="w-[115px] shrink-0" />
+                                )}
+
+                                {/* Bouton Rapport [N] */}
+                                {(() => {
+                                  const candEvals = [
+                                    ...evaluations.filter(e => e.candidate_id === c.id),
+                                    ...(c.evaluations || [])
+                                  ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+                                  const count = candEvals.length;
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled={!canManageReports}
+                                      onClick={() => canManageReports && openCandidateDetail(c, 'report')}
+                                      className={cn(
+                                        "w-[115px] h-8 rounded-full transition-all flex items-center justify-center gap-2 text-xs font-bold shadow-xs shrink-0 whitespace-nowrap",
+                                        !canManageReports
+                                          ? "bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed border border-slate-200"
+                                          : "bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
+                                      )}
+                                      title={!canManageReports ? "Consultation des rapports non autorisée (permission Gestion de rapport requise)" : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`}
+                                    >
+                                      <span className={cn("font-bold text-xs", !canManageReports ? "text-slate-400" : "text-white")}>Rapport</span>
+                                      <span className={cn(
+                                        "w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs",
+                                        !canManageReports ? "bg-slate-200 text-slate-500" : "bg-amber-400 text-slate-950"
+                                      )}>
+                                        {count}
+                                      </span>
+                                    </button>
+                                  );
+                                })()}
+
+                                {/* Bouton Assigner Mission */}
+                                {(() => {
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled={!canAssignMissions}
+                                      onClick={() => canAssignMissions && openAssignModal(c)}
+                                      className={cn(
+                                        "w-8 h-8 rounded-full border flex items-center justify-center shrink-0 transition-colors",
+                                        !canAssignMissions
+                                          ? "border-slate-200 bg-slate-50 text-slate-400 opacity-60 cursor-not-allowed"
+                                          : "border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer"
+                                      )}
+                                      title={!canAssignMissions ? "Assignation de joueur et mission réservée à la Direction (Scout Admin et Super Admin)" : "Assigner à un scout & confier une mission"}
+                                    >
+                                      {!canAssignMissions ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <UserPlus className="w-3.5 h-3.5" />}
+                                    </button>
+                                  );
+                                })()}
+
+                                {/* Modifier la fiche complète */}
+                                {canUpdateCandidateFull(c) && (
+                                  <button
+                                    onClick={() => {
+                                      navigate(`/recruitment-v2/add-player?editId=${c.id}&returnTab=${activeTab}`);
+                                    }}
+                                    className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                                    title="Modifier la fiche complète du joueur"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                                {canDeleteCandidate(c) ? (
+                                  <button
+                                    onClick={() => setCandidateToDelete(c)}
+                                    className="w-8 h-8 rounded-full border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                                    title="Supprimer ou archiver le joueur"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                ) : (
+                                  <span
+                                    className="w-8 h-8 rounded-full border border-slate-100 text-slate-300 bg-slate-50/80 cursor-not-allowed inline-flex items-center justify-center shrink-0"
+                                    title="Profil créé par l'administration : modification autorisée, suppression réservée aux administrateurs"
+                                  >
+                                    <Lock className="w-3.5 h-3.5" />
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -1934,7 +2602,41 @@ export const RecruitmentV2Page: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filteredCandidates.map((c) => {
-              const evalData = evaluations.find(e => e.candidate_id === c.id);
+              // Agrégation résiliente des rapports/évaluations du joueur
+              const candEvalsList = [
+                ...evaluations.filter(e => e.candidate_id === c.id),
+                ...(c.evaluations || [])
+              ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+
+              const sortedEvals = [...candEvalsList].sort((a, b) => {
+                const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
+                const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
+                return tB - tA;
+              });
+              // Dernier rapport d'évaluation rédigé
+              const latestEval = sortedEvals[0];
+
+              // 1. Scores des 4 piliers individuels (Technique, Tactique, Physique, Mental) issus du DERNIER RAPPORT
+              const getScoreVal = (val: any) => {
+                if (val == null || val === '') return null;
+                const num = Number(val);
+                return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+              };
+
+              const techScore = getScoreVal(latestEval?.technical_score ?? (latestEval as any)?.tech_score ?? (latestEval as any)?.technical_rating);
+              const tactScore = getScoreVal(latestEval?.tactical_score ?? (latestEval as any)?.tact_score ?? (latestEval as any)?.tactical_rating);
+              const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
+              const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
+
+              // 2. Dernier potentiel du joueur (issu du dernier rapport, sinon note de profil)
+              const potentialScore: number | null = (latestEval?.potential_rating != null && !isNaN(Number(latestEval.potential_rating)))
+                ? Math.round(Number(latestEval.potential_rating) * 10) / 10
+                : (c.potential_rating != null && !isNaN(Number(c.potential_rating)))
+                  ? Math.round(Number(c.potential_rating) * 10) / 10
+                  : (c.initial_scout_score != null && !isNaN(Number(c.initial_scout_score)))
+                    ? Math.round(Number(c.initial_scout_score) * 10) / 10
+                    : null;
+
               const isSelected = selectedCandidateIds.includes(c.id);
 
               return (
@@ -1948,19 +2650,18 @@ export const RecruitmentV2Page: React.FC = () => {
                   <div>
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center font-black text-slate-700 text-base shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
-                          {c.photo_url ? (
-                            <img
-                              src={c.photo_url}
-                              alt={`${c.first_name} ${c.last_name}`}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
-                            />
-                          ) : (
-                            `${c.first_name[0]}${c.last_name[0]}`
-                          )}
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                          <img
+                            src={c.photo_url || '/assets/avatar.svg'}
+                            alt={`${c.first_name} ${c.last_name}`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              if (!target.src.endsWith('/assets/avatar.svg')) {
+                                target.src = '/assets/avatar.svg';
+                              }
+                            }}
+                          />
                         </div>
                         <div>
                           <h3
@@ -1974,7 +2675,7 @@ export const RecruitmentV2Page: React.FC = () => {
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
                               {c.age_category || 'U19'}
                             </span>
-                            {c.scout_state_decision === 'recruit_now' && (
+                            {(isCandidateRecruitNow(c) || getCandidateLatestDecision(c) === 'recruit_now') && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
                                 <Flame className="w-3 h-3 text-emerald-600" />
                                 À recruter
@@ -2014,7 +2715,7 @@ export const RecruitmentV2Page: React.FC = () => {
                       </div>
                       <div>
                         <span className="text-[10px] text-muted-foreground block">Nationalité</span>
-                        <span className="font-bold">{c.nationality}</span>
+                        <span className="font-bold">{c.nationality || 'Marocaine'}</span>
                       </div>
                     </div>
 
@@ -2112,135 +2813,223 @@ export const RecruitmentV2Page: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Score Evaluation */}
-                  {evalData ? (
-                    <div className="p-3 bg-gradient-to-r from-red-50 to-orange-50 rounded-xl border border-red-100 flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-red-950 block">Score 4 Piliers</span>
-                        <span className="text-lg font-black text-primary">{evalData.overall_score}/10</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[10px] text-muted-foreground block">Verdict</span>
-                        <span className="text-xs font-bold text-slate-800 uppercase">{evalData.verdict.replace('_', ' ')}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-slate-50 rounded-xl border border-dashed text-center text-xs text-muted-foreground">
-                      Non encore évalué sur 4 piliers
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="pt-2 border-t flex items-center justify-between gap-1.5">
-                    {c.video_url && (
-                      <button
-                        type="button"
-                        onClick={() => setPlayerToWatchVideo(c)}
-                        className="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
-                        title="Visionner la vidéo du joueur (Google Drive)"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>Play</span>
-                      </button>
-                    )}
-
-                    {/* Bouton Rapide Dédié : Ajouter / Modifier Lien Drive (US-DASH-59) */}
-                    {canAddDriveLinkForCandidate(c) && (
-                      <button
-                        type="button"
-                        onClick={() => setCandidateForDriveLink(c)}
-                        className={cn(
-                          "py-2 px-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition-all cursor-pointer",
-                          c.video_url
-                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20"
-                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600"
-                        )}
-                        title={c.video_url ? "Modifier le lien vidéo Google Drive" : "Ajouter un lien vidéo Google Drive"}
-                      >
-                        <Video className="w-3.5 h-3.5" />
-                        <span>{c.video_url ? 'Drive' : '+ Drive'}</span>
-                      </button>
-                    )}
-
+                  {/* Statut du joueur */}
+                  <div className="pt-2 border-t flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Statut</span>
                     {(() => {
-                      const candEvals = evaluations.filter(e => e.candidate_id === c.id);
-                      const count = candEvals.length;
+                      const candDecision = getCandidateLatestDecision(c);
+                      if (isCandidateRecruitNow(c) || candDecision === 'recruit_now') {
+                        return (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-gradient-to-r from-rose-500/10 to-amber-500/10 border border-rose-500/20 text-rose-700 shadow-2xs">
+                            <Flame className="w-3.5 h-3.5 text-rose-600 animate-pulse shrink-0" />
+                            <span className="text-[11px] font-black uppercase tracking-wider">Recrutement Immédiat</span>
+                          </div>
+                        );
+                      }
+                      if (candDecision === 'invitation_test') {
+                        return (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-700 shadow-2xs">
+                            <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <span className="text-[11px] font-black uppercase tracking-wider">Convocation Test</span>
+                          </div>
+                        );
+                      }
+                      if (candDecision === 'to_follow') {
+                        return (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 shadow-2xs">
+                            <Eye className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span className="text-[11px] font-black uppercase tracking-wider">À suivre</span>
+                          </div>
+                        );
+                      }
                       return (
-                        <button
-                          onClick={() => openCandidateDetail(c, 'report')}
-                          className="flex-1 py-2 px-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-primary" />
-                          <span>Rapport{count > 0 ? ` (${count})` : ''}</span>
-                        </button>
+                        <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600">
+                          <span className="text-[10px] font-semibold capitalize">
+                            {c.pipeline_stage === 'shortlisted' ? 'Shortlisté' :
+                             c.pipeline_stage === 'signed' ? 'Signé' :
+                             c.pipeline_stage === 'trial' ? 'À l\'essai' :
+                             c.pipeline_stage === 'eliminated' ? 'Éliminé' : 'En observation'}
+                          </span>
+                        </div>
                       );
                     })()}
+                  </div>
 
-                    {(() => {
-                      return (
-                        <button
-                          type="button"
-                          disabled={!canAssignMissions}
-                          onClick={() => canAssignMissions && openAssignModal(c)}
-                          className={cn(
-                            "p-2 rounded-xl border transition-colors",
-                            !canAssignMissions
-                              ? "border-slate-200 bg-slate-50 text-slate-400 opacity-60 cursor-not-allowed"
-                              : "border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer"
-                          )}
-                          title={!canAssignMissions ? "Assignation de joueur et mission réservée à la Direction (Scout Admin et Super Admin)" : "Assigner à un scout & confier une mission"}
-                        >
-                          {!canAssignMissions ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <UserPlus className="w-3.5 h-3.5" />}
-                        </button>
-                      );
-                    })()}
+                  {/* Score 4 Piliers + Dernier Potentiel (TOUJOURS AFFICHÉ) */}
+                  <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-2xl border border-slate-200/80">
+                    <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Scores</span>
+                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[30px]" title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[8px] font-black uppercase text-slate-400">TEC</span>
+                        <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
+                          {techScore != null ? techScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                      <div className="h-4 w-px bg-slate-200" />
+                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[30px]" title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[8px] font-black uppercase text-slate-400">TAC</span>
+                        <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
+                          {tactScore != null ? tactScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                      <div className="h-4 w-px bg-slate-200" />
+                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[30px]" title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[8px] font-black uppercase text-slate-400">PHY</span>
+                        <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
+                          {physScore != null ? physScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                      <div className="h-4 w-px bg-slate-200" />
+                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[30px]" title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[8px] font-black uppercase text-slate-400">MEN</span>
+                        <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
+                          {mentScore != null ? mentScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                      <div className="h-4 w-px bg-slate-200" />
+                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[32px] bg-emerald-50 border border-emerald-200/80 rounded-md" title={`Dernier Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[8px] font-black uppercase text-emerald-700">POT</span>
+                        <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-950" : "text-slate-300")}>
+                          {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
-                    {/* Modifier la fiche complète (protégé par CRUD update et catégorie) */}
-                    {canUpdateCandidateFull(c) && (
+                  {/* Actions en mode Grid */}
+                  <div className="pt-2 border-t flex flex-col gap-2">
+                    {/* Si Directeur Administratif / utilisateur ciblé Recrutement Immédiat : UNIQUEMENT le bouton 'À recruter immédiatement' */}
+                    {isOnlyRecruitNowUser ? (
                       <button
-                        onClick={() => {
-                          navigate(`/recruitment-v2/add-player?editId=${c.id}&returnTab=${activeTab}`);
-                        }}
-                        className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-                        title="Modifier la fiche complète du joueur"
+                        type="button"
+                        onClick={() => handleOpenAdminProcedure(c)}
+                        className="w-full h-9 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95 transition-all"
+                        title="Ouvrir la procédure administrative pour ce recrutement immédiat"
                       >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-
-                    {/* Bouton Shadow List / Shortlist */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleShortlist(c);
-                      }}
-                      className={cn(
-                        "p-2 rounded-xl border transition-all cursor-pointer",
-                        ['shortlisted', 'shortlist'].includes(c.pipeline_stage)
-                          ? "bg-amber-50 text-amber-600 border-amber-300 hover:bg-amber-100 shadow-xs"
-                          : "border-slate-200 text-slate-400 hover:text-amber-600 hover:bg-amber-50/50"
-                      )}
-                      title={['shortlisted', 'shortlist'].includes(c.pipeline_stage) ? "Retirer de la Shortlist (Shadow List)" : "Ajouter à la Shortlist (Shadow List)"}
-                    >
-                      <Star className={cn("w-3.5 h-3.5", ['shortlisted', 'shortlist'].includes(c.pipeline_stage) ? "fill-amber-500 text-amber-500" : "")} />
-                    </button>
-
-                    {canDeleteCandidate(c) ? (
-                      <button
-                        onClick={() => setCandidateToDelete(c)}
-                        className="p-2 rounded-xl border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Supprimer ou archiver le joueur"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Flame className="w-4 h-4 fill-white text-white animate-pulse" />
+                        <span>À recruter immédiatement</span>
+                        <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
                       </button>
                     ) : (
-                      <span
-                        className="p-2 rounded-xl border border-slate-100 text-slate-300 bg-slate-50/80 cursor-not-allowed inline-flex items-center justify-center"
-                        title="Profil créé par l'administration : modification autorisée, suppression réservée aux administrateurs"
-                      >
-                        <Lock className="w-3.5 h-3.5" />
-                      </span>
+                      <>
+                        {/* Bouton À recruter immédiatement si le statut est recruit_now */}
+                        {isCandidateRecruitNow(c) && canProcessRecruitNow && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAdminProcedure(c)}
+                            className="w-full h-8.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95 transition-all"
+                            title="Ouvrir la procédure administrative pour ce recrutement immédiat"
+                          >
+                            <Flame className="w-4 h-4 fill-white text-white animate-pulse" />
+                            <span>À recruter immédiatement</span>
+                            <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                          </button>
+                        )}
+
+                        <div className="flex items-center justify-between gap-2.5">
+                          {/* Bouton Vidéo Google Drive : Play uniquement si le lien est présent, sinon + Drive */}
+                          {c.video_url ? (
+                            <button
+                              type="button"
+                              onClick={() => setPlayerToWatchVideo(c)}
+                              className="flex-1 h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+                              title="Visionner la vidéo du joueur (Google Drive)"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              <span>Play</span>
+                            </button>
+                          ) : canAddDriveLinkForCandidate(c) ? (
+                            <button
+                              type="button"
+                              onClick={() => setCandidateForDriveLink(c)}
+                              className="flex-1 h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition-all cursor-pointer whitespace-nowrap"
+                              title="Ajouter un lien vidéo Google Drive"
+                            >
+                              <Video className="w-3.5 h-3.5" />
+                              <span>+ Drive</span>
+                            </button>
+                          ) : null}
+
+                          {(() => {
+                            const candEvals = [
+                              ...evaluations.filter(e => e.candidate_id === c.id),
+                              ...(c.evaluations || [])
+                            ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+                            const count = candEvals.length;
+                            return (
+                              <button
+                                type="button"
+                                disabled={!canManageReports}
+                                onClick={() => canManageReports && openCandidateDetail(c, 'report')}
+                                className={cn(
+                                  "flex-1 h-8 rounded-full text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs whitespace-nowrap",
+                                  !canManageReports
+                                    ? "bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed border border-slate-200"
+                                    : "bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
+                                )}
+                                title={!canManageReports ? "Consultation des rapports non autorisée (permission Gestion de rapport requise)" : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`}
+                              >
+                                <span className={cn("font-bold text-xs", !canManageReports ? "text-slate-400" : "text-white")}>Rapport</span>
+                                <span className={cn(
+                                  "w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs",
+                                  !canManageReports ? "bg-slate-200 text-slate-500" : "bg-amber-400 text-slate-950"
+                                )}>
+                                  {count}
+                                </span>
+                              </button>
+                            );
+                          })()}
+
+                          {(() => {
+                            return (
+                              <button
+                                type="button"
+                                disabled={!canAssignMissions}
+                                onClick={() => canAssignMissions && openAssignModal(c)}
+                                className={cn(
+                                  "w-8 h-8 rounded-full border flex items-center justify-center shrink-0 transition-colors",
+                                  !canAssignMissions
+                                    ? "border-slate-200 bg-slate-50 text-slate-400 opacity-60 cursor-not-allowed"
+                                    : "border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer"
+                                )}
+                                title={!canAssignMissions ? "Assignation de joueur et mission réservée à la Direction (Scout Admin et Super Admin)" : "Assigner à un scout & confier une mission"}
+                              >
+                                {!canAssignMissions ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <UserPlus className="w-3.5 h-3.5" />}
+                              </button>
+                            );
+                          })()}
+
+                          {/* Modifier la fiche complète (protégé par CRUD update et catégorie) */}
+                          {canUpdateCandidateFull(c) && (
+                            <button
+                              onClick={() => {
+                                navigate(`/recruitment-v2/add-player?editId=${c.id}&returnTab=${activeTab}`);
+                              }}
+                              className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                              title="Modifier la fiche complète du joueur"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {canDeleteCandidate(c) ? (
+                            <button
+                              onClick={() => setCandidateToDelete(c)}
+                              className="w-8 h-8 rounded-full border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                              title="Supprimer ou archiver le joueur"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <span
+                              className="w-8 h-8 rounded-full border border-slate-100 text-slate-300 bg-slate-50/80 cursor-not-allowed inline-flex items-center justify-center shrink-0"
+                              title="Profil créé par l'administration : modification autorisée, suppression réservée aux administrateurs"
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                            </span>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -2261,8 +3050,10 @@ export const RecruitmentV2Page: React.FC = () => {
           scouts={scouts}
           currentUser={authState?.user}
           currentScout={currentScout}
-          isAdmin={isRecruitmentAdmin}
-          isScoutAdmin={isScoutAdmin && !isScoutManager}
+          isAdmin={isRecruitmentAdmin || isSuperAdmin}
+          isScoutAdmin={(isScoutAdmin || isSuperAdmin) && !isScoutManager}
+          isSuperAdmin={isSuperAdmin}
+          isScoutManager={isScoutManager}
           onAcknowledgeMission={async (candidateId, missionId) => {
             const scoutId = currentScout?.id || authState?.user?.id || '';
             const scoutName = currentScout?.full_name || authState?.user?.full_name || 'Scout FUS';
@@ -2421,11 +3212,17 @@ export const RecruitmentV2Page: React.FC = () => {
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               type="button"
-                              onClick={() => openCandidateDetail(c, 'report')}
-                              className="px-2.5 py-1.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
-                              title="Consulter les rapports et l'historique"
+                              disabled={!canManageReports}
+                              onClick={() => canManageReports && openCandidateDetail(c, 'report')}
+                              className={cn(
+                                "px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all shadow-xs",
+                                !canManageReports
+                                  ? "bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed border border-slate-200"
+                                  : "bg-slate-900 text-white hover:bg-slate-800 cursor-pointer"
+                              )}
+                              title={!canManageReports ? "Consultation des rapports non autorisée" : "Consulter les rapports et l'historique"}
                             >
-                              <Eye className="w-3.5 h-3.5 text-primary" />
+                              <Eye className={cn("w-3.5 h-3.5", !canManageReports ? "text-slate-400" : "text-primary")} />
                               <span>Consulter</span>
                             </button>
 
@@ -2565,6 +3362,7 @@ export const RecruitmentV2Page: React.FC = () => {
           isOpen={!!playerToWatchVideo}
           onClose={() => setPlayerToWatchVideo(null)}
           candidate={playerToWatchVideo}
+          onEditLink={canAddDriveLinkForCandidate(playerToWatchVideo) ? (cand) => setCandidateForDriveLink(cand) : undefined}
         />
       )}
 
@@ -2575,6 +3373,23 @@ export const RecruitmentV2Page: React.FC = () => {
           onClose={() => setCandidateForDriveLink(null)}
           candidate={candidateForDriveLink}
           onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.candidates });
+            queryClient.invalidateQueries({ queryKey: ['recruitment'] });
+          }}
+        />
+      )}
+
+      {/* MODAL PROCÉDURE ADMINISTRATIVE POUR RECRUTEMENT IMMÉDIAT */}
+      {candidateForAdminProcedure && (
+        <AdministrativeProcedureModal
+          isOpen={!!candidateForAdminProcedure}
+          onClose={() => setCandidateForAdminProcedure(null)}
+          candidate={candidateForAdminProcedure}
+          onSave={async (candidateId, updates) => {
+            await updateCandidate({
+              id: candidateId,
+              updates
+            });
             queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.candidates });
             queryClient.invalidateQueries({ queryKey: ['recruitment'] });
           }}

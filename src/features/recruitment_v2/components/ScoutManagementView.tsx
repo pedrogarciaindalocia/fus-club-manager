@@ -77,35 +77,43 @@ export const ScoutManagementView: React.FC<ScoutManagementViewProps> = ({
   const [adminCustomPassword, setAdminCustomPassword] = useState('');
   const [showAdminPassword, setShowAdminPassword] = useState(false);
 
-  // Règle US-DASH-25 : Pour le Super Admin, supervision complète de toute la cellule et de chaque scout (y compris Scout Admin)
-  // Pour le Scout Admin (US-DASH-21) : Le compte administrateur est géré via "Mon Profil" et masqué de l'effectif subordonné
+  // Rubrique Personnel : Seuls les Scout Admin, Scout Manager et Scouts de terrain apparaissent dans l'effectif
   const visibleScouts = useMemo(() => {
-    const roleFiltered = scouts.filter(s => {
-      if (isSuperAdmin) {
-        return true;
-      }
-      const roleTitle = (s.role_title || '').toLowerCase().trim();
-      if (
-        roleTitle === 'scout admin' ||
-        roleTitle === 'scout_admin' ||
-        roleTitle === 'admin' ||
-        roleTitle === 'super admin' ||
-        roleTitle.includes('scout admin')
-      ) {
-        return false;
-      }
-      const sysRole = ((s as any).system_role || '').toLowerCase().trim();
-      if (sysRole === 'scout_admin' || sysRole === 'admin' || sysRole === 'super_admin') {
-        return false;
-      }
-      return true;
-    });
-
     // Protection anti-doublons défensive par ID, email et nom complet
     const seenEmails = new Set<string>();
     const seenIds = new Set<string>();
     const seenNames = new Set<string>();
-    return roleFiltered.filter(s => {
+    return scouts.filter(s => {
+      if (!s) return false;
+
+      // Exclusion stricte des profils généraux du club (Directeurs, Super Admin, Analystes vidéo hors détection)
+      const roleTitle = (s.role_title || '').toLowerCase().trim();
+      const sysRole = ((s as any).system_role || '').toLowerCase().trim();
+      const fullName = (s.full_name || '').toLowerCase().trim();
+
+      const isExplicitScoutPersonnel = (
+        sysRole === 'scout_admin' ||
+        sysRole === 'scout_manager' ||
+        roleTitle.includes('scout') ||
+        roleTitle.includes('recruteur') ||
+        roleTitle.includes('observateur')
+      );
+
+      const isGeneralClubUser = (
+        (sysRole === 'super_admin' && !roleTitle.includes('scout')) ||
+        (roleTitle.includes('directeur') && !roleTitle.includes('scout')) ||
+        (roleTitle.includes('analyste') && !roleTitle.includes('scout')) ||
+        fullName.includes('super admin') ||
+        fullName.includes('manuel pires') ||
+        fullName.includes('youssef oughegi') ||
+        fullName.includes('boucba') ||
+        fullName.includes('badr belabbes')
+      );
+
+      if (isGeneralClubUser && !isExplicitScoutPersonnel) {
+        return false;
+      }
+
       if (s.id && seenIds.has(s.id)) return false;
       if (s.id) seenIds.add(s.id);
 
@@ -115,7 +123,7 @@ export const ScoutManagementView: React.FC<ScoutManagementViewProps> = ({
       }
       if (emailKey) seenEmails.add(emailKey);
 
-      const nameKey = (s.full_name || '').toLowerCase().trim().replace(/\s+/g, ' ');
+      const nameKey = fullName.replace(/\s+/g, ' ');
       if (nameKey && seenNames.has(nameKey)) {
         return false;
       }
@@ -123,7 +131,7 @@ export const ScoutManagementView: React.FC<ScoutManagementViewProps> = ({
 
       return true;
     });
-  }, [scouts, isSuperAdmin]);
+  }, [scouts]);
 
   const isCandidateForScout = (c: TrialCandidate, targetScout?: Scout | null) => {
     if (!targetScout) return false;
@@ -464,11 +472,10 @@ export const ScoutManagementView: React.FC<ScoutManagementViewProps> = ({
     ? Math.round((scoutEvals.reduce((acc, curr) => acc + (curr.overall_score || 0), 0) / scoutEvals.length) * 10) / 10
     : 0;
 
-  // Détermine si un candidat est shortlisté
+  // Détermine si un candidat est shortlisté : par défaut, tous les talents prospectés actifs sont shortlistés
   const isCandidateShortlisted = (c: TrialCandidate) => {
-    if (['shortlisted', 'shortlist'].includes(c.pipeline_stage)) return true;
-    const ev = scoutEvals.find(e => e.candidate_id === c.id);
-    return Boolean(ev && (['shortlist', 'recommend_academy', 'contract_proposal'].includes(ev.verdict) || (ev.overall_score || 0) >= 7.0));
+    if (c.pipeline_stage === 'rejected' || c.pipeline_stage === 'archived') return false;
+    return true;
   };
 
   // Bascule du statut shortlist (ajoute ou retire le joueur de la shortlist et du terrain)
@@ -1082,7 +1089,7 @@ Cellule Détection & Scouting — FUS Rabat`;
                       {isAdmin ? `Cellule Scouts • Effectif (${filteredScouts.length}/${visibleScouts.length})` : 'Mon Profil Scout'}
                     </h3>
                     {isAdmin && (
-                      <p className="text-[10px] text-slate-400 font-medium">Scout Managers & Observateurs</p>
+                      <p className="text-[10px] text-slate-400 font-medium">Scout Managers, Admins & Observateurs</p>
                     )}
                   </div>
                 </div>
@@ -1709,74 +1716,155 @@ Cellule Détection & Scouting — FUS Rabat`;
                       ) : (
                         <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1.5">
                           {filteredScoutCandidates.map((c) => {
-                            const candEvalsList = scoutEvals.filter(e => e.candidate_id === c.id);
-                            const latestEval = candEvalsList[0];
-                            const effectiveScore = latestEval?.overall_score || c.initial_scout_score;
+                            // Agrégation résiliente des rapports/évaluations du joueur
+                            const candEvalsList = [
+                              ...evaluations.filter(e => e.candidate_id === c.id),
+                              ...(c.evaluations || [])
+                            ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+
+                            const sortedEvals = [...candEvalsList].sort((a, b) => {
+                              const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
+                              const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
+                              return tB - tA;
+                            });
+                            // Dernier rapport d'évaluation rédigé
+                            const latestEval = sortedEvals[0];
+
+                            // 1. Scores des 4 piliers individuels (Technique, Tactique, Physique, Mental) issus du DERNIER RAPPORT
+                            const getScoreVal = (val: any) => {
+                              if (val == null || val === '') return null;
+                              const num = Number(val);
+                              return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                            };
+
+                            const techScore = getScoreVal(latestEval?.technical_score ?? (latestEval as any)?.tech_score ?? (latestEval as any)?.technical_rating);
+                            const tactScore = getScoreVal(latestEval?.tactical_score ?? (latestEval as any)?.tact_score ?? (latestEval as any)?.tactical_rating);
+                            const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
+                            const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
+
+                            // 2. Dernier potentiel du joueur (issu du dernier rapport, sinon note de profil)
+                            const potentialScore: number | null = (latestEval?.potential_rating != null && !isNaN(Number(latestEval.potential_rating)))
+                              ? Math.round(Number(latestEval.potential_rating) * 10) / 10
+                              : (c.potential_rating != null && !isNaN(Number(c.potential_rating)))
+                                ? Math.round(Number(c.potential_rating) * 10) / 10
+                                : (c.initial_scout_score != null && !isNaN(Number(c.initial_scout_score)))
+                                  ? Math.round(Number(c.initial_scout_score) * 10) / 10
+                                  : null;
 
                             return (
                               <div
                                 key={c.id}
                                 className="p-3.5 bg-slate-50/85 hover:bg-white transition-all rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                               >
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-xs font-black text-slate-900">{c.first_name} {c.last_name}</p>
-                                    {c.age_category && (
-                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 uppercase">
-                                        {c.age_category}
-                                      </span>
-                                    )}
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                                    <img
+                                      src={c.photo_url || '/assets/avatar.svg'}
+                                      alt={`${c.first_name} ${c.last_name}`}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        const target = e.currentTarget;
+                                        if (!target.src.endsWith('/assets/avatar.svg')) {
+                                          target.src = '/assets/avatar.svg';
+                                        }
+                                      }}
+                                    />
                                   </div>
-                                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                                    <strong className="text-slate-700">{POSITION_LABELS[c.primary_position] || c.primary_position}</strong>
-                                    {' '}• {c.current_club || 'Sans club'}
-                                  </p>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-xs font-black text-slate-900">{c.first_name} {c.last_name}</p>
+                                      {c.age_category && (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 uppercase">
+                                          {c.age_category}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                                      <strong className="text-slate-700">{POSITION_LABELS[c.primary_position] || c.primary_position}</strong>
+                                      {' '}• {c.current_club || 'Sans club'}
+                                    </p>
+                                  </div>
                                 </div>
 
-                                <div className="flex items-center gap-2 shrink-0">
-                                  {/* Score si existant */}
-                                  {effectiveScore ? (
-                                    <span className="text-xs font-black text-primary bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-xl">
-                                      ⭐ {effectiveScore}/10
-                                    </span>
-                                  ) : null}
-
-                                  {/* Bouton Attribution Shortlist */}
-                                  {onUpdateCandidate && (
-                                    <button
-                                      type="button"
-                                      disabled={updatingCandidateId === c.id}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleToggleShortlist(c);
-                                      }}
-                                      className={cn(
-                                        "px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer border",
-                                        isCandidateShortlisted(c)
-                                          ? "bg-amber-400 hover:bg-amber-500 text-slate-950 border-amber-500 shadow-amber-400/25"
-                                          : "bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-800 border-slate-200 hover:border-amber-300"
-                                      )}
-                                      title={isCandidateShortlisted(c) ? "Retirer de la Shortlist" : "Attribuer à la Shortlist (affichera le joueur sur le terrain tactique)"}
+                                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                  {/* Mini-Scorecard Pro 4 Piliers + Potentiel (Style Analytics sans icônes) */}
+                                  <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200/90 shadow-2xs">
+                                    {/* 1. Technique */}
+                                    <div
+                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px]"
+                                      title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}
                                     >
-                                      {updatingCandidateId === c.id ? (
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      ) : (
-                                        <Trophy className={cn("w-3.5 h-3.5", isCandidateShortlisted(c) ? "fill-slate-950 text-slate-950" : "text-amber-500")} />
-                                      )}
-                                      <span>{isCandidateShortlisted(c) ? 'Shortlisté' : '+ Shortlist'}</span>
-                                    </button>
-                                  )}
+                                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">TEC</span>
+                                      <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
+                                        {techScore != null ? techScore.toFixed(1) : '-'}
+                                      </span>
+                                    </div>
 
-                                  {/* Bouton Rapport */}
+                                    <div className="h-5 w-px bg-slate-200" />
+
+                                    {/* 2. Tactique */}
+                                    <div
+                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px]"
+                                      title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}
+                                    >
+                                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">TAC</span>
+                                      <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
+                                        {tactScore != null ? tactScore.toFixed(1) : '-'}
+                                      </span>
+                                    </div>
+
+                                    <div className="h-5 w-px bg-slate-200" />
+
+                                    {/* 3. Physique */}
+                                    <div
+                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px]"
+                                      title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}
+                                    >
+                                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">PHY</span>
+                                      <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
+                                        {physScore != null ? physScore.toFixed(1) : '-'}
+                                      </span>
+                                    </div>
+
+                                    <div className="h-5 w-px bg-slate-200" />
+
+                                    {/* 4. Mental */}
+                                    <div
+                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px]"
+                                      title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}
+                                    >
+                                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">MEN</span>
+                                      <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
+                                        {mentScore != null ? mentScore.toFixed(1) : '-'}
+                                      </span>
+                                    </div>
+
+                                    <div className="h-5 w-px bg-slate-200" />
+
+                                    {/* 5. Potentiel */}
+                                    <div
+                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[38px] bg-emerald-50 border border-emerald-200/80"
+                                      title={`Potentiel initial : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}
+                                    >
+                                      <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700">POT</span>
+                                      <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-950" : "text-slate-300")}>
+                                        {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Bouton Rapport avec rond jaune et chiffre en noir (0 par défaut) */}
                                   {onOpenCandidateDetail && (
                                     <button
                                       type="button"
                                       onClick={() => onOpenCandidateDetail(c, 'report')}
-                                      className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                                      title={`Consulter les rapports du joueur (${candEvalsList.length} rapport${candEvalsList.length > 1 ? 's' : ''})`}
+                                      className="px-3.5 py-1.5 rounded-full bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-xs cursor-pointer shrink-0"
+                                      title={`Consulter les rapports du joueur (${candEvalsList.length} rapport${candEvalsList.length !== 1 ? 's' : ''})`}
                                     >
-                                      <Eye className="w-3.5 h-3.5 text-primary" />
-                                      <span>Rapport{candEvalsList.length > 0 ? ` (${candEvalsList.length})` : ''}</span>
+                                      <span className="font-bold text-xs text-white">Rapport</span>
+                                      <span className="w-5 h-5 min-w-[20px] rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs">
+                                        {candEvalsList.length}
+                                      </span>
                                     </button>
                                   )}
                                 </div>

@@ -16,7 +16,7 @@ const AddReportPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { authState } = usePermissions();
+  const { authState, hasSubModuleAccess } = usePermissions();
   const returnTab = searchParams.get('returnTab') || 'candidates';
   const candidateIdFromUrl = searchParams.get('candidateId') || (location.state as any)?.candidateId;
   const editReportId = searchParams.get('editReportId') || (location.state as any)?.editReportId;
@@ -34,6 +34,14 @@ const AddReportPage: React.FC = () => {
   ].map(r => r.toLowerCase().trim());
   const isSuperAdmin = userRoles.includes('super_admin') || Boolean(authState?.isRealSuperAdmin);
   const isAdmin = isSuperAdmin || userRoles.includes('admin') || userRoles.includes('scout_admin');
+
+  // Permission spécifique de gestion de rapport
+  const canManageReports = Boolean(
+    isSuperAdmin ||
+    isAdmin ||
+    hasSubModuleAccess('candidates', 'manage_reports') ||
+    hasSubModuleAccess('candidates', 'reports')
+  );
 
   const currentScout = scouts.find((s) => {
     if (authState?.user?.email && s.email && s.email.toLowerCase() === authState.user.email.toLowerCase()) return true;
@@ -115,6 +123,13 @@ const AddReportPage: React.FC = () => {
   const selectedCandidate = candidates.find((c) => c.id === selectedCandidateId) || null;
 
   useEffect(() => {
+    // 0. Permission de gestion des rapports requise
+    if (!canManageReports) {
+      toast.error("Accès non autorisé : la permission 'Gestion de rapport' est requise.");
+      navigate(`/recruitment-v2?tab=${returnTab}`);
+      return;
+    }
+
     // 1. En cas de modification d'un rapport existant
     if (evaluationToEdit && !isEvaluationAuthoredByScout(evaluationToEdit)) {
       toast.error("Modification non autorisée : vous ne pouvez pas modifier un rapport rédigé par un autre scout.");
@@ -128,7 +143,7 @@ const AddReportPage: React.FC = () => {
       navigate(`/recruitment-v2?tab=${returnTab}`);
       return;
     }
-  }, [evaluationToEdit, selectedCandidate, isAdmin, isSuperAdmin, currentScout, authState?.user, returnTab, navigate]);
+  }, [canManageReports, evaluationToEdit, selectedCandidate, isAdmin, isSuperAdmin, currentScout, authState?.user, returnTab, navigate]);
 
   const handlePlayerChange = (candId: string) => {
     setSelectedCandidateId(candId);

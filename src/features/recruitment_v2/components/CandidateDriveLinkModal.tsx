@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Video, X, Check, ExternalLink, Trash2, AlertCircle, Link2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { recruitmentService } from '../services/recruitmentService';
+import { usePermissions } from '../../../context/PermissionsContext';
 import type { TrialCandidate } from '../types/recruitment';
 
 interface CandidateDriveLinkModalProps {
@@ -17,6 +18,14 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
   candidate,
   onSuccess,
 }) => {
+  const { authState, hasSubModuleAccess } = usePermissions();
+  const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
+  const isSuperAdmin = currentRole === 'super_admin' || authState.isRealSuperAdmin;
+  const canEditDriveLink = Boolean(
+    isSuperAdmin ||
+    hasSubModuleAccess('candidates', 'drive_link')
+  );
+
   const [videoUrl, setVideoUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -34,6 +43,10 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEditDriveLink) {
+      toast.error("Action refusée : vous n'avez pas la permission de modifier le lien vidéo Drive.");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const cleanUrl = trimmedUrl || null;
@@ -58,6 +71,10 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
   };
 
   const handleClear = async () => {
+    if (!canEditDriveLink) {
+      toast.error("Action refusée : vous n'avez pas la permission de modifier le lien vidéo Drive.");
+      return;
+    }
     setIsSubmitting(true);
     try {
       await recruitmentService.updateCandidate(candidate.id, {

@@ -47,7 +47,11 @@ const AddPlayerPage: React.FC = () => {
   );
 
   const canCreateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'create'));
-  const canUpdateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'update'));
+  const canUpdateCandidate = Boolean(
+    isSuperAdmin || 
+    hasSubModuleAccess('candidates', 'edit_player') || 
+    hasSubModuleAccess('candidates', 'update')
+  );
 
   useEffect(() => {
     // 1. Mode ajout d'un joueur : vérification du droit CRUD 'create'

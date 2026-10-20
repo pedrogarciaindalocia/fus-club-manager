@@ -215,12 +215,32 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const directKey = `sub:${subModule}:${action}`;
     if (perms.includes(directKey)) return true;
 
+    // Support des alias spécifiques pour la gestion des rapports
+    if (subModule === 'candidates' && (action === 'manage_reports' || action === 'reports')) {
+      if (perms.includes('sub:candidates:manage_reports') || perms.includes('sub:candidates:reports')) {
+        return true;
+      }
+    }
+
     // 1.b Actions métier spécifiques joueur (Statistiques / Surclasser / Sortie-Transfert)
-    // et Détection V2 Database (Lien Vidéo Drive) : STRICT — visibles uniquement si cochées explicitement.
+    // et Détection V2 Database (Lien Vidéo Drive, Assigner mission, Recruter immédiatement, Gestion de rapport) : STRICT — visibles uniquement si cochées explicitement.
     if (subModule === 'players' && ['stats', 'surclasser', 'departure'].includes(action)) {
       return false;
     }
-    if (subModule === 'candidates' && ['drive_link'].includes(action)) {
+    // Specific candidate actions including newly added edit_player
+    if (subModule === 'candidates' && ['drive_link', 'assign_mission', 'recruit_now', 'manage_reports', 'reports', 'edit_player'].includes(action)) {
+      // Priorité absolue aux permissions explicites si définies
+      if (perms.includes(`sub:candidates:${action}`)) return true;
+      // Si des permissions explicites existent mais que l'action n'est pas cochée, refus strict
+      if (perms.length > 0) return false;
+
+      // Fallback rôle si aucune configuration individuelle n'existe
+      if (role === 'admin' || role === 'scout_admin') {
+        if (action === 'drive_link') return false; // Exige d'être coché explicitement
+        return true;
+      }
+      if (action === 'recruit_now' && (role === 'direction' || authState.user?.job_title === 'Directeur Administratif')) return true;
+      if ((action === 'manage_reports' || action === 'reports') && role.startsWith('scout_')) return true;
       return false;
     }
 

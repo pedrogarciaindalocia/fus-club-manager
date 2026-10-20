@@ -774,14 +774,12 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
     return map;
   }, [evaluations]);
 
-  // Vérifie si un candidat est formellement shortlisté (pipeline stage Kanban ou verdict d'évaluation)
+  // Vérifie si un candidat est formellement shortlisté : par défaut, tous les talents actifs sont shortlistés et intégrés au Onze / Shadow List
   const isCandidateShortlisted = (cand: TrialCandidate): boolean => {
-    if (cand.pipeline_stage === 'prospect' || cand.pipeline_stage === 'rejected' || cand.pipeline_stage === 'archived') {
+    if (cand.pipeline_stage === 'rejected' || cand.pipeline_stage === 'archived') {
       return false;
     }
-    const hasEval = playerEvaluationsMap.get(cand.id);
-    const hasShortlistVerdict = hasEval && (['shortlist', 'recommend_academy', 'contract_proposal'].includes(hasEval.verdict) || hasEval.overall_score >= 7.0);
-    return ['shortlisted', 'shortlist', 'under_evaluation', 'trial', 'club_trial', 'academy', 'selected', 'signed'].includes(cand.pipeline_stage) || !!hasShortlistVerdict;
+    return true;
   };
 
   // US-DASH-62 / Scout Manager Cloisonnement Joueurs :

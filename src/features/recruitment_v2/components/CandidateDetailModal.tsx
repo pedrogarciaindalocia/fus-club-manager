@@ -122,6 +122,7 @@ interface CandidateDetailModalProps {
   onUpdateCandidate?: (id: string, updates: Partial<TrialCandidate>) => Promise<void>;
   initialTab?: 'scout' | 'personal' | 'sport' | 'evaluations' | 'report';
   scouts?: Scout[];
+  canManageReports?: boolean;
 }
 
 export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
@@ -150,8 +151,9 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   onOpenDriveLink,
   onUpdateCandidate,
   initialTab = 'scout',
+  canManageReports = true,
 }) => {
-  const [activeTab, setActiveTab] = useState<'scout' | 'personal' | 'report' | 'admin'>((initialTab === 'sport' || initialTab === 'evaluations' || initialTab === 'report') ? 'report' : (initialTab as any) || 'scout');
+  const [activeTab, setActiveTab] = useState<'scout' | 'personal' | 'report'>((canManageReports !== false && (initialTab === 'sport' || initialTab === 'evaluations' || initialTab === 'report')) ? 'report' : (initialTab as any) === 'admin' ? 'personal' : (initialTab as any) || 'scout');
   const { getPositionByCode } = useMetrics();
 
   const resolvePositionConfig = (posCode?: string) => {
@@ -176,12 +178,13 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
 
   const [currentAdminDocs, setCurrentAdminDocs] = useState<AdministrativeDocument[]>(candidate?.administrative_documents || []);
-  const [currentContractType, setCurrentContractType] = useState<string>(candidate?.contract_type || 'Convention de formation');
+  const [currentContractType, setCurrentContractType] = useState<string>(candidate?.contract_type || '');
   const [currentAdminNotes, setCurrentAdminNotes] = useState<string>(candidate?.admin_notes || '');
+  const [showAdminForm, setShowAdminForm] = useState(false);
 
   React.useEffect(() => {
     setCurrentAdminDocs(candidate?.administrative_documents || []);
-    setCurrentContractType(candidate?.contract_type || 'Convention de formation');
+    setCurrentContractType(candidate?.contract_type || '');
     setCurrentAdminNotes(candidate?.admin_notes || '');
   }, [candidate]);
 
@@ -215,12 +218,18 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   React.useEffect(() => {
     if (initialTab) {
       if (initialTab === 'sport' || initialTab === 'evaluations' || initialTab === 'report') {
-        setActiveTab('report');
+        if (canManageReports !== false) {
+          setActiveTab('report');
+        } else {
+          setActiveTab('scout');
+        }
+      } else if ((initialTab as any) === 'admin') {
+        setActiveTab('personal');
       } else {
         setActiveTab(initialTab as any);
       }
     }
-  }, [initialTab, candidate?.id]);
+  }, [initialTab, candidate?.id, canManageReports]);
 
   if (!isOpen) return null;
 
@@ -236,6 +245,9 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
     return candidateEvals.filter(ev => !canDeleteEvaluation || canDeleteEvaluation(ev));
   }, [candidateEvals, canDeleteEvaluation]);
   const latestEval = candidateEvals[0];
+  const latestDecision = latestEval
+    ? ((latestEval as any).scout_state_decision || latestEval.report_data?.scout_state_decision || (latestEval.verdict === 'sign' ? 'recruit_now' : latestEval.verdict === 'trial' ? 'invitation_test' : latestEval.verdict === 'follow' ? 'to_follow' : null))
+    : (candidate.scout_state_decision || null);
   const candidateObs = observations.filter(o => o.candidate_id === candidate.id);
   const candidateTests = tests.filter(t => t.candidate_id === candidate.id);
   const candidateTimeline = timeline.filter(t => t.candidate_id === candidate.id);
@@ -263,8 +275,25 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
         ? "rounded-3xl border border-slate-200 shadow-sm"
         : "rounded-3xl shadow-2xl border-2 border-slate-300 w-full max-w-4xl max-h-[92vh] animate-in fade-in zoom-in-95 duration-200 opacity-100"
     )}>
+      {isPage && (
+        <div className="bg-slate-950 px-5 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-slate-400">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1 font-bold"
+            >
+              <span>← Retour à la Database</span>
+            </button>
+            <span className="text-slate-600">/</span>
+            <span className="text-slate-200 font-semibold">{candidate.first_name} {candidate.last_name}</span>
+          </div>
+        </div>
+      )}
+
       {/* 🌟 BANDEAU HERO OMNIPRÉSENT : PHOTO DU JOUEUR & PHOTO DU SCOUT 🌟 */}
-      <div className="bg-slate-900 text-white p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 shrink-0">
+      {/* Header Modal Fiche Candidat */}
+      <div className="bg-slate-900 text-white px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 shrink-0">
         {/* BLOC 1 : JOUEUR (Photo omniprésente, nom, poste, club, âge, surclassement) */}
         <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
           <div className="relative shrink-0">
@@ -272,7 +301,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               <img
                 src={candidate.photo_url}
                 alt={`${candidate.first_name} ${candidate.last_name}`}
-                className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover ring-2 ring-white/20 shadow-md bg-slate-800"
+                className="w-14 h-14 sm:w-15 sm:h-15 rounded-2xl object-cover ring-2 ring-white/15 shadow-md bg-slate-800"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
                   const fb = (e.target as HTMLElement).nextElementSibling;
@@ -282,13 +311,13 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
             ) : null}
             <div
               className={cn(
-                "w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 text-white font-black text-lg sm:text-xl flex items-center justify-center ring-2 ring-white/20 shadow-md",
+                "w-14 h-14 sm:w-15 sm:h-15 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 text-white font-black text-lg sm:text-xl flex items-center justify-center ring-2 ring-white/15 shadow-md",
                 candidate.photo_url ? "hidden" : "flex"
               )}
             >
               {candidate.first_name?.[0]}{candidate.last_name?.[0]}
             </div>
-            <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-md bg-primary text-white text-[10px] font-black uppercase shadow-xs border border-white/30">
+            <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black uppercase shadow-xs border border-slate-900">
               {candidate.primary_position}
             </span>
           </div>
@@ -299,120 +328,153 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                 {candidate.first_name} {candidate.last_name}
               </h2>
               {isCandidateUpgraded && (
-                <span className="px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-extrabold flex items-center gap-1 shadow-2xs">
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-extrabold flex items-center gap-1 shadow-2xs">
                   <TrendingUp className="w-3 h-3 text-emerald-400" />
                   Surclassé {candidateSurclassLabel ? `(${candidateSurclassLabel})` : ''}
                 </span>
               )}
-              <span className="px-2.5 py-0.5 rounded-lg bg-primary/20 text-primary-foreground border border-primary/30 text-[10px] font-black uppercase tracking-wider">
+              <span className="px-2 py-0.5 rounded-md bg-primary/20 text-red-200 border border-primary/40 text-[10px] font-black uppercase tracking-wider">
                 {candidate.pipeline_stage || 'Prospect'}
               </span>
               {candidate.reference_player_style && (
-                <span className="px-2.5 py-0.5 rounded-lg bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 text-[10px] font-black flex items-center gap-1 shadow-2xs">
+                <span className="px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
                   <Sparkles className="w-3 h-3 text-indigo-300" />
                   Style : {candidate.reference_player_style}
                 </span>
               )}
-              {candidate.scout_state_decision === 'recruit_now' && (
-                <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-[10px] font-black flex items-center gap-1 shadow-2xs">
+              {latestDecision === 'recruit_now' ? (
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
                   <Flame className="w-3 h-3 text-emerald-400" />
                   À recruter immédiatement
                 </span>
-              )}
+              ) : latestDecision === 'invitation_test' ? (
+                <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-200 border border-blue-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
+                  <Calendar className="w-3 h-3 text-blue-300" />
+                  Convocation Test
+                </span>
+              ) : latestDecision === 'to_follow' ? (
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-200 border border-amber-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
+                  <Eye className="w-3 h-3 text-amber-300" />
+                  À suivre
+                </span>
+              ) : null}
             </div>
 
-            <div className="flex items-center gap-3 text-xs text-slate-300 flex-wrap">
-              <span className="flex items-center gap-1 font-medium">
+            <div className="flex items-center gap-2.5 text-xs text-slate-300 flex-wrap">
+              <span className="flex items-center gap-1.5 font-medium">
                 <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span className="truncate max-w-[140px] sm:max-w-[200px]">{candidate.current_club || 'Sans club'}</span>
               </span>
-              <span className="flex items-center gap-1 font-medium">
+              <span className="text-slate-600 font-semibold">•</span>
+              <span className="flex items-center gap-1.5 font-medium">
                 <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>
                   {candidateAge ? `${candidateAge} ans` : ''} {candidate.birth_date ? `(${new Date(candidate.birth_date).getFullYear()})` : ''}
                 </span>
               </span>
               {candidate.status && (
-                <span className="px-2 py-0.5 rounded-md bg-white/10 text-slate-200 text-[10px] font-bold">
-                  {candidate.status}
-                </span>
+                <>
+                  <span className="text-slate-600 font-semibold">•</span>
+                  <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700/80 text-slate-300 text-[10px] font-semibold tracking-wide">
+                    {candidate.status}
+                  </span>
+                </>
               )}
             </div>
           </div>
         </div>
 
         {/* BLOC 2 : SCOUT OMNIPRÉSENT & ACTIONS */}
-        <div className="flex items-center gap-3 self-end md:self-center shrink-0">
+        <div className="flex items-center gap-3 self-end lg:self-center shrink-0 flex-wrap sm:flex-nowrap">
           {/* Carte Scout Référent / Découvreur */}
-          <div className="flex items-center gap-2.5 bg-white/10 backdrop-blur-xs p-2 sm:p-2.5 rounded-2xl border border-white/15 shadow-2xs">
+          <div className="h-10 px-3 py-1 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 rounded-xl flex items-center gap-2.5 shadow-xs transition-all shrink-0">
             <ScoutAvatar
               scoutId={candidate.discovering_scout_id || latestEval?.evaluator_id}
               scoutName={candidate.discovering_scout_name || latestEval?.evaluator_name || 'Cellule Recrutement FUS'}
               scouts={scouts}
               size="md"
-              className="ring-2 ring-white/30"
+              className="ring-1 ring-white/20 rounded-lg shrink-0"
             />
-            <div className="min-w-0 pr-1">
-              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
-                Scout Référent
-              </span>
-              <span className="font-black text-white text-xs block truncate max-w-[130px] sm:max-w-[170px]">
+            <div className="min-w-0 pr-0.5">
+              <div className="flex items-center gap-1.5 leading-none mb-0.5">
+                <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">
+                  Scout Référent
+                </span>
+                {(() => {
+                  const s = scouts.find(sc => sc.id === candidate.discovering_scout_id || sc.full_name?.toLowerCase().trim() === (candidate.discovering_scout_name || latestEval?.evaluator_name || '').toLowerCase().trim());
+                  if (!s?.role_title && !candidate.discovering_scout_id) return null;
+                  return (
+                    <span className="text-[9px] text-amber-300/90 font-semibold block truncate">
+                      • {s?.role_title || 'Scout'}
+                    </span>
+                  );
+                })()}
+              </div>
+              <span className="font-bold text-white text-xs block truncate max-w-[120px] sm:max-w-[150px] leading-tight">
                 {candidate.discovering_scout_name || latestEval?.evaluator_name || 'Cellule Recrutement FUS'}
               </span>
-              {(() => {
-                const s = scouts.find(sc => sc.id === candidate.discovering_scout_id || sc.full_name?.toLowerCase().trim() === (candidate.discovering_scout_name || latestEval?.evaluator_name || '').toLowerCase().trim());
-                return (
-                  <span className="text-[10px] text-amber-300 font-semibold block truncate">
-                    {s?.role_title || 'Scout Officiel FUS'}
-                  </span>
-                );
-              })()}
             </div>
           </div>
 
-          {/* Actions : Play Vidéo, Shortlist & Fermer */}
-          <div className="flex items-center gap-1.5">
-            {candidate.video_url && (
-              <button
-                type="button"
-                onClick={() => setIsVideoModalOpen(true)}
-                className="px-3.5 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/30 cursor-pointer transition-all shrink-0 active:scale-95"
-                title="Visionner les séquences vidéo (Google Drive)"
-              >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Play Vidéo</span>
-              </button>
-            )}
+          {/* Séparateur discret */}
+          <div className="hidden sm:block h-6 w-px bg-slate-700/80 shrink-0" />
 
-            {onOpenDriveLink && (
+          {/* Actions : Barre d'actions homogène (Hauteur h-9, rounded-xl, design unifié) */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Vidéo / Drive */}
+            {candidate.video_url ? (
+              <div className="flex items-center h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 overflow-hidden shadow-xs shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsVideoModalOpen(true)}
+                  className="h-full px-3 text-emerald-300 hover:text-white hover:bg-emerald-500/20 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                  title="Visionner les séquences vidéo (Player Google Drive)"
+                >
+                  <Play className="w-3.5 h-3.5 fill-emerald-400 text-emerald-400" />
+                  <span>Player</span>
+                </button>
+                {onOpenDriveLink && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenDriveLink(candidate)}
+                    className="h-full px-2 text-emerald-400/80 hover:text-white hover:bg-emerald-500/20 border-l border-emerald-500/30 transition-all cursor-pointer"
+                    title="Modifier le lien Google Drive"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ) : onOpenDriveLink ? (
               <button
                 type="button"
                 onClick={() => onOpenDriveLink(candidate)}
-                className="px-3.5 py-2 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all shrink-0 active:scale-95"
-                title={candidate.video_url ? "Modifier le lien vidéo Google Drive" : "Ajouter un lien vidéo Google Drive"}
+                className="h-9 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-200 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
+                title="Ajouter un lien vidéo Google Drive"
               >
                 <Video className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{candidate.video_url ? 'Lien Drive' : '+ Lien Drive'}</span>
+                <span>+ Lien Drive</span>
               </button>
-            )}
+            ) : null}
 
+            {/* Modifier Joueur */}
             {onOpenEditCandidate && (
               <button
                 type="button"
                 onClick={() => onOpenEditCandidate(candidate)}
-                className="px-3.5 py-2 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all shrink-0 active:scale-95"
+                className="h-9 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-200 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
                 title="Modifier les données du joueur"
               >
-                <Edit3 className="w-3.5 h-3.5 text-blue-400" />
+                <Edit3 className="w-3.5 h-3.5 text-sky-400" />
                 <span>Modifier Joueur</span>
               </button>
             )}
 
+            {/* Supprimer */}
             {onDeleteCandidate && (
               <button
                 type="button"
                 onClick={() => onDeleteCandidate(candidate)}
-                className="px-3.5 py-2 rounded-2xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all shrink-0 active:scale-95"
+                className="h-9 px-3.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 hover:text-rose-100 font-semibold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
                 title="Supprimer la fiche de ce joueur"
               >
                 <Trash2 className="w-3.5 h-3.5 text-rose-400" />
@@ -420,52 +482,11 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               </button>
             )}
 
-            {onUpdateCandidate && (() => {
-              const isShortlisted = ['shortlisted', 'shortlist'].includes(candidate.pipeline_stage);
-              return (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (isShortlisted) {
-                      if (!window.confirm(`Voulez-vous retirer ${candidate.first_name} ${candidate.last_name} de la shortlist ?`)) return;
-                      try {
-                        await onUpdateCandidate(candidate.id, { pipeline_stage: 'prospect' });
-                        toast.success(`${candidate.first_name} ${candidate.last_name} retiré de la shortlist`);
-                        if (onRefresh) onRefresh();
-                      } catch (err) {
-                        toast.error("Erreur lors du retrait de la shortlist");
-                      }
-                    } else {
-                      try {
-                        await onUpdateCandidate(candidate.id, { pipeline_stage: 'shortlisted' });
-                        toast.success(`${candidate.first_name} ${candidate.last_name} ajouté à la shortlist`);
-                        if (onRefresh) onRefresh();
-                      } catch (err) {
-                        toast.error("Erreur lors de l'ajout à la shortlist");
-                      }
-                    }
-                  }}
-                  className={cn(
-                    "p-2.5 rounded-2xl border transition-all cursor-pointer shadow-2xs flex items-center justify-center shrink-0",
-                    isShortlisted
-                      ? "bg-amber-400 text-slate-900 border-amber-300 hover:bg-rose-500 hover:text-white hover:border-rose-400"
-                      : "bg-white/10 hover:bg-white/20 text-white border-white/20"
-                  )}
-                  title={isShortlisted ? "Retirer de la shortlist" : "Ajouter à la shortlist"}
-                >
-                  {isShortlisted ? (
-                    <BookmarkCheck className="w-4 h-4" />
-                  ) : (
-                    <Bookmark className="w-4 h-4 text-slate-300" />
-                  )}
-                </button>
-              );
-            })()}
-
+            {/* Fermer */}
             <button
               type="button"
               onClick={onClose}
-              className="p-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white border border-white/20 transition-colors cursor-pointer shadow-2xs shrink-0"
+              className="h-9 w-9 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-400 hover:text-white flex items-center justify-center transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
               title="Fermer"
               aria-label="Fermer"
             >
@@ -480,8 +501,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
         {[
           { id: 'scout', label: '1. Scout', icon: Compass },
           { id: 'personal', label: '2. État Civil & Contact', icon: User },
-          { id: 'report', label: `3. Rapports (${candidateEvals.length})`, icon: FileText },
-          { id: 'admin', label: `4. Dossier Administratif (${currentAdminDocs.length})`, icon: Briefcase },
+          ...(canManageReports !== false ? [{ id: 'report', label: `3. Rapports (${candidateEvals.length})`, icon: FileText }] : []),
         ].map((tab) => {
             const Icon = tab.icon;
             return (
@@ -529,56 +549,6 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                     <span className="px-2.5 py-1 rounded-xl bg-primary/10 text-primary font-bold text-xs uppercase border border-primary/20">
                       Priorité : {candidate.recommendation_priority || 'Standard'}
                     </span>
-
-                    {onUpdateCandidate && (() => {
-                      const isShortlisted = ['shortlisted', 'shortlist'].includes(candidate.pipeline_stage);
-                      return (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (isShortlisted) {
-                              if (!window.confirm(`Voulez-vous retirer ${candidate.first_name} ${candidate.last_name} de la shortlist ?`)) return;
-                              try {
-                                await onUpdateCandidate(candidate.id, { pipeline_stage: 'prospect' });
-                                toast.success(`${candidate.first_name} ${candidate.last_name} retiré de la shortlist`);
-                                if (onRefresh) onRefresh();
-                              } catch (err) {
-                                toast.error("Erreur lors du retrait de la shortlist");
-                              }
-                            } else {
-                              try {
-                                await onUpdateCandidate(candidate.id, { pipeline_stage: 'shortlisted' });
-                                toast.success(`${candidate.first_name} ${candidate.last_name} ajouté à la shortlist`);
-                                if (onRefresh) onRefresh();
-                              } catch (err) {
-                                toast.error("Erreur lors de l'ajout à la shortlist");
-                              }
-                            }
-                          }}
-                          className={cn(
-                            "px-3 py-1 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer border",
-                            isShortlisted
-                              ? "bg-amber-100 hover:bg-rose-100 text-amber-900 hover:text-rose-900 border-amber-300 hover:border-rose-300 group"
-                              : "bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-800 border-slate-200 hover:border-amber-300"
-                          )}
-                          title={isShortlisted ? "Cliquer pour retirer ce joueur de la shortlist" : "Ajouter ce joueur à la shortlist"}
-                        >
-                          {isShortlisted ? (
-                            <>
-                              <BookmarkCheck className="w-3.5 h-3.5 text-amber-600 group-hover:hidden" />
-                              <Trash2 className="w-3.5 h-3.5 text-rose-600 hidden group-hover:inline" />
-                              <span className="group-hover:hidden">Dans la Shortlist</span>
-                              <span className="hidden group-hover:inline">Retirer de la Shortlist</span>
-                            </>
-                          ) : (
-                            <>
-                              <Bookmark className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Ajouter à la Shortlist</span>
-                            </>
-                          )}
-                        </button>
-                      );
-                    })()}
                   </div>
                 </div>
 
@@ -658,11 +628,29 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                       <Calendar className="w-3.5 h-3.5 text-slate-500" /> Date de Détection
                     </span>
                     <span className="font-black text-slate-900 text-sm">
-                      {candidate.discovery_date || 'Non renseignée'}
+                      {candidate.discovery_date
+                        ? (() => {
+                            try {
+                              const p = candidate.discovery_date.split('T')[0].split('-');
+                              return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : candidate.discovery_date;
+                            } catch {
+                              return candidate.discovery_date;
+                            }
+                          })()
+                        : (candidate.created_at
+                            ? (() => {
+                                try {
+                                  const p = candidate.created_at.split('T')[0].split('-');
+                                  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : candidate.created_at.split('T')[0];
+                                } catch {
+                                  return candidate.created_at;
+                                }
+                              })()
+                            : 'Non renseignée')}
                     </span>
                   </div>
 
-                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/70">
+                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/70 lg:col-span-2">
                     <span className="text-muted-foreground block text-[11px] mb-1 flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-emerald-600" /> Lieu de Détection
                     </span>
@@ -671,24 +659,12 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                     </span>
                   </div>
 
-                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/70">
+                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/70 lg:col-span-2">
                     <span className="text-muted-foreground block text-[11px] mb-1 flex items-center gap-1.5">
                       <Award className="w-3.5 h-3.5 text-indigo-600" /> Match d'Observation
                     </span>
                     <span className="font-bold text-slate-900 text-xs">
                       {candidate.discovery_match || '-'}
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/70">
-                    <span className="text-muted-foreground block text-[11px] mb-1 flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-amber-600" /> Statut Actuel
-                    </span>
-                    <span className="font-bold text-slate-900 text-xs capitalize">
-                      {candidate.status === 'selected' ? 'Retenu FUS' :
-                       candidate.status === 'in_trial' ? 'En Essai / Test' :
-                       candidate.status === 'rejected' ? 'Non Retenu' :
-                       candidate.status === 'on_hold' ? 'En Réserve' : 'Inscrit'}
                     </span>
                   </div>
                 </div>
@@ -1206,6 +1182,49 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* 3. Détails Administratifs & Documents (affichés dans l'onglet État Civil) */}
+              {(currentAdminDocs.length > 0 || currentContractType || currentAdminNotes || candidate.contract_type || candidate.admin_notes || showAdminForm) ? (
+                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                      <Briefcase className="w-4 h-4 text-emerald-600" />
+                      Détails Administratifs & Documents ({currentAdminDocs.length})
+                    </h4>
+                    {currentContractType && (
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
+                        {currentContractType}
+                      </span>
+                    )}
+                  </div>
+
+                  <AdministrativeDossierForm
+                    documents={currentAdminDocs}
+                    onDocumentsChange={handleDocsChange}
+                    contractType={currentContractType || 'Convention de formation'}
+                    onContractTypeChange={handleContractTypeChange}
+                    adminNotes={currentAdminNotes}
+                    onAdminNotesChange={handleAdminNotesChange}
+                  />
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5 text-xs text-slate-600">
+                    <Briefcase className="w-4 h-4 text-slate-400" />
+                    <span>Aucun document administratif joint pour ce joueur.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!currentContractType) setCurrentContractType('Convention de formation');
+                      setShowAdminForm(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    <span>+ Ajouter un document</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -2198,19 +2217,6 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
             </div>
           )}
 
-          {/* ONGLET 4 : DOSSIER ADMINISTRATIF & CONTRAT */}
-          {activeTab === 'admin' && (
-            <div className="space-y-4 animate-in fade-in duration-200">
-              <AdministrativeDossierForm
-                documents={currentAdminDocs}
-                onDocumentsChange={handleDocsChange}
-                contractType={currentContractType}
-                onContractTypeChange={handleContractTypeChange}
-                adminNotes={currentAdminNotes}
-                onAdminNotesChange={handleAdminNotesChange}
-              />
-            </div>
-          )}
         </div>
 
         {/* Modal Lecteur Vidéo Détection Google Drive */}

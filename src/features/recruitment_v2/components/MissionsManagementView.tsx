@@ -1,11 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ClipboardCheck, Clock, CheckCircle2, AlertCircle, Search, Filter,
   Calendar, User, ArrowRight, FileText, ExternalLink, Shield,
   Building2, Sparkles, Check, CheckSquare, Tag, Eye, ChevronRight, Lock,
-  Target, Plus, X, UserPlus, Loader2
+  Target, Plus, X, UserPlus, Loader2, GripVertical
 } from 'lucide-react';
 import type { TrialCandidate, Scout, ScoutMission } from '../types/recruitment';
+import { ScoutingBasketSection } from './ScoutingBasketSection';
+import type { BasketPlayer } from './ScoutingBasketSection';
+import { recruitmentService } from '../services/recruitmentService';
+import { supabase } from '../../../lib/supabase';
 import { cn } from '../../../lib/utils';
 import { toast } from 'sonner';
 
@@ -16,6 +20,8 @@ interface MissionsManagementViewProps {
   currentScout?: Scout | null;
   isAdmin: boolean;
   isScoutAdmin: boolean;
+  isSuperAdmin?: boolean;
+  isScoutManager?: boolean;
   onAcknowledgeMission: (candidateId: string, missionId: string) => Promise<void>;
   onOpenCandidate: (candidate: TrialCandidate) => void;
   onNavigateToReport: (candidateId: string) => void;
@@ -27,7 +33,8 @@ interface MissionsManagementViewProps {
       missionDescription: string;
       priority: 'low' | 'medium' | 'high' | 'urgent';
       dueDate?: string;
-    }
+    },
+    candidateObj?: TrialCandidate
   ) => Promise<void>;
 }
 
@@ -43,6 +50,8 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
   currentScout,
   isAdmin,
   isScoutAdmin,
+  isSuperAdmin = false,
+  isScoutManager = false,
   onAcknowledgeMission,
   onOpenCandidate,
   onNavigateToReport,
@@ -50,7 +59,14 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
 }) => {
   const currentUserId = currentScout?.id || currentUser?.id || '';
   const currentUserName = currentScout?.full_name || currentUser?.full_name || 'Moi';
-  const hasAdminSupervision = isAdmin || isScoutAdmin;
+  const isSuperAdminUser = Boolean(
+    isSuperAdmin ||
+    currentUser?.system_role === 'super_admin' ||
+    currentUser?.role === 'super_admin' ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('admin'))
+  );
+  const hasAdminSupervision = isAdmin || isScoutAdmin || isSuperAdminUser || isSuperAdmin;
+  const isSuperAdminOrAdmin = Boolean(isSuperAdmin || isAdmin || isScoutAdmin || isSuperAdminUser);
 
   // Filtres
   const [filterScope, setFilterScope] = useState<'received' | 'sent' | 'all'>(
@@ -90,7 +106,7 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
 
   const handleConfirmModalAssign = async () => {
     if (!hasAdminSupervision) {
-      toast.error("Action non autorisée : seuls les Scout Admins peuvent assigner des missions.");
+      toast.error("Action non autorisée : réservée à la Direction (Super Admin et Scout Admin).");
       return;
     }
     if (!selectedCandidateForAssign) {
@@ -131,6 +147,104 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
       setIsSubmittingMission(false);
     }
   };
+
+  // Assignation automatique d'une mission à partir d'un joueur adverse présent dans le Panier de Détection
+  const handleAssignMissionFromBasket = async (player: BasketPlayer, scoutId: string) => {
+    // 1. Chercher si le candidat existe déjà dans la base des candidats
+    let targetCand = candidates.find(c => {
+      const cName = `${c.first_name} ${c.last_name}`.toLowerCase().trim();
+      return cName === player.full_name.toLowerCase().trim() || c.id === player.player_id;
+    });
+
+    // 2. Si le candidat n'existe pas encore dans trial_candidates, création automatique du profil
+    if (!targetCand) {
+      const nameParts = player.full_name.trim().split(/\s+/);
+      const firstName = nameParts[0] || 'Joueur';
+      const lastName = nameParts.slice(1).join(' ') || 'Adverse';
+      const matchContext = player.match_context || {};
+      const matchInfo = matchContext.home_name && matchContext.away_name
+        ? `${matchContext.home_name} vs ${matchContext.away_name} (${matchContext.score_home ?? 0}-${matchContext.score_away ?? 0})`
+        : 'Match officiel';
+      const obsText = player.rating_comment ? `\nObservation & Description : "${player.rating_comment}"` : '';
+
+      const createdCand = await recruitmentService.createCandidate({
+        first_name: firstName,
+        last_name: lastName,
+        primary_position: player.position || 'Attaquant',
+        age_category: (player.category as any) || 'SENIOR',
+        origin_club: matchContext.away_name?.includes('FUS') ? matchContext.home_name : (matchContext.away_name || 'Club adverse'),
+        photo_url: player.photo_url || undefined,
+        current_status: 'in_trial',
+        pipeline_stage: 'scouted',
+        evaluation_verdict: 'monitor',
+        recommendation_priority: 'high',
+        notes: `Joueur adverse repéré lors du match : ${matchInfo}. Ajouté au panier de détection par ${player.added_by_name} (${player.added_by_role || 'Staff'}).${obsText}`,
+        rating: player.rating || undefined,
+      });
+
+      targetCand = createdCand;
+    }
+
+    // 3. Déclencher l'assignation de la mission d'observation au scout cible
+    if (onAssignMission && targetCand) {
+      const matchSummary = player.match_context?.home_name && player.match_context?.away_name
+        ? `${player.match_context.home_name} ${player.match_context.score_home ?? 0}–${player.match_context.score_away ?? 0} ${player.match_context.away_name}`
+        : 'Match observé';
+      const descObs = player.rating_comment ? ` Observation & Description : "${player.rating_comment}".` : '';
+
+      await onAssignMission(targetCand.id, {
+        scoutId,
+        missionTitle: `Observation & Rapport : ${player.full_name} (${player.position || 'Adversaire'})`,
+        missionDescription: `Joueur repéré lors du match ${matchSummary}. Recommandé par ${player.added_by_name} (${player.added_by_role || 'Cellule Détection'}).${descObs} Mission d'effectuer un rapport complet de suivi et d'observation.`,
+        priority: 'high',
+      }, targetCand);
+    }
+  };
+
+  // Permet d'assigner ou réassigner n'importe quel candidat / mission par glisser-déposer sur un scout
+  const handleAssignCandidateToScout = async (candidateId: string, targetScout: Scout, extraData?: any) => {
+    if (!onAssignMission) return;
+    const targetCand = candidates.find(c => c.id === candidateId);
+    const missionTitle = extraData?.missionTitle || `Observation & Suivi : ${targetCand ? `${targetCand.first_name} ${targetCand.last_name}` : 'Joueur'}`;
+    const missionDesc = extraData?.missionDescription || `Mission d'observation et de rapport confiée par la Direction Scouting.`;
+    const priority = extraData?.priority || 'high';
+
+    await onAssignMission(candidateId, {
+      scoutId: targetScout.id,
+      missionTitle,
+      missionDescription: missionDesc,
+      priority,
+    }, targetCand);
+  };
+
+  // Écoute temps réel des assignations de mission pour notifier instantanément le Scout Manager ou Scout ciblé
+  useEffect(() => {
+    const channel = supabase
+      .channel('scouting_missions_broadcast_alerts')
+      .on('broadcast', { event: 'mission_assigned' }, (payload: any) => {
+        const data = payload?.payload;
+        if (!data) return;
+
+        const isTargeted = Boolean(
+          (currentUserId && data.scoutId === currentUserId) ||
+          (currentScout?.id && data.scoutId === currentScout.id) ||
+          (data.scoutName && currentUserName && data.scoutName.toLowerCase().trim() === currentUserName.toLowerCase().trim()) ||
+          (data.scoutName && currentUser?.full_name && data.scoutName.toLowerCase().trim() === currentUser.full_name.toLowerCase().trim())
+        );
+
+        if (isTargeted) {
+          toast.info(`🎯 Nouvelle Mission Assignée !`, {
+            description: `${data.assignedBy} vous a confié l'observation de ${data.candidateName} (${data.missionTitle})`,
+            duration: 8000,
+          });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, currentScout?.id, currentUserName, currentUser?.full_name]);
 
   // Extraction et enrichissement de toutes les missions
   const allMissions = useMemo(() => {
@@ -275,15 +389,15 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
     const inProgress = allMissions.filter(m => (m.status === 'in_progress' || (m.acknowledged_at && m.status !== 'completed' && m.status !== 'cancelled'))).length;
     const completed = allMissions.filter(m => m.status === 'completed').length;
 
-    // Décompte pour badge mes missions à accuser
-    const myPendingAck = allMissions.filter(m => 
-      (m.assigned_to_id === currentUserId || (m.assigned_to_name && currentUserName && m.assigned_to_name.toLowerCase().trim() === currentUserName.toLowerCase().trim())) &&
+    // Décompte pour badge mes missions à accuser (masqué définitivement pour le Super Admin et l'Admin)
+    const myPendingAck = isSuperAdminOrAdmin ? 0 : allMissions.filter(m => 
+      (m.assigned_to_id === currentUserId || (m.assigned_to_name && currentUserName && m.assigned_to_name.toLowerCase().trim() === currentUserName.toLowerCase().trim()) || isScoutManager) &&
       (m.status === 'pending_ack' || (m.status === 'pending' && !m.acknowledged_at)) &&
       m.status !== 'completed'
     ).length;
 
     return { total, pendingAck, inProgress, completed, myPendingAck };
-  }, [allMissions, currentUserId, currentUserName]);
+  }, [allMissions, currentUserId, currentUserName, isSuperAdminOrAdmin, isScoutManager]);
 
   // Action d'accusé de réception
   const handleAcknowledge = async (mission: EnrichedMission) => {
@@ -362,10 +476,10 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
           ) : (
             <div
               className="px-3 py-2 rounded-xl bg-slate-100 text-slate-400 font-semibold text-xs flex items-center gap-1.5 border border-slate-200 cursor-not-allowed"
-              title="Seuls les Scout Admins peuvent assigner des missions aux autres scouts"
+              title="Seuls le Super Admin et les Scout Admins peuvent assigner des missions aux scouts"
             >
               <Lock className="w-3.5 h-3.5 text-slate-400" />
-              <span>Assignation réservée au Scout Admin</span>
+              <span>Assignation réservée à la Direction</span>
             </div>
           )}
         </div>
@@ -562,26 +676,47 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
         </div>
       </div>
 
+      {/* SECTION DU PANIER DE DÉTECTION (REMPLACE OU SURPLOMBE LE BLOC D'ASSIGNATION CHEZ LE SCOUT ADMIN ET SUPER ADMIN) */}
+      {hasAdminSupervision && (
+        <ScoutingBasketSection
+          scouts={scouts}
+          isAdmin={isAdmin}
+          isScoutAdmin={isScoutAdmin}
+          isSuperAdmin={isSuperAdmin || isSuperAdminUser}
+          onAssignMissionFromBasket={handleAssignMissionFromBasket}
+          onAssignCandidateToScout={handleAssignCandidateToScout}
+          className="mb-6"
+        />
+      )}
+
       {/* LISTE DES MISSIONS */}
       {filteredMissions.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-xs">
-          <div className="w-14 h-14 rounded-2xl bg-purple-50 text-purple-600 mx-auto flex items-center justify-center mb-3">
-            <ClipboardCheck className="w-7 h-7" />
+        !hasAdminSupervision ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center shadow-xs">
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 mx-auto flex items-center justify-center mb-3">
+              <ClipboardCheck className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">
+              Aucune mission correspondante
+            </h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+              Aucune mission d'observation ne vous a été assignée pour le moment par la Direction.
+            </p>
           </div>
-          <h3 className="text-base font-bold text-slate-900">Aucune mission correspondante</h3>
-          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-            Aucune mission ne répond aux critères sélectionnés. Modifiez vos filtres ou assignez une nouvelle mission d'observation depuis la Database des candidats.
-          </p>
-        </div>
+        ) : null
       ) : (
         <div className="space-y-3">
           {filteredMissions.map((mission) => {
             const cand = mission.candidate;
             const posBadge = getPositionBadge(cand.primary_position);
             const isPendingAck = (mission.status === 'pending_ack' || (mission.status === 'pending' && !mission.acknowledged_at)) && mission.status !== 'completed';
-            const isAssignedToMe = mission.assigned_to_id === currentUserId ||
-              (mission.assigned_to_name && currentUserName && mission.assigned_to_name.toLowerCase().trim() === currentUserName.toLowerCase().trim());
-            const canIAcknowledge = isPendingAck && (isAssignedToMe || hasAdminSupervision);
+            const isAssignedToMe = Boolean(
+              mission.assigned_to_id === currentUserId ||
+              (mission.assigned_to_name && currentUserName && mission.assigned_to_name.toLowerCase().trim() === currentUserName.toLowerCase().trim())
+            );
+            // SUPPRESSION DÉFINITIVE DU BOUTON ACCUSER RÉCEPTION POUR LE SUPER ADMIN ET L'ADMIN ÉMETTEUR
+            // SEUL LE SCOUT MANAGER OU LE SCOUT DE TERRAIN ASSIGNÉ (DESTINATAIRE) PEUT ACCUSER RÉCEPTION
+            const canIAcknowledge = isPendingAck && !isSuperAdminOrAdmin && (isAssignedToMe || isScoutManager);
             const isAckLoading = isAcknowledgingId === mission.id;
 
             // Récupération des profils et photos des Scouts A et B
@@ -614,8 +749,28 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
             return (
               <div
                 key={mission.id}
+                draggable={hasAdminSupervision}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('application/json', JSON.stringify({
+                    type: 'mission_card',
+                    candidateId: cand.id,
+                    name: `${cand.first_name} ${cand.last_name}`,
+                    candidateName: `${cand.first_name} ${cand.last_name}`,
+                    missionId: mission.id,
+                    missionTitle: mission.mission_title,
+                    missionDescription: mission.mission_description,
+                    priority: mission.priority,
+                  }));
+                  e.dataTransfer.setData('text/plain', JSON.stringify({
+                    type: 'mission_card',
+                    candidateId: cand.id,
+                    name: `${cand.first_name} ${cand.last_name}`,
+                  }));
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
                 className={cn(
-                  'bg-white rounded-2xl border transition-all p-4 sm:p-5 shadow-xs hover:shadow-md space-y-3.5 hover:border-purple-300',
+                  'bg-white rounded-2xl border transition-all p-4 sm:p-5 shadow-xs hover:shadow-md space-y-3.5 hover:border-purple-300 relative',
+                  hasAdminSupervision && 'cursor-grab active:cursor-grabbing',
                   isPendingAck ? 'border-amber-200 bg-amber-50/15' : 'border-slate-200/90',
                   !mission.isActive && 'opacity-85 bg-slate-50/50'
                 )}
@@ -623,7 +778,15 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
                 {/* LIGNE 1 : IDENTITÉ DU JOUEUR & STATUT + ACTIONS */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                   {/* Informations Joueur */}
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {hasAdminSupervision && (
+                      <div
+                        className="hidden sm:flex items-center text-slate-300 hover:text-purple-600 cursor-grab active:cursor-grabbing p-1 -ml-1 rounded-md transition-colors shrink-0"
+                        title="Glisser cette mission sur un scout pour la lui assigner"
+                      >
+                        <GripVertical className="w-4 h-4" />
+                      </div>
+                    )}
                     <div className="relative shrink-0">
                       {cand.photo_url ? (
                         <img
@@ -893,6 +1056,35 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
                             <p className="text-[10px] text-purple-600/80 truncate">
                               {assigneeScout?.recruitment_region || assigneeScout?.role_title || 'Scout'}
                             </p>
+                            {hasAdminSupervision && scouts.length > 0 && (
+                              <div className="mt-1">
+                                <select
+                                  value={mission.assigned_to_id || ''}
+                                  onChange={async (e) => {
+                                    const newScoutId = e.target.value;
+                                    if (!newScoutId || newScoutId === mission.assigned_to_id) return;
+                                    const targetScout = scouts.find(s => s.id === newScoutId);
+                                    if (targetScout) {
+                                      await handleAssignCandidateToScout(cand.id, targetScout, {
+                                        missionTitle: mission.mission_title,
+                                        missionDescription: mission.mission_description,
+                                        priority: mission.priority,
+                                      });
+                                      toast.success(`Mission réassignée avec succès à ${targetScout.full_name}`);
+                                    }
+                                  }}
+                                  className="text-[10px] py-0.5 px-1 rounded-lg border border-purple-200 bg-purple-50/70 hover:bg-white text-purple-900 font-bold focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer max-w-[130px]"
+                                  title="Réassigner cette mission à un autre scout"
+                                >
+                                  <option value={mission.assigned_to_id || ''}>Changer scout...</option>
+                                  {scouts.map(s => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.full_name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

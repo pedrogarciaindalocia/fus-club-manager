@@ -360,7 +360,8 @@ export const OFFICIAL_JOB_TITLES = [
   'Coach',
   'Coach Adjoint',
   'Coach Principal',
-  'Directeur Technique'
+  'Directeur Technique',
+  'Directeur Administratif'
 ] as const;
 
 export type OfficialJobTitle = typeof OFFICIAL_JOB_TITLES[number];

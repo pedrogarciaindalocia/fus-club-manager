@@ -6,18 +6,95 @@ import {
   Swords, Building2, Target, Calendar, LayoutTemplate,
   X, ChevronLeft, ChevronDown, Sparkles, UserPlus, Compass,
   Dumbbell, Award, Zap, Menu, Blocks, Archive, User, ClipboardCheck,
-  Image as ImageIcon, LifeBuoy
+  Image as ImageIcon, LifeBuoy, Eye
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { usePermissions } from '../context/PermissionsContext';
 import { useClubData } from '../hooks/useClubData';
 import { usePlugins } from '../context/PluginsContext';
+import { useLiveCursors } from '../context/LiveCursorsContext';
 import defaultClubLogo from '../assets/fus-logo.png';
 import { AuditLogger } from '../services/auditLogger';
 import UserProfileModal from './UserProfileModal';
 import { ticketService } from '../features/ticket-management/ticketService';
 
 import { isScoutBranch } from '../constants/roles';
+
+function isItemAllowedInMirror(path: string, subId?: string, role: string = '', jobTitle: string = ''): boolean {
+  const normRole = role.toLowerCase();
+  const normJob = jobTitle.toLowerCase();
+  
+  // Seul le super_admin absolu a accès aux rubriques d'administration
+  const isSuper = normRole === 'super_admin';
+  if (isSuper) return true;
+
+  // Rubriques strictement Super Admin : toujours interdites pour les rôles non super admin
+  if (['/plugins', '/blog', '/store', '/users', '/logs', '/settings'].some(p => path.startsWith(p))) {
+    return false;
+  }
+
+  const isScout = isScoutBranch(normRole, normJob);
+  const isCoach = normRole === 'coach' || normJob.includes('coach') || normJob.includes('entr');
+  const isAnalyst = normJob.includes('analyst') || normRole.includes('analyst') || normJob.includes('vidéo') || normJob.includes('video') || normJob.includes('data');
+  const isStaff = normRole === 'staff';
+
+  // Branche Analyse Vidéo & Data
+  if (isAnalyst) {
+    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/arbitres' || path === '/leagues' || path === '/stadiums') return true;
+    if (path.startsWith('/players') || path === '/club' || path.startsWith('/teams') || path.startsWith('/opponents') || path.startsWith('/staff')) return true;
+    if (path.startsWith('/media')) return true;
+    if (path === '/' || path === '/dashboard') return true;
+    return false;
+  }
+
+  // Branche Scout
+  if (isScout) {
+    if (path.startsWith('/recruitment-v2')) {
+      if (subId === 'scouts' && normRole !== 'scout_admin' && normRole !== 'scout_manager') {
+        return false;
+      }
+      return true;
+    }
+    if (path === '/players' || path === '/club') return true;
+    if (path === '/official-shortlist') return true;
+    if (path === '/matches') return true;
+    if (path === '/opponents') return true;
+    if (path === '/media') return true;
+    return false;
+  }
+
+  // Branche Coach / Entraîneur
+  if (isCoach) {
+    if (path.startsWith('/trainings')) return true;
+    if (path.startsWith('/matches') || path === '/matchday') return true;
+    if (path === '/official-shortlist') return true;
+    if (path === '/players' || path === '/teams' || path === '/opponents') return true;
+    if (path === '/arbitres' || path === '/leagues' || path === '/stadiums') return true;
+    if (path === '/media') return true;
+    if (path === '/' || path === '/dashboard') return true;
+    return false;
+  }
+
+  // Rôle Admin Métier / Direction standard (hors analyste, scout, coach)
+  if (normRole === 'admin' || normRole === 'direction' || normRole === 'manager') {
+    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/arbitres' || path === '/leagues' || path === '/stadiums') return true;
+    if (path.startsWith('/players') || path === '/club' || path.startsWith('/teams') || path.startsWith('/opponents') || path.startsWith('/staff')) return true;
+    if (path.startsWith('/trainings')) return true;
+    if (path.startsWith('/recruitment-v2')) return true;
+    if (path.startsWith('/media')) return true;
+    if (path === '/' || path === '/dashboard') return true;
+    return false;
+  }
+
+  // Staff standard
+  if (isStaff) {
+    if (path === '/' || path === '/dashboard' || path === '/matches' || path === '/media') return true;
+    return false;
+  }
+
+  // Default
+  return path === '/' || path === '/dashboard' || path === '/media';
+}
 
 interface SubNavItem {
   path: string;
@@ -82,10 +159,27 @@ const Sidebar: React.FC<SidebarProps> = ({
     };
   }, []);
 
+  const { selectedUserId, allOnlineUsers, setSelectedUserId } = useLiveCursors();
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
-  const isSuperAdmin = currentRole === 'super_admin';
-  const isScout = isScoutBranch(currentRole, authState.user?.job_title);
-  const isScoutAdmin = currentRole === 'scout_admin' || isSuperAdmin || currentRole === 'admin';
+  const realIsSuperAdmin = currentRole === 'super_admin' || authState.isRealSuperAdmin;
+
+  // Détection du mode Miroir : si le Super Admin a ciblé un utilisateur en direct
+  const targetedUser = (realIsSuperAdmin && selectedUserId)
+    ? (allOnlineUsers.find(u => u.userId === selectedUserId) || null)
+    : null;
+  const isMirrorMode = Boolean(targetedUser);
+
+  // En mode miroir, les habilitations de navigation et rubriques deviennent celles de l'utilisateur ciblé
+  // et toutes les rubriques exclusives Super Admin disparaissent !
+  const effectiveRole = targetedUser ? targetedUser.role.toLowerCase() : currentRole;
+  const effectiveJob = targetedUser ? (targetedUser.jobTitle || '') : (authState.user?.job_title || '');
+  const isSuperAdmin = isMirrorMode 
+    ? (effectiveRole === 'super_admin') 
+    : realIsSuperAdmin;
+  const isScout = isScoutBranch(effectiveRole, effectiveJob);
+  const isScoutAdmin = isMirrorMode
+    ? (effectiveRole === 'scout_admin' || effectiveRole === 'super_admin')
+    : (currentRole === 'scout_admin' || realIsSuperAdmin || currentRole === 'admin');
 
   const clubName = mainClub?.name || mainClub?.settings?.club_name || 'FUS Rabat';
   const rawLogo = mainClub?.logo_url || mainClub?.settings?.logo_url;
@@ -212,13 +306,16 @@ const Sidebar: React.FC<SidebarProps> = ({
       return true;
     })
     .map(cat => {
-      if (isSuperAdmin || cat.id === 'system') return cat;
+      if (isSuperAdmin && !isMirrorMode) return cat;
 
       const filteredItems = cat.items
         .map(item => {
           // Gestion des items avec sous-enfants (ex: Mon Club -> Joueurs, Équipes)
           if (item.children && item.children.length > 0) {
             const filteredChildren = item.children.filter(child => {
+              if (isMirrorMode) {
+                return isItemAllowedInMirror(child.path, child.subId, effectiveRole, effectiveJob);
+              }
               const childSubId = child.subId || (child.path === '/players' ? 'players' : 'teams');
               return hasSubModuleAccess(childSubId, 'read', cat.id);
             });
@@ -228,6 +325,10 @@ const Sidebar: React.FC<SidebarProps> = ({
               path: filteredChildren[0].path,
               children: filteredChildren
             };
+          }
+
+          if (isMirrorMode) {
+            return isItemAllowedInMirror(item.path, item.subId, effectiveRole, effectiveJob) ? item : null;
           }
 
           if (!item.subId) return item;
@@ -346,45 +447,47 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const renderNavList = (isCollapsedMode = false) => (
     <div className="space-y-4">
-      {/* Primary Dashboard Link */}
-      <div className="mb-2">
-        <NavLink
-          to="/dashboard"
-          onClick={() => isMobile && onMobileClose?.()}
-          className={cn(
-            "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl transition-all duration-200 group relative text-sm font-bold shadow-sm",
-            isDashboardActive
-              ? "bg-primary text-white shadow-md font-black"
-              : "text-slate-700 hover:bg-slate-100",
-            isCollapsedMode && "justify-center px-2 py-3"
-          )}
-          title={isCollapsedMode ? "Tableau de Bord" : undefined}
-        >
-          <LayoutDashboard className={cn(
-            "w-5 h-5 shrink-0 transition-transform",
-            !isDashboardActive && "group-hover:scale-110 text-primary"
-          )} />
+      {/* Primary Dashboard Link (Caché pour la cellule Scout / Détection & Recrutements) */}
+      {!isScout && (
+        <div className="mb-2">
+          <NavLink
+            to="/dashboard"
+            onClick={() => isMobile && onMobileClose?.()}
+            className={cn(
+              "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl transition-all duration-200 group relative text-sm font-bold shadow-sm",
+              isDashboardActive
+                ? "bg-primary text-white shadow-md font-black"
+                : "text-slate-700 hover:bg-slate-100",
+              isCollapsedMode && "justify-center px-2 py-3"
+            )}
+            title={isCollapsedMode ? "Tableau de Bord" : undefined}
+          >
+            <LayoutDashboard className={cn(
+              "w-5 h-5 shrink-0 transition-transform",
+              !isDashboardActive && "group-hover:scale-110 text-primary"
+            )} />
 
-          {!isCollapsedMode && (
-            <span className="truncate flex-1 text-left tracking-wide">
-              Tableau de Bord
-            </span>
-          )}
+            {!isCollapsedMode && (
+              <span className="truncate flex-1 text-left tracking-wide">
+                Tableau de Bord
+              </span>
+            )}
 
-          {!isCollapsedMode && (
-            <span className={cn(
-              "text-[10px] font-black uppercase px-2 py-0.5 rounded-md",
-              isDashboardActive ? "bg-white/20 text-white" : "bg-primary/10 text-primary"
-            )}>
-              Live
-            </span>
-          )}
+            {!isCollapsedMode && (
+              <span className={cn(
+                "text-[10px] font-black uppercase px-2 py-0.5 rounded-md",
+                isDashboardActive ? "bg-white/20 text-white" : "bg-primary/10 text-primary"
+              )}>
+                Live
+              </span>
+            )}
 
-          {isDashboardActive && !isCollapsedMode && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-white rounded-r-full" />
-          )}
-        </NavLink>
-      </div>
+            {isDashboardActive && !isCollapsedMode && (
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-white rounded-r-full" />
+            )}
+          </NavLink>
+        </div>
+      )}
 
       {navCategories.map((category) => {
         const isOpen = !!openCategories[category.id];
@@ -495,7 +598,13 @@ const Sidebar: React.FC<SidebarProps> = ({
                                 <NavLink
                                   key={child.path}
                                   to={child.path}
-                                  onClick={() => isMobile && onMobileClose?.()}
+                                  onClick={(e) => {
+                                    if (isMobile && onMobileClose) onMobileClose();
+                                    if (child.path.startsWith('/recruitment-v2') && location.search.includes('candidateId')) {
+                                      e.preventDefault();
+                                      navigate(child.path);
+                                    }
+                                  }}
                                   className={cn(
                                     "w-full flex items-center gap-2 px-3 py-2 rounded-xl transition-all duration-200 group relative text-xs font-semibold",
                                     childActive
@@ -561,6 +670,57 @@ const Sidebar: React.FC<SidebarProps> = ({
     </div>
   );
 
+  const renderMirrorBanner = (isCollapsed: boolean) => {
+    if (!targetedUser) return null;
+
+    if (isCollapsed) {
+      return (
+        <div className="mb-2 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setSelectedUserId(null)}
+            title={`Vue Miroir Active : ${targetedUser.name} (${targetedUser.role}). Cliquez pour rétablir Super Admin`}
+            className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-600 flex items-center justify-center hover:scale-105 transition-all shadow-xs cursor-pointer"
+          >
+            <Eye className="w-5 h-5 animate-pulse" />
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mb-2 p-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-primary/10 to-purple-500/15 border border-amber-500/35 text-slate-800 shadow-2xs flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 font-black text-[9.5px] text-amber-600 uppercase tracking-wider">
+            <Eye className="w-3 h-3 animate-pulse text-amber-500 shrink-0" />
+            <span className="truncate max-w-[160px]">Miroir : {targetedUser.name}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedUserId(null)}
+            className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded p-0.5 text-[8.5px] font-bold transition-colors cursor-pointer"
+            title="Quitter la vue miroir et restaurer toutes les rubriques Super Admin"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-1 text-[9.5px]">
+          <span className="text-amber-800 font-semibold truncate flex-1">
+            {targetedUser.jobTitle || targetedUser.role}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedUserId(null)}
+            className="px-2 py-0.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-black text-[8.5px] uppercase tracking-wider transition-all shadow-2xs cursor-pointer shrink-0"
+          >
+            Rétablir
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const sidebarContent = (
     <>
       {/* Mobile Close Button */}
@@ -597,8 +757,9 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation bas */}
-      <div className="p-3.5 border-t space-y-1.5 bg-white">
-        {isScout ? (
+      <div className="p-3.5 border-t space-y-1.5 bg-white shrink-0">
+        {renderMirrorBanner(false)}
+        {!isSuperAdmin ? (
           <button
             onClick={() => {
               setProfileModalOpen(true);
@@ -685,8 +846,9 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Footer Settings & Logout */}
-      <div className="p-3.5 border-t space-y-1.5 bg-white">
-        {isScout ? (
+      <div className="p-3.5 border-t space-y-1.5 bg-white shrink-0">
+        {renderMirrorBanner(collapsed)}
+        {!isSuperAdmin ? (
           <NavLink
             to="/profile"
             className={({ isActive }) => cn(

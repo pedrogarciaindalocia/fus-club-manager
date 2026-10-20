@@ -55,6 +55,9 @@ import { PluginsProvider, usePlugins } from './context/PluginsContext';
 import DevRoleSwitcher from './components/dev/DevRoleSwitcher';
 import { MediaManagementPage } from './features/media-management/MediaManagementPage';
 import TicketsPage from './features/ticket-management/TicketsPage';
+import { LiveCursorsProvider } from './context/LiveCursorsContext';
+import LiveCursorsOverlay from './components/collaborative/LiveCursorsOverlay';
+import LiveTargetHUD from './components/collaborative/LiveTargetHUD';
 
 const pageTitles: Record<string, string> = {
   '/': 'Tableau de Bord',
@@ -104,10 +107,13 @@ const AppContent: React.FC = () => {
   const isSuperAdmin = currentRole === 'super_admin' || authState.isRealSuperAdmin;
   const isScout = isScoutBranch(currentRole, authState.user?.job_title);
 
-  // 1. Cloisonnement des routes pour le rôle Scout (redirection vers /recruitment-v2 si non habilité)
+  // 1. Redirection de la racine et dashboard vers Détection & Recrutements pour la branche Scout
+  if (isScout && (location.pathname === '/' || location.pathname === '/dashboard')) {
+    return <Navigate to="/recruitment-v2" replace />;
+  }
+
+  // Cloisonnement des routes pour le rôle Scout (redirection vers /recruitment-v2 si non habilité)
   const isAllowedScoutPath = 
-    location.pathname === '/' || 
-    location.pathname === '/dashboard' || 
     location.pathname === '/tickets' ||
     location.pathname.startsWith('/recruitment-v2') ||
     location.pathname === '/profile' ||
@@ -190,6 +196,8 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50/50">
+      <LiveCursorsOverlay />
+      <LiveTargetHUD />
       <Sidebar 
         mobileOpen={mobileSidebarOpen} 
         onMobileClose={() => setMobileSidebarOpen(false)} 
@@ -355,7 +363,9 @@ function App() {
                   <SessionSecurityProvider>
                     <MatchReminderProvider>
                       <PluginsProvider>
-                        <AppContent />
+                        <LiveCursorsProvider>
+                          <AppContent />
+                        </LiveCursorsProvider>
                       </PluginsProvider>
                     </MatchReminderProvider>
                   </SessionSecurityProvider>

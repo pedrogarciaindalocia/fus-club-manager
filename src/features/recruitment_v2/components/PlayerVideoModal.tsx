@@ -1,18 +1,29 @@
 import React, { useState } from 'react';
-import { X, ExternalLink, Video, Sparkles, Download, RefreshCw, Info } from 'lucide-react';
+import { X, ExternalLink, Video, Sparkles, Download, RefreshCw, Info, Edit3 } from 'lucide-react';
+import { usePermissions } from '../../../context/PermissionsContext';
+import { isScoutBranch } from '../../../constants/roles';
 import type { TrialCandidate } from '../types/recruitment';
 
 interface PlayerVideoModalProps {
   isOpen: boolean;
   onClose: () => void;
   candidate: TrialCandidate | null;
+  onEditLink?: (candidate: TrialCandidate) => void;
 }
 
 export const PlayerVideoModal: React.FC<PlayerVideoModalProps> = ({
   isOpen,
   onClose,
   candidate,
+  onEditLink,
 }) => {
+  const { authState } = usePermissions();
+  const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
+  const isSuperAdmin = currentRole === 'super_admin' || authState.isRealSuperAdmin;
+  const isScout = isScoutBranch(currentRole, authState.user?.job_title);
+  // Télécharger et Lien direct masqués pour la cellule Scout (notamment Scout Manager)
+  const canDownloadAndOpenDirect = isSuperAdmin || (!isScout && currentRole === 'admin');
+
   const [reloadKey, setReloadKey] = useState(0);
   const [isReloading, setIsReloading] = useState(false);
 
@@ -92,7 +103,7 @@ export const PlayerVideoModal: React.FC<PlayerVideoModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {isDrive && (
+            {canDownloadAndOpenDirect && isDrive && (
               <a
                 href={driveDownloadUrl}
                 target="_blank"
@@ -114,16 +125,33 @@ export const PlayerVideoModal: React.FC<PlayerVideoModalProps> = ({
               <span className="hidden md:inline">Actualiser</span>
             </button>
 
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold text-white flex items-center gap-1.5 transition-colors"
-              title="Ouvrir le lien Google Drive original dans un nouvel onglet"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Lien direct</span>
-            </a>
+            {canDownloadAndOpenDirect && (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold text-white flex items-center gap-1.5 transition-colors"
+                title="Ouvrir le lien Google Drive original dans un nouvel onglet"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Lien direct</span>
+              </a>
+            )}
+
+            {onEditLink && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEditLink(candidate);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Modifier le lien vidéo Google Drive"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Modifier</span>
+              </button>
+            )}
 
             <button
               onClick={onClose}

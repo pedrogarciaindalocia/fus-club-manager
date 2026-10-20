@@ -4,7 +4,7 @@ import type { Area, Point } from 'react-easy-crop';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Button } from './ui/button';
 import { Slider } from './ui/slider';
-import { X, ZoomIn, Scissors, Minus, Plus, RotateCcw } from 'lucide-react';
+import { X, ZoomIn, Scissors, Minus, Plus, RotateCcw, Crosshair } from 'lucide-react';
 
 interface ImageCropperModalProps {
   isOpen: boolean;
@@ -30,6 +30,7 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number; inside: boolean }>({ x: 0, y: 0, inside: false });
 
   // Réinitialiser la position et le zoom à chaque nouvelle ouverture ou image
   useEffect(() => {
@@ -145,7 +146,19 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
           </div>
         </DialogHeader>
 
-        <div className="relative h-96 w-full bg-slate-900 border-y border-white/5 select-none">
+        <div 
+          className="relative h-96 w-full bg-slate-900 border-y border-white/5 select-none overflow-hidden"
+          onMouseMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setCursorPos({
+              x: Math.round(e.clientX - rect.left),
+              y: Math.round(e.clientY - rect.top),
+              inside: true,
+            });
+          }}
+          onMouseEnter={() => setCursorPos(prev => ({ ...prev, inside: true }))}
+          onMouseLeave={() => setCursorPos(prev => ({ ...prev, inside: false }))}
+        >
           {imageSrc && (
             <Cropper
               image={imageSrc}
@@ -162,6 +175,21 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
               }}
             />
           )}
+
+          {/* Mire / Charte de positionnement XY du curseur en direct */}
+          <div className="absolute bottom-3 left-3 z-30 pointer-events-none flex items-center gap-2 bg-slate-950/80 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-xl text-white font-mono text-[10px] shadow-2xl">
+            <div className="flex items-center gap-1.5 text-slate-300">
+              <Crosshair className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span className="font-sans font-bold text-[9px] uppercase tracking-wider text-slate-400">Curseur XY :</span>
+            </div>
+            <span className="text-emerald-400 font-bold">X: {cursorPos.x}px</span>
+            <span className="text-sky-400 font-bold">Y: {cursorPos.y}px</span>
+            {croppedAreaPixels && (
+              <span className="text-slate-400 text-[9px] border-l border-white/20 pl-2">
+                Zone: {Math.round(croppedAreaPixels.width)}×{Math.round(croppedAreaPixels.height)}px
+              </span>
+            )}
+          </div>
         </div>
 
         <DialogFooter className="p-6 sm:p-8 space-y-6 sm:flex-col sm:items-stretch sm:space-x-0">

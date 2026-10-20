@@ -459,15 +459,111 @@ export const recruitmentService = {
     };
 
     try {
-      const { data, error } = await supabase
-        .from('scouts')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [scoutsRes, profilesRes, sessionsRes] = await Promise.all([
+        supabase.from('scouts').select('*').order('created_at', { ascending: false }),
+        supabase.from('user_profiles').select('id, full_name, avatar_url, system_role, is_active, job_title, phone_number, default_club_id, created_at'),
+        supabase.from('user_sessions').select('user_id, user_email, user_role')
+      ]);
 
-      if (error) {
-        console.warn('[RecruitmentService] Supabase getScouts erreur, bascule cache local:', error.message);
-      } else if (data) {
-        const uniqueData = deduplicate(data);
+      if (scoutsRes.error) {
+        console.warn('[RecruitmentService] Supabase getScouts erreur, bascule cache local:', scoutsRes.error.message);
+      }
+
+      let combined: Scout[] = [];
+      if (scoutsRes.data && scoutsRes.data.length > 0) {
+        combined = [...scoutsRes.data];
+      }
+
+      // Map des emails de session réels
+      const sessionEmailMap = new Map<string, string>();
+      sessionsRes.data?.forEach((s: any) => {
+        if (s?.user_id && s?.user_email && s.user_email !== 'invite@fus.ma') {
+          sessionEmailMap.set(s.user_id, s.user_email);
+        }
+      });
+
+      // Map des profils utilisateurs pour enrichir les scouts avec leur rôle réel (Scout Admin / Scout Manager)
+      const profileMap = new Map<string, any>();
+      const profileByEmail = new Map<string, any>();
+      const profileByName = new Map<string, any>();
+      profilesRes.data?.forEach((p: any) => {
+        if (!p) return;
+        if (p.id) profileMap.set(p.id, p);
+        if (p.email) profileByEmail.set(p.email.toLowerCase().trim(), p);
+        if (p.full_name) profileByName.set(p.full_name.toLowerCase().trim().replace(/\s+/g, ' '), p);
+      });
+
+      // Enrichir les scouts de la cellule avec leur rôle réel (Scout Admin / Scout Manager)
+      combined = combined.map(s => {
+        const p = profileMap.get(s.id) || 
+                  (s.email ? profileByEmail.get(s.email.toLowerCase().trim()) : null) || 
+                  (s.full_name ? profileByName.get(s.full_name.toLowerCase().trim().replace(/\s+/g, ' ')) : null);
+        
+        if (!p) return s;
+
+        const sysRole = (p.system_role || '').toLowerCase().trim();
+        let roleTitle = s.role_title;
+        if (sysRole === 'scout_admin') {
+          roleTitle = 'Scout Admin';
+        } else if (sysRole === 'scout_manager' && (!roleTitle || roleTitle === 'Scout')) {
+          roleTitle = 'Scout Manager';
+        }
+
+        return {
+          ...s,
+          photo_url: s.photo_url || p.avatar_url || undefined,
+          phone: s.phone || p.phone_number || '',
+          role_title: roleTitle,
+          system_role: sysRole || (s as any).system_role,
+        };
+      });
+
+      // Synchroniser UNIQUEMENT les profils dont le rôle est explicitement Scout Admin ou Scout Manager
+      // (Exclusion stricte des administrateurs généraux du club, Directeurs ou Analystes vidéo hors détection)
+      if (profilesRes.data && profilesRes.data.length > 0) {
+        profilesRes.data.forEach((p: any) => {
+          if (!p || !p.id) return;
+          const sysRole = (p.system_role || '').toLowerCase().trim();
+          const jobTitle = (p.job_title || '').toLowerCase().trim();
+
+          const isScoutPersonnel = (
+            sysRole === 'scout_admin' ||
+            sysRole === 'scout_manager' ||
+            (jobTitle.includes('scout') && (jobTitle.includes('admin') || jobTitle.includes('manager')))
+          );
+
+          if (!isScoutPersonnel) return;
+
+          const roleTitle = sysRole === 'scout_admin' 
+            ? 'Scout Admin' 
+            : sysRole === 'scout_manager' 
+              ? 'Scout Manager' 
+              : p.job_title;
+
+          const email = (p as any).email || sessionEmailMap.get(p.id) || '';
+
+          const profileScout: Scout = {
+            id: p.id,
+            full_name: p.full_name || 'Membre Cellule Détection',
+            photo_url: p.avatar_url || undefined,
+            phone: p.phone_number || '',
+            email: email,
+            role_title: roleTitle,
+            recruitment_region: 'Rabat-Salé-Kénitra',
+            assigned_categories: ['U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U21', 'U23', 'Sénior'],
+            assigned_teams: [],
+            status: p.is_active !== false ? 'active' : 'inactive',
+            recruited_date: p.created_at ? p.created_at.split('T')[0] : '2024-01-01',
+            notes: `Profil ${sysRole} synchronisé`,
+            ...({ system_role: sysRole }),
+          };
+
+          combined.push(profileScout);
+        });
+      }
+
+      if (combined.length > 0) {
+        const uniqueData = deduplicate(combined);
         setLocal(KEY_SCOUTS, uniqueData);
         return uniqueData;
       }
@@ -1960,23 +2056,30 @@ export const recruitmentService = {
       }
     }
 
-    // 4. Gestion de l'avancement dans le Pipeline Kanban
+    // 4. Synchronisation de la décision du rapport sur la fiche candidat et Pipeline Kanban
     if (evaluation.candidate_id) {
       try {
+        const evDecision = (evaluation as any).scout_state_decision || evaluation.report_data?.scout_state_decision;
         const candidates = await this.getCandidates();
         const cand = candidates.find(c => c.id === evaluation.candidate_id);
+        const updates: Record<string, any> = {};
+
+        if (evDecision) {
+          updates.scout_state_decision = evDecision;
+        }
+
         if (cand && !['signed', 'academy', 'rejected', 'archived'].includes(cand.pipeline_stage)) {
           if (options?.promoteToShortlist) {
-            await this.updateCandidate(evaluation.candidate_id, {
-              pipeline_stage: 'shortlisted',
-              discovering_scout_name: evaluation.evaluator_name || cand.discovering_scout_name,
-            });
+            updates.pipeline_stage = 'shortlisted';
+            updates.discovering_scout_name = evaluation.evaluator_name || cand.discovering_scout_name;
           } else if (['prospect', 'test_scheduled'].includes(cand.pipeline_stage)) {
-            await this.updateCandidate(evaluation.candidate_id, {
-              pipeline_stage: 'test_completed',
-              discovering_scout_name: evaluation.evaluator_name || cand.discovering_scout_name,
-            });
+            updates.pipeline_stage = 'test_completed';
+            updates.discovering_scout_name = evaluation.evaluator_name || cand.discovering_scout_name;
           }
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await this.updateCandidate(evaluation.candidate_id, updates);
         }
       } catch (candErr) {
         console.warn('[RecruitmentService] Erreur mise à jour candidat lors de l\'évaluation:', candErr);
