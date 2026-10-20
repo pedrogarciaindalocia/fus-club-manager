@@ -90,12 +90,6 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     }
   }, [mode, initialTab]);
 
-  useEffect(() => {
-    if (mode === 'report_only' && scoutStateDecision === 'recruit_now' && activeSection !== 'sport') {
-      setActiveSection('sport');
-    }
-  }, [mode, scoutStateDecision, activeSection]);
-
   const { authState, hasSubModuleAccess, canManageCategory } = usePermissions();
   const userRoles = [
     ...(authState?.roles || []),
@@ -305,6 +299,13 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [scoutStateDecision, setScoutStateDecision] = useState<'invitation_test' | 'recruit_now' | 'to_follow'>('to_follow');
   const [informationSource, setInformationSource] = useState<'terrain' | 'recommandation_interne' | 'recommandation_externe'>('terrain');
   const [informationSourcePerson, setInformationSourcePerson] = useState('');
+
+  // En mode 'report_only', si Recrutement Immédiat est sélectionné, verrouiller l'affichage sur la section sportive
+  useEffect(() => {
+    if (mode === 'report_only' && scoutStateDecision === 'recruit_now' && activeSection !== 'sport') {
+      setActiveSection('sport');
+    }
+  }, [mode, scoutStateDecision, activeSection]);
 
   const [currentClub, setCurrentClub] = useState('');
   const [previousClubs, setPreviousClubs] = useState('');

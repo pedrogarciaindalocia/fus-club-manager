@@ -218,6 +218,7 @@ export const LiveCursorsProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const currentSectionLabel = useMemo(() => resolveSectionLabel(location.pathname), [location.pathname]);
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const isSubscribedRef = useRef<boolean>(false);
   const lastBroadcastTimeRef = useRef<number>(0);
   const THROTTLE_MS = 40; // ~25 FPS max pour fluidité et économie réseau
 
@@ -393,9 +394,9 @@ export const LiveCursorsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       });
     });
 
-    // Souscription et déclaration de présence avec métadonnées de session
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
+        isSubscribedRef.current = true;
         const deviceName = navigator.userAgent.includes('Mac')
           ? 'Macintosh'
           : navigator.userAgent.includes('Windows')
@@ -417,12 +418,15 @@ export const LiveCursorsProvider: React.FC<{ children: React.ReactNode }> = ({ c
           device: deviceName,
           onlineAt: sessionStartTimeRef.current,
         });
+      } else {
+        isSubscribedRef.current = false;
       }
     });
 
     channelRef.current = channel;
 
     return () => {
+      isSubscribedRef.current = false;
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
@@ -464,7 +468,7 @@ export const LiveCursorsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (now - lastBroadcastTimeRef.current < THROTTLE_MS) return;
       lastBroadcastTimeRef.current = now;
 
-      if (!channelRef.current) return;
+      if (!channelRef.current || !isSubscribedRef.current) return;
 
       const windowWidth = window.innerWidth || 1920;
       const windowHeight = window.innerHeight || 1080;
@@ -519,7 +523,7 @@ export const LiveCursorsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (!currentUserId || currentUserId === 'anonymous') return;
 
     const handleClick = (e: MouseEvent) => {
-      if (!channelRef.current) return;
+      if (!channelRef.current || !isSubscribedRef.current) return;
 
       const windowWidth = window.innerWidth || 1920;
       const windowHeight = window.innerHeight || 1080;
