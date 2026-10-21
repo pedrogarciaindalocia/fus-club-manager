@@ -25,7 +25,10 @@ import {
   Check,
   ImageIcon,
   Trash2,
-  Scissors
+  Scissors,
+  RotateCcw,
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { LocationPicker } from '../recruitment_v2/components/LocationPicker';
@@ -51,6 +54,8 @@ export const ProfilePage: React.FC = () => {
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [selectedFileUrl, setSelectedFileUrl] = useState<string | null>(null);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
 
   // Données de Détection & Scouting
   const [existingScoutId, setExistingScoutId] = useState<string | null>(null);
@@ -152,6 +157,14 @@ export const ProfilePage: React.FC = () => {
 
     loadScoutData();
   }, [currentUser, currentEmail]);
+
+  const handleRestartApp = () => {
+    setIsRestarting(true);
+    toast.info("Redémarrage de l'application en cours...");
+    setTimeout(() => {
+      window.location.reload();
+    }, 350);
+  };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -756,6 +769,45 @@ export const ProfilePage: React.FC = () => {
           )}
         </div>
 
+        {/* Section Système & Maintenance */}
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                  Système & Maintenance
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Résilience applicative et actualisation de l'état local
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-900 dark:text-white">
+                Redémarrer l'application (Rechargement complet)
+              </span>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xl">
+                En cas de lenteur, d'incohérence d'affichage ou après une mise à jour, vous pouvez forcer un redémarrage complet sans vous déconnecter.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRestartConfirmOpen(true)}
+              className="border-amber-200 dark:border-amber-900/40 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 gap-2 rounded-xl text-xs font-bold shrink-0 cursor-pointer h-10 px-4"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Redémarrer l'application</span>
+            </Button>
+          </div>
+        </div>
+
         {/* Boutons d'Action Fixes / Enregistrement */}
         <div className="flex items-center justify-end gap-3 pt-2">
           <Button 
@@ -799,6 +851,61 @@ export const ProfilePage: React.FC = () => {
         title="Recadrer Votre Photo de Profil"
         description="Ajustez le zoom et cadrez votre visage pour votre avatar"
       />
+
+      {/* Modal de Confirmation du Redémarrage */}
+      {restartConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                  Redémarrer l'application ?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Rechargement complet du dashboard
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              L'application va être rechargée immédiatement. Vos données synchronisées et votre session active restent préservées. Assurez-vous d'avoir enregistré d'éventuelles modifications en cours.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRestartConfirmOpen(false)}
+                disabled={isRestarting}
+                className="rounded-xl h-10 px-4 text-xs font-bold cursor-pointer"
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRestartApp}
+                disabled={isRestarting}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold gap-2 rounded-xl h-10 px-5 text-xs shadow-md shadow-amber-600/20 cursor-pointer"
+              >
+                {isRestarting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Redémarrage...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Redémarrer</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

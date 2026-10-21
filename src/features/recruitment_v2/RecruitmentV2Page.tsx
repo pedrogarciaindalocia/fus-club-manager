@@ -573,6 +573,92 @@ export const RecruitmentV2Page: React.FC = () => {
     }
   };
 
+  const handleUnassignMission = async (candidateId: string, _missionId?: string) => {
+    if (!canAssignMissions) {
+      toast.error("Action non autorisée : seuls le Super Admin et les Scout Admins peuvent retirer des missions.");
+      return;
+    }
+    const targetCandidate = candidates.find(c => c.id === candidateId);
+    if (!targetCandidate) {
+      toast.error("Joueur introuvable.");
+      return;
+    }
+
+    const previousScoutName = targetCandidate.assigned_scout_name || targetCandidate.active_mission?.assigned_to_name || 'Scout';
+    const previousScoutId = targetCandidate.assigned_scout_id || targetCandidate.active_mission?.assigned_to_id;
+    const assignerName = currentScout?.full_name || authState?.user?.full_name || 'Direction Scouting FUS';
+
+    const existingHistory = targetCandidate.mission_history || [];
+    const updatedHistory: ScoutMission[] = targetCandidate.active_mission
+      ? [
+          {
+            ...targetCandidate.active_mission,
+            status: 'recalled' as any,
+            completed_at: new Date().toISOString(),
+          },
+          ...existingHistory.filter(m => m.id !== targetCandidate.active_mission?.id)
+        ]
+      : existingHistory;
+
+    await updateCandidate(targetCandidate.id, {
+      assigned_scout_id: undefined,
+      assigned_scout_name: undefined,
+      active_mission: undefined,
+      mission_history: updatedHistory,
+    });
+
+    // Mettre à jour le cache React Query immédiatement
+    queryClient.setQueryData<TrialCandidate[]>(RECRUITMENT_KEYS.candidates, (old = []) => {
+      return old.map(c => {
+        if (c.id === targetCandidate.id) {
+          return {
+            ...c,
+            assigned_scout_id: undefined,
+            assigned_scout_name: undefined,
+            active_mission: undefined,
+            mission_history: updatedHistory,
+          };
+        }
+        return c;
+      });
+    });
+    queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.candidates });
+
+    // Diffuser la notification en temps réel
+    if (previousScoutId) {
+      try {
+        await supabase.channel('scouting_missions_broadcast_alerts').send({
+          type: 'broadcast',
+          event: 'mission_recalled',
+          payload: {
+            scoutId: previousScoutId,
+            candidateId: targetCandidate.id,
+            candidateName: `${targetCandidate.first_name} ${targetCandidate.last_name}`,
+            withdrawnBy: assignerName,
+          },
+        });
+      } catch (broadcastErr) {
+        console.warn('Notice broadcast unassign error:', broadcastErr);
+      }
+    }
+
+    try {
+      await recruitmentService.addTimelineEvent({
+        candidate_id: targetCandidate.id,
+        event_type: 'observation_scheduled',
+        event_title: `Mission retirée à ${previousScoutName}`,
+        event_description: `La mission a été retirée par ${assignerName}. Le joueur est désormais disponible pour une nouvelle assignation.`,
+        performed_by: assignerName,
+        event_date: new Date().toISOString().split('T')[0],
+      });
+    } catch {}
+
+    toast.success(`Mission retirée avec succès à ${previousScoutName}`, {
+      description: `${targetCandidate.first_name} ${targetCandidate.last_name} est désormais disponible pour une nouvelle assignation.`,
+      icon: '↩️',
+    });
+  };
+
   const handleConfirmAssign = async () => {
     if (!candidateToAssign) return;
     setIsAssigningScout(true);
@@ -3064,6 +3150,7 @@ export const RecruitmentV2Page: React.FC = () => {
             navigate(`/recruitment-v2/add-report?candidateId=${candidateId}&returnTab=missions`);
           }}
           onAssignMission={handleAssignMission}
+          onUnassignMission={handleUnassignMission}
         />
       )}
 

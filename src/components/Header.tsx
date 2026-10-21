@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Bell, ChevronDown, Settings, Calendar,
-  Search, LogOut, Shield, User, Radio, Swords, X, Eye
+  Search, LogOut, Shield, User, Radio, Swords, X, Eye, RotateCcw
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
@@ -72,6 +72,14 @@ const Header: React.FC<HeaderProps> = ({ title, onMobileMenuClick, sidebarCollap
     setDropdownOpen(false);
     await logout();
     navigate('/login');
+  };
+
+  const handleRestartApp = () => {
+    setDropdownOpen(false);
+    toast.info("Redémarrage de l'application en cours...");
+    setTimeout(() => {
+      window.location.reload();
+    }, 300);
   };
 
   // Données affichées
@@ -363,6 +371,15 @@ const Header: React.FC<HeaderProps> = ({ title, onMobileMenuClick, sidebarCollap
                 >
                   <User className="w-4 h-4 text-purple-600" />
                   Mon profil
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRestartApp}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors font-medium text-left cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  Redémarrer l'application
                 </button>
               </div>
 

@@ -3,7 +3,7 @@ import {
   ClipboardCheck, Clock, CheckCircle2, AlertCircle, Search, Filter,
   Calendar, User, ArrowRight, FileText, ExternalLink, Shield,
   Building2, Sparkles, Check, CheckSquare, Tag, Eye, ChevronRight, Lock,
-  Target, Plus, X, UserPlus, Loader2, GripVertical
+  Target, Plus, X, UserPlus, Loader2, GripVertical, UserMinus
 } from 'lucide-react';
 import type { TrialCandidate, Scout, ScoutMission } from '../types/recruitment';
 import { ScoutingBasketSection } from './ScoutingBasketSection';
@@ -36,6 +36,7 @@ interface MissionsManagementViewProps {
     },
     candidateObj?: TrialCandidate
   ) => Promise<void>;
+  onUnassignMission?: (candidateId: string, missionId?: string) => Promise<void>;
 }
 
 interface EnrichedMission extends ScoutMission {
@@ -56,6 +57,7 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
   onOpenCandidate,
   onNavigateToReport,
   onAssignMission,
+  onUnassignMission,
 }) => {
   const currentUserId = currentScout?.id || currentUser?.id || '';
   const currentUserName = currentScout?.full_name || currentUser?.full_name || 'Moi';
@@ -90,6 +92,23 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
   const [modalPriority, setModalPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
   const [modalDueDate, setModalDueDate] = useState('');
   const [isSubmittingMission, setIsSubmittingMission] = useState(false);
+
+  // État pour le retrait de mission (Règle de gouvernance : retrait obligatoire avant réassignation)
+  const [missionToUnassign, setMissionToUnassign] = useState<EnrichedMission | null>(null);
+  const [isUnassigning, setIsUnassigning] = useState(false);
+
+  const confirmUnassignMission = async () => {
+    if (!missionToUnassign || !onUnassignMission) return;
+    setIsUnassigning(true);
+    try {
+      await onUnassignMission(missionToUnassign.candidate.id, missionToUnassign.id);
+      setMissionToUnassign(null);
+    } catch (err: any) {
+      toast.error(err?.message || "Erreur lors du retrait de la mission");
+    } finally {
+      setIsUnassigning(false);
+    }
+  };
 
   // Candidats filtrés pour la modale d'assignation
   const filteredCandidatesForAssign = useMemo(() => {
@@ -889,18 +908,30 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
                     {/* Profil Joueur, Rapport & Assigner */}
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {hasAdminSupervision && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCandidateForAssign(cand);
-                            setIsAssignModalOpen(true);
-                          }}
-                          className="px-3 py-1.5 rounded-xl border border-purple-200 bg-purple-50/80 hover:bg-purple-100 text-purple-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                          title="Assigner ou confier une nouvelle mission pour ce joueur (Scout Admin seul)"
-                        >
-                          <Target className="w-3.5 h-3.5 text-purple-600" />
-                          <span>Assigner</span>
-                        </button>
+                        mission.isActive ? (
+                          <button
+                            type="button"
+                            onClick={() => setMissionToUnassign(mission)}
+                            className="px-3 py-1.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                            title="Retirer cette mission au scout actuel pour libérer le joueur avant toute réassignation"
+                          >
+                            <UserMinus className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Retirer du scout</span>
+                          </button>
+                        ) : !cand.active_mission ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCandidateForAssign(cand);
+                              setIsAssignModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 rounded-xl border border-purple-200 bg-purple-50/80 hover:bg-purple-100 text-purple-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                            title="Assigner ou confier une nouvelle mission pour ce joueur libre"
+                          >
+                            <Target className="w-3.5 h-3.5 text-purple-600" />
+                            <span>Assigner</span>
+                          </button>
+                        ) : null
                       )}
                       <button
                         type="button"
@@ -1450,6 +1481,68 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmation de retrait de scout */}
+      {missionToUnassign && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4 ring-8 ring-amber-50/50">
+                <UserMinus className="w-6 h-6" />
+              </div>
+
+              <h3 className="text-base font-bold text-slate-900 mb-1">
+                Retirer la mission du scout ?
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                Êtes-vous sûr de vouloir retirer cette mission d'observation ? La mission en cours sera clôturée et archivée, et le joueur redeviendra disponible pour une nouvelle assignation.
+              </p>
+
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 mb-4 space-y-1.5 text-xs">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-medium text-slate-400">Joueur :</span>
+                  <span className="font-bold text-slate-800">{missionToUnassign.candidateName}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-medium text-slate-400">Scout actuel :</span>
+                  <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                    {missionToUnassign.scoutName}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  disabled={isUnassigning}
+                  onClick={() => setMissionToUnassign(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  disabled={isUnassigning}
+                  onClick={confirmUnassignMission}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isUnassigning ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Retrait en cours...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserMinus className="w-4 h-4" />
+                      <span>Confirmer le retrait</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

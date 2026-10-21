@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   ShoppingBag, User, Calendar, Shield, Sparkles, GripVertical,
   ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Layers,
-  Grid, Clock, AlertCircle, RefreshCw, Star, Info, Send
+  Grid, Clock, AlertCircle, RefreshCw, Star, Info, Send, Trash2
 } from 'lucide-react';
 import type { Scout } from '../types/recruitment';
 import { supabase } from '../../../lib/supabase';
@@ -297,6 +297,81 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
     }
   };
 
+  // Suppression d'un joueur du panier de détection avec répercussion dans matches et broadcast
+  const [playerToDelete, setPlayerToDelete] = useState<BasketPlayer | null>(null);
+  const [isDeletingBasketId, setIsDeletingBasketId] = useState<string | null>(null);
+
+  const confirmRemoveFromBasket = async (player: BasketPlayer) => {
+    setIsDeletingBasketId(player.id);
+    try {
+      // 1. Supprimer de la table public.scouting_basket
+      await supabase
+        .from('scouting_basket')
+        .delete()
+        .or(`id.eq.${player.id},player_id.eq.${player.player_id}`);
+
+      // 2. Mettre à jour la table public.matches (in_scouting_basket = false)
+      if (player.match_id) {
+        const { data: matchData } = await supabase
+          .from('matches')
+          .select('id, opponent_lineup, opponent_subs')
+          .eq('id', player.match_id)
+          .single();
+
+        if (matchData) {
+          const updateArray = (arr: any[]) => (arr || []).map(p => {
+            if (typeof p === 'object' && p !== null) {
+              const matchesId = p.id && String(p.id) === String(player.player_id);
+              const matchesJersey = player.jersey_number != null && String(p.jersey_number) === String(player.jersey_number);
+              const matchesName = p.full_name && player.full_name && p.full_name.trim().toLowerCase() === player.full_name.trim().toLowerCase();
+              if (matchesId || matchesJersey || matchesName) {
+                return { ...p, in_scouting_basket: false };
+              }
+            }
+            return p;
+          });
+
+          await supabase
+            .from('matches')
+            .update({
+              opponent_lineup: updateArray(matchData.opponent_lineup),
+              opponent_subs: updateArray(matchData.opponent_subs),
+            })
+            .eq('id', player.match_id);
+        }
+      }
+
+      // 3. Diffuser l'événement en temps réel pour fus-app
+      try {
+        await supabase.channel('scouting_basket_realtime').send({
+          type: 'broadcast',
+          event: 'basket_player_removed',
+          payload: {
+            playerId: player.player_id,
+            matchId: player.match_id,
+            fullName: player.full_name,
+            jerseyNumber: player.jersey_number,
+          },
+        });
+      } catch (broadcastErr) {
+        console.warn('[ScoutingBasket] Broadcast error:', broadcastErr);
+      }
+
+      // 4. Mettre à jour l'état local
+      setBasketPlayers(prev => prev.filter(p => p.id !== player.id && p.player_id !== player.player_id));
+      setPlayerToDelete(null);
+
+      toast.success(`${player.full_name} a été retiré du panier de détection`, {
+        description: "Le statut panier a été désactivé dans le match et sur l'application mobile.",
+      });
+    } catch (err: any) {
+      console.error('Erreur suppression du panier:', err);
+      toast.error(err?.message || "Erreur lors du retrait du panier");
+    } finally {
+      setIsDeletingBasketId(null);
+    }
+  };
+
   // Helper badge poste
   const getPositionBadge = (pos?: string | null) => {
     if (!pos) return { label: 'Adversaire', bg: 'bg-slate-100 text-slate-700 border-slate-200' };
@@ -533,12 +608,27 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
                         </div>
                       </div>
 
-                      {/* PASTILLE NOTE RONDE */}
-                      <div className="flex flex-col items-center">
-                        <div className={cn("w-11 h-11 rounded-full border-2 flex items-center justify-center shadow-xs font-black text-sm", ratingBadge.bg, ratingBadge.text, ratingBadge.border)}>
-                          {player.rating != null ? `${player.rating}` : '—'}
+                      {/* PASTILLE NOTE RONDE & BOUTON RETIRER */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-center">
+                          <div className={cn("w-11 h-11 rounded-full border-2 flex items-center justify-center shadow-xs font-black text-sm", ratingBadge.bg, ratingBadge.text, ratingBadge.border)}>
+                            {player.rating != null ? `${player.rating}` : '—'}
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-bold mt-0.5">Note match</span>
                         </div>
-                        <span className="text-[10px] text-slate-500 font-bold mt-0.5">Note match</span>
+                        {canUserAssign && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPlayerToDelete(player);
+                            }}
+                            className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors border border-transparent hover:border-rose-200"
+                            title="Retirer ce joueur du panier"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -652,8 +742,23 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
                         </div>
                       </div>
 
-                      <div className={cn("w-8 h-8 rounded-full border flex items-center justify-center font-black text-xs shrink-0", ratingBadge.bg, ratingBadge.text, ratingBadge.border)}>
-                        {player.rating ?? '—'}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <div className={cn("w-8 h-8 rounded-full border flex items-center justify-center font-black text-xs shrink-0", ratingBadge.bg, ratingBadge.text, ratingBadge.border)}>
+                          {player.rating ?? '—'}
+                        </div>
+                        {canUserAssign && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPlayerToDelete(player);
+                            }}
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            title="Retirer ce joueur du panier"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -818,6 +923,50 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
           )}
         </div>
       </div>
+
+      {/* MODALE DE CONFIRMATION DE SUPPRESSION DU PANIER */}
+      {playerToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-rose-600 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center border border-rose-200">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Retirer du panier de détection</h3>
+                <p className="text-xs text-slate-500">Action synchronisée avec l'application mobile</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-600 mb-5 leading-relaxed">
+              Voulez-vous vraiment retirer <strong className="text-slate-900">{playerToDelete.full_name}</strong> (#{playerToDelete.jersey_number ?? '?'}) du panier de détection ?
+              <br />
+              <span className="text-xs text-slate-500 mt-2 block">
+                Le statut panier sera automatiquement désactivé sur le match et la pastille sera retirée en temps réel de l'application mobile.
+              </span>
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isDeletingBasketId != null}
+                onClick={() => setPlayerToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingBasketId != null}
+                onClick={() => confirmRemoveFromBasket(playerToDelete)}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white shadow-xs flex items-center gap-2 transition-colors disabled:opacity-50"
+              >
+                {isDeletingBasketId != null ? 'Retrait en cours...' : 'Confirmer le retrait'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
