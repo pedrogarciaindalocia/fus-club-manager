@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import type {
   TrialCandidate,
   CandidateEvaluation,
@@ -30,7 +30,7 @@ import {
   Clock, MapPin, CheckCircle2, AlertCircle, FileText, Briefcase, Building2,
   ShieldCheck, ShieldAlert, UserCheck, Zap, Star, XCircle, RotateCcw, TrendingUp, TrendingDown, Edit3,
   Video, Play, ExternalLink, Lock, ArrowLeft, Users, FileSpreadsheet, Flame, Compass, Target, Eye,
-  History, ClipboardList, Bookmark, BookmarkCheck, Trash2, Check, Loader2, Trophy, Info
+  History, ClipboardList, Bookmark, BookmarkCheck, Trash2, Check, Loader2, Trophy, Info, Crown, ArrowRight
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { recruitmentService } from '../services/recruitmentService';
@@ -96,6 +96,33 @@ const parseCriterion = (criterion: string) => {
   return { title: criterion.trim(), detail: null };
 };
 
+// Helper pour formater la date et heure de saisie / rentrée d'un rapport
+export const formatReportEntryDate = (createdAt?: string, evalDate?: string): { formattedDate: string; isFullDateTime: boolean } => {
+  if (createdAt) {
+    try {
+      const d = new Date(createdAt);
+      if (!isNaN(d.getTime())) {
+        const dateStr = d.toLocaleDateString('fr-FR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        });
+        const timeStr = d.toLocaleTimeString('fr-FR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        return { formattedDate: `${dateStr} à ${timeStr}`, isFullDateTime: true };
+      }
+    } catch {
+      // fallback
+    }
+  }
+  if (evalDate) {
+    return { formattedDate: evalDate, isFullDateTime: false };
+  }
+  return { formattedDate: 'Date non renseignée', isFullDateTime: false };
+};
+
 interface CandidateDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -123,6 +150,11 @@ interface CandidateDetailModalProps {
   initialTab?: 'scout' | 'personal' | 'sport' | 'evaluations' | 'report';
   scouts?: Scout[];
   canManageReports?: boolean;
+  isRecruitmentAdmin?: boolean;
+  isScoutManager?: boolean;
+  currentScout?: Scout | null;
+  currentUserId?: string;
+  currentUserName?: string;
 }
 
 export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
@@ -152,6 +184,11 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   onUpdateCandidate,
   initialTab = 'scout',
   canManageReports = true,
+  isRecruitmentAdmin = false,
+  isScoutManager = false,
+  currentScout = null,
+  currentUserId,
+  currentUserName,
 }) => {
   const [activeTab, setActiveTab] = useState<'scout' | 'personal' | 'report'>((canManageReports !== false && (initialTab === 'sport' || initialTab === 'evaluations' || initialTab === 'report')) ? 'report' : (initialTab as any) === 'admin' ? 'personal' : (initialTab as any) || 'scout');
   const { getPositionByCode } = useMetrics();
@@ -234,13 +271,170 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   if (!isOpen) return null;
 
   const todayStr = new Date().toLocaleDateString('en-CA');
-  const candidateEvals = evaluations
-    .filter(e => e.candidate_id === candidate.id)
-    .sort((a, b) => {
-      const dateA = new Date(a.evaluation_date || a.created_at || '').getTime();
-      const dateB = new Date(b.evaluation_date || b.created_at || '').getTime();
-      return dateB - dateA;
+
+  // US-DASH-100 : Vérifie si le scout connecté est strictement l'auteur de l'évaluation
+  const isEvaluationAuthoredByCurrentScout = useCallback((ev: CandidateEvaluation): boolean => {
+    if (!ev) return false;
+    const uid = currentUserId;
+    const sid = currentScout?.id;
+    const sName = (currentScout?.full_name || '').toLowerCase().trim();
+    const uName = (currentUserName || '').toLowerCase().trim();
+
+    if (uid && ((ev as any).created_by === uid || (ev as any).user_id === uid)) return true;
+    if (sid && (ev.evaluator_id === sid || (ev as any).scout_id === sid)) return true;
+    if (uid && (ev.evaluator_id === uid || (ev as any).scout_id === uid)) return true;
+    if (sName && ev.evaluator_name && ev.evaluator_name.toLowerCase().trim() === sName) return true;
+    if (uName && ev.evaluator_name && ev.evaluator_name.toLowerCase().trim() === uName) return true;
+
+    return false;
+  }, [currentUserId, currentScout, currentUserName]);
+
+  // US-DASH-100 : Filtrage strict multi-scouts
+  // - Administrateurs (Super Admin & Scout Admin) : accès consolidé à l'intégralité des rapports
+  // - Scout / Scout Manager : accès UNIQUEMENT à leurs propres rapports et scorings
+  const candidateEvals = useMemo(() => {
+    const sorted = evaluations
+      .filter(e => e.candidate_id === candidate.id)
+      .sort((a, b) => {
+        const dateA = new Date(a.evaluation_date || a.created_at || '').getTime();
+        const dateB = new Date(b.evaluation_date || b.created_at || '').getTime();
+        return dateB - dateA;
+      });
+
+    if (isRecruitmentAdmin) {
+      return sorted;
+    }
+
+    return sorted.filter(isEvaluationAuthoredByCurrentScout);
+  }, [evaluations, candidate.id, isRecruitmentAdmin, isEvaluationAuthoredByCurrentScout]);
+
+  // US-DASH-102 : Liste brute de toutes les évaluations du candidat (tous scouts confondus) pour métriques
+  const allRawCandidateEvals = useMemo(() => {
+    return (evaluations || [])
+      .filter(e => e.candidate_id === candidate.id)
+      .sort((a, b) => {
+        const dateA = new Date(a.evaluation_date || a.created_at || '').getTime();
+        const dateB = new Date(b.evaluation_date || b.created_at || '').getTime();
+        return dateB - dateA;
+      });
+  }, [evaluations, candidate.id]);
+
+  // US-DASH-101 / US-DASH-102 : Hiérarchisation Scout Détecteur & Métriques Multi-Scouts
+  const canSeeDetectingScores = Boolean(isRecruitmentAdmin || isScoutManager);
+
+  const { discoveringEval, otherEvals, discoveringScoutInfo, multiScoutMetrics } = useMemo(() => {
+    // 1. Recherche de l'évaluation du scout ayant détecté le joueur dans TOUTES les évaluations
+    let discEval: CandidateEvaluation | null = null;
+    if (canSeeDetectingScores) {
+      if (candidate.discovering_scout_id) {
+        discEval = allRawCandidateEvals.find(e => e.evaluator_id === candidate.discovering_scout_id) || null;
+      }
+      if (!discEval && candidate.discovering_scout_name) {
+        discEval = allRawCandidateEvals.find(e => 
+          e.evaluator_name?.toLowerCase().trim() === candidate.discovering_scout_name?.toLowerCase().trim()
+        ) || null;
+      }
+      if (!discEval && allRawCandidateEvals.length > 0) {
+        discEval = allRawCandidateEvals[allRawCandidateEvals.length - 1];
+      }
+    } else {
+      discEval = candidateEvals[0] || null;
+    }
+
+    // 2. Les autres évaluations (pour Admin/Super Admin : toute la liste des contre-rapports)
+    const others = discEval && isRecruitmentAdmin
+      ? candidateEvals.filter(e => e.id !== discEval!.id)
+      : isRecruitmentAdmin ? candidateEvals : [];
+
+    const discScoutProfile = scouts.find(s => 
+      (candidate.discovering_scout_id && s.id === candidate.discovering_scout_id) ||
+      (candidate.discovering_scout_name && s.full_name?.toLowerCase().trim() === candidate.discovering_scout_name?.toLowerCase().trim()) ||
+      (discEval?.evaluator_id && s.id === discEval.evaluator_id) ||
+      (discEval?.evaluator_name && s.full_name?.toLowerCase().trim() === discEval.evaluator_name?.toLowerCase().trim())
+    );
+
+    const scoutName = candidate.discovering_scout_name || discEval?.evaluator_name || discScoutProfile?.full_name || 'Scout Détecteur';
+    const scoutId = candidate.discovering_scout_id || discEval?.evaluator_id || discScoutProfile?.id;
+    const scoutRole = discScoutProfile?.role_title || discEval?.evaluator_role || 'Scout Détecteur';
+
+    // 3. Métriques multi-scouts pour le Scout Manager :
+    // Total des rapports sur le joueur, nombre d'autres scouts, et décompte par scout
+    const scoutsMap = new Map<string, {
+      scoutId?: string;
+      scoutName: string;
+      roleTitle: string;
+      reportsCount: number;
+      latestDate?: string;
+      isCurrentScout: boolean;
+      isDiscoverer: boolean;
+    }>();
+
+    allRawCandidateEvals.forEach(ev => {
+      const name = (ev.evaluator_name || 'Scout Inconnu').trim();
+      const key = (ev.evaluator_id || name).toLowerCase();
+      const sProf = scouts.find(s => 
+        (ev.evaluator_id && s.id === ev.evaluator_id) ||
+        (s.full_name?.toLowerCase().trim() === name.toLowerCase())
+      );
+      const isCur = Boolean(
+        (currentScout?.id && ev.evaluator_id === currentScout.id) ||
+        (currentUserId && ev.evaluator_id === currentUserId) ||
+        (currentUserName && name.toLowerCase() === currentUserName.toLowerCase())
+      );
+      const isDisc = Boolean(
+        (candidate.discovering_scout_id && ev.evaluator_id === candidate.discovering_scout_id) ||
+        (candidate.discovering_scout_name && name.toLowerCase() === candidate.discovering_scout_name.toLowerCase().trim())
+      );
+
+      const existing = scoutsMap.get(key);
+      const evalDate = ev.evaluation_date || ev.created_at;
+      if (existing) {
+        existing.reportsCount += 1;
+        if (evalDate && (!existing.latestDate || new Date(evalDate) > new Date(existing.latestDate))) {
+          existing.latestDate = evalDate;
+        }
+      } else {
+        scoutsMap.set(key, {
+          scoutId: ev.evaluator_id || sProf?.id,
+          scoutName: name,
+          roleTitle: sProf?.role_title || ev.evaluator_role || 'Scout',
+          reportsCount: 1,
+          latestDate: evalDate,
+          isCurrentScout: isCur,
+          isDiscoverer: isDisc,
+        });
+      }
     });
+
+    const scoutsList = Array.from(scoutsMap.values());
+    const otherScoutsList = scoutsList.filter(s => !s.isCurrentScout);
+
+    return {
+      discoveringEval: discEval,
+      otherEvals: others,
+      discoveringScoutInfo: {
+        id: scoutId,
+        name: scoutName,
+        role: scoutRole,
+        date: candidate.discovery_date || discEval?.evaluation_date || discEval?.created_at,
+        notes: candidate.scout_recommendation_notes,
+        initialScore: candidate.initial_scout_score,
+      },
+      multiScoutMetrics: {
+        totalReportsCount: allRawCandidateEvals.length,
+        distinctScoutsCount: scoutsList.length,
+        otherScoutsCount: otherScoutsList.length,
+        scoutsList,
+        otherScoutsList,
+      }
+    };
+  }, [
+    canSeeDetectingScores, isRecruitmentAdmin, allRawCandidateEvals, candidateEvals,
+    candidate.discovering_scout_id, candidate.discovering_scout_name, candidate.discovery_date,
+    candidate.scout_recommendation_notes, candidate.initial_scout_score, scouts,
+    currentScout, currentUserId, currentUserName
+  ]);
+
   const deletableEvaluations = useMemo(() => {
     return candidateEvals.filter(ev => !canDeleteEvaluation || canDeleteEvaluation(ev));
   }, [candidateEvals, canDeleteEvaluation]);
@@ -494,6 +688,1069 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* 🌟 BLOC OMNIPRÉSENT SOUS LE HEADER : HIÉRARCHISATION SCOUT DÉTECTEUR VS SCOUTS INTERVENANTS (US-DASH-101) 🌟 */}
+      <div className="bg-slate-50/90 border-b border-slate-200 px-6 py-4 space-y-4 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
+              <Award className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                {isRecruitmentAdmin
+                  ? "Cellule de Détection & Évaluations Multi-Scouts"
+                  : isScoutManager
+                  ? "Supervision Multi-Scouts & Détection"
+                  : "Mon Évaluation & Scorings"}
+              </h3>
+              <p className="text-[11px] text-slate-500 font-medium">
+                {isRecruitmentAdmin
+                  ? `${candidateEvals.length} rapport${candidateEvals.length > 1 ? 's' : ''} rédigé${candidateEvals.length > 1 ? 's' : ''} au total • Hiérarchie Détecteur & Contre-Rapports`
+                  : isScoutManager
+                  ? `${multiScoutMetrics.totalReportsCount} rapport${multiScoutMetrics.totalReportsCount > 1 ? 's' : ''} au total • ${multiScoutMetrics.otherScoutsCount} autre${multiScoutMetrics.otherScoutsCount > 1 ? 's' : ''} scout${multiScoutMetrics.otherScoutsCount > 1 ? 's' : ''} actif${multiScoutMetrics.otherScoutsCount > 1 ? 's' : ''}`
+                  : candidateEvals.length > 0
+                  ? "Votre notation enregistrée sur les 5 piliers clés"
+                  : "Aucune évaluation rédigée par votre compte pour ce joueur"}
+              </p>
+            </div>
+          </div>
+
+          {Boolean(onAddReport || onOpenEvaluation) && canManageReports !== false && (
+            <button
+              type="button"
+              onClick={() => onAddReport ? onAddReport(candidate) : onOpenEvaluation?.({ mode: 'create' })}
+              className="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer self-start sm:self-auto"
+              title="Rédiger un nouveau rapport pour ce joueur"
+            >
+              <Award className="w-3.5 h-3.5" />
+              <span>+ Ajouter un rapport</span>
+            </button>
+          )}
+        </div>
+
+        {/* 1. VUE ADMIN & SUPER ADMIN : SCOUT DÉTECTEUR (HAUT) + AUTRES SCOUTS INTERVENANTS (BAS) */}
+        {isRecruitmentAdmin ? (
+          <div className="space-y-4">
+            {/* 1.1 SECTION SUPÉRIEURE : SCOUT DÉTECTEUR (INITIATEUR DU JOUEUR) */}
+            <div className="bg-gradient-to-r from-amber-500/10 via-amber-50/40 to-white p-4 sm:p-5 rounded-2xl border-2 border-amber-300 shadow-xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-xs">
+                    <Crown className="w-4 h-4 fill-slate-950" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black text-[10px] uppercase tracking-wider shadow-2xs">
+                        Scout Détecteur
+                      </span>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                        Initiateur du Profil & Découverte Terrain
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Premier scout ayant repéré et introduit le talent dans la base de données
+                    </p>
+                  </div>
+                </div>
+
+                {discoveringEval && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedReportId(discoveringEval.id);
+                      setActiveTab('report');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer self-start sm:self-auto shrink-0"
+                    title="Ouvrir le rapport d'observation détaillé du scout détecteur"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Consulter son rapport complet →</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Contenu Détecteur */}
+              {discoveringEval ? (() => {
+                const getScoreVal = (val: any) => {
+                  if (val == null || val === '') return null;
+                  const num = Number(val);
+                  return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                };
+
+                const techScore = getScoreVal(discoveringEval.technical_score ?? (discoveringEval as any).tech_score ?? (discoveringEval as any).technical_rating);
+                const tactScore = getScoreVal(discoveringEval.tactical_score ?? (discoveringEval as any).tact_score ?? (discoveringEval as any).tactical_rating);
+                const physScore = getScoreVal(discoveringEval.physical_score ?? (discoveringEval as any).phys_score ?? (discoveringEval as any).physical_rating);
+                const mentScore = getScoreVal(discoveringEval.mental_score ?? (discoveringEval as any).ment_score ?? (discoveringEval as any).mental_rating);
+                const potentialScore = (discoveringEval.potential_rating != null && !isNaN(Number(discoveringEval.potential_rating)))
+                  ? Math.round(Number(discoveringEval.potential_rating) * 10) / 10
+                  : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
+                    ? Math.round(Number(candidate.potential_rating) * 10) / 10
+                    : null;
+
+                const roleTitle = discoveringScoutInfo?.role || discoveringEval.evaluator_role || 'Scout Détecteur';
+                const scoutName = discoveringScoutInfo?.name || discoveringEval.evaluator_name || 'Scout Détecteur';
+
+                return (
+                  <div
+                    onClick={() => {
+                      setSelectedReportId(discoveringEval.id);
+                      setActiveTab('report');
+                    }}
+                    className="bg-white p-4 rounded-xl border border-amber-200 shadow-2xs space-y-3 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer group"
+                    title="Cliquer pour afficher le rapport complet du scout détecteur"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-3">
+                        <ScoutAvatar
+                          scoutId={discoveringScoutInfo?.id || discoveringEval.evaluator_id}
+                          scoutName={scoutName}
+                          scouts={scouts}
+                          size="md"
+                          className="border-2 border-amber-400 shrink-0 shadow-xs"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-slate-900 text-sm group-hover:text-amber-600 transition-colors">
+                              {scoutName}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-200">
+                              {roleTitle}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+                            <span className="flex items-center gap-1 font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
+                              <Clock className="w-2.5 h-2.5 text-amber-600" />
+                              Rapport déposé : {formatReportEntryDate(discoveringEval.created_at, discoveringEval.evaluation_date).formattedDate}
+                            </span>
+                            {discoveringEval.verdict && (
+                              <span className={cn(
+                                "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider",
+                                discoveringEval.verdict === 'sign' ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
+                                discoveringEval.verdict === 'trial' ? "bg-blue-100 text-blue-800 border border-blue-200" :
+                                discoveringEval.verdict === 'follow' ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                                "bg-slate-100 text-slate-700 border border-slate-200"
+                              )}>
+                                {discoveringEval.verdict === 'sign' ? 'À recruter' :
+                                 discoveringEval.verdict === 'trial' ? 'À l\'essai' :
+                                 discoveringEval.verdict === 'follow' ? 'À suivre' :
+                                 discoveringEval.verdict}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        <span className="text-xs font-black text-slate-900 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
+                          Note Globale : <strong className="text-amber-700">{Number(discoveringEval.overall_score || 0).toFixed(1)}/10</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Ruban 5 Piliers Détecteur */}
+                    <div className="flex items-center justify-between gap-1 bg-amber-50/50 p-2 rounded-xl border border-amber-200/70">
+                      <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[9px] font-black uppercase text-slate-500">TEC</span>
+                        <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
+                          {techScore != null ? techScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                      <div className="h-4 w-px bg-amber-200 shrink-0" />
+                      <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[9px] font-black uppercase text-slate-500">TAC</span>
+                        <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
+                          {tactScore != null ? tactScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                      <div className="h-4 w-px bg-amber-200 shrink-0" />
+                      <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[9px] font-black uppercase text-slate-500">PHY</span>
+                        <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
+                          {physScore != null ? physScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                      <div className="h-4 w-px bg-amber-200 shrink-0" />
+                      <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[9px] font-black uppercase text-slate-500">MEN</span>
+                        <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
+                          {mentScore != null ? mentScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                      <div className="h-4 w-px bg-amber-200 shrink-0" />
+                      <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-amber-100/80 border border-amber-300 rounded-lg" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <span className="text-[9px] font-black uppercase text-amber-900">POT</span>
+                        <span className={cn("text-xs font-black", potentialScore != null ? "text-amber-950" : "text-slate-300")}>
+                          {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })() : discoveringScoutInfo?.name ? (
+                <div className="p-3.5 bg-white rounded-xl border border-amber-200 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-3">
+                    <ScoutAvatar
+                      scoutId={discoveringScoutInfo?.id}
+                      scoutName={discoveringScoutInfo?.name || 'Scout Détecteur'}
+                      scouts={scouts}
+                      size="sm"
+                    />
+                    <div>
+                      <span className="font-bold text-slate-900 block">{discoveringScoutInfo?.name}</span>
+                      <span className="text-[11px] text-slate-500">
+                        Joueur introduit le {discoveringScoutInfo?.date ? new Date(discoveringScoutInfo.date).toLocaleDateString('fr-FR') : 'Non renseignée'} (Rapport complet 4 piliers en attente de formalisation)
+                      </span>
+                    </div>
+                  </div>
+                  {Boolean(onAddReport || onOpenEvaluation) && canManageReports !== false && (
+                    <button
+                      type="button"
+                      onClick={() => onAddReport ? onAddReport(candidate) : onOpenEvaluation?.({ mode: 'create' })}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-all cursor-pointer shrink-0"
+                    >
+                      + Saisir l'évaluation
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3.5 bg-white rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>Aucun scout détecteur initial n'est spécifié pour ce joueur.</span>
+                </div>
+              )}
+            </div>
+
+            {/* 1.2 SECTION INFÉRIEURE : AUTRES SCOUTS INTERVENANTS (CONTRE-RAPPORTS) */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between border-b border-slate-200/70 pb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                    <Users className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                      Autres Scouts Intervenants ({otherEvals.length})
+                    </h4>
+                    <p className="text-[10px] text-slate-500">
+                      Scouts ayant formulé des contre-rapports d'observation indépendants (cliquer sur un scout pour ouvrir directement son rapport)
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {otherEvals.length === 0 ? (
+                <div className="p-4 bg-white rounded-2xl border border-dashed border-slate-200 text-center space-y-1">
+                  <p className="text-xs font-semibold text-slate-600">
+                    Aucun autre scout n'a encore déposé de contre-rapport pour ce joueur.
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Lorsqu'un autre scout observera ce profil, son évaluation et ses notes 5 piliers apparaîtront automatiquement ici.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {otherEvals.map((ev, idx) => {
+                    const getScoreVal = (val: any) => {
+                      if (val == null || val === '') return null;
+                      const num = Number(val);
+                      return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                    };
+
+                    const techScore = getScoreVal(ev.technical_score ?? (ev as any).tech_score ?? (ev as any).technical_rating);
+                    const tactScore = getScoreVal(ev.tactical_score ?? (ev as any).tact_score ?? (ev as any).tactical_rating);
+                    const physScore = getScoreVal(ev.physical_score ?? (ev as any).phys_score ?? (ev as any).physical_rating);
+                    const mentScore = getScoreVal(ev.mental_score ?? (ev as any).ment_score ?? (ev as any).mental_rating);
+                    const potentialScore = (ev.potential_rating != null && !isNaN(Number(ev.potential_rating)))
+                      ? Math.round(Number(ev.potential_rating) * 10) / 10
+                      : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
+                        ? Math.round(Number(candidate.potential_rating) * 10) / 10
+                        : null;
+
+                    const reportScout = scouts.find(s => s.id === ev.evaluator_id || s.full_name?.toLowerCase().trim() === (ev.evaluator_name || '').toLowerCase().trim());
+                    const roleTitle = reportScout?.role_title || ev.evaluator_role || 'Scout Intervenant';
+
+                    return (
+                      <div
+                        key={ev.id}
+                        onClick={() => {
+                          setSelectedReportId(ev.id);
+                          setActiveTab('report');
+                        }}
+                        className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3 hover:border-indigo-500 hover:shadow-md transition-all cursor-pointer group hover:bg-indigo-50/20 relative"
+                        title={`Cliquer pour ouvrir directement le rapport complet de ${ev.evaluator_name || 'ce scout'}`}
+                      >
+                        {/* Ligne 1 : Scout, Rôle, Date & Verdict */}
+                        <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <ScoutAvatar
+                              scoutId={ev.evaluator_id}
+                              scoutName={ev.evaluator_name || 'Scout Intervenant'}
+                              scouts={scouts}
+                              size="sm"
+                              className="border border-slate-200 shrink-0 shadow-2xs group-hover:ring-2 group-hover:ring-indigo-400 transition-all"
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-black text-slate-900 text-xs block truncate group-hover:text-indigo-600 transition-colors">
+                                  {ev.evaluator_name || 'Scout Intervenant'}
+                                </span>
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                                  Avis #{idx + 1}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-semibold block truncate">
+                                {roleTitle}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            {ev.verdict && (
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shrink-0",
+                                ev.verdict === 'sign' ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
+                                ev.verdict === 'trial' ? "bg-blue-100 text-blue-800 border border-blue-200" :
+                                ev.verdict === 'follow' ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                                "bg-slate-100 text-slate-700 border border-slate-200"
+                              )}>
+                                {ev.verdict === 'sign' ? 'À recruter' :
+                                 ev.verdict === 'trial' ? 'À l\'essai' :
+                                 ev.verdict === 'follow' ? 'À suivre' :
+                                 ev.verdict}
+                              </span>
+                            )}
+                            <span
+                              className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center gap-1"
+                              title={`Date de rentrée : ${formatReportEntryDate(ev.created_at, ev.evaluation_date).formattedDate}`}
+                            >
+                              <Clock className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                              <span>{formatReportEntryDate(ev.created_at, ev.evaluation_date).formattedDate}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Ligne 2 : Ruban Scorecard 5 Piliers */}
+                        <div className="flex items-center justify-between gap-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200/80 group-hover:bg-white transition-colors">
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-slate-400">TEC</span>
+                            <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
+                              {techScore != null ? techScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                          <div className="h-4 w-px bg-slate-200 shrink-0" />
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-slate-400">TAC</span>
+                            <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
+                              {tactScore != null ? tactScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                          <div className="h-4 w-px bg-slate-200 shrink-0" />
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-slate-400">PHY</span>
+                            <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
+                              {physScore != null ? physScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                          <div className="h-4 w-px bg-slate-200 shrink-0" />
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-slate-400">MEN</span>
+                            <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
+                              {mentScore != null ? mentScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                          <div className="h-4 w-px bg-slate-200 shrink-0" />
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-indigo-50 border border-indigo-200 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-indigo-700">POT</span>
+                            <span className={cn("text-xs font-black", potentialScore != null ? "text-indigo-950" : "text-slate-300")}>
+                              {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Ligne 3 : Action Consulter ce rapport */}
+                        <div className="flex items-center justify-between text-[11px] pt-0.5">
+                          <span className="text-slate-500 font-medium">
+                            Score : <strong className="text-slate-900 font-bold">{Number(ev.overall_score || 0).toFixed(1)}/10</strong>
+                          </span>
+                          <span className="font-black text-indigo-600 group-hover:text-indigo-800 flex items-center gap-1 text-xs group-hover:translate-x-0.5 transition-all">
+                            <span>Voir son rapport</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : isScoutManager ? (
+          /* 2. VUE SCOUT MANAGER : SUPERVISION MULTI-SCOUTS & CLOISONNEMENT STRICT */
+          <div className="space-y-4">
+            {/* 2.1 SECTION SUPÉRIEURE : SCOUT DÉTECTEUR (INITIATEUR DU CANDIDAT) */}
+            <div className="bg-gradient-to-r from-amber-500/10 via-amber-50/40 to-white p-4 sm:p-5 rounded-2xl border-2 border-amber-300 shadow-xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-xs">
+                    <Crown className="w-4 h-4 fill-slate-950" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black text-[10px] uppercase tracking-wider shadow-2xs">
+                        Scout Détecteur
+                      </span>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                        Initiateur du Profil & Découverte Terrain
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Scout à l'origine de la découverte du joueur sur le terrain
+                    </p>
+                  </div>
+                </div>
+
+                {/* Si le détecteur est le scout manager lui-même, il peut consulter son rapport */}
+                {discoveringEval && (
+                  (() => {
+                    const isMyEval = Boolean(
+                      (currentScout?.id && discoveringEval.evaluator_id === currentScout.id) ||
+                      (currentUserId && discoveringEval.evaluator_id === currentUserId) ||
+                      (currentUserName && discoveringEval.evaluator_name?.toLowerCase().trim() === currentUserName.toLowerCase().trim())
+                    );
+                    if (isMyEval) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedReportId(discoveringEval.id);
+                            setActiveTab('report');
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer self-start sm:self-auto shrink-0"
+                          title="Consulter votre rapport complet"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Voir mon rapport complet →</span>
+                        </button>
+                      );
+                    }
+                    return (
+                      <span className="px-2.5 py-1 rounded-lg bg-amber-100/90 text-amber-900 border border-amber-200 text-[11px] font-bold flex items-center gap-1.5 shrink-0" title="Les évaluations et scores d'autrui sont strictement confidentiels.">
+                        <Lock className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Scores & Rapport confidentiels</span>
+                      </span>
+                    );
+                  })()
+                )}
+              </div>
+
+              {/* Contenu Détecteur */}
+              {(() => {
+                const isMyEval = Boolean(
+                  discoveringEval && (
+                    (currentScout?.id && discoveringEval.evaluator_id === currentScout.id) ||
+                    (currentUserId && discoveringEval.evaluator_id === currentUserId) ||
+                    (currentUserName && discoveringEval.evaluator_name?.toLowerCase().trim() === currentUserName.toLowerCase().trim())
+                  )
+                );
+
+                const roleTitle = discoveringScoutInfo?.role || discoveringEval?.evaluator_role || 'Scout Détecteur';
+                const scoutName = discoveringScoutInfo?.name || discoveringEval?.evaluator_name || 'Scout Détecteur';
+                const scoutId = discoveringScoutInfo?.id || discoveringEval?.evaluator_id;
+
+                if (isMyEval && discoveringEval) {
+                  // Le Scout Manager est LUI-MÊME le détecteur : il voit ses propres scores et accède à son rapport
+                  const getScoreVal = (val: any) => {
+                    if (val == null || val === '') return null;
+                    const num = Number(val);
+                    return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                  };
+
+                  const techScore = getScoreVal(discoveringEval.technical_score ?? (discoveringEval as any).tech_score ?? (discoveringEval as any).technical_rating);
+                  const tactScore = getScoreVal(discoveringEval.tactical_score ?? (discoveringEval as any).tact_score ?? (discoveringEval as any).tactical_rating);
+                  const physScore = getScoreVal(discoveringEval.physical_score ?? (discoveringEval as any).phys_score ?? (discoveringEval as any).physical_rating);
+                  const mentScore = getScoreVal(discoveringEval.mental_score ?? (discoveringEval as any).ment_score ?? (discoveringEval as any).mental_rating);
+                  const potentialScore = (discoveringEval.potential_rating != null && !isNaN(Number(discoveringEval.potential_rating)))
+                    ? Math.round(Number(discoveringEval.potential_rating) * 10) / 10
+                    : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
+                      ? Math.round(Number(candidate.potential_rating) * 10) / 10
+                      : null;
+
+                  return (
+                    <div
+                      onClick={() => {
+                        setSelectedReportId(discoveringEval.id);
+                        setActiveTab('report');
+                      }}
+                      className="bg-white p-4 rounded-xl border border-amber-300 shadow-2xs space-y-3 cursor-pointer group hover:border-amber-500 transition-all"
+                      title="Cliquer pour afficher votre rapport complet"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-3">
+                          <ScoutAvatar
+                            scoutId={scoutId}
+                            scoutName={scoutName}
+                            scouts={scouts}
+                            size="md"
+                            className="border-2 border-emerald-400 shrink-0 shadow-xs"
+                          />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-slate-900 text-sm group-hover:text-emerald-700 transition-colors">
+                                {scoutName}
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                C'est vous
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+                              <span className="flex items-center gap-1 font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
+                                <Clock className="w-2.5 h-2.5 text-amber-600" />
+                                Rapport déposé : {formatReportEntryDate(discoveringEval.created_at, discoveringEval.evaluation_date).formattedDate}
+                              </span>
+                              {discoveringEval.verdict && (
+                                <span className={cn(
+                                  "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider",
+                                  discoveringEval.verdict === 'sign' ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
+                                  discoveringEval.verdict === 'trial' ? "bg-blue-100 text-blue-800 border border-blue-200" :
+                                  discoveringEval.verdict === 'follow' ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                                  "bg-slate-100 text-slate-700 border border-slate-200"
+                                )}>
+                                  {discoveringEval.verdict === 'sign' ? 'À recruter' :
+                                   discoveringEval.verdict === 'trial' ? 'À l\'essai' :
+                                   discoveringEval.verdict === 'follow' ? 'À suivre' :
+                                   discoveringEval.verdict}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                          <span className="text-xs font-black text-slate-900 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
+                            Note Globale : <strong className="text-amber-700">{Number(discoveringEval.overall_score || 0).toFixed(1)}/10</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Ruban 5 Piliers Détecteur (Visible car c'est votre propre rapport) */}
+                      <div className="flex items-center justify-between gap-1 bg-amber-50/50 p-2 rounded-xl border border-amber-200/70">
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[9px] font-black uppercase text-slate-500">TEC</span>
+                          <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
+                            {techScore != null ? techScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                        <div className="h-4 w-px bg-amber-200 shrink-0" />
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[9px] font-black uppercase text-slate-500">TAC</span>
+                          <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
+                            {tactScore != null ? tactScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                        <div className="h-4 w-px bg-amber-200 shrink-0" />
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[9px] font-black uppercase text-slate-500">PHY</span>
+                          <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
+                            {physScore != null ? physScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                        <div className="h-4 w-px bg-amber-200 shrink-0" />
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[9px] font-black uppercase text-slate-500">MEN</span>
+                          <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
+                            {mentScore != null ? mentScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                        <div className="h-4 w-px bg-amber-200 shrink-0" />
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-amber-100/60 border border-amber-300 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[9px] font-black uppercase text-amber-800">POT</span>
+                          <span className={cn("text-xs font-black", potentialScore != null ? "text-amber-950" : "text-slate-300")}>
+                            {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Le détecteur est un AUTRE scout : le Scout Manager voit son identité mais PAS ses scores ni son rapport
+                return (
+                  <div className="bg-white p-4 rounded-xl border border-amber-200/90 shadow-2xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-3">
+                        <ScoutAvatar
+                          scoutId={scoutId}
+                          scoutName={scoutName}
+                          scouts={scouts}
+                          size="md"
+                          className="border-2 border-amber-400 shrink-0 shadow-xs"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-slate-900 text-sm">
+                              {scoutName}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-200">
+                              {roleTitle}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+                            <span className="flex items-center gap-1 font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
+                              <Clock className="w-2.5 h-2.5 text-amber-600" />
+                              Découverte terrain : {formatReportEntryDate(candidate.discovery_date || discoveringEval?.created_at).formattedDate}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-bold flex items-center gap-1.5 shadow-2xs">
+                          <Lock className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Évaluation d'un autre scout</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Avertissement isolation : Scores et rapport masqués */}
+                    <div className="flex items-center gap-2.5 p-3 rounded-xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-950">
+                      <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>
+                        <strong>Scores & Évaluation Confidentiels</strong> — Conformément aux règles d'isolation de la cellule, les scores d'évaluation (5 piliers) et les rapports d'observation des autres scouts sont strictement confidentiels et réservés à l'auteur et à la direction.
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* 2.2 SECTION MÉTRIQUES MULTI-SCOUTS & SUPERVISION DU JOUEUR */}
+            <div className="bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-white p-4 sm:p-5 rounded-2xl border border-indigo-200 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-xs">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-900 border border-indigo-200 font-black text-[10px] uppercase tracking-wider">
+                        Supervision Multi-Scouts
+                      </span>
+                      <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                        Couverture & Activité Terrain ({multiScoutMetrics.distinctScoutsCount} scouts)
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Décompte des rapports rédigés par scout sur ce joueur (les évaluations détaillées restent confidentielles)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                  <span className="px-3 py-1.5 rounded-xl bg-white border border-indigo-200 text-indigo-900 text-xs font-black shadow-2xs">
+                    Total : <strong>{multiScoutMetrics.totalReportsCount}</strong> rapport{multiScoutMetrics.totalReportsCount > 1 ? 's' : ''}
+                  </span>
+                  <span className="px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold">
+                    <strong>{multiScoutMetrics.otherScoutsCount}</strong> autre{multiScoutMetrics.otherScoutsCount > 1 ? 's' : ''} scout{multiScoutMetrics.otherScoutsCount > 1 ? 's' : ''}
+                  </span>
+                </div>
+              </div>
+
+              {/* Liste de tous les scouts ayant créé un rapport sur ce joueur */}
+              {multiScoutMetrics.scoutsList.length === 0 ? (
+                <div className="p-4 rounded-xl bg-white border border-dashed border-indigo-200 text-center text-xs text-slate-500">
+                  Aucun scout n'a encore rédigé de rapport sur ce joueur.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {multiScoutMetrics.scoutsList.map((scoutItem, sIdx) => {
+                    return (
+                      <div
+                        key={scoutItem.scoutId || scoutItem.scoutName || sIdx}
+                        className={cn(
+                          "p-3.5 rounded-xl border shadow-2xs space-y-2.5 transition-all relative",
+                          scoutItem.isCurrentScout
+                            ? "bg-emerald-50/60 border-emerald-300"
+                            : "bg-white border-slate-200/90"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <ScoutAvatar
+                              scoutId={scoutItem.scoutId}
+                              scoutName={scoutItem.scoutName}
+                              scouts={scouts}
+                              size="sm"
+                              className={cn(
+                                "border shrink-0 shadow-2xs",
+                                scoutItem.isCurrentScout ? "border-emerald-400" : "border-slate-200"
+                              )}
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-black text-slate-900 text-xs truncate">
+                                  {scoutItem.scoutName}
+                                </span>
+                                {scoutItem.isCurrentScout && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                    Vous
+                                  </span>
+                                )}
+                                {scoutItem.isDiscoverer && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                                    Détecteur
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-semibold block truncate">
+                                {scoutItem.roleTitle}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200/80 text-indigo-950 font-black text-xs block shadow-2xs">
+                              {scoutItem.reportsCount} rapport{scoutItem.reportsCount > 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100">
+                          <span className="text-slate-500 font-medium flex items-center gap-1 text-[10px]">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            {scoutItem.latestDate ? formatReportEntryDate(scoutItem.latestDate).formattedDate : 'Date non précisée'}
+                          </span>
+
+                          {scoutItem.isCurrentScout ? (
+                            <span className="font-bold text-emerald-700 text-[10px] flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Votre évaluation</span>
+                            </span>
+                          ) : (
+                            <span className="font-bold text-slate-400 text-[10px] flex items-center gap-1" title="Contenu et notes détaillées réservés à l'auteur et à la direction">
+                              <Lock className="w-3 h-3 text-slate-400" />
+                              <span>Confidentiel</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 2.3 SECTION MON ÉVALUATION PERSONNELLE (ACCÈS COMPLET AUX RAPPORTS DU SCOUT MANAGER) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="font-black text-xs uppercase tracking-wide text-slate-900">
+                    Mon Évaluation Personnelle ({candidateEvals.length})
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    (Vos rapports que vous êtes autorisé à consulter et modifier)
+                  </span>
+                </div>
+              </div>
+
+              {candidateEvals.length === 0 ? (
+                <div className="p-3.5 rounded-2xl bg-white border border-dashed border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5 text-slate-500">
+                    <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span>Vous n'avez pas encore rédigé de rapport personnel pour ce joueur.</span>
+                  </div>
+                  {Boolean(onAddReport || onOpenEvaluation) && canManageReports !== false && (
+                    <button
+                      type="button"
+                      onClick={() => onAddReport ? onAddReport(candidate) : onOpenEvaluation?.({ mode: 'create' })}
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition-all cursor-pointer shrink-0"
+                    >
+                      + Rédiger mon rapport
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {candidateEvals.map((ev) => {
+                    const getScoreVal = (val: any) => {
+                      if (val == null || val === '') return null;
+                      const num = Number(val);
+                      return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                    };
+
+                    const techScore = getScoreVal(ev.technical_score ?? (ev as any).tech_score ?? (ev as any).technical_rating);
+                    const tactScore = getScoreVal(ev.tactical_score ?? (ev as any).tact_score ?? (ev as any).tactical_rating);
+                    const physScore = getScoreVal(ev.physical_score ?? (ev as any).phys_score ?? (ev as any).physical_rating);
+                    const mentScore = getScoreVal(ev.mental_score ?? (ev as any).ment_score ?? (ev as any).mental_rating);
+                    const potentialScore = (ev.potential_rating != null && !isNaN(Number(ev.potential_rating)))
+                      ? Math.round(Number(ev.potential_rating) * 10) / 10
+                      : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
+                        ? Math.round(Number(candidate.potential_rating) * 10) / 10
+                        : null;
+
+                    const reportScout = scouts.find(s => s.id === ev.evaluator_id || s.full_name?.toLowerCase().trim() === (ev.evaluator_name || '').toLowerCase().trim());
+                    const roleTitle = reportScout?.role_title || ev.evaluator_role || 'Scout Manager';
+
+                    return (
+                      <div
+                        key={ev.id}
+                        onClick={() => {
+                          setSelectedReportId(ev.id);
+                          setActiveTab('report');
+                        }}
+                        className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-3.5 hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer group hover:bg-slate-50/40 relative"
+                        title="Cliquer pour ouvrir et consulter votre rapport complet"
+                      >
+                        <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <ScoutAvatar
+                              scoutId={ev.evaluator_id}
+                              scoutName={ev.evaluator_name || 'Scout FUS'}
+                              scouts={scouts}
+                              size="sm"
+                              className="border border-slate-200 shrink-0 shadow-2xs group-hover:ring-2 group-hover:ring-emerald-300 transition-all"
+                            />
+                            <div className="min-w-0">
+                              <span className="font-black text-slate-900 text-xs block truncate group-hover:text-emerald-700 transition-colors">
+                                {ev.evaluator_name || 'Scout FUS'}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-semibold block truncate">
+                                {roleTitle}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            {ev.verdict && (
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shrink-0",
+                                ev.verdict === 'sign' ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
+                                ev.verdict === 'trial' ? "bg-blue-100 text-blue-800 border border-blue-200" :
+                                ev.verdict === 'follow' ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                                "bg-slate-100 text-slate-700 border border-slate-200"
+                              )}>
+                                {ev.verdict === 'sign' ? 'À recruter' :
+                                 ev.verdict === 'trial' ? 'À l\'essai' :
+                                 ev.verdict === 'follow' ? 'À suivre' :
+                                 ev.verdict}
+                              </span>
+                            )}
+                            <span
+                              className="text-[10px] font-bold text-amber-900 bg-amber-50/90 border border-amber-200/80 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs"
+                              title={`Date de rentrée : ${formatReportEntryDate(ev.created_at, ev.evaluation_date).formattedDate}`}
+                            >
+                              <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                              <span>Rentrée : {formatReportEntryDate(ev.created_at, ev.evaluation_date).formattedDate}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 5 Piliers Ruban */}
+                        <div className="flex items-center justify-between gap-1 bg-slate-50/80 p-2 rounded-xl border border-slate-100">
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-slate-400">TEC</span>
+                            <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
+                              {techScore != null ? techScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                          <div className="h-4 w-px bg-slate-200 shrink-0" />
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-slate-400">TAC</span>
+                            <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
+                              {tactScore != null ? tactScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                          <div className="h-4 w-px bg-slate-200 shrink-0" />
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-slate-400">PHY</span>
+                            <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
+                              {physScore != null ? physScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                          <div className="h-4 w-px bg-slate-200 shrink-0" />
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-slate-400">MEN</span>
+                            <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
+                              {mentScore != null ? mentScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                          <div className="h-4 w-px bg-slate-200 shrink-0" />
+                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-indigo-50 border border-indigo-200 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                            <span className="text-[8px] font-black uppercase text-indigo-700">POT</span>
+                            <span className={cn("text-xs font-black", potentialScore != null ? "text-indigo-950" : "text-slate-300")}>
+                              {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] pt-0.5">
+                          <span className="text-slate-500 font-medium">
+                            Score : <strong className="text-slate-900 font-bold">{Number(ev.overall_score || 0).toFixed(1)}/10</strong>
+                          </span>
+                          <span className="font-black text-emerald-600 group-hover:text-emerald-800 flex items-center gap-1 text-xs group-hover:translate-x-0.5 transition-all">
+                            <span>Voir mon rapport</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* 2. VUE SCOUT STANDARD : CLOISONNEMENT STRICT (UNIQUEMENT SON PROPRE RAPPORT S'IL EXISTE) */
+          <div>
+            {candidateEvals.length === 0 ? (
+              <div className="p-3.5 rounded-2xl bg-white border border-dashed border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5 text-slate-500">
+                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>Vous n'avez pas encore évalué ce joueur. Rédigez votre première observation terrain.</span>
+                </div>
+                {Boolean(onAddReport || onOpenEvaluation) && canManageReports !== false && (
+                  <button
+                    type="button"
+                    onClick={() => onAddReport ? onAddReport(candidate) : onOpenEvaluation?.({ mode: 'create' })}
+                    className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition-all cursor-pointer shrink-0"
+                  >
+                    Rédiger mon rapport
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {candidateEvals.map((ev) => {
+                  const getScoreVal = (val: any) => {
+                    if (val == null || val === '') return null;
+                    const num = Number(val);
+                    return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                  };
+
+                  const techScore = getScoreVal(ev.technical_score ?? (ev as any).tech_score ?? (ev as any).technical_rating);
+                  const tactScore = getScoreVal(ev.tactical_score ?? (ev as any).tact_score ?? (ev as any).tactical_rating);
+                  const physScore = getScoreVal(ev.physical_score ?? (ev as any).phys_score ?? (ev as any).physical_rating);
+                  const mentScore = getScoreVal(ev.mental_score ?? (ev as any).ment_score ?? (ev as any).mental_rating);
+                  const potentialScore = (ev.potential_rating != null && !isNaN(Number(ev.potential_rating)))
+                    ? Math.round(Number(ev.potential_rating) * 10) / 10
+                    : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
+                      ? Math.round(Number(candidate.potential_rating) * 10) / 10
+                      : null;
+
+                  const reportScout = scouts.find(s => s.id === ev.evaluator_id || s.full_name?.toLowerCase().trim() === (ev.evaluator_name || '').toLowerCase().trim());
+                  const roleTitle = reportScout?.role_title || ev.evaluator_role || 'Scout';
+
+                  return (
+                    <div
+                      key={ev.id}
+                      onClick={() => {
+                        setSelectedReportId(ev.id);
+                        setActiveTab('report');
+                      }}
+                      className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-3.5 hover:border-primary/60 hover:shadow-md transition-all cursor-pointer group hover:bg-slate-50/40 relative"
+                      title="Cliquer pour ouvrir et consulter votre rapport complet"
+                    >
+                      {/* Ligne 1 : Scout, Rôle, Date de Rentrée & Verdict */}
+                      <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <ScoutAvatar
+                            scoutId={ev.evaluator_id}
+                            scoutName={ev.evaluator_name || 'Scout FUS'}
+                            scouts={scouts}
+                            size="sm"
+                            className="border border-slate-200 shrink-0 shadow-2xs group-hover:ring-2 group-hover:ring-primary/20 transition-all"
+                          />
+                          <div className="min-w-0">
+                            <span className="font-black text-slate-900 text-xs block truncate group-hover:text-primary transition-colors">
+                              {ev.evaluator_name || 'Scout FUS'}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-semibold block truncate">
+                              {roleTitle}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {ev.verdict && (
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shrink-0",
+                              ev.verdict === 'sign' ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
+                              ev.verdict === 'trial' ? "bg-blue-100 text-blue-800 border border-blue-200" :
+                              ev.verdict === 'follow' ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                              "bg-slate-100 text-slate-700 border border-slate-200"
+                            )}>
+                              {ev.verdict === 'sign' ? 'À recruter' :
+                               ev.verdict === 'trial' ? 'À l\'essai' :
+                               ev.verdict === 'follow' ? 'À suivre' :
+                               ev.verdict}
+                            </span>
+                          )}
+                          <span
+                            className="text-[10px] font-bold text-amber-900 bg-amber-50/90 border border-amber-200/80 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs"
+                            title={`Date de rentrée : ${formatReportEntryDate(ev.created_at, ev.evaluation_date).formattedDate}`}
+                          >
+                            <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                            <span>Rentrée : {formatReportEntryDate(ev.created_at, ev.evaluation_date).formattedDate}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Ligne 2 : Ruban Scorecard 5 Piliers */}
+                      <div className="flex items-center justify-between gap-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200/80 group-hover:bg-white transition-colors">
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[8px] font-black uppercase text-slate-400">TEC</span>
+                          <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
+                            {techScore != null ? techScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                        <div className="h-4 w-px bg-slate-200 shrink-0" />
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[8px] font-black uppercase text-slate-400">TAC</span>
+                          <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
+                            {tactScore != null ? tactScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                        <div className="h-4 w-px bg-slate-200 shrink-0" />
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[8px] font-black uppercase text-slate-400">PHY</span>
+                          <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
+                            {physScore != null ? physScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                        <div className="h-4 w-px bg-slate-200 shrink-0" />
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center" title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[8px] font-black uppercase text-slate-400">MEN</span>
+                          <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
+                            {mentScore != null ? mentScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                        <div className="h-4 w-px bg-slate-200 shrink-0" />
+                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-emerald-50 border border-emerald-200/80 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <span className="text-[8px] font-black uppercase text-emerald-700">POT</span>
+                          <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-950" : "text-slate-300")}>
+                            {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Ligne 3 : Action Consulter */}
+                      <div className="flex items-center justify-between text-[11px] pt-1">
+                        <span className="text-slate-500 font-medium text-[11px]">
+                          Score Global : <strong className="text-slate-900 font-bold">{Number(ev.overall_score || 0).toFixed(1)}/10</strong>
+                        </span>
+                        <span className="font-black text-primary group-hover:text-primary/90 flex items-center gap-1 text-xs group-hover:translate-x-0.5 transition-all">
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Afficher mon rapport →</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tab Navigation Principale du Dossier (1. Scout, 2. État Civil & Contact, 3. Rapports) */}
@@ -1267,7 +2524,9 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                       <FileText className="w-6 h-6" />
                     </div>
                     <p className="text-muted-foreground text-xs max-w-sm mx-auto">
-                      Aucun rapport de scout n'a encore été rédigé pour {candidate.first_name} {candidate.last_name}.
+                      {isRecruitmentAdmin
+                        ? `Aucun rapport de scout n'a encore été rédigé pour ${candidate.first_name} ${candidate.last_name}.`
+                        : `Vous n'avez pas encore rédigé de rapport pour ${candidate.first_name} ${candidate.last_name}.`}
                     </p>
                     {Boolean(onAddReport || onOpenEvaluation) ? (
                       <button
@@ -1276,12 +2535,12 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                         className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold shadow-xs hover:bg-primary/90 transition-all inline-flex items-center gap-2 cursor-pointer"
                       >
                         <Award className="w-3.5 h-3.5" />
-                        <span>Rédiger le Premier Rapport</span>
+                        <span>Rédiger mon premier rapport</span>
                       </button>
                     ) : (
                       <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-500 text-xs font-medium border border-slate-200">
                         <Lock className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Rapports en lecture seule (joueur non assigné à votre compte)</span>
+                        <span>Rapports en lecture seule</span>
                       </div>
                     )}
                   </div>
@@ -1653,10 +2912,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5 flex-wrap">
-                                    <span className="flex items-center gap-1">
-                                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                      {currentSelectedReport.evaluation_date}
+                                  <div className="text-xs text-muted-foreground flex items-center gap-2 mt-1 flex-wrap">
+                                    <span className="flex items-center gap-1 font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                      <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                                      Match : {currentSelectedReport.evaluation_date}
                                     </span>
                                     <span>•</span>
                                     <span className="flex items-center gap-1">
@@ -1667,10 +2926,18 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                         scouts={scouts}
                                         size="xs"
                                       />
-                                      <span className="font-medium text-slate-700">{currentSelectedReport.evaluator_name || 'Scout FUS'}</span>
+                                      <span className="font-bold text-slate-900">{currentSelectedReport.evaluator_name || 'Scout FUS'}</span>
                                       {currentSelectedReport.evaluator_role && (
-                                        <span className="text-slate-400 text-[11px]">({currentSelectedReport.evaluator_role})</span>
+                                        <span className="text-slate-500 text-[11px]">({currentSelectedReport.evaluator_role})</span>
                                       )}
+                                    </span>
+                                    <span>•</span>
+                                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 text-amber-950 font-bold border border-amber-300 shadow-2xs" title="Date et heure de saisie / rentrée du rapport dans la base de données">
+                                      <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                      <span>Date de rentrée :</span>
+                                      <strong className="text-amber-900 font-black">
+                                        {formatReportEntryDate(currentSelectedReport.created_at, currentSelectedReport.evaluation_date).formattedDate}
+                                      </strong>
                                     </span>
                                   </div>
                                 </div>

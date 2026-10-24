@@ -5,6 +5,28 @@ import { getMyClubId } from './_helpers';
 
 export type { Team };
 
+// Catégories autorisées par l'enum public.age_category dans PostgreSQL
+export const VALID_DB_TEAM_CATEGORIES = [
+  'U7', 'U9', 'U11', 'U13', 'U14', 'U15', 'U16', 'U17', 'U19', 'U21', 'U23', 'SENIOR', 'PRO', 'OTHER'
+] as const;
+
+const VALID_CATEGORIES_SET = new Set<string>(VALID_DB_TEAM_CATEGORIES);
+
+export function normalizeTeamCategory(cat?: string | null): string {
+  if (!cat) return 'U13';
+  const clean = cat.trim().toUpperCase();
+  if (VALID_CATEGORIES_SET.has(clean)) return clean;
+
+  // Normalisation automatique des sous-catégories vers l'échelon de compétition officiel Supabase
+  if (clean === 'U18') return 'U19';
+  if (clean === 'U20') return 'U21';
+  if (clean === 'U22') return 'U23';
+  if (clean === 'U8') return 'U9';
+  if (clean === 'U10') return 'U11';
+  if (clean === 'U12') return 'U13';
+  return 'OTHER';
+}
+
 export const teamService = {
   async getTeams(): Promise<Team[]> {
     const clubId = await getMyClubId();
@@ -24,22 +46,46 @@ export const teamService = {
 
   async addTeam(team: Omit<Inserts<'teams'>, 'id'>): Promise<Team> {
     const clubId = await getMyClubId();
+    const sanitized = { ...team } as any;
+    (['id', 'created_at', 'updated_at', 'club_id'] as const).forEach(field => delete sanitized[field]);
+    if (!sanitized.coach_id || sanitized.coach_id === '' || sanitized.coach_id === 'null' || sanitized.coach_id === 'undefined') {
+      sanitized.coach_id = null;
+    }
+    if (!sanitized.photo_url || sanitized.photo_url === '' || sanitized.photo_url === 'null' || sanitized.photo_url === 'undefined') {
+      sanitized.photo_url = null;
+    }
+    if (sanitized.category) {
+      sanitized.category = normalizeTeamCategory(sanitized.category);
+    }
+
+    console.log('[addTeam] Payload final envoyé:', { ...sanitized, club_id: clubId });
 
     const { data, error } = await supabase
       .from('teams')
-      .insert([{ ...team, club_id: clubId }])
+      .insert([{ ...sanitized, club_id: clubId }])
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      const errMsg = error.message || error.details || JSON.stringify(error);
+      console.error('[addTeam] Erreur Supabase:', errMsg, error);
+      throw new Error(errMsg);
+    }
     return data;
   },
 
   async updateTeam(id: string, team: Partial<Team>): Promise<Team> {
     const sanitized = { ...team } as any;
     (['id', 'created_at', 'updated_at', 'club_id'] as const).forEach(field => delete sanitized[field]);
-    if (sanitized.coach_id === '') sanitized.coach_id = null;
-    if (sanitized.photo_url === '') sanitized.photo_url = null;
+    if (!sanitized.coach_id || sanitized.coach_id === '' || sanitized.coach_id === 'null' || sanitized.coach_id === 'undefined') {
+      sanitized.coach_id = null;
+    }
+    if (!sanitized.photo_url || sanitized.photo_url === '' || sanitized.photo_url === 'null' || sanitized.photo_url === 'undefined') {
+      sanitized.photo_url = null;
+    }
+    if (sanitized.category) {
+      sanitized.category = normalizeTeamCategory(sanitized.category);
+    }
 
     console.log('[updateTeam] payload envoyé:', sanitized, 'pour id:', id);
 
@@ -52,7 +98,10 @@ export const teamService = {
 
     console.log('[updateTeam] résultat:', { data, error });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[updateTeam] Erreur Supabase:', error);
+      throw error;
+    }
     return data;
   },
 

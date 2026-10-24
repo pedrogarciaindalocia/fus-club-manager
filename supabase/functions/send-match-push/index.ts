@@ -36,6 +36,38 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
+    // Sécurisation : Exiger une authentification valide (Jeton JWT utilisateur ou clé interne service_role)
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing or unauthorized auth header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const token = authHeader.replace('Bearer ', '').trim()
+    let isAuthorized = false
+
+    if (token === supabaseServiceKey) {
+      isAuthorized = true
+    } else {
+      try {
+        const { data, error } = await supabaseAdmin.auth.getUser(token)
+        if (!error && data?.user) {
+          isAuthorized = true
+        }
+      } catch (authErr) {
+        // Token invalide
+      }
+    }
+
+    if (!isAuthorized) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: Invalid or expired token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     const body = await req.json()
     // Supports either Webhook format (body.record) or direct invocation
     const record = body.record || body.event || body

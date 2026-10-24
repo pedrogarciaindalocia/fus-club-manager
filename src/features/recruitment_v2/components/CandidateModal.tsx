@@ -1323,6 +1323,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       evaluator_name: selectedScout?.full_name || 'Scout',
       evaluator_role: selectedScout?.role_title || 'Scout',
       evaluation_date: new Date().toISOString().split('T')[0],
+      created_at: evaluation?.created_at || new Date().toISOString(),
+      potential_rating: Number(potentialRating) || (candidate?.potential_rating != null ? Number(candidate.potential_rating) : undefined),
       scout_state_decision: scoutStateDecision,
       report_title: reportTitle.trim() || (scoutStateDecision === 'recruit_now' ? 'Signalement : À recruter immédiatement' : undefined),
       position_evaluated: positionConfig.code || primaryPosition,

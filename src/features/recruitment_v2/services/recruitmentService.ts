@@ -379,6 +379,10 @@ function toSupabaseEvaluationPayload(evaluation: Record<string, any>): Record<st
   if (evaluation.phys_report) metaObj.phys_report = evaluation.phys_report;
   if (evaluation.ment_report) metaObj.ment_report = evaluation.ment_report;
   if (evaluation.evaluator_id) metaObj.evaluator_id = evaluation.evaluator_id;
+  if (evaluation.evaluator_name) metaObj.evaluator_name = evaluation.evaluator_name;
+  if (evaluation.evaluator_role) metaObj.evaluator_role = evaluation.evaluator_role;
+  if (evaluation.potential_rating != null) metaObj.potential_rating = evaluation.potential_rating;
+  if (evaluation.created_at) metaObj.created_at = evaluation.created_at;
 
   const baseNotes = cleanGeneralNotes(evaluation.general_notes || '');
   if (Object.keys(metaObj).length > 0) {
@@ -1921,6 +1925,8 @@ export const recruitmentService = {
             phys_report: d.phys_report || meta.phys_report || undefined,
             ment_report: d.ment_report || meta.ment_report || undefined,
             evaluator_id: d.evaluator_id || meta.evaluator_id || undefined,
+            evaluator_name: d.evaluator_name || meta.evaluator_name || 'Scout FUS',
+            evaluator_role: (d as any).evaluator_role || meta.evaluator_role || undefined,
             general_notes: cleanGeneralNotes(d.general_notes),
             strengths: d.strengths || meta.strengths || undefined,
             weaknesses: d.weaknesses || meta.weaknesses || undefined,
@@ -1932,6 +1938,8 @@ export const recruitmentService = {
             mental_score: finalMentScore,
             verdict: mapVerdictFromSupabase(d.verdict),
             test_id: d.session_id,
+            created_at: d.created_at || meta.created_at || undefined,
+            potential_rating: (meta.potential_rating != null ? Number(meta.potential_rating) : (d as any).potential_rating != null ? Number((d as any).potential_rating) : undefined),
 
             // Sous-critères normalisés sur l'échelle 1-10
             tech_ball_control: normScore(d.tech_first_touch, finalTechScore),
@@ -2071,10 +2079,12 @@ export const recruitmentService = {
         if (cand && !['signed', 'academy', 'rejected', 'archived'].includes(cand.pipeline_stage)) {
           if (options?.promoteToShortlist) {
             updates.pipeline_stage = 'shortlisted';
-            updates.discovering_scout_name = evaluation.evaluator_name || cand.discovering_scout_name;
+            // Préserver le scout découvreur d'origine s'il existe déjà
+            updates.discovering_scout_name = cand.discovering_scout_name || evaluation.evaluator_name;
           } else if (['prospect', 'test_scheduled'].includes(cand.pipeline_stage)) {
             updates.pipeline_stage = 'test_completed';
-            updates.discovering_scout_name = evaluation.evaluator_name || cand.discovering_scout_name;
+            // Préserver le scout découvreur d'origine s'il existe déjà
+            updates.discovering_scout_name = cand.discovering_scout_name || evaluation.evaluator_name;
           }
         }
 

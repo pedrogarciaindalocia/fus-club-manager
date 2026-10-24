@@ -200,6 +200,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
     opponent_id: '',
     league_id: '',
     stadium_id: '',
+    pitch_number: '' as string,
     team_id: '',
     match_date: new Date().toISOString().split('T')[0],
     match_time: '18:00',
@@ -428,6 +429,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         opponent_id: initialMatch.opponent_id || (isInternalMatch ? (mainClub?.id || '') : ''),
         league_id: initialMatch.league_id || '',
         stadium_id: initialMatch.stadium_id || '',
+        pitch_number: rawLineup?.pitch_number || (initialMatch as any).pitch_number || '',
         team_id: initialMatch.team_id || '',
         match_date: initialMatch.match_date || new Date().toISOString().split('T')[0],
         match_time: initialMatch.match_time || '18:00',
@@ -882,6 +884,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         internal_opposition_type,
         internal_target_category,
         internal_opponent_team_id,
+        pitch_number,
         ...setupBase
       } = setup;
 
@@ -911,6 +914,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
           formation,
           match_format: setup.match_format,
           match_type: setup.match_type,
+          pitch_number: pitch_number || null,
           internal_opposition: internalMeta,
           jerseyOverrides: Object.fromEntries(
             Array.from(surclassedTargetMap.entries())
@@ -960,8 +964,9 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
       }
       onSuccess?.();
       onBack();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      toast.error(e?.message || "Erreur lors de la sauvegarde du match");
     } finally {
       setSaving(false);
     }
@@ -1471,15 +1476,12 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       </select>
                     )}
                   </div>
-                  {setup.match_type !== 'internal_scrimmage' && (
+                  {setup.match_type === 'league' && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between ml-3">
                         <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                           <Trophy className="inline w-3.5 h-3.5 mr-2 text-primary" /> Compétition / Saison
                         </label>
-                        {setup.match_type === 'amical' && (
-                          <span className="text-[10px] font-bold text-muted-foreground/60">(Facultatif pour amical)</span>
-                        )}
                       </div>
                       <select className="w-full h-16 rounded-2xl bg-white border border-transparent px-8 font-black text-lg outline-none focus:ring-4 ring-primary/20 appearance-none shadow-sm transition-all"
                         value={setup.league_id || ''} onChange={e => setSetup({ ...setup, league_id: e.target.value })}>
@@ -1520,22 +1522,60 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       })()}
                     </div>
                   )}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-3"><MapPin className="inline w-3.5 h-3.5 mr-2 text-primary" /> {setup.is_home ? 'Stade de la Rencontre (Domicile)' : 'Stade de la Rencontre (Extérieur)'}</label>
-                    <select className="w-full h-16 rounded-2xl bg-white border border-transparent px-8 font-black text-lg outline-none focus:ring-4 ring-primary/20 appearance-none shadow-sm transition-all"
-                      value={setup.stadium_id || ''} onChange={e => {
-                        const sId = e.target.value;
-                        const found = stadiums.find(s => s.id === sId);
-                        setSetup({
-                          ...setup,
-                          stadium_id: sId,
-                          location: found ? `${found.name}${found.city ? ` (${found.city})` : ''}` : (setup as any).location || ''
-                        });
-                      }}>
-                      <option value="">Sélectionner stade...</option>
-                      {stadiums.map(s => <option key={s.id} value={s.id}>{s.name} ({s.city})</option>)}
-                    </select>
-                  </div>
+                  {setup.is_home ? (
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-3">
+                        <span className="inline-block mr-2">🟩</span> Quel Terrain à Domicile ?
+                      </label>
+                      <div className="grid grid-cols-4 gap-3">
+                        {['1', '2', '3', '4'].map(n => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => {
+                              const fusStadium = stadiums.find(s => s.club_id === mainClub?.id) || stadiums[0];
+                              setSetup(prev => ({
+                                ...prev,
+                                pitch_number: prev.pitch_number === n ? '' : n,
+                                stadium_id: fusStadium?.id || prev.stadium_id || '',
+                                location: `Académie FUS — Terrain ${n}`
+                              }));
+                            }}
+                            className={`h-16 rounded-2xl font-black text-xl tracking-tight transition-all border-2 ${
+                              setup.pitch_number === n
+                                ? 'bg-primary text-white border-primary shadow-xl shadow-primary/30 scale-105'
+                                : 'bg-white text-slate-700 border-transparent hover:border-primary/30 hover:bg-primary/5 shadow-sm'
+                            }`}
+                          >
+                            Terrain {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-3">
+                        <MapPin className="inline w-3.5 h-3.5 mr-2 text-primary" /> Choisir le Stade (Extérieur)
+                      </label>
+                      <select
+                        className="w-full h-16 rounded-2xl bg-white border border-transparent px-8 font-black text-lg outline-none focus:ring-4 ring-primary/20 appearance-none shadow-sm transition-all"
+                        value={setup.stadium_id || ''}
+                        onChange={e => {
+                          const sId = e.target.value;
+                          const found = stadiums.find(s => s.id === sId);
+                          setSetup(prev => ({
+                            ...prev,
+                            stadium_id: sId,
+                            pitch_number: '',
+                            location: found ? `${found.name}${found.city ? ` (${found.city})` : ''}` : (prev as any).location || ''
+                          }));
+                        }}
+                      >
+                        <option value="">Sélectionner stade...</option>
+                        {stadiums.map(s => <option key={s.id} value={s.id}>{s.name} ({s.city})</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-6">
@@ -1550,8 +1590,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   </div>
                   <div className="pt-2">
                     <div className="bg-white/50 rounded-[2.5rem] p-3 flex border-2 border-secondary shadow-inner">
-                      <button type="button" onClick={() => setSetup({ ...setup, is_home: true })} className={`flex-1 h-16 rounded-[1.8rem] text-[11px] font-black uppercase tracking-widest transition-all ${setup.is_home ? 'bg-primary text-white shadow-2xl scale-105' : 'text-muted-foreground hover:bg-white'}`}>Domicile</button>
-                      <button type="button" onClick={() => setSetup({ ...setup, is_home: false })} className={`flex-1 h-16 rounded-[1.8rem] text-[11px] font-black uppercase tracking-widest transition-all ${!setup.is_home ? 'bg-slate-900 text-white shadow-2xl scale-105' : 'text-muted-foreground hover:bg-white'}`}>Extérieur</button>
+                      <button type="button" onClick={() => setSetup(prev => ({ ...prev, is_home: true }))} className={`flex-1 h-16 rounded-[1.8rem] text-[11px] font-black uppercase tracking-widest transition-all ${setup.is_home ? 'bg-primary text-white shadow-2xl scale-105' : 'text-muted-foreground hover:bg-white'}`}>Domicile</button>
+                      <button type="button" onClick={() => setSetup(prev => ({ ...prev, is_home: false, pitch_number: '', stadium_id: '' }))} className={`flex-1 h-16 rounded-[1.8rem] text-[11px] font-black uppercase tracking-widest transition-all ${!setup.is_home ? 'bg-slate-900 text-white shadow-2xl scale-105' : 'text-muted-foreground hover:bg-white'}`}>Extérieur</button>
                     </div>
                   </div>
 
@@ -2514,6 +2554,9 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       }
                     />
                     <InfoRow label="Terrain de Jeu" value={getStadiumName(setup.stadium_id)} />
+                    {setup.is_home && setup.pitch_number && (
+                      <InfoRow label="Numéro de Terrain" value={`Terrain ${setup.pitch_number}`} />
+                    )}
                     <InfoRow label="Rendez-vous" value={`${setup.match_date} @ ${setup.match_time}`} />
                     <InfoRow label="Catégorie Squad" value={setup.category} />
                   </div>
@@ -2533,7 +2576,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       />
                     )}
                     <InfoRow label="Encadrement Staff" value={`${selectedStaffIds.length} membres`} />
-                    <InfoRow label="Terrain" value={setup.is_home ? 'Domicile' : 'Extérieur'} />
+                    <InfoRow label="Terrain" value={setup.is_home && setup.match_type === 'amical' ? getStadiumName(setup.stadium_id) : (setup.is_home ? 'Domicile' : 'Extérieur')} />
                     <InfoRow label="Système Adverse" value={opponentFormation} />
                   </div>
                 </div>

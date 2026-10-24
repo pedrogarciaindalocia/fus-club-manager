@@ -408,14 +408,22 @@ const TeamManagement: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+       const cleanData = {
+         ...formData,
+         coach_id: formData.coach_id?.trim() ? formData.coach_id.trim() : null,
+         photo_url: (formData.photo_url?.trim() && formData.photo_url !== 'null') ? formData.photo_url.trim() : null,
+       };
        if (editingTeam) {
-         await updateTeam({ id: editingTeam.id, data: formData });
+         await updateTeam({ id: editingTeam.id, data: cleanData as any });
+         toast.success(`Équipe ${formData.name} mise à jour avec succès !`);
        } else {
-         await addTeam(formData);
+         await addTeam(cleanData as any);
+         toast.success(`Équipe ${formData.name} créée avec succès !`);
        }
        setViewState('LIST');
-    } catch (err) {
+    } catch (err: any) {
        console.error("Failed to save team:", err);
+       toast.error(err?.message || "Erreur lors de l'enregistrement de l'équipe");
     }
   };
 

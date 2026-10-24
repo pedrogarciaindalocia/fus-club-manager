@@ -90,6 +90,24 @@ export const matchService = {
     // Build the DB payload — only include opponent scouting if we have data
     const dbPayload: any = { ...payload, club_id: clubId, status: payload.status ?? 'scheduled' };
     if (mergedLineup) dbPayload.lineup = mergedLineup;
+
+    // Clean non-column or virtual fields
+    ([
+      'pitch_number',
+      'match_type',
+      'match_format',
+      'internal_opposition_type',
+      'internal_target_category',
+      'internal_opponent_team_id',
+      'qualif_status',
+      'staff_ids',
+      'match_players',
+      'match_staff',
+    ] as const).forEach(f => delete dbPayload[f]);
+
+    (['opponent_id', 'league_id', 'stadium_id', 'team_id'] as const).forEach(f => {
+      if (dbPayload[f] === '') dbPayload[f] = null;
+    });
     
     // Safely try to include opponent fields (they require the migration to be run)
     if (opponent_lineup !== undefined) dbPayload.opponent_lineup = opponent_lineup;
@@ -110,10 +128,17 @@ export const matchService = {
 
       if (isColumnError) {
         const safePayload = { ...dbPayload };
+        delete safePayload.pitch_number;
         delete safePayload.match_type;
         delete safePayload.match_format;
+        delete safePayload.internal_opposition_type;
+        delete safePayload.internal_target_category;
+        delete safePayload.internal_opponent_team_id;
+        delete safePayload.qualif_status;
+        delete safePayload.staff_ids;
         delete safePayload.opponent_lineup;
         delete safePayload.opponent_subs;
+        delete safePayload.opponent_lineup_positions;
         delete safePayload.referee_central_id;
         delete safePayload.referee_assistant1_id;
         delete safePayload.referee_assistant2_id;
@@ -157,7 +182,13 @@ export const matchService = {
     }
     delete sanitized.match_type;
     delete sanitized.match_format;
-    (['id', 'created_at', 'match_players', 'match_staff'] as const).forEach(f => delete sanitized[f]);
+    delete sanitized.pitch_number;
+    delete sanitized.internal_opposition_type;
+    delete sanitized.internal_target_category;
+    delete sanitized.internal_opponent_team_id;
+    delete sanitized.qualif_status;
+    delete sanitized.staff_ids;
+    (['id', 'created_at', 'updated_at', 'match_players', 'match_staff'] as const).forEach(f => delete sanitized[f]);
     (['opponent_id', 'league_id', 'stadium_id', 'team_id'] as const).forEach(f => {
       if (sanitized[f] === '') sanitized[f] = null;
     });
@@ -175,8 +206,14 @@ export const matchService = {
         error.message?.includes('column') || (error as any)?.status === 400;
 
       if (isColumnError) {
+        delete sanitized.pitch_number;
         delete sanitized.match_type;
         delete sanitized.match_format;
+        delete sanitized.internal_opposition_type;
+        delete sanitized.internal_target_category;
+        delete sanitized.internal_opponent_team_id;
+        delete sanitized.qualif_status;
+        delete sanitized.staff_ids;
         delete sanitized.referee_central_id;
         delete sanitized.referee_assistant1_id;
         delete sanitized.referee_assistant2_id;
@@ -185,6 +222,7 @@ export const matchService = {
         delete sanitized.referees_assigned;
         delete sanitized.opponent_lineup;
         delete sanitized.opponent_subs;
+        delete sanitized.opponent_lineup_positions;
 
         const { data: retryData, error: retryError } = await supabase
           .from('matches')

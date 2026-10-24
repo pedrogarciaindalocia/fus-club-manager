@@ -150,6 +150,12 @@ const commandRegistry: {
     }
     delete sanitized.match_type;
     delete sanitized.match_format;
+    delete sanitized.pitch_number;
+    delete sanitized.internal_opposition_type;
+    delete sanitized.internal_target_category;
+    delete sanitized.internal_opponent_team_id;
+    delete sanitized.qualif_status;
+    delete sanitized.staff_ids;
 
     // Convert empty string UUIDs to null
     ['opponent_id', 'league_id', 'stadium_id', 'team_id', 'club_id', 'referee_central_id', 'referee_assistant1_id', 'referee_assistant2_id', 'referee_fourth_id', 'referee_commissaire_id'].forEach(f => {
@@ -163,6 +169,14 @@ const commandRegistry: {
         error.message?.includes('column') || (error as any)?.status === 400;
 
       if (isColumnError) {
+        delete sanitized.pitch_number;
+        delete sanitized.match_type;
+        delete sanitized.match_format;
+        delete sanitized.internal_opposition_type;
+        delete sanitized.internal_target_category;
+        delete sanitized.internal_opponent_team_id;
+        delete sanitized.qualif_status;
+        delete sanitized.staff_ids;
         delete sanitized.referee_central_id;
         delete sanitized.referee_assistant1_id;
         delete sanitized.referee_assistant2_id;
@@ -171,6 +185,7 @@ const commandRegistry: {
         delete sanitized.referees_assigned;
         delete sanitized.opponent_lineup;
         delete sanitized.opponent_subs;
+        delete sanitized.opponent_lineup_positions;
         const { error: retryError } = await supabase.from('matches').update(sanitized).eq('id', op.matchId);
         if (retryError) throw retryError;
         return;

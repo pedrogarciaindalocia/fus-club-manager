@@ -881,11 +881,9 @@ export const RecruitmentV2Page: React.FC = () => {
     return false;
   };
 
-  // Vérifie si le scout connecté est l'auteur d'un rapport / évaluation
-  const isEvaluationAuthoredByScout = (ev: CandidateEvaluation): boolean => {
+  // Vérifie si le scout connecté est strictement l'auteur d'un rapport / évaluation (sans présumer des droits admin)
+  const isEvaluationStrictlyAuthoredByCurrentScout = (ev: CandidateEvaluation): boolean => {
     if (!ev) return false;
-    if (isSuperAdmin || isAdmin) return true;
-
     const userId = authState?.user?.id;
     const scoutId = currentScout?.id;
     const scoutName = (currentScout?.full_name || '').toLowerCase().trim();
@@ -900,18 +898,30 @@ export const RecruitmentV2Page: React.FC = () => {
     return false;
   };
 
-  // Règle d'ajout de rapport :
-  // Le scout peut rédiger un rapport :
-  // 1) Si le joueur a été introduit par lui
-  // 2) OU si le joueur lui a été assigné en mission d'observation
+  // US-DASH-100 : Vérifie si l'utilisateur connecté a le droit de visualiser cette évaluation
+  // Les admins voient tout. Les scouts et scout managers ne voient QUE leurs propres rapports.
+  const canViewEvaluation = (ev: CandidateEvaluation): boolean => {
+    if (!ev) return false;
+    if (isSuperAdmin || isAdmin || isRecruitmentAdmin) return true;
+    return isEvaluationStrictlyAuthoredByCurrentScout(ev);
+  };
+
+  // Vérifie si le scout connecté est l'auteur d'un rapport / évaluation (avec droits admin)
+  const isEvaluationAuthoredByScout = (ev: CandidateEvaluation): boolean => {
+    if (!ev) return false;
+    if (isSuperAdmin || isAdmin) return true;
+    return isEvaluationStrictlyAuthoredByCurrentScout(ev);
+  };
+
+  // Règle d'ajout de rapport (US-DASH-100) :
+  // Tout scout ou scout manager habilité aux rapports peut rédiger un rapport
+  // sur n'importe quel joueur existant dans la base de données.
   const canAddReportForCandidate = (cand: TrialCandidate): boolean => {
     if (!cand) return false;
-    if (isSuperAdmin || isAdmin) return true;
+    if (isSuperAdmin || isAdmin || isRecruitmentAdmin) return true;
     if (!canManageReports) return false;
     if (!canManageCategory(cand.age_category)) return false;
-    if (!canCreateCandidate) return false;
-
-    return isCandidateIntroducedByScout(cand) || isCandidateAssignedToScout(cand);
+    return true;
   };
 
   // Règle de modification d'un rapport :
@@ -1435,6 +1445,11 @@ export const RecruitmentV2Page: React.FC = () => {
           timeline={timeline}
           scouts={scouts}
           canManageReports={canManageReports}
+          isRecruitmentAdmin={isRecruitmentAdmin}
+          isScoutManager={isScoutManager}
+          currentScout={currentScout}
+          currentUserId={authState?.user?.id}
+          currentUserName={authState?.user?.full_name}
           onScheduleTest={canCreateCandidate ? (cand) => {
             handleOpenScheduleTestForCandidate(cand);
           } : undefined}
@@ -2269,8 +2284,10 @@ export const RecruitmentV2Page: React.FC = () => {
                         />
                       </th>
                       <th className="py-3.5 px-4">Joueur</th>
-                      <th className="py-3.5 px-3">Scout Référent</th>
-                      <th className="py-3.5 px-3">Score 4 Piliers</th>
+                      <th className="py-3.5 px-3">Scout Détecteur</th>
+                      {isRecruitmentAdmin && (
+                        <th className="py-3.5 px-3 text-center">Scores Détecteur (5 Piliers)</th>
+                      )}
                       <th className="py-3.5 px-3">Statut</th>
                       <th className={cn("py-3.5 px-4 text-right", isOnlyRecruitNowUser ? "min-w-[200px]" : "min-w-[360px]")}>Actions</th>
                     </tr>
@@ -2412,89 +2429,101 @@ export const RecruitmentV2Page: React.FC = () => {
                             </div>
                           </td>
 
-                          {/* Scout Référent */}
+                          {/* Scout Détecteur & Auteur(s) de rapport */}
                           <td className="py-3 px-3">
-                            {c.discovering_scout_name ? (
-                              <ScoutAvatar
-                                scoutId={c.discovering_scout_id}
-                                scoutName={c.discovering_scout_name}
-                                scouts={scouts}
-                                size="xs"
-                                showBadge
-                                className="bg-slate-50 text-slate-800 border border-slate-200 shadow-2xs"
-                              />
-                            ) : (
-                              <span className="text-[11px] text-slate-400 italic">Cellule FUS</span>
-                            )}
-                          </td>
+                            <div className="flex flex-col gap-1 items-start">
+                              {c.discovering_scout_name ? (
+                                <ScoutAvatar
+                                  scoutId={c.discovering_scout_id}
+                                  scoutName={c.discovering_scout_name}
+                                  scouts={scouts}
+                                  size="xs"
+                                  showBadge
+                                  badgePrefix={(isRecruitmentAdmin || isScoutManager) ? "Détecteur :" : undefined}
+                                  className="bg-slate-50 text-slate-800 border border-slate-200 shadow-2xs"
+                                />
+                              ) : (
+                                <span className="text-[11px] text-slate-400 italic">Cellule FUS</span>
+                              )}
 
-                          {/* Score 4 Piliers + Dernier Potentiel (Dernier Rapport) : TOUJOURS PRÉSENT */}
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200/90 shadow-2xs w-fit">
-                              {/* 1. Technique */}
-                              <div
-                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[34px]"
-                                title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                              >
-                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">TEC</span>
-                                <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
-                                  {techScore != null ? techScore.toFixed(1) : '-'}
-                                </span>
-                              </div>
+                              {/* Mention explicite des autres scouts ayant rentré un rapport (Admin & Super Admin) */}
+                              {isRecruitmentAdmin && (() => {
+                                const candEvals = evaluations.filter(e => e.candidate_id === c.id);
+                                const evalScoutsMap = new Map<string, { id?: string; name: string }>();
+                                candEvals.forEach(e => {
+                                  const name = e.evaluator_name?.trim();
+                                  if (name && !evalScoutsMap.has(name.toLowerCase())) {
+                                    evalScoutsMap.set(name.toLowerCase(), { id: e.evaluator_id, name });
+                                  }
+                                });
+                                const otherScouts = Array.from(evalScoutsMap.values()).filter(
+                                  s => !c.discovering_scout_name || s.name.toLowerCase() !== c.discovering_scout_name.toLowerCase().trim()
+                                );
 
-                              <div className="h-5 w-px bg-slate-200" />
-
-                              {/* 2. Tactique */}
-                              <div
-                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[34px]"
-                                title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                              >
-                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">TAC</span>
-                                <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
-                                  {tactScore != null ? tactScore.toFixed(1) : '-'}
-                                </span>
-                              </div>
-
-                              <div className="h-5 w-px bg-slate-200" />
-
-                              {/* 3. Physique */}
-                              <div
-                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[34px]"
-                                title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                              >
-                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">PHY</span>
-                                <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
-                                  {physScore != null ? physScore.toFixed(1) : '-'}
-                                </span>
-                              </div>
-
-                              <div className="h-5 w-px bg-slate-200" />
-
-                              {/* 4. Mental */}
-                              <div
-                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[34px]"
-                                title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                              >
-                                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">MEN</span>
-                                <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
-                                  {mentScore != null ? mentScore.toFixed(1) : '-'}
-                                </span>
-                              </div>
-
-                              <div className="h-5 w-px bg-slate-200" />
-
-                              {/* 5. Potentiel */}
-                              <div
-                                className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px] bg-emerald-50 border border-emerald-200/80 rounded-md"
-                                title={`Dernier Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                              >
-                                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700">POT</span>
-                                <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-950" : "text-slate-300")}>
-                                  {potentialScore != null ? potentialScore.toFixed(1) : '-'}
-                                </span>
-                              </div>
+                                if (otherScouts.length > 0) {
+                                  return (
+                                    <div className="flex flex-wrap items-center gap-1 mt-0.5" title={`Contre-rapport(s) rédigé(s) par : ${otherScouts.map(s => s.name).join(', ')}`}>
+                                      {otherScouts.map((sc, i) => (
+                                        <ScoutAvatar
+                                          key={i}
+                                          scoutId={sc.id}
+                                          scoutName={sc.name}
+                                          scouts={scouts}
+                                          size="xs"
+                                          showBadge
+                                          badgePrefix="Rapport :"
+                                          className="bg-indigo-50/90 text-indigo-800 border border-indigo-200 shadow-2xs"
+                                        />
+                                      ))}
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
                           </td>
+
+                          {/* Scores 5 Piliers (Technique, Tactique, Physique, Mental, Potentiel) réservé Admin & Super Admin */}
+                          {isRecruitmentAdmin && (
+                            <td className="py-3 px-3 text-center">
+                              <div className="inline-flex items-center gap-1 bg-slate-50/90 border border-slate-200/80 p-1.5 rounded-xl shadow-2xs">
+                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center" title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                                  <span className="text-[8px] font-black uppercase text-slate-400">TEC</span>
+                                  <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
+                                    {techScore != null ? techScore.toFixed(1) : '-'}
+                                  </span>
+                                </div>
+                                <div className="h-4 w-px bg-slate-200 shrink-0" />
+                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center" title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                                  <span className="text-[8px] font-black uppercase text-slate-400">TAC</span>
+                                  <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
+                                    {tactScore != null ? tactScore.toFixed(1) : '-'}
+                                  </span>
+                                </div>
+                                <div className="h-4 w-px bg-slate-200 shrink-0" />
+                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center" title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                                  <span className="text-[8px] font-black uppercase text-slate-400">PHY</span>
+                                  <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
+                                    {physScore != null ? physScore.toFixed(1) : '-'}
+                                  </span>
+                                </div>
+                                <div className="h-4 w-px bg-slate-200 shrink-0" />
+                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center" title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                                  <span className="text-[8px] font-black uppercase text-slate-400">MEN</span>
+                                  <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
+                                    {mentScore != null ? mentScore.toFixed(1) : '-'}
+                                  </span>
+                                </div>
+                                <div className="h-4 w-px bg-slate-200 shrink-0" />
+                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center bg-emerald-50 border border-emerald-200/80 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                                  <span className="text-[8px] font-black uppercase text-emerald-700">POT</span>
+                                  <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-700" : "text-slate-300")}>
+                                    {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                          )}
 
                           {/* Colonne Statut du joueur */}
                           <td className="py-3 px-3">
@@ -2601,7 +2630,7 @@ export const RecruitmentV2Page: React.FC = () => {
                                     ...evaluations.filter(e => e.candidate_id === c.id),
                                     ...(c.evaluations || [])
                                   ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
-                                  const count = candEvals.length;
+                                  const count = candEvals.filter(canViewEvaluation).length;
                                   return (
                                     <button
                                       type="button"
@@ -2941,47 +2970,6 @@ export const RecruitmentV2Page: React.FC = () => {
                     })()}
                   </div>
 
-                  {/* Score 4 Piliers + Dernier Potentiel (TOUJOURS AFFICHÉ) */}
-                  <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-2xl border border-slate-200/80">
-                    <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Scores</span>
-                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
-                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[30px]" title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                        <span className="text-[8px] font-black uppercase text-slate-400">TEC</span>
-                        <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
-                          {techScore != null ? techScore.toFixed(1) : '-'}
-                        </span>
-                      </div>
-                      <div className="h-4 w-px bg-slate-200" />
-                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[30px]" title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                        <span className="text-[8px] font-black uppercase text-slate-400">TAC</span>
-                        <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
-                          {tactScore != null ? tactScore.toFixed(1) : '-'}
-                        </span>
-                      </div>
-                      <div className="h-4 w-px bg-slate-200" />
-                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[30px]" title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                        <span className="text-[8px] font-black uppercase text-slate-400">PHY</span>
-                        <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
-                          {physScore != null ? physScore.toFixed(1) : '-'}
-                        </span>
-                      </div>
-                      <div className="h-4 w-px bg-slate-200" />
-                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[30px]" title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                        <span className="text-[8px] font-black uppercase text-slate-400">MEN</span>
-                        <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
-                          {mentScore != null ? mentScore.toFixed(1) : '-'}
-                        </span>
-                      </div>
-                      <div className="h-4 w-px bg-slate-200" />
-                      <div className="px-1.5 py-0.5 rounded flex flex-col items-center min-w-[32px] bg-emerald-50 border border-emerald-200/80 rounded-md" title={`Dernier Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                        <span className="text-[8px] font-black uppercase text-emerald-700">POT</span>
-                        <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-950" : "text-slate-300")}>
-                          {potentialScore != null ? potentialScore.toFixed(1) : '-'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Actions en mode Grid */}
                   <div className="pt-2 border-t flex flex-col gap-2">
                     {/* Si Directeur Administratif / utilisateur ciblé Recrutement Immédiat : UNIQUEMENT le bouton 'À recruter immédiatement' */}
@@ -3041,7 +3029,7 @@ export const RecruitmentV2Page: React.FC = () => {
                               ...evaluations.filter(e => e.candidate_id === c.id),
                               ...(c.evaluations || [])
                             ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
-                            const count = candEvals.length;
+                            const count = candEvals.filter(canViewEvaluation).length;
                             return (
                               <button
                                 type="button"
