@@ -319,13 +319,20 @@ export const RecruitmentV2Page: React.FC = () => {
     })[0];
   }, [evaluations]);
 
-  const getCandidateLatestDecision = React.useCallback((c: TrialCandidate): 'recruit_now' | 'invitation_test' | 'to_follow' | null => {
+  const getCandidateLatestDecision = React.useCallback((c: TrialCandidate): 'recruit_now' | 'recruit_standby' | 'invitation_test' | 'to_follow' | null => {
+    // Si explicitement validé recrutement immédiat
+    if ((c as any).is_recruit_now_validated || c.scout_state_decision === 'recruit_now' || (c as any).status === 'recruit_now' || (c as any).pipeline_stage === 'recruit_now') {
+      return 'recruit_now';
+    }
     const latestEval = getCandidateLatestEvaluation(c);
     if (!latestEval) {
-      // Aucun rapport : pas de décision de rapport, en observation
-      return null;
+      if (c.scout_state_decision === 'recruit_standby') return 'recruit_standby';
+      return (c.scout_state_decision as any) || null;
     }
     const dec = (latestEval as any).scout_state_decision || latestEval.report_data?.scout_state_decision;
+    if (dec === 'recruit_standby' || c.scout_state_decision === 'recruit_standby') {
+      return 'recruit_standby';
+    }
     if (dec === 'recruit_now' || dec === 'invitation_test' || dec === 'to_follow') {
       return dec;
     }
@@ -335,13 +342,21 @@ export const RecruitmentV2Page: React.FC = () => {
     return (c.scout_state_decision as any) || null;
   }, [getCandidateLatestEvaluation]);
 
-  // Helper pour vérifier si un candidat est marqué pour un recrutement immédiat via son dernier rapport
+  // Helper pour vérifier si un candidat est validé pour un recrutement immédiat
   const isCandidateRecruitNow = React.useCallback((c: TrialCandidate): boolean => {
+    if ((c as any).is_recruit_now_validated) return true;
     const latestDec = getCandidateLatestDecision(c);
     if (latestDec === 'recruit_now') return true;
     return (c as any).status === 'recruit_now' ||
       (c as any).pipeline_stage === 'recruit_now';
   }, [getCandidateLatestDecision]);
+
+  // Helper pour vérifier si un candidat est en Recrutement Stand-by (en attente d'arbitrage Direction)
+  const isCandidateRecruitStandby = React.useCallback((c: TrialCandidate): boolean => {
+    if (isCandidateRecruitNow(c)) return false;
+    const latestDec = getCandidateLatestDecision(c);
+    return latestDec === 'recruit_standby' || c.scout_state_decision === 'recruit_standby';
+  }, [getCandidateLatestDecision, isCandidateRecruitNow]);
 
   const todayStr = new Date().toLocaleDateString('en-CA');
 
@@ -1021,7 +1036,7 @@ export const RecruitmentV2Page: React.FC = () => {
   // Filtre de nationalité sous forme de tags (Marocains par défaut)
   const [nationalityTagFilter, setNationalityTagFilter] = useState<NationalityTag>('marocains');
   // Filtre de statut / décision scout
-  const [decisionFilter, setDecisionFilter] = useState<'ALL' | 'recruit_now' | 'invitation_test' | 'to_follow'>('ALL');
+  const [decisionFilter, setDecisionFilter] = useState<'ALL' | 'recruit_now' | 'recruit_standby' | 'invitation_test' | 'to_follow'>('ALL');
 
   const visibleRecruitmentCategories = React.useMemo(() => {
     const allowed = RECRUITMENT_AGE_CATEGORIES.filter(cat => canManageCategory(cat));
@@ -1176,7 +1191,9 @@ export const RecruitmentV2Page: React.FC = () => {
       const candDecision = getCandidateLatestDecision(c);
       if (decisionFilter === 'recruit_now' && !isCandidateRecruitNow(c)) {
         return false;
-      } else if (decisionFilter !== 'ALL' && decisionFilter !== 'recruit_now' && candDecision !== decisionFilter) {
+      } else if (decisionFilter === 'recruit_standby' && !isCandidateRecruitStandby(c)) {
+        return false;
+      } else if (decisionFilter !== 'ALL' && decisionFilter !== 'recruit_now' && decisionFilter !== 'recruit_standby' && candDecision !== decisionFilter) {
         return false;
       }
 
@@ -1865,6 +1882,32 @@ export const RecruitmentV2Page: React.FC = () => {
                   )}
                 </div>
 
+                {/* Filtre Rapide : Recrutement Stand-by (US-DASH-104) */}
+                <div className="inline-flex items-center p-1 bg-amber-50 rounded-2xl border border-amber-200/80">
+                  <button
+                    type="button"
+                    onClick={() => setDecisionFilter(prev => prev === 'recruit_standby' ? 'ALL' : 'recruit_standby')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                      decisionFilter === 'recruit_standby'
+                        ? "bg-amber-600 text-white font-black shadow-xs ring-2 ring-amber-400/40"
+                        : "text-amber-800 hover:bg-white"
+                    )}
+                    title="Filtrer les talents en Recrutement Stand-by (en attente de validation)"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-current" />
+                    <span>Recrutement Stand-by</span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                      decisionFilter === 'recruit_standby'
+                        ? "bg-white/20 text-white"
+                        : "bg-amber-200 text-amber-900"
+                    )}>
+                      {scopedCandidates.filter(c => isCandidateRecruitStandby(c)).length}
+                    </span>
+                  </button>
+                </div>
+
                 {/* Filtre Rapide : À recruter immédiatement */}
                 <div className="inline-flex items-center p-1 bg-rose-50 rounded-2xl border border-rose-200/80">
                   <button
@@ -1876,7 +1919,7 @@ export const RecruitmentV2Page: React.FC = () => {
                         ? "bg-rose-600 text-white font-black shadow-xs ring-2 ring-rose-400/40"
                         : "text-rose-700 hover:bg-white"
                     )}
-                    title="Filtrer uniquement les talents signalés à recruter immédiatement"
+                    title="Filtrer uniquement les talents validés à recruter immédiatement"
                   >
                     <Flame className="w-3.5 h-3.5 fill-current text-current" />
                     <span>À recruter immédiatement</span>
@@ -2506,9 +2549,17 @@ export const RecruitmentV2Page: React.FC = () => {
                               const candDecision = getCandidateLatestDecision(c);
                               if (isCandidateRecruitNow(c) || candDecision === 'recruit_now') {
                                 return (
-                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500/10 to-amber-500/10 border border-rose-500/20 text-rose-700 w-fit shadow-2xs">
-                                    <Flame className="w-3.5 h-3.5 text-rose-600 animate-pulse shrink-0" />
-                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">Recrutement Immédiat</span>
+                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 text-emerald-800 w-fit shadow-2xs">
+                                    <Flame className="w-3.5 h-3.5 text-emerald-600 animate-pulse shrink-0" />
+                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">Recrutement Validé</span>
+                                  </div>
+                                );
+                              }
+                              if (isCandidateRecruitStandby(c) || candDecision === 'recruit_standby') {
+                                return (
+                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 w-fit shadow-2xs">
+                                    <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">Recrutement Stand-by</span>
                                   </div>
                                 );
                               }
@@ -2544,7 +2595,50 @@ export const RecruitmentV2Page: React.FC = () => {
                           {/* Actions : Si Directeur Administratif / utilisateur recrutement immédiat exclusif -> SEULEMENT le bouton 'À recruter immédiatement' */}
                           {isOnlyRecruitNowUser ? (
                             <td className="py-3 px-4 text-right">
-                              <div className="flex items-center justify-end">
+                              <div className="flex items-center justify-end gap-2">
+                                {/* Toggle interactif Recrutement Stand-by / Validé (US-DASH-104) */}
+                                {(isCandidateRecruitStandby(c) || isCandidateRecruitNow(c)) && (
+                                  <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 whitespace-nowrap">
+                                      {isCandidateRecruitNow(c) ? 'Validé Immédiat' : 'Stand-by'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={isCandidateRecruitNow(c)}
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const willValidate = !isCandidateRecruitNow(c);
+                                        await updateCandidate({
+                                          id: c.id,
+                                          updates: {
+                                            scout_state_decision: willValidate ? 'recruit_now' : 'recruit_standby',
+                                            is_recruit_now_validated: willValidate,
+                                            status: willValidate ? 'recruit_now' : (c.status === 'recruit_now' ? 'registered' : c.status),
+                                          }
+                                        });
+                                        if (willValidate) {
+                                          toast.success(`Recrutement Immédiat validé pour ${c.first_name} ${c.last_name} ! Procédure débloquée.`, { icon: '🔥' });
+                                        } else {
+                                          toast.info(`Joueur ${c.first_name} ${c.last_name} replacé en Recrutement Stand-by.`);
+                                        }
+                                      }}
+                                      className={cn(
+                                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                                        isCandidateRecruitNow(c) ? "bg-emerald-600" : "bg-amber-400"
+                                      )}
+                                      title={isCandidateRecruitNow(c) ? "Cliquer pour replacer en Recrutement Stand-by" : "Cliquer pour valider officiellement le Recrutement Immédiat"}
+                                    >
+                                      <span
+                                        className={cn(
+                                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
+                                          isCandidateRecruitNow(c) ? "translate-x-4" : "translate-x-0"
+                                        )}
+                                      />
+                                    </button>
+                                  </div>
+                                )}
+
                                 <button
                                   type="button"
                                   onClick={() => handleOpenAdminProcedure(c)}
@@ -2560,6 +2654,55 @@ export const RecruitmentV2Page: React.FC = () => {
                           ) : (
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-2.5">
+                                {/* Toggle interactif Recrutement Stand-by / Validé (US-DASH-104) */}
+                                {(isCandidateRecruitStandby(c) || isCandidateRecruitNow(c)) && (
+                                  <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 whitespace-nowrap">
+                                      {isCandidateRecruitNow(c) ? 'Validé' : 'Stand-by'}
+                                    </span>
+                                    {canProcessRecruitNow ? (
+                                      <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={isCandidateRecruitNow(c)}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          const willValidate = !isCandidateRecruitNow(c);
+                                          await updateCandidate({
+                                            id: c.id,
+                                            updates: {
+                                              scout_state_decision: willValidate ? 'recruit_now' : 'recruit_standby',
+                                              is_recruit_now_validated: willValidate,
+                                              status: willValidate ? 'recruit_now' : (c.status === 'recruit_now' ? 'registered' : c.status),
+                                            }
+                                          });
+                                          if (willValidate) {
+                                            toast.success(`Recrutement Immédiat validé pour ${c.first_name} ${c.last_name} ! Procédure débloquée.`, { icon: '🔥' });
+                                          } else {
+                                            toast.info(`Joueur ${c.first_name} ${c.last_name} replacé en Recrutement Stand-by.`);
+                                          }
+                                        }}
+                                        className={cn(
+                                          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                                          isCandidateRecruitNow(c) ? "bg-emerald-600" : "bg-amber-400"
+                                        )}
+                                        title={isCandidateRecruitNow(c) ? "Cliquer pour replacer en Recrutement Stand-by" : "Cliquer pour valider officiellement le Recrutement Immédiat"}
+                                      >
+                                        <span
+                                          className={cn(
+                                            "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
+                                            isCandidateRecruitNow(c) ? "translate-x-4" : "translate-x-0"
+                                          )}
+                                        />
+                                      </button>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 whitespace-nowrap">
+                                        Stand-by
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
                                 {/* Bouton 'À recruter immédiatement' si le statut est recruit_now et canProcessRecruitNow */}
                                 {isCandidateRecruitNow(c) && canProcessRecruitNow && (
                                   <button
@@ -2910,9 +3053,17 @@ export const RecruitmentV2Page: React.FC = () => {
                       const candDecision = getCandidateLatestDecision(c);
                       if (isCandidateRecruitNow(c) || candDecision === 'recruit_now') {
                         return (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-gradient-to-r from-rose-500/10 to-amber-500/10 border border-rose-500/20 text-rose-700 shadow-2xs">
-                            <Flame className="w-3.5 h-3.5 text-rose-600 animate-pulse shrink-0" />
-                            <span className="text-[11px] font-black uppercase tracking-wider">Recrutement Immédiat</span>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 text-emerald-800 shadow-2xs">
+                            <Flame className="w-3.5 h-3.5 text-emerald-600 animate-pulse shrink-0" />
+                            <span className="text-[11px] font-black uppercase tracking-wider">Recrutement Validé</span>
+                          </div>
+                        );
+                      }
+                      if (isCandidateRecruitStandby(c) || candDecision === 'recruit_standby') {
+                        return (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 shadow-2xs">
+                            <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span className="text-[11px] font-black uppercase tracking-wider">Recrutement Stand-by</span>
                           </div>
                         );
                       }
@@ -2947,6 +3098,54 @@ export const RecruitmentV2Page: React.FC = () => {
 
                   {/* Actions en mode Grid */}
                   <div className="pt-2 border-t flex flex-col gap-2">
+                    {/* Toggle Recrutement Stand-by / Validé en mode Grid (US-DASH-104) */}
+                    {(isCandidateRecruitStandby(c) || isCandidateRecruitNow(c)) && (
+                      <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                          {isCandidateRecruitNow(c) ? 'Validé Immédiat' : 'Recrutement Stand-by'}
+                        </span>
+                        {canProcessRecruitNow ? (
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isCandidateRecruitNow(c)}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const willValidate = !isCandidateRecruitNow(c);
+                              await updateCandidate({
+                                id: c.id,
+                                updates: {
+                                  scout_state_decision: willValidate ? 'recruit_now' : 'recruit_standby',
+                                  is_recruit_now_validated: willValidate,
+                                  status: willValidate ? 'recruit_now' : (c.status === 'recruit_now' ? 'registered' : c.status),
+                                }
+                              });
+                              if (willValidate) {
+                                toast.success(`Recrutement Immédiat validé pour ${c.first_name} ${c.last_name} !`, { icon: '🔥' });
+                              } else {
+                                toast.info(`Joueur ${c.first_name} ${c.last_name} replacé en Recrutement Stand-by.`);
+                              }
+                            }}
+                            className={cn(
+                              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                              isCandidateRecruitNow(c) ? "bg-emerald-600" : "bg-amber-400"
+                            )}
+                            title={isCandidateRecruitNow(c) ? "Cliquer pour replacer en Stand-by" : "Cliquer pour valider le Recrutement Immédiat"}
+                          >
+                            <span
+                              className={cn(
+                                "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
+                                isCandidateRecruitNow(c) ? "translate-x-4" : "translate-x-0"
+                              )}
+                            />
+                          </button>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800">
+                            Stand-by
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {/* Si Directeur Administratif / utilisateur ciblé Recrutement Immédiat : UNIQUEMENT le bouton 'À recruter immédiatement' */}
                     {isOnlyRecruitNowUser ? (
                       <button

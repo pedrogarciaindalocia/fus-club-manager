@@ -296,16 +296,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [subInHalf, setSubInHalf] = useState<'1st' | '2nd'>('2nd');
   const [subInMinute, setSubInMinute] = useState<number | ''>(60);
   const [teamFormation, setTeamFormation] = useState<string>('4-3-3');
-  const [scoutStateDecision, setScoutStateDecision] = useState<'invitation_test' | 'recruit_now' | 'to_follow'>('to_follow');
+  const [scoutStateDecision, setScoutStateDecision] = useState<'invitation_test' | 'recruit_standby' | 'recruit_now' | 'to_follow'>('to_follow');
   const [informationSource, setInformationSource] = useState<'terrain' | 'recommandation_interne' | 'recommandation_externe'>('terrain');
   const [informationSourcePerson, setInformationSourcePerson] = useState('');
 
-  // En mode 'report_only', si Recrutement Immédiat est sélectionné, verrouiller l'affichage sur la section sportive
-  useEffect(() => {
-    if (mode === 'report_only' && scoutStateDecision === 'recruit_now' && activeSection !== 'sport') {
-      setActiveSection('sport');
-    }
-  }, [mode, scoutStateDecision, activeSection]);
+  // US-DASH-104 : En mode 'report_only', ne plus verrouiller l'affichage. Le scout continue vers les Qualités et le Rapport écrit même en Recrutement Stand-by.
 
   const [currentClub, setCurrentClub] = useState('');
   const [previousClubs, setPreviousClubs] = useState('');
@@ -1304,6 +1299,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     // L'évaluation n'est incluse que si on est en mode 'report_only', si 'À recruter immédiatement' est coché, ou si un vrai titre/contenu de rapport a été renseigné.
     const hasEvalData = mode === 'player_only' ? false : (
       mode === 'report_only' ||
+      scoutStateDecision === 'recruit_standby' ||
       scoutStateDecision === 'recruit_now' ||
       Boolean(
         reportTitle.trim() ||
@@ -1326,7 +1322,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       created_at: evaluation?.created_at || new Date().toISOString(),
       potential_rating: Number(potentialRating) || (candidate?.potential_rating != null ? Number(candidate.potential_rating) : undefined),
       scout_state_decision: scoutStateDecision,
-      report_title: reportTitle.trim() || (scoutStateDecision === 'recruit_now' ? 'Signalement : À recruter immédiatement' : undefined),
+      report_title: reportTitle.trim() || (scoutStateDecision === 'recruit_standby' ? 'Recommandation : Recrutement Stand-by' : scoutStateDecision === 'recruit_now' ? 'Signalement : À recruter immédiatement' : undefined),
       position_evaluated: positionConfig.code || primaryPosition,
       report_data: {
         scout_state_decision: scoutStateDecision,
@@ -2363,76 +2359,81 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                       </span>
                     </div>
 
-                    {/* ── TOGGLE : À RECRUTER IMMÉDIATEMENT ── */}
-                    <div className={cn(
-                      "p-4 rounded-2xl border transition-all duration-300",
-                      scoutStateDecision === 'recruit_now'
-                        ? "bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/5 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/20"
-                        : "bg-white border-slate-200"
-                    )}>
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <div className={cn(
-                            "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
-                            scoutStateDecision === 'recruit_now'
-                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/20"
-                              : "bg-slate-100 text-slate-500"
-                          )}>
-                            <Flame className={cn("w-5 h-5", scoutStateDecision === 'recruit_now' ? "fill-white" : "")} />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                                À recruter immédiatement
-                              </span>
-                              {scoutStateDecision === 'recruit_now' && (
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider animate-pulse">
-                                  Priorité Absolue
-                                </span>
-                              )}
+                    {/* ── TOGGLE : RECRUTEMENT STAND-BY (US-DASH-104) ── */}
+                    {(() => {
+                      const isStandby = scoutStateDecision === 'recruit_standby' || scoutStateDecision === 'recruit_now';
+                      return (
+                        <div className={cn(
+                          "p-4 rounded-2xl border transition-all duration-300",
+                          isStandby
+                            ? "bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border-amber-500/40 shadow-xs ring-1 ring-amber-500/20"
+                            : "bg-white border-slate-200"
+                        )}>
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                              <div className={cn(
+                                "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
+                                isStandby
+                                  ? "bg-amber-600 text-white shadow-md shadow-amber-950/20"
+                                  : "bg-slate-100 text-slate-500"
+                              )}>
+                                <Clock className={cn("w-5 h-5", isStandby ? "text-white" : "")} />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                                    Recrutement Stand-by
+                                  </span>
+                                  {isStandby && (
+                                    <span className="px-2 py-0.5 rounded-full bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider animate-pulse">
+                                      En attente Direction
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-500">
+                                  Positionne le profil en stand-by de recrutement. Vous continuez le rapport d'observation normalement (sections 2 et 3).
+                                </p>
+                              </div>
                             </div>
-                            <p className="text-[11px] text-slate-500">
-                              Enclenche la procédure prioritaire. Les champs d'évaluation de rapport ne sont pas obligatoires.
-                            </p>
+
+                            {/* Switch Toggle */}
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={isStandby}
+                              onClick={() => {
+                                const next = isStandby ? 'invitation_test' : 'recruit_standby';
+                                setScoutStateDecision(next);
+                                if (next === 'recruit_standby') {
+                                  toast.info("Recrutement Stand-by activé : le dossier sera notifié à la Direction pour arbitrage en Database. Poursuivez votre évaluation.");
+                                }
+                              }}
+                              className={cn(
+                                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                                isStandby ? "bg-amber-600" : "bg-slate-300"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
+                                  isStandby ? "translate-x-5" : "translate-x-0"
+                                )}
+                              />
+                            </button>
                           </div>
-                        </div>
 
-                        {/* Switch Toggle */}
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={scoutStateDecision === 'recruit_now'}
-                          onClick={() => {
-                            const next = scoutStateDecision === 'recruit_now' ? 'invitation_test' : 'recruit_now';
-                            setScoutStateDecision(next);
-                            if (next === 'recruit_now') {
-                              toast.success("Notification émise à la Direction Administrative : procédure de recrutement immédiat enclenchée !");
-                            }
-                          }}
-                          className={cn(
-                            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
-                            scoutStateDecision === 'recruit_now' ? "bg-emerald-600" : "bg-slate-300"
+                          {isStandby && (
+                            <div className="mt-3 pt-3 border-t border-amber-500/20 flex items-center gap-2 text-xs font-bold text-amber-900 bg-amber-500/10 p-2.5 rounded-xl animate-in fade-in duration-200">
+                              <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span>Recrutement Stand-by activé : Une notification a été émise à la Direction. Poursuivez la saisie du rapport en cliquant sur « Suivant (2. Qualités) ».</span>
+                            </div>
                           )}
-                        >
-                          <span
-                            className={cn(
-                              "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
-                              scoutStateDecision === 'recruit_now' ? "translate-x-5" : "translate-x-0"
-                            )}
-                          />
-                        </button>
-                      </div>
-
-                      {scoutStateDecision === 'recruit_now' && (
-                        <div className="mt-3 pt-3 border-t border-emerald-500/20 flex items-center gap-2 text-xs font-bold text-emerald-800 bg-emerald-500/10 p-2.5 rounded-xl animate-in fade-in duration-200">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>Notification émise à la Direction Administrative : la fiche du joueur est directement orientée en recrutement immédiat.</span>
                         </div>
-                      )}
-                    </div>
+                      );
+                    })()}
 
-                    {/* Orientations alternatives si le toggle immédiat est désactivé */}
-                    {scoutStateDecision !== 'recruit_now' && (
+                    {/* Orientations alternatives si le toggle standby est désactivé */}
+                    {scoutStateDecision !== 'recruit_standby' && scoutStateDecision !== 'recruit_now' && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                         {[
                           {
@@ -2545,8 +2546,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   </div>
                 </div>
 
-                {/* Information Recrutement Immédiat (court-circuite la suite du formulaire) */}
-                {scoutStateDecision === 'recruit_now' && (
+                {/* Information Procédure Administrative : Uniquement si mode édition joueur complet et recrutement immédiat validé */}
+                {mode !== 'report_only' && scoutStateDecision === 'recruit_now' && (
                   <div className="space-y-4 animate-in fade-in duration-200">
                     <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/5 border border-emerald-500/30 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3">
@@ -2558,7 +2559,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                             Procédure de Recrutement Immédiat Activée
                           </h5>
                           <p className="text-[11px] text-emerald-800">
-                            La suite des formulaires d'évaluation (surclassement, temps de jeu, qualités et rapport de scout) n'est pas requise. Vous pouvez enregistrer directement ce rapport.
+                            Dossier administratif et contractuel validé par la Direction.
                           </p>
                         </div>
                       </div>
@@ -2575,11 +2576,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   </div>
                 )}
 
-                {/* La suite des formulaires d'observation : uniquement si recrutement immédiat non activé */}
-                {scoutStateDecision !== 'recruit_now' && (
-                  <>
-                    {/* 2. SURCLASSEMENT DU JOUEUR (Catégorie principale éliminée de ce bloc) */}
-                    <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4">
+                {/* 2. SURCLASSEMENT DU JOUEUR (Catégorie principale éliminée de ce bloc) */}
+                <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4">
                   <div className="flex items-center justify-between border-b pb-2.5">
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-indigo-600" />
@@ -3216,14 +3214,10 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                       <div className="flex justify-between text-[10px] text-muted-foreground">
                         <span>1 (Insuffisant)</span>
                         <span>5 (Correct)</span>
-                        <span>8 (Très bon)</span>
-                        <span className="font-bold text-emerald-700">10 (Top Match)</span>
-                      </div>
                     </div>
                   </div>
                 </div>
-              </>
-            )}
+              </div>
           </div>
         )}
 
@@ -3535,7 +3529,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   Annuler
                 </button>
 
-                {mode === 'report_only' && activeSection === 'sport' && scoutStateDecision !== 'recruit_now' && (
+                {mode === 'report_only' && activeSection === 'sport' && (
                   <button
                     type="button"
                     onClick={() => setActiveSection('evaluation')}
@@ -3555,21 +3549,19 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   </button>
                 )}
 
-                {(mode !== 'report_only' || activeSection === 'report' || (mode === 'report_only' && scoutStateDecision === 'recruit_now')) && (
+                {(mode !== 'report_only' || activeSection === 'report' || activeSection === 'sport') && (
                   <button
                     type="submit"
                     disabled={isSubmitting || (mode !== 'report_only' && (candidate ? !canUpdateCandidate : !canCreateCandidate))}
                     title={mode !== 'report_only' && (candidate ? !canUpdateCandidate : !canCreateCandidate) ? "Vous n'avez pas la permission CRUD requise" : undefined}
                     className="px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow hover:bg-primary/90 disabled:opacity-50 cursor-pointer flex items-center gap-2"
                   >
-                    {scoutStateDecision === 'recruit_now' && <Flame className="w-4 h-4 fill-white text-white" />}
+                    {(scoutStateDecision === 'recruit_standby' || scoutStateDecision === 'recruit_now') && <Clock className="w-4 h-4 text-white" />}
                     <span>
                       {isSubmitting
                         ? 'Enregistrement...'
                         : mode === 'report_only'
-                          ? (scoutStateDecision === 'recruit_now'
-                            ? (evaluation ? 'Mettre à jour (Recrutement Immédiat)' : 'Enregistrer (Recrutement Immédiat)')
-                            : (evaluation ? 'Mettre à jour le rapport' : 'Enregistrer le rapport'))
+                          ? (evaluation ? 'Mettre à jour le rapport' : 'Enregistrer le rapport')
                           : candidate
                             ? 'Mettre à jour la Fiche'
                             : 'Enregistrer le Joueur'}

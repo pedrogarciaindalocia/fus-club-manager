@@ -195,8 +195,8 @@ export interface TrialCandidate {
   potential_rating?: number; // Potentiel (1 à 10)
   performance_rating?: number; // Performance (1 à 10)
   is_starter?: boolean; // Titulaire ou non (oui ou non)
-  team_formation?: string; // Formation de l'équipe (ex: 4-3-3, 4-2-3-1, 3-5-2...)
-  scout_state_decision?: 'invitation_test' | 'recruit_now' | 'to_follow'; // État (invitation test, à recruter immédiatement, à suivre)
+  scout_state_decision?: 'invitation_test' | 'recruit_standby' | 'recruit_now' | 'to_follow'; // État (invitation test, recrutement stand-by, à recruter immédiatement, à suivre)
+  is_recruit_now_validated?: boolean; // Validé pour recrutement immédiat par la direction
   information_source?: 'terrain' | 'recommandation_interne' | 'recommandation_externe'; // Source d’information (terrain – recommandation interne – recommandation externe)
   information_source_person?: string; // Nom et prénom de la personne source
 
