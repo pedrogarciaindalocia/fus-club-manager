@@ -7,7 +7,7 @@ export type { Team };
 
 // Catégories autorisées par l'enum public.age_category dans PostgreSQL
 export const VALID_DB_TEAM_CATEGORIES = [
-  'U7', 'U9', 'U11', 'U13', 'U14', 'U15', 'U16', 'U17', 'U19', 'U21', 'U23', 'SENIOR', 'PRO', 'OTHER'
+  'U7', 'U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U20', 'U21', 'U22', 'U23', 'SENIOR', 'PRO', 'OTHER'
 ] as const;
 
 const VALID_CATEGORIES_SET = new Set<string>(VALID_DB_TEAM_CATEGORIES);
@@ -16,15 +16,7 @@ export function normalizeTeamCategory(cat?: string | null): string {
   if (!cat) return 'U13';
   const clean = cat.trim().toUpperCase();
   if (VALID_CATEGORIES_SET.has(clean)) return clean;
-
-  // Normalisation automatique des sous-catégories vers l'échelon de compétition officiel Supabase
-  if (clean === 'U18') return 'U19';
-  if (clean === 'U20') return 'U21';
-  if (clean === 'U22') return 'U23';
-  if (clean === 'U8') return 'U9';
-  if (clean === 'U10') return 'U11';
-  if (clean === 'U12') return 'U13';
-  return 'OTHER';
+  return clean;
 }
 
 export const teamService = {

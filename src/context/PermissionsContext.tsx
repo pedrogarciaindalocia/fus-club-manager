@@ -222,6 +222,16 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     }
 
+    // Support de l'action métier spécifique Calendrier des Matchs : Planifier un match
+    // RÈGLE STRICTE : dépend impérativement d'être coché explicitement dans UserManagement.
+    if (subModule === 'matches' && (action === 'plan_match' || action === 'create')) {
+      if (perms.includes('sub:matches:plan_match')) return true;
+      if (perms.length > 0) return false;
+      // Fallback rôle historique UNIQUEMENT si aucune permission explicite n'a jamais été configurée
+      if (role === 'admin' || role === 'direction' || role === 'coach') return true;
+      return false;
+    }
+
     // 1.b Actions métier spécifiques joueur (Statistiques / Surclasser / Sortie-Transfert)
     // et Détection V2 Database (Lien Vidéo Drive, Assigner mission, Recruter immédiatement, Gestion de rapport) : STRICT — visibles uniquement si cochées explicitement.
     if (subModule === 'players' && ['stats', 'surclasser', 'departure'].includes(action)) {
@@ -336,8 +346,23 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
         hasModuleAccess('competition', 'update')
       );
     }
-    if (action === 'track_live_match') {
-      return hasModuleAccess('competition', 'update') || perms.includes('live_tracking');
+    if (action === 'create_match' || action === 'plan_match') {
+      if (perms.length > 0) {
+        return perms.includes('sub:matches:plan_match');
+      }
+      if (role === 'admin' || role === 'direction' || role === 'coach') {
+        return true;
+      }
+      return false;
+    }
+
+    if (action === 'manage_matches') {
+      return (
+        hasSubModuleAccess('matches', 'update') ||
+        hasSubModuleAccess('matches', 'create') ||
+        hasSubModuleAccess('matches', 'plan_match') ||
+        hasModuleAccess('competition', 'update')
+      );
     }
 
     return false; 

@@ -186,9 +186,10 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
                 onClick={handleClear}
                 disabled={isSubmitting}
                 className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Supprimer uniquement le lien vidéo Google Drive (la fiche du joueur est conservée)"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Supprimer</span>
+                <span>Supprimer le lien</span>
               </button>
             ) : <div />}
 

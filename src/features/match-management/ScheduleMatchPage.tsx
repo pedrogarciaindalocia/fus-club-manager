@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useMatches } from '../../hooks/useMatches';
+import { usePermissions } from '../../context/PermissionsContext';
 import ScheduleMatchWizard from './ScheduleMatchWizard';
 import { Trophy, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Button } from '../../components/ui/button';
@@ -17,6 +18,7 @@ export const ScheduleMatchPage: React.FC = () => {
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
+  const { can, hasSubModuleAccess } = usePermissions();
 
   const { matches, isLoading } = useMatches();
 
@@ -43,6 +45,17 @@ export const ScheduleMatchPage: React.FC = () => {
     }
     return (location.state as any)?.match || undefined;
   }, [existingMatch, id, dateParam, categoryParam, location.state]);
+
+  // Contrôle de permission : planifier un match ou gérer un match
+  useEffect(() => {
+    if (!isEditing) {
+      const hasPlanPermission = can('plan_match') || can('create_match') || hasSubModuleAccess('matches', 'plan_match') || hasSubModuleAccess('matches', 'create');
+      if (!hasPlanPermission) {
+        toast.error("Accès refusé : vous n'avez pas la permission de planifier un match.");
+        navigate('/matches', { replace: true });
+      }
+    }
+  }, [isEditing, can, hasSubModuleAccess, navigate]);
 
   const handleBack = () => {
     navigate('/matches');

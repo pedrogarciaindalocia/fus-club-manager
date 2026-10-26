@@ -58,7 +58,8 @@ import {
   Power,
   Video,
   Flame,
-  ClipboardList
+  ClipboardList,
+  CalendarPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ImageCropperModal from '../../components/ImageCropperModal';
@@ -349,6 +350,16 @@ export const CANDIDATE_SPECIFIC_ACTIONS: {
   { key: 'edit_player', label: 'Modifier un joueur', sublabel: 'Modifier les informations du joueur', icon: Edit2, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
 ];
 
+export const MATCH_SPECIFIC_ACTIONS: {
+  key: string;
+  label: string;
+  sublabel: string;
+  icon: any;
+  badgeClass: string;
+}[] = [
+  { key: 'plan_match', label: 'Planifier un match', sublabel: 'Planification, programmation et configuration du match (/matches/new)', icon: CalendarPlus, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
+];
+
 export const DASHBOARD_PERMISSIONS: PermissionDefinition[] = [
   ...DASHBOARD_HIERARCHY_MODULES.flatMap(cat => 
     cat.subModules.flatMap(sub => 
@@ -374,6 +385,14 @@ export const DASHBOARD_PERMISSIONS: PermissionDefinition[] = [
     key: `sub:candidates:${action.key}`,
     label: `Détection & Recrutement V2 > Database & Vivier (${action.label})`,
     desc: `${action.sublabel} pour les candidats détectés`,
+    target: 'dashboard' as const,
+    category: 'dashboard_core' as const,
+    badge: action.label
+  })),
+  ...MATCH_SPECIFIC_ACTIONS.map(action => ({
+    key: `sub:matches:${action.key}`,
+    label: `Compétition & Matchs > Calendrier des Matchs (${action.label})`,
+    desc: `${action.sublabel} pour le calendrier`,
     target: 'dashboard' as const,
     category: 'dashboard_core' as const,
     badge: action.label
@@ -1980,6 +1999,14 @@ Direction Générale — FUS Rabat`;
 
       if (isCurrentlyActive) {
         delete next[key];
+        // Si Planifier un match est décoché, nettoyer aussi sub:matches:create
+        if (subId === 'matches' && action === 'plan_match') {
+          delete next[`sub:matches:create`];
+        }
+        // Si Create est décoché sur matches, nettoyer aussi sub:matches:plan_match
+        if (subId === 'matches' && action === 'create') {
+          delete next[`sub:matches:plan_match`];
+        }
         // Si Read est désactivé, désactiver toutes les autres actions de ce sous-module
         if (action === 'read') {
           delete next[`sub:${subId}:create`];
@@ -1995,9 +2022,22 @@ Direction Générale — FUS Rabat`;
               delete next[`sub:candidates:${a.key}`];
             });
           }
+          if (subId === 'matches') {
+            MATCH_SPECIFIC_ACTIONS.forEach(a => {
+              delete next[`sub:matches:${a.key}`];
+            });
+          }
         }
       } else {
         next[key] = true;
+        // Si Planifier un match est coché, activer aussi sub:matches:create
+        if (subId === 'matches' && action === 'plan_match') {
+          next[`sub:matches:create`] = true;
+        }
+        // Si Create est coché sur matches, activer aussi sub:matches:plan_match
+        if (subId === 'matches' && action === 'create') {
+          next[`sub:matches:plan_match`] = true;
+        }
         // Si Create, Update, Delete ou une action spécifique est activé, Read est automatiquement activé
         if (action !== 'read') {
           next[`sub:${subId}:read`] = true;
@@ -2037,6 +2077,8 @@ Direction Générale — FUS Rabat`;
         ? [...baseActions, ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
         : subId === 'candidates'
         ? [...baseActions, ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
+        : subId === 'matches'
+        ? [...baseActions, ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
         : baseActions;
       const activeCount = actions.filter(act => next[`sub:${subId}:${act}`]).length;
       const shouldEnable = activeCount < actions.length;
@@ -2083,6 +2125,8 @@ Direction Générale — FUS Rabat`;
           ? ['create', 'read', 'update', 'delete', ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
           : subId === 'candidates'
           ? ['create', 'read', 'update', 'delete', ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
+          : subId === 'matches'
+          ? ['create', 'read', 'update', 'delete', ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
           : ['create', 'read', 'update', 'delete'];
 
       const allActive = category.subModules.every(sub => 
@@ -3778,6 +3822,8 @@ Direction Générale — FUS Rabat`;
                                                     ? [...CRUD_ACTIONS.map(a => a.key), ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
                                                     : sub.id === 'candidates'
                                                     ? [...CRUD_ACTIONS.map(a => a.key), ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
+                                                    : sub.id === 'matches'
+                                                    ? [...CRUD_ACTIONS.map(a => a.key), ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
                                                     : CRUD_ACTIONS.map(a => a.key);
                                                   const activeActionsCount = subActionsList.filter(k => Boolean(formData.permissions_overrides[`sub:${sub.id}:${k}`])).length;
 
@@ -3837,7 +3883,9 @@ Direction Générale — FUS Rabat`;
                                                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
                                                         {CRUD_ACTIONS.map(action => {
                                                           const permKey = `sub:${sub.id}:${action.key}`;
-                                                          const isChecked = Boolean(formData.permissions_overrides[permKey]);
+                                                          const isChecked = sub.id === 'matches' && action.key === 'create'
+                                                            ? Boolean(formData.permissions_overrides['sub:matches:plan_match'])
+                                                            : Boolean(formData.permissions_overrides[permKey]);
 
                                                           return (
                                                             <button
@@ -3964,6 +4012,62 @@ Direction Générale — FUS Rabat`;
                                                                   <div className="shrink-0">
                                                                     {isChecked ? (
                                                                       <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                                                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                                      </div>
+                                                                    ) : (
+                                                                      <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
+                                                                        <IconComponent className="w-3 h-3" />
+                                                                      </div>
+                                                                    )}
+                                                                  </div>
+                                                                  <div className="min-w-0 flex-1">
+                                                                    <div className="flex items-center justify-between">
+                                                                      <span className="text-[11px] font-bold text-foreground">
+                                                                        {action.label}
+                                                                      </span>
+                                                                    </div>
+                                                                    <p className="text-[9px] text-muted-foreground truncate">
+                                                                      {action.sublabel}
+                                                                    </p>
+                                                                  </div>
+                                                                </button>
+                                                              );
+                                                            })}
+                                                          </div>
+                                                        </div>
+                                                      )}
+
+                                                      {/* Actions Spécifiques : Calendrier des Matchs */}
+                                                      {sub.id === 'matches' && (
+                                                        <div className="mt-2.5 pt-2 border-t border-border/50">
+                                                          <div className="flex items-center gap-1.5 mb-2">
+                                                            <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
+                                                              Actions Métier Spécifiques (Calendrier des Matchs)
+                                                            </span>
+                                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                                                              Permissions Dédiées
+                                                            </span>
+                                                          </div>
+                                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                            {MATCH_SPECIFIC_ACTIONS.map(action => {
+                                                              const permKey = `sub:matches:${action.key}`;
+                                                              const isChecked = Boolean(formData.permissions_overrides[permKey]);
+                                                              const IconComponent = action.icon;
+                                                              return (
+                                                                <button
+                                                                  key={action.key}
+                                                                  type="button"
+                                                                  disabled={modalMode === 'view'}
+                                                                  onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
+                                                                  className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
+                                                                    isChecked
+                                                                      ? 'bg-amber-500/10 border-amber-500/40 shadow-xs ring-1 ring-amber-500/20'
+                                                                      : 'bg-muted/20 border-border/60 hover:bg-muted/40'
+                                                                  } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                                                >
+                                                                  <div className="shrink-0">
+                                                                    {isChecked ? (
+                                                                      <div className="w-5 h-5 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-xs">
                                                                         <Check className="w-3.5 h-3.5 stroke-[3]" />
                                                                       </div>
                                                                     ) : (

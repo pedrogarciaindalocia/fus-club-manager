@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import type { Match, MatchEvent, MatchStats, PlayerMatchStat, MatchLineup } from '../types';
 import type { Inserts, Updates } from '../types/supabase';
 import { getMyClubId } from './_helpers';
+import { dispatchMatchPushNotification } from './pushNotificationSender';
 
 // -------------------------------------------------------
 // Matches
@@ -249,6 +250,10 @@ export const matchService = {
   },
 
   async deleteMatch(id: string): Promise<void> {
+    // 0. Supprimer les surclassements programmés pour ce match
+    const dSurc = await supabase.from('player_surclassements').delete().ilike('notes', `%${id}%`);
+    if (dSurc.error && dSurc.error.code !== 'PGRST205') console.warn('Notice deleting player_surclassements:', dSurc.error);
+
     const d2 = await supabase.from('player_match_stats').delete().eq('match_id', id);
     if (d2.error && d2.error.code !== 'PGRST205') console.error('Error deleting player_match_stats:', d2.error);
     
@@ -409,7 +414,7 @@ export const matchService = {
     const { error } = await supabase.from('match_events').insert([event]);
     if (error) throw error;
     try {
-      supabase.functions.invoke('send-match-push', { body: { record: event } }).catch(() => {});
+      dispatchMatchPushNotification(event).catch(() => {});
     } catch {}
   },
 

@@ -102,25 +102,47 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
       }
    };
 
+   const isHome = match.is_home ?? true;
+   const isLive = match.status === 'live';
+   const isFinished = match.status === 'finished';
+   const hasScore = isFinished || isLive;
+
+   const oppName = getOpponentName(match.opponent_id);
+   const oppLogo = (isInternal && mainClub?.logo_url)
+      ? mainClub.logo_url
+      : (opponentClubs.find(c => c.id === match.opponent_id)?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(oppName)}&background=random`);
+
+   const fusName = mainClub?.club_name || 'FUS';
+   const fusLogo = mainClub?.logo_url || null;
+
+   const leftClubName = isHome ? fusName : oppName;
+   const leftClubLogo = isHome ? fusLogo : oppLogo;
+   const leftIsFus = isHome;
+
+   const rightClubName = isHome ? oppName : fusName;
+   const rightClubLogo = isHome ? oppLogo : fusLogo;
+   const rightIsFus = !isHome;
+
+   const leftScore = match.score_home ?? 0;
+   const rightScore = match.score_away ?? 0;
+
+   const hasPenalties = (match.penalty_score_home ?? 0) > 0 || (match.penalty_score_away ?? 0) > 0;
+   const leftPenScore = match.penalty_score_home ?? 0;
+   const rightPenScore = match.penalty_score_away ?? 0;
+
    const getScoreBadge = () => {
-      if (match.status !== 'finished') return null;
-      const fusScore = match.is_home ? match.score_home : match.score_away;
-      const oppScore = match.is_home ? match.score_away : match.score_home;
-      
-      const hasPenalties = (match.penalty_score_home ?? 0) > 0 || (match.penalty_score_away ?? 0) > 0;
-      const fusPenScore = match.is_home ? match.penalty_score_home : match.penalty_score_away;
-      const oppPenScore = match.is_home ? match.penalty_score_away : match.penalty_score_home;
+      if (!hasScore) return null;
 
       return (
          <div className="flex flex-col items-center">
-            <div className="flex items-center gap-1 text-sm font-black tabular-nums">
-               <span>{fusScore || 0}</span>
-               <span className="text-muted-foreground">-</span>
-               <span>{oppScore || 0}</span>
+            <div className={`flex items-center gap-1.5 text-base font-black tabular-nums ${isLive ? 'text-red-600 scale-105' : 'text-slate-900'}`}>
+               <span>{leftScore}</span>
+               <span className={isLive ? 'text-red-400 font-bold' : 'text-muted-foreground'}>-</span>
+               <span>{rightScore}</span>
             </div>
             {hasPenalties && (
                <div className="mt-1 bg-purple-50 text-purple-700 text-[8px] font-black uppercase px-2 py-0.5 rounded border border-purple-200 shadow-sm">
-                  ({fusPenScore} - {oppPenScore} TAB)
+                  ({leftPenScore} - {rightPenScore} TAB)
                </div>
             )}
          </div>
@@ -172,26 +194,39 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
          </div>
 
          <div className="flex items-center justify-between w-full pt-4">
-            {/* Club Principal (FUS) avec Badge de Catégorie incrusté sur le logo */}
+            {/* Club Domicile (Gauche) */}
             <div className="flex flex-col items-center gap-1 w-1/3">
                <div className="relative">
                   <div className={`w-14 h-14 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center p-1.5 shadow-sm transition-all overflow-hidden ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
-                     {mainClub?.logo_url ? <img src={mainClub.logo_url} alt="" className="w-full h-full object-contain rounded-full" /> : <div className="bg-yellow-500 w-full h-full text-white font-black text-[12px] flex items-center justify-center rounded-full">FUS</div>}
+                     {leftClubLogo ? (
+                        <img src={leftClubLogo} alt="" className="w-full h-full object-contain rounded-full" />
+                     ) : (
+                        <div className="bg-yellow-500 w-full h-full text-white font-black text-[12px] flex items-center justify-center rounded-full">
+                           {leftIsFus ? 'FUS' : leftClubName.substring(0, 3).toUpperCase()}
+                        </div>
+                     )}
                   </div>
-                  {match.category && (
+                  {leftIsFus && match.category && (
                      <span className="absolute -bottom-1 -right-1 bg-primary text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm leading-none">
                         {match.category}
                      </span>
                   )}
+                  {!leftIsFus && league?.logo_url && (
+                     <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white p-0.5 border-2 border-slate-200 shadow-sm flex items-center justify-center overflow-hidden" title={league.name}>
+                        <img src={league.logo_url} alt="" className="w-full h-full object-contain" />
+                     </div>
+                  )}
                </div>
                <span className="text-[10px] font-black uppercase tracking-tight text-foreground truncate max-w-full text-center">
-                  {mainClub?.club_name || 'FUS'}
+                  {leftClubName}
+               </span>
+               <span className="text-[8px] font-bold text-slate-400 uppercase -mt-0.5">
+                  DOM
                </span>
             </div>
 
             <div className="flex flex-col items-center justify-center w-1/3 text-center">
-               {getScoreBadge()}
-               {match.status !== 'finished' && (
+               {hasScore ? getScoreBadge() : (
                   <span className="text-xl font-black text-slate-300">-</span>
                )}
                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-2 opacity-80 whitespace-nowrap">
@@ -210,35 +245,41 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
                      </span>
                   </div>
                </div>
-               {match.status === 'live' && (
-                  <Badge className="mt-1 bg-red-500 text-white text-[8px] font-black px-2 py-0 rounded-full animate-pulse shadow-sm shadow-red-500/20">
+               {isLive && (
+                  <Badge className="mt-1 bg-red-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm shadow-red-500/20">
                      LIVE
                   </Badge>
                )}
             </div>
 
-            {/* Club Adversaire avec badge de compétition incrusté si disponible */}
+            {/* Club Extérieur (Droite) */}
             <div className="flex flex-col items-center gap-1 w-1/3">
                <div className="relative">
                   <div className={`w-14 h-14 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center p-1.5 shadow-sm transition-all overflow-hidden ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
-                     <img 
-                        src={
-                           (isInternal && mainClub?.logo_url)
-                              ? mainClub.logo_url
-                              : (opponentClubs.find(c => c.id === match.opponent_id)?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(getOpponentName(match.opponent_id))}&background=random`)
-                        } 
-                        alt="" 
-                        className="w-full h-full object-contain rounded-full" 
-                     />
+                     {rightClubLogo ? (
+                        <img src={rightClubLogo} alt="" className="w-full h-full object-contain rounded-full" />
+                     ) : (
+                        <div className="bg-yellow-500 w-full h-full text-white font-black text-[12px] flex items-center justify-center rounded-full">
+                           {rightIsFus ? 'FUS' : rightClubName.substring(0, 3).toUpperCase()}
+                        </div>
+                     )}
                   </div>
-                  {league?.logo_url && (
+                  {rightIsFus && match.category && (
+                     <span className="absolute -bottom-1 -right-1 bg-primary text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm leading-none">
+                        {match.category}
+                     </span>
+                  )}
+                  {!rightIsFus && league?.logo_url && (
                      <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white p-0.5 border-2 border-slate-200 shadow-sm flex items-center justify-center overflow-hidden" title={league.name}>
                         <img src={league.logo_url} alt="" className="w-full h-full object-contain" />
                      </div>
                   )}
                </div>
                <span className="text-[10px] font-black uppercase tracking-tight text-foreground truncate max-w-full text-center">
-                  {getOpponentName(match.opponent_id)}
+                  {rightClubName}
+               </span>
+               <span className="text-[8px] font-bold text-slate-400 uppercase -mt-0.5">
+                  EXT
                </span>
             </div>
          </div>
@@ -1274,8 +1315,11 @@ const MatchManagementPage: React.FC = () => {
                                  {/* Match cards — dark style like the app */}
                                  {panelMatches.map(match => {
                                     const oppClub = opponentClubs.find(c => c.id === match.opponent_id);
-                                    const fusScore = match.is_home ? match.score_home : match.score_away;
-                                    const oppScore = match.is_home ? match.score_away : match.score_home;
+                                    const isHome = match.is_home ?? true;
+                                    const leftScore = match.score_home ?? 0;
+                                    const rightScore = match.score_away ?? 0;
+                                    const fusScore = isHome ? leftScore : rightScore;
+                                    const oppScore = isHome ? rightScore : leftScore;
                                     const hasScore = match.status === 'finished' || match.status === 'live';
                                     const league = leagues.find(l => l.id === match.league_id);
                                     const isFriendlyMatch = !match.league_id || league?.name?.toLowerCase().includes('amical') || match.category?.toLowerCase().includes('amical') || match.notes?.toLowerCase().includes('amical');
@@ -1284,6 +1328,14 @@ const MatchManagementPage: React.FC = () => {
                                     const mainClubName = (mainClub as any)?.club_name || (mainClub as any)?.name || 'Mon Club';
                                     const mainClubLogo = mainClub?.logo_url && mainClub.logo_url !== 'null' ? mainClub.logo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(mainClubName)}&background=1a1a2e&color=fff&size=128`;
                                     const oppLogo = oppClub?.logo_url && oppClub.logo_url !== 'null' ? oppClub.logo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(getOpponentName(match.opponent_id))}&background=random&color=fff&size=128`;
+
+                                    const leftClubName = isHome ? mainClubName : getOpponentName(match.opponent_id);
+                                    const leftClubLogo = isHome ? mainClubLogo : oppLogo;
+                                    const leftIsFus = isHome;
+
+                                    const rightClubName = isHome ? getOpponentName(match.opponent_id) : mainClubName;
+                                    const rightClubLogo = isHome ? oppLogo : mainClubLogo;
+                                    const rightIsFus = !isHome;
 
                                     return (
                                        <motion.div
@@ -1333,18 +1385,23 @@ const MatchManagementPage: React.FC = () => {
 
                                           {/* Main match content */}
                                           <div className="flex items-center justify-between px-4 sm:px-8 py-4 sm:py-5 gap-4">
-                                             {/* Our Club with Category Badge on Logo */}
+                                             {/* Left Club (Domicile) */}
                                              <div className="flex flex-col items-center gap-2 flex-1">
                                                 <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-800 border border-slate-600 flex items-center justify-center overflow-hidden p-2 shadow-lg">
-                                                   <img src={mainClubLogo} alt={mainClubName} className="w-full h-full object-contain drop-shadow-lg" />
-                                                   {match.category && (
+                                                   <img src={leftClubLogo} alt={leftClubName} className="w-full h-full object-contain drop-shadow-lg" />
+                                                   {leftIsFus && match.category && (
                                                       <span className="absolute bottom-1 right-1 text-[8px] font-black bg-primary text-white px-1.5 py-0.5 rounded shadow border border-white/20 leading-none">
                                                          {match.category}
                                                       </span>
                                                    )}
+                                                   {!leftIsFus && league?.logo_url && (
+                                                      <div className="absolute bottom-1 right-1 w-5 h-5 rounded-lg bg-slate-900/95 p-0.5 border border-slate-700 shadow flex items-center justify-center overflow-hidden" title={league.name}>
+                                                         <img src={league.logo_url} alt="" className="w-full h-full object-contain" />
+                                                      </div>
+                                                   )}
                                                 </div>
-                                                <span className="text-[10px] font-black text-white uppercase tracking-tight text-center max-w-[80px] leading-tight">{mainClubName}</span>
-                                                {match.category && <span className="text-[8px] font-black bg-white/10 text-white/70 px-2 py-0.5 rounded-full uppercase">{match.category}</span>}
+                                                <span className="text-[10px] font-black text-white uppercase tracking-tight text-center max-w-[80px] leading-tight">{leftClubName}</span>
+                                                <span className="text-[8px] font-black bg-white/10 text-white/70 px-2 py-0.5 rounded-full uppercase">DOM</span>
                                              </div>
 
                                              {/* Score / VS */}
@@ -1356,12 +1413,12 @@ const MatchManagementPage: React.FC = () => {
                                                 )}
                                                 {hasScore ? (
                                                    <div className="flex items-center gap-2">
-                                                      <div className="bg-primary rounded-xl px-4 py-2.5 shadow-lg shadow-primary/30 min-w-[48px] flex items-center justify-center">
-                                                         <span className="text-2xl sm:text-3xl font-black text-white tabular-nums">{fusScore ?? 0}</span>
+                                                      <div className={`${match.status === 'live' ? 'bg-red-600' : 'bg-primary'} rounded-xl px-4 py-2.5 shadow-lg min-w-[48px] flex items-center justify-center`}>
+                                                         <span className="text-2xl sm:text-3xl font-black text-white tabular-nums">{leftScore}</span>
                                                       </div>
                                                       <span className="text-slate-500 font-black text-lg">-</span>
-                                                      <div className="bg-primary rounded-xl px-4 py-2.5 shadow-lg shadow-primary/30 min-w-[48px] flex items-center justify-center">
-                                                         <span className="text-2xl sm:text-3xl font-black text-white tabular-nums">{oppScore ?? 0}</span>
+                                                      <div className={`${match.status === 'live' ? 'bg-red-600' : 'bg-primary'} rounded-xl px-4 py-2.5 shadow-lg min-w-[48px] flex items-center justify-center`}>
+                                                         <span className="text-2xl sm:text-3xl font-black text-white tabular-nums">{rightScore}</span>
                                                       </div>
                                                    </div>
                                                 ) : (
@@ -1369,21 +1426,30 @@ const MatchManagementPage: React.FC = () => {
                                                       <span className="text-lg font-black text-white/50 italic tracking-widest">VS</span>
                                                    </div>
                                                 )}
-                                                {hasScore && <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Score Final</span>}
+                                                {hasScore && (
+                                                   <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">
+                                                      {match.status === 'live' ? 'En Direct' : 'Score Final'}
+                                                   </span>
+                                                )}
                                              </div>
 
-                                             {/* Opponent with Competition Badge on Logo */}
+                                             {/* Right Club (Extérieur) */}
                                              <div className="flex flex-col items-center gap-2 flex-1">
                                                 <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-800 border border-slate-600 flex items-center justify-center overflow-hidden p-2 shadow-lg">
-                                                   <img src={oppLogo} alt={getOpponentName(match.opponent_id)} className="w-full h-full object-contain drop-shadow-lg" />
-                                                   {league?.logo_url && (
+                                                   <img src={rightClubLogo} alt={rightClubName} className="w-full h-full object-contain drop-shadow-lg" />
+                                                   {rightIsFus && match.category && (
+                                                      <span className="absolute bottom-1 right-1 text-[8px] font-black bg-primary text-white px-1.5 py-0.5 rounded shadow border border-white/20 leading-none">
+                                                         {match.category}
+                                                      </span>
+                                                   )}
+                                                   {!rightIsFus && league?.logo_url && (
                                                       <div className="absolute bottom-1 right-1 w-5 h-5 rounded-lg bg-slate-900/95 p-0.5 border border-slate-700 shadow flex items-center justify-center overflow-hidden" title={league.name}>
                                                          <img src={league.logo_url} alt="" className="w-full h-full object-contain" />
                                                       </div>
                                                    )}
                                                 </div>
-                                                <span className="text-[10px] font-black text-white uppercase tracking-tight text-center max-w-[80px] leading-tight">{getOpponentName(match.opponent_id)}</span>
-                                                {match.formation && <span className="text-[8px] font-black bg-white/10 text-white/70 px-2 py-0.5 rounded-full uppercase">{match.formation}</span>}
+                                                <span className="text-[10px] font-black text-white uppercase tracking-tight text-center max-w-[80px] leading-tight">{rightClubName}</span>
+                                                <span className="text-[8px] font-black bg-white/10 text-white/70 px-2 py-0.5 rounded-full uppercase">EXT</span>
                                              </div>
                                           </div>
 
@@ -1494,7 +1560,11 @@ const MatchManagementPage: React.FC = () => {
                                           </Badge>
                                        </td>
                                        <td className="py-4 px-4 text-center whitespace-nowrap text-sm font-black tabular-nums">
-                                          {match.status === 'finished' ? `${match.is_home ? match.score_home : match.score_away} - ${match.is_home ? match.score_away : match.score_home}` : '-'}
+                                          {(match.status === 'finished' || match.status === 'live') ? (
+                                             <span className={match.status === 'live' ? 'text-red-600 font-black animate-pulse' : 'text-slate-900'}>
+                                                {`${match.score_home ?? 0} - ${match.score_away ?? 0}`}
+                                             </span>
+                                          ) : '-'}
                                        </td>
                                        <td className="py-4 px-4 text-right whitespace-nowrap">
                                           <div className="flex items-center justify-end gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">

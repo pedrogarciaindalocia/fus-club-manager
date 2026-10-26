@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { dispatchMatchPushNotification } from './pushNotificationSender';
 
 const QUEUE_KEY = 'fus_dashboard_offline_queue';
 
@@ -118,7 +119,7 @@ const commandRegistry: {
     const { error } = await supabase.from('match_events').insert([payload]);
     if (error) throw error;
     try {
-      supabase.functions.invoke('send-match-push', { body: { record: payload } }).catch(() => {});
+      dispatchMatchPushNotification(payload).catch(() => {});
     } catch {}
   },
   update_event: async (op) => {

@@ -1764,20 +1764,11 @@ const PlayerManagement: React.FC = () => {
                             {/* Badge surclassement ou sous-classement actif */}
                             {activeByPlayerId[player.id] && (() => {
                               const activeMob = activeByPlayerId[player.id];
-                              const isSousClass = isLowerCategory(activeMob.original_category, activeMob.target_category);
                               return (
-                                <div className={`mb-3 flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 border ${
-                                  isSousClass
-                                    ? 'bg-sky-50 border-sky-200 text-sky-700'
-                                    : 'bg-orange-50 border-orange-200 text-orange-600'
-                                }`}>
-                                  {isSousClass ? (
-                                    <ArrowDownCircle className="w-3 h-3 text-sky-600" />
-                                  ) : (
-                                    <ArrowUpCircle className="w-3 h-3 text-orange-500" />
-                                  )}
+                                <div className="mb-3 flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 border bg-orange-50 border-orange-200 text-orange-600">
+                                  <ArrowUpCircle className="w-3 h-3 text-orange-500" />
                                   <span className="text-[10px] font-black uppercase tracking-widest">
-                                    {isSousClass ? 'SOUS-CLASSÉ' : 'SURCLASSÉ'} → {activeMob.target_category}
+                                    SURCLASSÉ → {activeMob.target_category}
                                   </span>
                                 </div>
                               );
@@ -1800,19 +1791,16 @@ const PlayerManagement: React.FC = () => {
                                 )}
                                 {canSurclassPlayer && canManageCategory(getPlayerCategory(player)) && (() => {
                                   const activeMob = activeByPlayerId[player.id];
-                                  const isSousClass = activeMob ? isLowerCategory(activeMob.original_category, activeMob.target_category) : false;
                                   return (
                                     <Button
                                       variant="secondary"
                                       size="icon"
                                       onClick={() => handleOpenSurclassement(player)}
-                                      title={activeMob ? 'Réintégrer' : 'Surclasser / Sous-classer'}
+                                      title={activeMob ? 'Gérer le surclassement (Matchs planifiés)' : 'Surclasser sur des matchs à venir'}
                                       className={`h-9 w-9 rounded-xl transition-all ${activeMob
-                                        ? isSousClass
-                                          ? 'bg-sky-100 text-sky-700 hover:bg-sky-200'
-                                          : 'bg-orange-100 text-orange-600 hover:bg-orange-200'
+                                        ? 'bg-orange-100 text-orange-600 hover:bg-orange-200'
                                         : 'bg-secondary/50 hover:bg-orange-500 hover:text-white'
-                                        }`}
+                                      }`}
                                     >
                                       {activeMob
                                         ? <RotateCcw className="w-4 h-4" />
@@ -1977,18 +1965,15 @@ const PlayerManagement: React.FC = () => {
                                     )}
                                     {canSurclassPlayer && (() => {
                                       const activeMob = activeByPlayerId[player.id];
-                                      const isSousClass = activeMob ? isLowerCategory(activeMob.original_category, activeMob.target_category) : false;
                                       return (
                                         <Button
                                           variant="ghost"
                                           size="icon"
                                           onClick={() => handleOpenSurclassement(player)}
-                                          title={activeMob ? 'Réintégrer' : 'Surclasser / Sous-classer'}
+                                          title={activeMob ? 'Gérer le surclassement (Matchs planifiés)' : 'Surclasser sur des matchs à venir'}
                                           className={`h-9 w-9 rounded-xl transition-all ${
                                             activeMob
-                                              ? isSousClass
-                                                ? 'text-sky-600 bg-sky-50 hover:bg-sky-100'
-                                                : 'text-orange-500 bg-orange-50 hover:bg-orange-100'
+                                              ? 'text-orange-500 bg-orange-50 hover:bg-orange-100'
                                               : 'text-muted-foreground hover:text-orange-500 hover:bg-orange-50'
                                           }`}
                                         >

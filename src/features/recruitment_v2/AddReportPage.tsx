@@ -16,7 +16,7 @@ const AddReportPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { authState, hasSubModuleAccess } = usePermissions();
+  const { authState, hasSubModuleAccess, canManageCategory } = usePermissions();
   const returnTab = searchParams.get('returnTab') || 'candidates';
   const candidateIdFromUrl = searchParams.get('candidateId') || (location.state as any)?.candidateId;
   const editReportId = searchParams.get('editReportId') || (location.state as any)?.editReportId;
@@ -33,17 +33,28 @@ const AddReportPage: React.FC = () => {
     authState?.user?.role || ''
   ].map(r => r.toLowerCase().trim());
   const isSuperAdmin = userRoles.includes('super_admin') || Boolean(authState?.isRealSuperAdmin);
-  const isAdmin = isSuperAdmin || userRoles.includes('admin') || userRoles.includes('scout_admin');
+  const isScoutAdmin = userRoles.includes('scout_admin') || authState?.user?.system_role === 'scout_admin';
+  const isScoutManager = Boolean(
+    !isSuperAdmin && !isScoutAdmin && (
+      userRoles.includes('scout_manager') ||
+      userRoles.includes('manager') ||
+      (authState?.user?.job_title && authState.user.job_title.toLowerCase().includes('scout manager'))
+    )
+  );
+  const isRecruitmentAdmin = Boolean((isSuperAdmin || isScoutAdmin) && !isScoutManager);
+  const isAdmin = isSuperAdmin || userRoles.includes('admin') || isScoutAdmin;
 
   // Permission spécifique de gestion de rapport
   const canManageReports = Boolean(
     isSuperAdmin ||
     isAdmin ||
+    isScoutManager ||
     hasSubModuleAccess('candidates', 'manage_reports') ||
     hasSubModuleAccess('candidates', 'reports')
   );
 
   const currentScout = scouts.find((s) => {
+    if (authState?.user?.id && s.id === authState.user.id) return true;
     if (authState?.user?.email && s.email && s.email.toLowerCase() === authState.user.email.toLowerCase()) return true;
     if (authState?.user?.full_name && s.full_name && s.full_name.toLowerCase() === authState.user.full_name.toLowerCase()) return true;
     return false;
@@ -95,19 +106,23 @@ const AddReportPage: React.FC = () => {
     return false;
   };
 
+  // Règle d'éligibilité pour rédiger un rapport (US-DASH-103) :
+  // Tout scout ou scout manager habilité aux rapports peut rédiger un ou plusieurs
+  // rapports d'observation sur n'importe quel joueur de la base (dans le respect de ses catégories assignées).
   const canAddReportForCandidate = (cand: any): boolean => {
     if (!cand) return false;
-    if (isSuperAdmin || isAdmin) return true;
-    return isCandidateIntroducedByScout(cand) || isCandidateAssignedToScout(cand);
+    if (isSuperAdmin || isAdmin || isRecruitmentAdmin) return true;
+    if (!canManageReports) return false;
+    if (canManageCategory && !canManageCategory(cand.age_category)) return false;
+    return true;
   };
 
   // Liste des candidats éligibles pour rédiger un rapport :
-  // - Tous pour les admins
-  // - Pour un scout : ses propres joueurs découverts OU les joueurs avec mission d'observation assignée
+  // - Tous pour les admins et scouts/scout managers habilités (filtrés par catégories autorisées le cas échéant)
   const eligibleCandidates = React.useMemo(() => {
-    if (isAdmin || isSuperAdmin) return candidates;
+    if (isAdmin || isSuperAdmin || isRecruitmentAdmin) return candidates;
     return candidates.filter(c => canAddReportForCandidate(c));
-  }, [candidates, isAdmin, isSuperAdmin, currentScout, authState?.user]);
+  }, [candidates, isAdmin, isSuperAdmin, isRecruitmentAdmin, canManageReports, canManageCategory]);
 
   // Synchroniser avec l'URL ou le joueur concerné par l'évaluation
   useEffect(() => {
@@ -139,7 +154,7 @@ const AddReportPage: React.FC = () => {
 
     // 2. En cas de création de rapport sur un joueur cible
     if (!evaluationToEdit && selectedCandidate && !isAdmin && !isSuperAdmin && !canAddReportForCandidate(selectedCandidate)) {
-      toast.error("Création de rapport non autorisée : vous n'avez pas de mission d'observation assignée pour ce joueur.");
+      toast.error("Création de rapport non autorisée pour cette catégorie de joueur.");
       navigate(`/recruitment-v2?tab=${returnTab}`);
       return;
     }
@@ -300,7 +315,7 @@ const AddReportPage: React.FC = () => {
               </h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
                 {eligibleCandidates.length === 0
-                  ? "Vous n'avez pas de joueur introduit ni de mission d'observation assignée par la direction pour rédiger un rapport. Vous pouvez créer un nouveau joueur."
+                  ? "Aucun joueur éligible dans vos catégories autorisées pour rédiger un rapport. Vous pouvez créer un nouveau joueur."
                   : "Veuillez sélectionner un joueur dans la liste ci-dessus ou en créer un nouveau pour rédiger votre rapport."}
               </p>
             </div>

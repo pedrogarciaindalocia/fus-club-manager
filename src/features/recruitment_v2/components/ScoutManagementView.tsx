@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { LocationPicker } from './LocationPicker';
 import { recruitmentService, generateSecureTempPassword, generateScoutLogin } from '../services/recruitmentService';
 import { MediaPickerModal } from '../../media-management/components/MediaPickerModal';
+import { CandidatePillarsScorecard } from './CandidatePillarsScorecard';
 
 interface ScoutManagementViewProps {
   scouts: Scout[];
@@ -1787,71 +1788,17 @@ Cellule Détection & Scouting — FUS Rabat`;
                                 </div>
 
                                 <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                                  {/* Mini-Scorecard Pro 4 Piliers + Potentiel (Style Analytics sans icônes) */}
-                                  <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200/90 shadow-2xs">
-                                    {/* 1. Technique */}
-                                    <div
-                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px]"
-                                      title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                                    >
-                                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">TEC</span>
-                                      <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
-                                        {techScore != null ? techScore.toFixed(1) : '-'}
-                                      </span>
-                                    </div>
-
-                                    <div className="h-5 w-px bg-slate-200" />
-
-                                    {/* 2. Tactique */}
-                                    <div
-                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px]"
-                                      title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                                    >
-                                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">TAC</span>
-                                      <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
-                                        {tactScore != null ? tactScore.toFixed(1) : '-'}
-                                      </span>
-                                    </div>
-
-                                    <div className="h-5 w-px bg-slate-200" />
-
-                                    {/* 3. Physique */}
-                                    <div
-                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px]"
-                                      title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                                    >
-                                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">PHY</span>
-                                      <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
-                                        {physScore != null ? physScore.toFixed(1) : '-'}
-                                      </span>
-                                    </div>
-
-                                    <div className="h-5 w-px bg-slate-200" />
-
-                                    {/* 4. Mental */}
-                                    <div
-                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[36px]"
-                                      title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                                    >
-                                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">MEN</span>
-                                      <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
-                                        {mentScore != null ? mentScore.toFixed(1) : '-'}
-                                      </span>
-                                    </div>
-
-                                    <div className="h-5 w-px bg-slate-200" />
-
-                                    {/* 5. Potentiel */}
-                                    <div
-                                      className="px-2 py-0.5 rounded-lg flex flex-col items-center min-w-[38px] bg-emerald-50 border border-emerald-200/80"
-                                      title={`Potentiel initial : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}
-                                    >
-                                      <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700">POT</span>
-                                      <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-950" : "text-slate-300")}>
-                                        {potentialScore != null ? potentialScore.toFixed(1) : '-'}
-                                      </span>
-                                    </div>
-                                  </div>
+                                  {/* Mini-Scorecard Pro 4 Piliers + Potentiel avec survol Radar & Barres de progression */}
+                                  <CandidatePillarsScorecard
+                                    candidate={c}
+                                    latestEval={latestEval}
+                                    techScore={techScore}
+                                    tactScore={tactScore}
+                                    physScore={physScore}
+                                    mentScore={mentScore}
+                                    potentialScore={potentialScore}
+                                    onOpenDetail={onOpenCandidateDetail ? () => onOpenCandidateDetail(c) : undefined}
+                                  />
 
                                   {/* Bouton Rapport avec rond jaune et chiffre en noir (0 par défaut) */}
                                   {onOpenCandidateDetail && (

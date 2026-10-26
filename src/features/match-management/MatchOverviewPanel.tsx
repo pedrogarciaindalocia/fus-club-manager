@@ -150,6 +150,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     );
   }
 
+  // Home vs Away Determination (Left = Home, Right = Away)
+  const isHome = match.is_home ?? true;
+
   // Real Database Metadata
   const mainClubName = mainClub?.name || mainClub?.club_name || 'FUS Rabat';
   const mainClubLogo = mainClub?.logo_url && mainClub.logo_url !== 'null' ? mainClub.logo_url : null;
@@ -157,8 +160,17 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   const opponentName = (getOpponentName && match.opponent_id ? getOpponentName(match.opponent_id) : '') || opponent?.name || (match as any).opponent_name || 'Adversaire';
   const opponentLogo = opponent?.logo_url && opponent.logo_url !== 'null' ? opponent.logo_url : null;
 
-  const homeScore = match.is_home ? (match.score_home ?? 0) : (match.score_away ?? 0);
-  const awayScore = match.is_home ? (match.score_away ?? 0) : (match.score_home ?? 0);
+  const homeClubName = isHome ? mainClubName : opponentName;
+  const homeClubLogo = isHome ? mainClubLogo : opponentLogo;
+  const homeClubCategory = isHome ? (match.category || 'Équipe Première') : 'Domicile';
+
+  const awayClubName = isHome ? opponentName : mainClubName;
+  const awayClubLogo = isHome ? opponentLogo : mainClubLogo;
+  const awayClubCategory = isHome ? 'Adversaire' : (match.category || 'Extérieur');
+
+  // Scores in DB: score_home is Home score, score_away is Away score
+  const homeScore = match.score_home ?? 0;
+  const awayScore = match.score_away ?? 0;
   const isLive = match.status === 'live';
   const isFinished = match.status === 'finished';
 
@@ -229,9 +241,6 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     return parts[parts.length - 1]?.substring(0, 12) || 'Joueur';
   };
 
-  // Whether FUS plays at home (from DB)
-  const isHome = match.is_home ?? true;
-
   const getEventPlayerId = (e: any): string => {
     if (!e) return '';
     const raw = e.player_id ?? e.playerId;
@@ -255,24 +264,38 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   // 1. Buts
   const ourGoalEvents = (events || []).filter(e => (e.type === 'goal' || e.type === 'penalty') && isEventOurTeam(e)).length;
   const advGoalEvents = (events || []).filter(e => (e.type === 'goal' || e.type === 'penalty') && !isEventOurTeam(e)).length;
-  const ourGoals = Math.max(isHome ? homeScore : awayScore, ourGoalEvents);
-  const advGoals = Math.max(isHome ? awayScore : homeScore, advGoalEvents);
+  
+  // Calculate goals for FUS vs Opponent (accounting for match score and logged events)
+  const fusGoals = Math.max(isHome ? homeScore : awayScore, ourGoalEvents);
+  const oppGoals = Math.max(isHome ? awayScore : homeScore, advGoalEvents);
+
+  // Home (Left) vs Away (Right) Goals
+  const homeGoals = isHome ? fusGoals : oppGoals;
+  const awayGoals = isHome ? oppGoals : fusGoals;
 
   // 2. Assists (Passes décisives)
   const ourAssists = (events || []).filter(e => e.type === 'assist' && isEventOurTeam(e)).length;
   const advAssists = (events || []).filter(e => e.type === 'assist' && !isEventOurTeam(e)).length;
+  const homeAssists = isHome ? ourAssists : advAssists;
+  const awayAssists = isHome ? advAssists : ourAssists;
 
   // 3. Changements (Remplacements)
   const ourSubsCount = (events || []).filter(e => e.type === 'substitution' && isEventOurTeam(e)).length;
   const advSubsCount = (events || []).filter(e => e.type === 'substitution' && !isEventOurTeam(e)).length;
+  const homeSubsCount = isHome ? ourSubsCount : advSubsCount;
+  const awaySubsCount = isHome ? advSubsCount : ourSubsCount;
 
   // 4. Cartons Jaunes
   const ourYellows = (events || []).filter(e => e.type === 'yellow_card' && isEventOurTeam(e)).length;
   const advYellows = (events || []).filter(e => e.type === 'yellow_card' && !isEventOurTeam(e)).length;
+  const homeYellows = isHome ? ourYellows : advYellows;
+  const awayYellows = isHome ? advYellows : ourYellows;
 
   // 5. Cartons Rouges
   const ourReds = (events || []).filter(e => e.type === 'red_card' && isEventOurTeam(e)).length;
   const advReds = (events || []).filter(e => e.type === 'red_card' && !isEventOurTeam(e)).length;
+  const homeReds = isHome ? ourReds : advReds;
+  const awayReds = isHome ? advReds : ourReds;
 
   // Real Head Coach from Staff
   const headCoach = (staff || []).find(s => (s.role || '').toLowerCase().includes('entraîneur') || (s.role || '').toLowerCase().includes('coach')) || staff[0];
@@ -386,7 +409,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
           photo: photoUrl,
           title,
           desc: commentaryText,
-          isLeft: isOur,
+          isOur,
+          isLeft: isHome ? isOur : !isOur,
         };
       });
     }
@@ -639,9 +663,11 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     };
   };
 
-  // Real Tactical Positions (respecting matchFormat)
-  const topTeamPositions = getFormationPositions(formationKey, matchFormat);
-  const bottomTeamPositions = getFormationPositions(opponentFormationKey, matchFormat);
+  // Real Tactical Positions (respecting matchFormat and Home/Away orientation)
+  const topFormation = isHome ? formationKey : opponentFormationKey;
+  const bottomFormation = isHome ? opponentFormationKey : formationKey;
+  const topTeamPositions = getFormationPositions(topFormation, matchFormat);
+  const bottomTeamPositions = getFormationPositions(bottomFormation, matchFormat);
 
   return (
     <motion.div
@@ -789,19 +815,19 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
 
               {/* Clubs and Real Score */}
               <div className="flex items-center justify-between px-2">
-                {/* Home Club */}
+                {/* Home Club (Domicile - Gauche) */}
                 <div className="flex-1 text-center min-w-0">
                   <div className="w-20 h-20 md:w-24 md:h-24 mx-auto rounded-full bg-white p-2 shadow-2xl flex items-center justify-center mb-2.5 overflow-hidden ring-4 ring-white/20 border-2 border-white/40">
-                    {mainClubLogo ? (
-                      <img src={mainClubLogo} alt={mainClubName} className="w-full h-full object-contain rounded-full" />
+                    {homeClubLogo ? (
+                      <img src={homeClubLogo} alt={homeClubName} className="w-full h-full object-contain rounded-full" />
                     ) : (
                       <Shield className="w-10 h-10 text-emerald-500" />
                     )}
                   </div>
                   <h4 className="font-black text-xs md:text-sm tracking-wider uppercase text-white truncate max-w-full px-1">
-                    {mainClubName}
+                    {homeClubName}
                   </h4>
-                  <p className="text-[9px] text-slate-400 mt-0.5 uppercase">{match.category || 'Équipe Première'}</p>
+                  <p className="text-[9px] text-slate-400 mt-0.5 uppercase font-bold">{homeClubCategory}</p>
                   <div className="text-4xl md:text-5xl font-black mt-2 text-white tabular-nums">
                     {homeScore}
                   </div>
@@ -815,19 +841,19 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                   </div>
                 </div>
 
-                {/* Away Club */}
+                {/* Away Club (Extérieur - Droite) */}
                 <div className="flex-1 text-center min-w-0">
                   <div className="w-20 h-20 md:w-24 md:h-24 mx-auto rounded-full bg-white p-2 shadow-2xl flex items-center justify-center mb-2.5 overflow-hidden ring-4 ring-white/20 border-2 border-white/40">
-                    {opponentLogo ? (
-                      <img src={opponentLogo} alt={opponentName} className="w-full h-full object-contain rounded-full" />
+                    {awayClubLogo ? (
+                      <img src={awayClubLogo} alt={awayClubName} className="w-full h-full object-contain rounded-full" />
                     ) : (
                       <Target className="w-10 h-10 text-rose-500" />
                     )}
                   </div>
                   <h4 className="font-black text-xs md:text-sm tracking-wider uppercase text-white truncate max-w-full px-1">
-                    {opponentName}
+                    {awayClubName}
                   </h4>
-                  <p className="text-[9px] text-slate-400 mt-0.5 uppercase">{match.category || 'Adversaire'}</p>
+                  <p className="text-[9px] text-slate-400 mt-0.5 uppercase font-bold">{awayClubCategory}</p>
                   <div className="text-4xl md:text-5xl font-black mt-2 text-white tabular-nums">
                     {awayScore}
                   </div>
@@ -945,13 +971,19 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                             </p>
                           )}
                         </div>
-                        {item.photo ? (
-                          <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-emerald-400/60 shadow-sm shrink-0">
-                            <img src={item.photo} alt="" className="w-full h-full object-cover" />
-                          </div>
+                        {item.isOur ? (
+                          item.photo ? (
+                            <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-emerald-400/60 shadow-sm shrink-0">
+                              <img src={item.photo} alt="" className="w-full h-full object-cover" />
+                            </div>
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 font-black text-[9px] flex items-center justify-center shrink-0 border border-emerald-300">
+                              {item.player.substring(0, 2).toUpperCase()}
+                            </div>
+                          )
                         ) : (
-                          <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 font-black text-[9px] flex items-center justify-center shrink-0 border border-emerald-300">
-                            {item.player.substring(0, 2).toUpperCase()}
+                          <div className="w-7 h-7 rounded-full bg-rose-100 text-rose-700 font-black text-[9px] flex items-center justify-center shrink-0 border border-rose-300">
+                            ADV
                           </div>
                         )}
                       </div>
@@ -961,11 +993,23 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                         <span className="text-[9px] font-black text-emerald-600">{item.minute}'</span>
                       </div>
 
-                      {/* Right text / block (Opponent events) */}
+                      {/* Right text / block (Opponent events or our events) */}
                       <div className={`w-[42%] flex items-center justify-start gap-2 text-left ${!isLeft ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                        <div className="w-7 h-7 rounded-full bg-rose-100 text-rose-700 font-black text-[9px] flex items-center justify-center shrink-0 border border-rose-300">
-                          ADV
-                        </div>
+                        {item.isOur ? (
+                          item.photo ? (
+                            <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-emerald-400/60 shadow-sm shrink-0">
+                              <img src={item.photo} alt="" className="w-full h-full object-cover" />
+                            </div>
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 font-black text-[9px] flex items-center justify-center shrink-0 border border-emerald-300">
+                              {item.player.substring(0, 2).toUpperCase()}
+                            </div>
+                          )
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-rose-100 text-rose-700 font-black text-[9px] flex items-center justify-center shrink-0 border border-rose-300">
+                            ADV
+                          </div>
+                        )}
                         <div>
                           <p className="font-bold text-slate-800 text-[11px] leading-tight">
                             <span className="font-black">{item.player}</span> · {item.title}
@@ -1007,28 +1051,28 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
             <div className="flex items-center justify-between text-center px-2">
               <div className="w-[110px] min-w-0">
                 <div className="w-14 h-14 mx-auto rounded-full bg-white border-2 border-slate-200 p-1.5 flex items-center justify-center shadow-md overflow-hidden ring-2 ring-slate-100">
-                  {mainClubLogo ? <img src={mainClubLogo} alt={mainClubName} className="w-full h-full object-contain rounded-full" /> : <Shield className="w-7 h-7 text-[#4d94ff]" />}
+                  {homeClubLogo ? <img src={homeClubLogo} alt={homeClubName} className="w-full h-full object-contain rounded-full" /> : <Shield className="w-7 h-7 text-[#4d94ff]" />}
                 </div>
-                <p className="text-[10px] font-black text-slate-800 mt-1.5 truncate">{mainClubName}</p>
+                <p className="text-[10px] font-black text-slate-800 mt-1.5 truncate">{homeClubName}</p>
               </div>
 
               <div className="text-slate-300 font-bold text-xs">VS</div>
 
               <div className="w-[110px] min-w-0">
                 <div className="w-14 h-14 mx-auto rounded-full bg-white border-2 border-slate-200 p-1.5 flex items-center justify-center shadow-md overflow-hidden ring-2 ring-slate-100">
-                  {opponentLogo ? <img src={opponentLogo} alt={opponentName} className="w-full h-full object-contain rounded-full" /> : <Target className="w-7 h-7 text-[#e94e77]" />}
+                  {awayClubLogo ? <img src={awayClubLogo} alt={awayClubName} className="w-full h-full object-contain rounded-full" /> : <Target className="w-7 h-7 text-[#e94e77]" />}
                 </div>
-                <p className="text-[10px] font-black text-slate-800 mt-1.5 truncate">{opponentName}</p>
+                <p className="text-[10px] font-black text-slate-800 mt-1.5 truncate">{awayClubName}</p>
               </div>
             </div>
 
-            {/* Real Stats Bars for the 5 Metrics */}
+            {/* Real Stats Bars for the 5 Metrics (Left = Home, Right = Away) */}
             <div className="space-y-2 pt-2 border-t border-slate-100">
-              <StatBar label="Buts" icon="⚽" home={ourGoals} away={advGoals} />
-              <StatBar label="Assists" icon="⭐" home={ourAssists} away={advAssists} />
-              <StatBar label="Changements" icon="🔁" home={ourSubsCount} away={advSubsCount} />
-              <StatBar label="Cartons Jaunes" icon="🟨" home={ourYellows} away={advYellows} />
-              <StatBar label="Cartons Rouges" icon="🟥" home={ourReds} away={advReds} />
+              <StatBar label="Buts" icon="⚽" home={homeGoals} away={awayGoals} />
+              <StatBar label="Assists" icon="⭐" home={homeAssists} away={awayAssists} />
+              <StatBar label="Changements" icon="🔁" home={homeSubsCount} away={awaySubsCount} />
+              <StatBar label="Cartons Jaunes" icon="🟨" home={homeYellows} away={awayYellows} />
+              <StatBar label="Cartons Rouges" icon="🟥" home={homeReds} away={awayReds} />
             </div>
           </div>
 
@@ -1128,13 +1172,13 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
 
                       <div className="flex items-center justify-between gap-2 py-1">
                         <span className="text-[11px] font-black text-white group-hover:text-emerald-300 transition-colors truncate">
-                          {mainClubName}
+                          {m.is_home ? mainClubName : oppNm}
                         </span>
                         <span className="text-[9px] font-bold text-slate-500 px-1.5 py-0.5 bg-slate-900 rounded">
                           VS
                         </span>
                         <span className="text-[11px] font-black text-slate-300 group-hover:text-white transition-colors truncate text-right">
-                          {oppNm}
+                          {m.is_home ? oppNm : mainClubName}
                         </span>
                       </div>
 
@@ -1159,7 +1203,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
             {/* Header: LINE UP & Half selector */}
             <div className="bg-[#2ecc71] px-4 py-2.5 flex items-center justify-between text-[#0b141d] font-black text-[11px] uppercase">
               <span className="flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5" /> COMPOSITIONS ({formationKey} vs {opponentFormationKey})
+                <Users className="w-3.5 h-3.5" /> COMPOSITIONS ({topFormation} vs {bottomFormation})
               </span>
               <div className="flex items-center gap-1 text-[9px] font-bold bg-[#1d7e32]/40 px-2 py-0.5 rounded text-white cursor-pointer">
                 <span>TITULAIRES</span>
@@ -1184,132 +1228,241 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               <div className="absolute top-2 inset-x-[25%] h-[12%] border-2 border-white/50 border-t-0 pointer-events-none" />
               <div className="absolute bottom-2 inset-x-[25%] h-[12%] border-2 border-white/50 border-b-0 pointer-events-none" />
 
-              {/* Formations Labels */}
+              {/* Formations Labels (Top = Home, Bottom = Away) */}
               <span className="absolute top-3 left-3 text-[9px] font-black text-white/90 bg-black/40 px-2 py-0.5 rounded">
-                {mainClubName.substring(0, 6)} ({formationKey})
+                {homeClubName.substring(0, 8)} ({topFormation})
               </span>
               <span className="absolute bottom-3 left-3 text-[9px] font-black text-white/90 bg-black/40 px-2 py-0.5 rounded">
-                {opponentName.substring(0, 6)} ({opponentFormationKey})
+                {awayClubName.substring(0, 8)} ({bottomFormation})
               </span>
 
-              {/* Top Team Nodes (Real FUS Players - Blue/White Jerseys) */}
+              {/* Top Team Nodes (Home Team: Top Goal) */}
               {topTeamPositions.map((pos, idx) => {
-                const rawPid = startingXI[idx];
-                const pid = typeof rawPid === 'object' ? (rawPid?.player_id || rawPid?.id) : rawPid;
-                const p = getPlayer(pid);
-                const name = p ? (p.last_name || p.name || 'FUS') : (typeof rawPid === 'object' ? (rawPid.full_name || rawPid.name || 'FUS') : `J.${idx + 1}`);
-                const jerseyVal = p?.jersey_number ?? (typeof rawPid === 'object' ? (rawPid.jersey_number || rawPid.number) : null) ?? (idx + 1);
-                const jerseyText = String(jerseyVal);
-                const hasGoal = (events || []).some(e => (e.type === 'goal' || e.type === 'penalty') && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid));
-                const hasYellowCard = (events || []).some(e => e.type === 'yellow_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid));
-                const hasRedCard = (events || []).some(e => e.type === 'red_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid));
+                if (isHome) {
+                  const rawPid = startingXI[idx];
+                  const pid = typeof rawPid === 'object' ? (rawPid?.player_id || rawPid?.id) : rawPid;
+                  const p = getPlayer(pid);
+                  const name = p ? (p.last_name || p.name || 'FUS') : (typeof rawPid === 'object' ? (rawPid.full_name || rawPid.name || 'FUS') : `J.${idx + 1}`);
+                  const jerseyVal = p?.jersey_number ?? (typeof rawPid === 'object' ? (rawPid.jersey_number || rawPid.number) : null) ?? (idx + 1);
+                  const jerseyText = String(jerseyVal);
+                  const hasGoal = (events || []).some(e => (e.type === 'goal' || e.type === 'penalty') && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid));
+                  const hasYellowCard = (events || []).some(e => e.type === 'yellow_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid));
+                  const hasRedCard = (events || []).some(e => e.type === 'red_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid));
 
-                // GK at top goal (~7.5%), Strikers near halfway line (~40%)
-                const topPct = 48 - (parseFloat(pos.top) * 0.44);
+                  const topPct = 48 - (parseFloat(pos.top) * 0.44);
+                  const isHovered = hoveredPlayerKey === `top-fus-${idx}`;
+                  const hoverStats = isHovered ? getPlayerHoverStats(rawPid, pos.label, true, true, idx, jerseyVal) : null;
+                  const hAlign = getHorizontalAlign(pos.left);
 
-                const isHovered = hoveredPlayerKey === `home-${idx}`;
-                const hoverStats = isHovered ? getPlayerHoverStats(rawPid, pos.label, true, true, idx, jerseyVal) : null;
-                const hAlign = getHorizontalAlign(pos.left);
-
-                return (
-                  <div
-                    key={`home-${idx}`}
-                    onMouseEnter={() => setHoveredPlayerKey(`home-${idx}`)}
-                    onMouseLeave={() => setHoveredPlayerKey(null)}
-                    className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
-                      isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
-                    }`}
-                    style={{ top: `${topPct}%`, left: pos.left }}
-                  >
-                    <div className="relative w-11 h-11 rounded-full bg-slate-900 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
-                      {p?.photo_url && p.photo_url !== 'null' ? (
-                        <img src={p.photo_url} alt="" className="w-full h-full rounded-full object-cover" />
-                      ) : (
-                        <span className="text-xs font-black">{jerseyText}</span>
-                      )}
-                      {/* Jersey badge */}
-                      <span className="absolute -top-1 -right-1 bg-slate-950 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white shadow">
-                        {jerseyText}
+                  return (
+                    <div
+                      key={`top-fus-${idx}`}
+                      onMouseEnter={() => setHoveredPlayerKey(`top-fus-${idx}`)}
+                      onMouseLeave={() => setHoveredPlayerKey(null)}
+                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
+                        isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
+                      }`}
+                      style={{ top: `${topPct}%`, left: pos.left }}
+                    >
+                      <div className="relative w-11 h-11 rounded-full bg-slate-900 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
+                        {p?.photo_url && p.photo_url !== 'null' ? (
+                          <img src={p.photo_url} alt="" className="w-full h-full rounded-full object-cover" />
+                        ) : (
+                          <span className="text-xs font-black">{jerseyText}</span>
+                        )}
+                        <span className="absolute -top-1 -right-1 bg-slate-950 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white shadow">
+                          {jerseyText}
+                        </span>
+                        {hasGoal && <span className="absolute -bottom-1 -left-1 text-[10px]">⚽</span>}
+                        {hasRedCard ? (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-red-600 rounded-xs shadow border border-white/40" title="Carton Rouge" />
+                        ) : hasYellowCard ? (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-yellow-400 rounded-xs shadow border border-white/40" title="Carton Jaune" />
+                        ) : null}
+                      </div>
+                      <span className="text-[8px] font-black text-white uppercase mt-0.5 tracking-tight drop-shadow bg-black/60 px-1.5 py-0.5 rounded-md truncate max-w-[65px]">
+                        {String(name).split(' ').pop()}
                       </span>
-                      {hasGoal && <span className="absolute -bottom-1 -left-1 text-[10px]">⚽</span>}
-                      {hasRedCard ? (
-                        <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-red-600 rounded-xs shadow border border-white/40" title="Carton Rouge" />
-                      ) : hasYellowCard ? (
-                        <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-yellow-400 rounded-xs shadow border border-white/40" title="Carton Jaune" />
-                      ) : null}
-                    </div>
-                    <span className="text-[8px] font-black text-white uppercase mt-0.5 tracking-tight drop-shadow bg-black/60 px-1.5 py-0.5 rounded-md truncate max-w-[65px]">
-                      {String(name).split(' ').pop()}
-                    </span>
 
-                    {/* Popover Card */}
-                    <AnimatePresence>
-                      {isHovered && hoverStats && (
-                        <PlayerPitchHoverCard
-                          stats={hoverStats}
-                          placement="bottom"
-                          horizontalAlign={hAlign}
-                        />
-                      )}
-                    </AnimatePresence>
-                  </div>
-                );
+                      <AnimatePresence>
+                        {isHovered && hoverStats && (
+                          <PlayerPitchHoverCard
+                            stats={hoverStats}
+                            placement="bottom"
+                            horizontalAlign={hAlign}
+                          />
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                } else {
+                  // Opponent is Home (Top Goal)
+                  const rawOpp = opponentStartingXI[idx];
+                  const oppPid = typeof rawOpp === 'object' ? (rawOpp.id || rawOpp.player_id) : rawOpp;
+                  const jerseyVal = typeof rawOpp === 'object' ? (rawOpp.jersey_number || rawOpp.number || (idx + 1)) : (rawOpp || (idx + 1));
+                  const jerseyText = String(jerseyVal);
+
+                  const hasOppGoal = (events || []).some(e => (e.type === 'goal' || e.type === 'penalty') && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
+                  const hasOppYellowCard = (events || []).some(e => e.type === 'yellow_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
+                  const hasOppRedCard = (events || []).some(e => e.type === 'red_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
+
+                  const topPct = 48 - (parseFloat(pos.top) * 0.44);
+                  const isHovered = hoveredPlayerKey === `top-opp-${idx}`;
+                  const hoverStats = isHovered ? getPlayerHoverStats(rawOpp, pos.label, false, true, idx, jerseyVal) : null;
+                  const hAlign = getHorizontalAlign(pos.left);
+
+                  return (
+                    <div
+                      key={`top-opp-${idx}`}
+                      onMouseEnter={() => setHoveredPlayerKey(`top-opp-${idx}`)}
+                      onMouseLeave={() => setHoveredPlayerKey(null)}
+                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
+                        isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
+                      }`}
+                      style={{ top: `${topPct}%`, left: pos.left }}
+                    >
+                      <div className="relative w-11 h-11 rounded-full bg-rose-600 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
+                        {jerseyText}
+                        {hasOppGoal && <span className="absolute -bottom-1 -left-1 text-[10px]">⚽</span>}
+                        {hasOppRedCard ? (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-red-600 rounded-xs shadow border border-white/40" title="Carton Rouge" />
+                        ) : hasOppYellowCard ? (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-yellow-400 rounded-xs shadow border border-white/40" title="Carton Jaune" />
+                        ) : null}
+                      </div>
+                      <span className="text-[8px] font-black text-rose-200 uppercase mt-0.5 tracking-tight drop-shadow bg-black/60 px-1.5 py-0.5 rounded-md truncate max-w-[65px]">
+                        Adv #{jerseyText}
+                      </span>
+
+                      <AnimatePresence>
+                        {isHovered && hoverStats && (
+                          <PlayerPitchHoverCard
+                            stats={hoverStats}
+                            placement="bottom"
+                            horizontalAlign={hAlign}
+                          />
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                }
               })}
 
-              {/* Bottom Team Nodes (Opponent Players - Red Jerseys) - Rotated 180° so GK is in the bottom goal */}
+              {/* Bottom Team Nodes (Away Team: Bottom Goal - Rotated 180°) */}
               {bottomTeamPositions.map((pos, idx) => {
-                const rawOpp = opponentStartingXI[idx];
-                const oppPid = typeof rawOpp === 'object' ? (rawOpp.id || rawOpp.player_id) : rawOpp;
-                const jerseyVal = typeof rawOpp === 'object' ? (rawOpp.jersey_number || rawOpp.number || (idx + 1)) : (rawOpp || (idx + 1));
-                const jerseyText = String(jerseyVal);
+                if (isHome) {
+                  // Opponent is Away (Bottom Goal)
+                  const rawOpp = opponentStartingXI[idx];
+                  const oppPid = typeof rawOpp === 'object' ? (rawOpp.id || rawOpp.player_id) : rawOpp;
+                  const jerseyVal = typeof rawOpp === 'object' ? (rawOpp.jersey_number || rawOpp.number || (idx + 1)) : (rawOpp || (idx + 1));
+                  const jerseyText = String(jerseyVal);
 
-                const hasOppGoal = (events || []).some(e => (e.type === 'goal' || e.type === 'penalty') && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
-                const hasOppYellowCard = (events || []).some(e => e.type === 'yellow_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
-                const hasOppRedCard = (events || []).some(e => e.type === 'red_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
-                
-                // Rotated 180°: GK occupies bottom goal (~92.5%), defenders (~85%), midfielders (~75%), strikers near center line (~60%)
-                const topPct = 52 + (parseFloat(pos.top) * 0.44);
-                const leftPct = parseFloat(pos.left);
+                  const hasOppGoal = (events || []).some(e => (e.type === 'goal' || e.type === 'penalty') && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
+                  const hasOppYellowCard = (events || []).some(e => e.type === 'yellow_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
+                  const hasOppRedCard = (events || []).some(e => e.type === 'red_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
+                  
+                  const topPct = 52 + (parseFloat(pos.top) * 0.44);
+                  const leftPct = parseFloat(pos.left);
 
-                const isHovered = hoveredPlayerKey === `away-${idx}`;
-                const hoverStats = isHovered ? getPlayerHoverStats(rawOpp, pos.label, false, true, idx, jerseyVal) : null;
-                const hAlign = getHorizontalAlign(pos.left);
+                  const isHovered = hoveredPlayerKey === `bottom-opp-${idx}`;
+                  const hoverStats = isHovered ? getPlayerHoverStats(rawOpp, pos.label, false, true, idx, jerseyVal) : null;
+                  const hAlign = getHorizontalAlign(pos.left);
 
-                return (
-                  <div
-                    key={`away-${idx}`}
-                    onMouseEnter={() => setHoveredPlayerKey(`away-${idx}`)}
-                    onMouseLeave={() => setHoveredPlayerKey(null)}
-                    className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
-                      isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
-                    }`}
-                    style={{ top: `${topPct}%`, left: `${leftPct}%` }}
-                  >
-                    <div className="relative w-11 h-11 rounded-full bg-rose-600 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
-                      {jerseyText}
-                      {hasOppGoal && <span className="absolute -bottom-1 -left-1 text-[10px]">⚽</span>}
-                      {hasOppRedCard ? (
-                        <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-red-600 rounded-xs shadow border border-white/40" title="Carton Rouge" />
-                      ) : hasOppYellowCard ? (
-                        <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-yellow-400 rounded-xs shadow border border-white/40" title="Carton Jaune" />
-                      ) : null}
+                  return (
+                    <div
+                      key={`bottom-opp-${idx}`}
+                      onMouseEnter={() => setHoveredPlayerKey(`bottom-opp-${idx}`)}
+                      onMouseLeave={() => setHoveredPlayerKey(null)}
+                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
+                        isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
+                      }`}
+                      style={{ top: `${topPct}%`, left: `${leftPct}%` }}
+                    >
+                      <div className="relative w-11 h-11 rounded-full bg-rose-600 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
+                        {jerseyText}
+                        {hasOppGoal && <span className="absolute -bottom-1 -left-1 text-[10px]">⚽</span>}
+                        {hasOppRedCard ? (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-red-600 rounded-xs shadow border border-white/40" title="Carton Rouge" />
+                        ) : hasOppYellowCard ? (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-yellow-400 rounded-xs shadow border border-white/40" title="Carton Jaune" />
+                        ) : null}
+                      </div>
+                      <span className="text-[8px] font-black text-rose-200 uppercase mt-0.5 tracking-tight drop-shadow bg-black/60 px-1.5 py-0.5 rounded-md truncate max-w-[65px]">
+                        Adv #{jerseyText}
+                      </span>
+
+                      <AnimatePresence>
+                        {isHovered && hoverStats && (
+                          <PlayerPitchHoverCard
+                            stats={hoverStats}
+                            placement="top"
+                            horizontalAlign={hAlign}
+                          />
+                        )}
+                      </AnimatePresence>
                     </div>
-                    <span className="text-[8px] font-black text-rose-200 uppercase mt-0.5 tracking-tight drop-shadow bg-black/60 px-1.5 py-0.5 rounded-md truncate max-w-[65px]">
-                      Adv #{jerseyText}
-                    </span>
+                  );
+                } else {
+                  // FUS is Away (Bottom Goal)
+                  const rawPid = startingXI[idx];
+                  const pid = typeof rawPid === 'object' ? (rawPid?.player_id || rawPid?.id) : rawPid;
+                  const p = getPlayer(pid);
+                  const name = p ? (p.last_name || p.name || 'FUS') : (typeof rawPid === 'object' ? (rawPid.full_name || rawPid.name || 'FUS') : `J.${idx + 1}`);
+                  const jerseyVal = p?.jersey_number ?? (typeof rawPid === 'object' ? (rawPid.jersey_number || rawPid.number) : null) ?? (idx + 1);
+                  const jerseyText = String(jerseyVal);
+                  const hasGoal = (events || []).some(e => (e.type === 'goal' || e.type === 'penalty') && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid));
+                  const hasYellowCard = (events || []).some(e => e.type === 'yellow_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid));
+                  const hasRedCard = (events || []).some(e => e.type === 'red_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid));
 
-                    {/* Popover Card */}
-                    <AnimatePresence>
-                      {isHovered && hoverStats && (
-                        <PlayerPitchHoverCard
-                          stats={hoverStats}
-                          placement="top"
-                          horizontalAlign={hAlign}
-                        />
-                      )}
-                    </AnimatePresence>
-                  </div>
-                );
+                  const topPct = 52 + (parseFloat(pos.top) * 0.44);
+                  const leftPct = parseFloat(pos.left);
+
+                  const isHovered = hoveredPlayerKey === `bottom-fus-${idx}`;
+                  const hoverStats = isHovered ? getPlayerHoverStats(rawPid, pos.label, true, true, idx, jerseyVal) : null;
+                  const hAlign = getHorizontalAlign(pos.left);
+
+                  return (
+                    <div
+                      key={`bottom-fus-${idx}`}
+                      onMouseEnter={() => setHoveredPlayerKey(`bottom-fus-${idx}`)}
+                      onMouseLeave={() => setHoveredPlayerKey(null)}
+                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
+                        isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
+                      }`}
+                      style={{ top: `${topPct}%`, left: `${leftPct}%` }}
+                    >
+                      <div className="relative w-11 h-11 rounded-full bg-slate-900 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
+                        {p?.photo_url && p.photo_url !== 'null' ? (
+                          <img src={p.photo_url} alt="" className="w-full h-full rounded-full object-cover" />
+                        ) : (
+                          <span className="text-xs font-black">{jerseyText}</span>
+                        )}
+                        <span className="absolute -top-1 -right-1 bg-slate-950 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white shadow">
+                          {jerseyText}
+                        </span>
+                        {hasGoal && <span className="absolute -bottom-1 -left-1 text-[10px]">⚽</span>}
+                        {hasRedCard ? (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-red-600 rounded-xs shadow border border-white/40" title="Carton Rouge" />
+                        ) : hasYellowCard ? (
+                          <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-3 bg-yellow-400 rounded-xs shadow border border-white/40" title="Carton Jaune" />
+                        ) : null}
+                      </div>
+                      <span className="text-[8px] font-black text-white uppercase mt-0.5 tracking-tight drop-shadow bg-black/60 px-1.5 py-0.5 rounded-md truncate max-w-[65px]">
+                        {String(name).split(' ').pop()}
+                      </span>
+
+                      <AnimatePresence>
+                        {isHovered && hoverStats && (
+                          <PlayerPitchHoverCard
+                            stats={hoverStats}
+                            placement="top"
+                            horizontalAlign={hAlign}
+                          />
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                }
               })}
             </div>
 
@@ -1321,37 +1474,78 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                 </span>
               </div>
 
-              {/* Coaches Portraits */}
+              {/* Coaches Portraits (Left = Home, Right = Away) */}
               <div className="grid grid-cols-2 gap-2 text-center text-[8px] pb-2 border-b border-slate-700/60">
                 <div className="flex flex-col items-center">
-                  <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center text-xs">
+                  <div className={`w-8 h-8 rounded-full ${isHome ? 'bg-emerald-500/20 border-emerald-400' : 'bg-rose-500/20 border-rose-400'} border flex items-center justify-center text-xs`}>
                     👨‍💼
                   </div>
-                  <p className="font-bold text-white uppercase mt-1 truncate max-w-full px-1">{headCoachName}</p>
+                  <p className="font-bold text-white uppercase mt-1 truncate max-w-full px-1">
+                    {isHome ? headCoachName : `Staff ${opponentName}`}
+                  </p>
                 </div>
 
                 <div className="flex flex-col items-center">
-                  <div className="w-8 h-8 rounded-full bg-rose-500/20 border border-rose-400 flex items-center justify-center text-xs">
+                  <div className={`w-8 h-8 rounded-full ${!isHome ? 'bg-emerald-500/20 border-emerald-400' : 'bg-rose-500/20 border-rose-400'} border flex items-center justify-center text-xs`}>
                     👨‍💼
                   </div>
-                  <p className="font-bold text-slate-300 uppercase mt-1 truncate max-w-full px-1">Staff {opponentName}</p>
+                  <p className="font-bold text-slate-300 uppercase mt-1 truncate max-w-full px-1">
+                    {!isHome ? headCoachName : `Staff ${opponentName}`}
+                  </p>
                 </div>
               </div>
 
-              {/* Substitutes List Columns with Photos */}
+              {/* Substitutes List Columns with Photos (Left = Home, Right = Away) */}
               <div className="grid grid-cols-2 gap-2 text-[8px]">
-                {/* Home Subs from Supabase */}
+                {/* Home Subs */}
                 <div className="space-y-1.5">
-                  {subs.length === 0 ? (
-                    <span className="text-slate-500 italic text-[7.5px]">Aucun remplaçant</span>
+                  {isHome ? (
+                    subs.length === 0 ? (
+                      <span className="text-slate-500 italic text-[7.5px]">Aucun remplaçant</span>
+                    ) : (
+                      subs.slice(0, 5).map((rawSub, i) => {
+                        const pid = typeof rawSub === 'object' ? (rawSub?.player_id || rawSub?.id) : rawSub;
+                        const p = getPlayer(pid);
+                        const subJersey = p?.jersey_number ?? (typeof rawSub === 'object' ? (rawSub.jersey_number || rawSub.number) : null) ?? (12 + i);
+                        const subName = p ? getPlayerShortName(pid) : (typeof rawSub === 'object' ? (rawSub.full_name || rawSub.name) : 'Remplaçant');
+                        const isSubHovered = hoveredPlayerKey === `sub-home-${i}`;
+                        const subStats = isSubHovered ? getPlayerHoverStats(rawSub, 'SUB', true, false, i, subJersey) : null;
+
+                        return (
+                          <div
+                            key={i}
+                            onMouseEnter={() => setHoveredPlayerKey(`sub-home-${i}`)}
+                            onMouseLeave={() => setHoveredPlayerKey(null)}
+                            className="relative flex items-center gap-1.5 truncate text-slate-300 hover:text-white cursor-pointer transition-colors"
+                          >
+                            <div className="w-6 h-6 rounded-full bg-slate-800 overflow-hidden border border-slate-600 shrink-0 flex items-center justify-center">
+                              {p?.photo_url && p.photo_url !== 'null' ? (
+                                <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-[8px] font-bold text-slate-400">{String(subJersey)}</span>
+                              )}
+                            </div>
+                            <span className="text-emerald-400 font-bold">{String(subJersey)}.</span>
+                            <span className="truncate uppercase text-[8px]">{String(subName)}</span>
+
+                            <AnimatePresence>
+                              {isSubHovered && subStats && (
+                                <PlayerPitchHoverCard
+                                  stats={subStats}
+                                  placement="top"
+                                  horizontalAlign="left"
+                                />
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })
+                    )
                   ) : (
-                    subs.slice(0, 5).map((rawSub, i) => {
-                      const pid = typeof rawSub === 'object' ? (rawSub?.player_id || rawSub?.id) : rawSub;
-                      const p = getPlayer(pid);
-                      const subJersey = p?.jersey_number ?? (typeof rawSub === 'object' ? (rawSub.jersey_number || rawSub.number) : null) ?? (12 + i);
-                      const subName = p ? getPlayerShortName(pid) : (typeof rawSub === 'object' ? (rawSub.full_name || rawSub.name) : 'Remplaçant');
-                      const isSubHovered = hoveredPlayerKey === `sub-home-${i}`;
-                      const subStats = isSubHovered ? getPlayerHoverStats(rawSub, 'SUB', true, false, i, subJersey) : null;
+                    (opponentSubs.length > 0 ? opponentSubs : ['12', '14', '18', '21', '24']).slice(0, 5).map((rawOppSub, i) => {
+                      const num = typeof rawOppSub === 'object' ? (rawOppSub.jersey_number || rawOppSub.number || (12 + i)) : String(rawOppSub);
+                      const isOppSubHovered = hoveredPlayerKey === `sub-home-${i}`;
+                      const oppSubStats = isOppSubHovered ? getPlayerHoverStats(rawOppSub, 'SUB', false, false, i, num) : null;
 
                       return (
                         <div
@@ -1360,20 +1554,16 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                           onMouseLeave={() => setHoveredPlayerKey(null)}
                           className="relative flex items-center gap-1.5 truncate text-slate-300 hover:text-white cursor-pointer transition-colors"
                         >
-                          <div className="w-6 h-6 rounded-full bg-slate-800 overflow-hidden border border-slate-600 shrink-0 flex items-center justify-center">
-                            {p?.photo_url && p.photo_url !== 'null' ? (
-                              <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-[8px] font-bold text-slate-400">{String(subJersey)}</span>
-                            )}
+                          <div className="w-6 h-6 rounded-full bg-slate-800 overflow-hidden border border-slate-700 shrink-0 flex items-center justify-center">
+                            <span className="text-[8px] font-bold text-rose-400">{String(num)}</span>
                           </div>
-                          <span className="text-emerald-400 font-bold">{String(subJersey)}.</span>
-                          <span className="truncate uppercase text-[8px]">{String(subName)}</span>
+                          <span className="text-rose-400 font-bold">{String(num)}.</span>
+                          <span className="truncate uppercase text-[8px]">Adv #{String(num)}</span>
 
                           <AnimatePresence>
-                            {isSubHovered && subStats && (
+                            {isOppSubHovered && oppSubStats && (
                               <PlayerPitchHoverCard
-                                stats={subStats}
+                                stats={oppSubStats}
                                 placement="top"
                                 horizontalAlign="left"
                               />
@@ -1387,36 +1577,80 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
 
                 {/* Away Subs */}
                 <div className="space-y-1.5">
-                  {(opponentSubs.length > 0 ? opponentSubs : ['12', '14', '18', '21', '24']).slice(0, 5).map((rawOppSub, i) => {
-                    const num = typeof rawOppSub === 'object' ? (rawOppSub.jersey_number || rawOppSub.number || (12 + i)) : String(rawOppSub);
-                    const isOppSubHovered = hoveredPlayerKey === `sub-away-${i}`;
-                    const oppSubStats = isOppSubHovered ? getPlayerHoverStats(rawOppSub, 'SUB', false, false, i, num) : null;
+                  {!isHome ? (
+                    subs.length === 0 ? (
+                      <span className="text-slate-500 italic text-[7.5px]">Aucun remplaçant</span>
+                    ) : (
+                      subs.slice(0, 5).map((rawSub, i) => {
+                        const pid = typeof rawSub === 'object' ? (rawSub?.player_id || rawSub?.id) : rawSub;
+                        const p = getPlayer(pid);
+                        const subJersey = p?.jersey_number ?? (typeof rawSub === 'object' ? (rawSub.jersey_number || rawSub.number) : null) ?? (12 + i);
+                        const subName = p ? getPlayerShortName(pid) : (typeof rawSub === 'object' ? (rawSub.full_name || rawSub.name) : 'Remplaçant');
+                        const isSubHovered = hoveredPlayerKey === `sub-away-${i}`;
+                        const subStats = isSubHovered ? getPlayerHoverStats(rawSub, 'SUB', true, false, i, subJersey) : null;
 
-                    return (
-                      <div
-                        key={i}
-                        onMouseEnter={() => setHoveredPlayerKey(`sub-away-${i}`)}
-                        onMouseLeave={() => setHoveredPlayerKey(null)}
-                        className="relative flex items-center gap-1.5 truncate text-slate-400 hover:text-white cursor-pointer transition-colors"
-                      >
-                        <div className="w-6 h-6 rounded-full bg-slate-800 overflow-hidden border border-slate-700 shrink-0 flex items-center justify-center">
-                          <span className="text-[8px] font-bold text-rose-400">{String(num)}</span>
+                        return (
+                          <div
+                            key={i}
+                            onMouseEnter={() => setHoveredPlayerKey(`sub-away-${i}`)}
+                            onMouseLeave={() => setHoveredPlayerKey(null)}
+                            className="relative flex items-center gap-1.5 truncate text-slate-400 hover:text-white cursor-pointer transition-colors"
+                          >
+                            <div className="w-6 h-6 rounded-full bg-slate-800 overflow-hidden border border-slate-600 shrink-0 flex items-center justify-center">
+                              {p?.photo_url && p.photo_url !== 'null' ? (
+                                <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-[8px] font-bold text-slate-400">{String(subJersey)}</span>
+                              )}
+                            </div>
+                            <span className="text-emerald-400 font-bold">{String(subJersey)}.</span>
+                            <span className="truncate uppercase text-[8px]">{String(subName)}</span>
+
+                            <AnimatePresence>
+                              {isSubHovered && subStats && (
+                                <PlayerPitchHoverCard
+                                  stats={subStats}
+                                  placement="top"
+                                  horizontalAlign="right"
+                                />
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })
+                    )
+                  ) : (
+                    (opponentSubs.length > 0 ? opponentSubs : ['12', '14', '18', '21', '24']).slice(0, 5).map((rawOppSub, i) => {
+                      const num = typeof rawOppSub === 'object' ? (rawOppSub.jersey_number || rawOppSub.number || (12 + i)) : String(rawOppSub);
+                      const isOppSubHovered = hoveredPlayerKey === `sub-away-${i}`;
+                      const oppSubStats = isOppSubHovered ? getPlayerHoverStats(rawOppSub, 'SUB', false, false, i, num) : null;
+
+                      return (
+                        <div
+                          key={i}
+                          onMouseEnter={() => setHoveredPlayerKey(`sub-away-${i}`)}
+                          onMouseLeave={() => setHoveredPlayerKey(null)}
+                          className="relative flex items-center gap-1.5 truncate text-slate-400 hover:text-white cursor-pointer transition-colors"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-slate-800 overflow-hidden border border-slate-700 shrink-0 flex items-center justify-center">
+                            <span className="text-[8px] font-bold text-rose-400">{String(num)}</span>
+                          </div>
+                          <span className="text-rose-400 font-bold">{String(num)}.</span>
+                          <span className="truncate uppercase text-[8px]">Adv #{String(num)}</span>
+
+                          <AnimatePresence>
+                            {isOppSubHovered && oppSubStats && (
+                              <PlayerPitchHoverCard
+                                stats={oppSubStats}
+                                placement="top"
+                                horizontalAlign="right"
+                              />
+                            )}
+                          </AnimatePresence>
                         </div>
-                        <span className="text-rose-400 font-bold">{String(num)}.</span>
-                        <span className="truncate uppercase text-[8px]">Adv #{String(num)}</span>
-
-                        <AnimatePresence>
-                          {isOppSubHovered && oppSubStats && (
-                            <PlayerPitchHoverCard
-                              stats={oppSubStats}
-                              placement="top"
-                              horizontalAlign="right"
-                            />
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </div>
 

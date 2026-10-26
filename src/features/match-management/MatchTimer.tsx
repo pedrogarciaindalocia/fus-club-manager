@@ -135,9 +135,24 @@ const MatchTimer: React.FC<MatchTimerProps> = ({
 
   const phaseInfo = getPhaseInfo();
 
+  const getPhaseOffsetMinutes = () => {
+    switch (matchPhase) {
+      case 'second_half': return halfDurationMinutes;
+      case 'extra_time_first': return halfDurationMinutes * 2;
+      case 'extra_time_second': return halfDurationMinutes * 2 + 15;
+      default: return 0;
+    }
+  };
+
+  const getDisplayedTimeSeconds = () => {
+    return (getPhaseOffsetMinutes() * 60) + phaseTime;
+  };
+
   // Calculate displayed minute (includes added time indication)
   const getDisplayedMinute = () => {
-    const baseMinutes = Math.floor(phaseTime / 60);
+    const offsetMin = getPhaseOffsetMinutes();
+    const currentPhaseMin = Math.floor(phaseTime / 60);
+    const totalMatchMin = offsetMin + currentPhaseMin;
     const currentAddedTime = (() => {
       switch (matchPhase) {
         case 'first_half': return addedTime.firstHalf;
@@ -149,9 +164,10 @@ const MatchTimer: React.FC<MatchTimerProps> = ({
     })();
     
     if (phaseTime > halfDurationSeconds && currentAddedTime > 0) {
-      return `${halfDurationMinutes}+${baseMinutes - halfDurationMinutes}`;
+      const normalEndMin = offsetMin + halfDurationMinutes;
+      return `${normalEndMin}+${currentPhaseMin - halfDurationMinutes}`;
     }
-    return baseMinutes.toString();
+    return totalMatchMin.toString();
   };
 
   // Start/Pause match
@@ -332,7 +348,7 @@ const MatchTimer: React.FC<MatchTimerProps> = ({
           ) : (
             <div className="text-center">
               <div className="text-7xl font-black italic tabular-nums tracking-tighter">
-                {formatTime(phaseTime)}
+                {formatTime(getDisplayedTimeSeconds())}
               </div>
               {matchPhase !== 'halftime' && matchPhase !== 'finished' && (
                 <p className="text-[12px] font-black uppercase tracking-widest text-slate-500 mt-2">

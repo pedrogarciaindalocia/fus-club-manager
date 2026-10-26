@@ -46,6 +46,7 @@ import { PlayerVideoModal } from './components/PlayerVideoModal';
 import { CandidateDriveLinkModal } from './components/CandidateDriveLinkModal';
 import { AdministrativeProcedureModal } from './components/AdministrativeProcedureModal';
 import { getFrenchPositionLabel } from './constants/scoutCriteriaByPosition';
+import { CandidatePillarsScorecard } from './components/CandidatePillarsScorecard';
 import { cn } from '../../lib/utils';
 const FOOT_OPTIONS = [
   { id: 'ALL', label: 'Tous les pieds' },
@@ -2483,45 +2484,19 @@ export const RecruitmentV2Page: React.FC = () => {
                             </div>
                           </td>
 
-                          {/* Scores 5 Piliers (Technique, Tactique, Physique, Mental, Potentiel) réservé Admin & Super Admin */}
+                          {/* Scores 5 Piliers (Technique, Tactique, Physique, Mental, Potentiel) avec survol Radar & Barres de progression */}
                           {isRecruitmentAdmin && (
                             <td className="py-3 px-3 text-center">
-                              <div className="inline-flex items-center gap-1 bg-slate-50/90 border border-slate-200/80 p-1.5 rounded-xl shadow-2xs">
-                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center" title={`Technique : ${techScore != null ? `${techScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                                  <span className="text-[8px] font-black uppercase text-slate-400">TEC</span>
-                                  <span className={cn("text-xs font-black", techScore != null ? "text-slate-900" : "text-slate-300")}>
-                                    {techScore != null ? techScore.toFixed(1) : '-'}
-                                  </span>
-                                </div>
-                                <div className="h-4 w-px bg-slate-200 shrink-0" />
-                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center" title={`Tactique : ${tactScore != null ? `${tactScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                                  <span className="text-[8px] font-black uppercase text-slate-400">TAC</span>
-                                  <span className={cn("text-xs font-black", tactScore != null ? "text-slate-900" : "text-slate-300")}>
-                                    {tactScore != null ? tactScore.toFixed(1) : '-'}
-                                  </span>
-                                </div>
-                                <div className="h-4 w-px bg-slate-200 shrink-0" />
-                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center" title={`Physique : ${physScore != null ? `${physScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                                  <span className="text-[8px] font-black uppercase text-slate-400">PHY</span>
-                                  <span className={cn("text-xs font-black", physScore != null ? "text-slate-900" : "text-slate-300")}>
-                                    {physScore != null ? physScore.toFixed(1) : '-'}
-                                  </span>
-                                </div>
-                                <div className="h-4 w-px bg-slate-200 shrink-0" />
-                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center" title={`Mental : ${mentScore != null ? `${mentScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                                  <span className="text-[8px] font-black uppercase text-slate-400">MEN</span>
-                                  <span className={cn("text-xs font-black", mentScore != null ? "text-slate-900" : "text-slate-300")}>
-                                    {mentScore != null ? mentScore.toFixed(1) : '-'}
-                                  </span>
-                                </div>
-                                <div className="h-4 w-px bg-slate-200 shrink-0" />
-                                <div className="px-1.5 py-0.5 rounded flex flex-col items-center bg-emerald-50 border border-emerald-200/80 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
-                                  <span className="text-[8px] font-black uppercase text-emerald-700">POT</span>
-                                  <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-700" : "text-slate-300")}>
-                                    {potentialScore != null ? potentialScore.toFixed(1) : '-'}
-                                  </span>
-                                </div>
-                              </div>
+                              <CandidatePillarsScorecard
+                                candidate={c}
+                                latestEval={latestEval}
+                                techScore={techScore}
+                                tactScore={tactScore}
+                                physScore={physScore}
+                                mentScore={mentScore}
+                                potentialScore={potentialScore}
+                                onOpenDetail={() => openCandidateDetail(c)}
+                              />
                             </td>
                           )}
 

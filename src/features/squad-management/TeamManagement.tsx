@@ -435,9 +435,18 @@ const TeamManagement: React.FC = () => {
 
   const handleOpenEdit = (team: Team) => {
     setEditingTeam(team);
+    let initialCat = team.category;
+    // Si l'équipe s'appelle U18 mais avait été forcée à U19 en base, rétablir U18
+    if (team.name.toUpperCase().includes('U18') && initialCat === 'U19') {
+      initialCat = 'U18';
+    } else if (team.name.toUpperCase().includes('U20') && initialCat === 'U21') {
+      initialCat = 'U20';
+    } else if (team.name.toUpperCase().includes('U22') && initialCat === 'U23') {
+      initialCat = 'U22';
+    }
     setFormData({
       name: team.name,
-      category: team.category,
+      category: initialCat,
       coach_id: team.coach_id || '',
       photo_url: (team.photo_url && team.photo_url !== 'null') ? team.photo_url : ''
     });
@@ -793,7 +802,18 @@ const TeamManagement: React.FC = () => {
                          <Input 
                            required
                            value={formData.name}
-                           onChange={e => setFormData({...formData, name: e.target.value})}
+                           onChange={e => {
+                             const newName = e.target.value;
+                             if (!editingTeam) {
+                               const upper = newName.toUpperCase();
+                               const foundCat = formCategories.find(c => upper.includes(c));
+                               if (foundCat) {
+                                 setFormData(prev => ({ ...prev, name: newName, category: foundCat }));
+                                 return;
+                               }
+                             }
+                             setFormData(prev => ({ ...prev, name: newName }));
+                           }}
                            placeholder="ex. FUS U13 Elite" 
                            className="h-16 px-8 rounded-2xl bg-secondary/30 border-transparent font-bold text-lg focus:bg-background focus:ring-2 ring-primary/20" 
                          />
