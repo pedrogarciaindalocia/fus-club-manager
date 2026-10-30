@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_2" data-name="Layer 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 626.55 971.46">
+  <defs>
+    <style>
+      .cls-1, .cls-2, .cls-3 {
+        fill: none;
+      }
+
+      .cls-1, .cls-2, .cls-4 {
+        opacity: .31;
+      }
+
+      .cls-5 {
+        fill: #1bb183;
+      }
+
+      .cls-6 {
+        fill: #16986e;
+      }
+
+      .cls-7 {
+        fill: #383839;
+      }
+
+      .cls-2, .cls-3 {
+        stroke: #fff;
+        stroke-miterlimit: 10;
+        stroke-width: 4px;
+      }
+
+      .cls-4 {
+        fill: #fff;
+      }
+    </style>
+  </defs>
+  <g id="Layer_4" data-name="Layer 4">
+    <g>
+      <path class="cls-7" fill="#383839" d="m576.39,971.46H50.16c-27.7,0-49.31-20.04-48.27-44.75L33.6,176.16c1.04-24.72,21.3-44.82,45.24-44.9l454.76-1.5c23.94-.08,44.53,19.94,45.99,44.71l44.31,752.14c1.46,24.77-19.82,44.85-47.52,44.85Z"/>
+      <path class="cls-5" fill="#1bb183" d="m575.03,944.72l-523.95.05c-27.58,0-49.1-20.03-48.05-44.75L34.72,149.47c1.04-24.72,21.2-44.82,45.02-44.9l452.49-1.55c23.82-.08,44.32,19.93,45.78,44.7l44.31,752.14c1.46,24.77-19.72,44.85-47.3,44.85Z"/>
+      <polygon class="cls-6" fill="#16986e" points="588.84 331.49 26.98 332.84 31.05 236.53 583.16 234.97 588.84 331.49"/>
+      <polygon class="cls-6" fill="#16986e" points="599.84 518.23 19.11 519.19 23.17 422.88 594.16 421.72 599.84 518.23"/>
+      <polygon class="cls-6" fill="#16986e" points="610.85 704.98 11.23 705.54 15.3 609.23 605.16 608.46 610.85 704.98"/>
+      <polygon class="cls-6" fill="#16986e" points="621.85 891.72 3.36 891.89 7.43 795.58 616.16 795.21 621.85 891.72"/>
+      <polygon class="cls-2" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="4" opacity="0.31" points="591.06 916.85 29.23 916.96 58.36 147.37 549.68 145.79 591.06 916.85"/>
+      <path class="cls-2" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="4" opacity="0.31" d="m412.29,521.32c1.45,55.01-44.2,99.66-101.95,99.73s-104.15-44.43-103.62-99.39c.52-54.97,46.17-99.62,101.95-99.73,55.78-.11,102.18,44.39,103.62,99.39Z"/>
+      <g class="cls-1" fill="none" opacity="0.31">
+        <polygon class="cls-3" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="4" points="478.16 285.41 129.03 286.32 132.38 147.13 472.68 146.04 478.16 285.41"/>
+        <polygon class="cls-3" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="4" points="389.24 215.97 216.88 216.48 217.45 146.86 387.6 146.31 389.24 215.97"/>
+        <path class="cls-3" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="4" d="m348.51,285.35c-3.91,21.17-22.31,37.15-44.65,37.2-22.28.05-40.87-15.73-45.18-36.78"/>
+      </g>
+      <g class="cls-1" fill="none" opacity="0.31">
+        <polygon class="cls-3" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="4" points="497.52 777.47 117.22 777.73 113.87 916.92 503.01 916.85 497.52 777.47"/>
+        <polygon class="cls-3" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="4" points="404.09 847.2 211.73 847.28 211.16 916.9 405.72 916.86 404.09 847.2"/>
+        <path class="cls-3" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="4" d="m356.31,777.96c-4.93-21.16-25.21-37.07-49.24-37.05-23.96.02-43.95,15.87-48.63,36.93"/>
+      </g>
+      <line class="cls-2" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="4" opacity="0.31" x1="44.18" y1="521.92" x2="569.82" y2="521.06"/>
+      <path class="cls-4" fill="#fff" opacity="0.31" d="m313.35,521.48c.01,1.37-1.13,2.49-2.55,2.49s-2.58-1.11-2.59-2.48,1.13-2.49,2.55-2.49,2.58,1.11,2.59,2.48Z"/>
+    </g>
+  </g>
+</svg>

@@ -257,7 +257,19 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
 
   if (candidate.status) {
     const validStatuses = new Set(['registered', 'in_trial', 'selected', 'rejected', 'on_hold']);
-    payload.status = validStatuses.has(candidate.status) ? candidate.status : 'registered';
+    if (validStatuses.has(candidate.status)) {
+      payload.status = candidate.status;
+    } else if (candidate.status === 'recruit_now') {
+      payload.status = 'selected';
+    } else if (candidate.status === 'recruit_standby') {
+      payload.status = 'on_hold';
+    } else if (candidate.status === 'invitation_test') {
+      payload.status = 'in_trial';
+    } else if (candidate.status === 'to_follow') {
+      payload.status = 'registered';
+    } else {
+      payload.status = 'registered';
+    }
   }
 
   for (const [key, val] of Object.entries(candidate)) {

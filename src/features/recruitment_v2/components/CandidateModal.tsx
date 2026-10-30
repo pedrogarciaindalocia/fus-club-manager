@@ -6,15 +6,16 @@ import {
   Target, Globe, Compass, Video, ExternalLink, Camera, Upload, Trash2, Loader2, Image as ImageIcon, Check, Users,
   FileSpreadsheet, Search, CheckCircle2, Flame, Eye, Trophy, RotateCcw, Info, Calendar
 } from 'lucide-react';
-import type { TrialCandidate, CandidateStatus, FootType, RecommendationPriority, Scout, CandidateEvaluation, AdministrativeDocument } from '../types/recruitment';
-import { RECRUITMENT_AGE_CATEGORIES, REFERENCE_PLAYER_STYLES } from '../types/recruitment';
+import type { TrialCandidate, CandidateStatus, FootType, RecommendationPriority, Scout, CandidateEvaluation, AdministrativeDocument, PlayerRecruitmentStatus } from '../types/recruitment';
+import { RECRUITMENT_AGE_CATEGORIES, REFERENCE_PLAYER_STYLES, RECRUITMENT_CATEGORY_GROUPS, PLAYER_RECRUITMENT_STATUS_OPTIONS, groupCategoriesByPole, getAgeCategoryFromBirthDate, getPoleFromCategory } from '../types/recruitment';
 import { AdministrativeDossierForm } from './AdministrativeDossierForm';
 import { cn } from '../../../lib/utils';
 import { usePlayers } from '../../../hooks/usePlayers';
 import { NATIONALITIES, normalizeAgeCategory } from '../../../constants';
 import { UNIFIED_POSITION_OPTIONS, formatUnifiedPosition } from '../../../constants/positions';
 import { useMetrics } from '../../../hooks/useMetrics';
-import { GEOGRAPHY_DATA, getContinentForCountry } from '../../../constants/geography';
+import { GEOGRAPHY_DATA, getContinentForCountry, getCountryForNationality, getCountryFlag, getCountryNationality } from '../../../constants/geography';
+import { PlayerGeographyFields } from '../../../components/PlayerGeographyFields';
 import { usePermissions } from '../../../context/PermissionsContext';
 import {
   getScoutPositionConfig,
@@ -96,12 +97,70 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     authState?.user?.system_role || '',
     authState?.user?.role || ''
   ].map(r => r.toLowerCase().trim());
-  const isSuperAdmin = userRoles.includes('super_admin') || Boolean(authState?.isRealSuperAdmin);
-  const isAdmin = isSuperAdmin || userRoles.includes('admin') || userRoles.includes('scout_admin');
+  const hasExplicitPerms = Boolean(authState?.permissions && authState.permissions.length > 0);
+  const isSuperAdmin = Boolean(!authState?.isImpersonating && userRoles.includes('super_admin'));
+  const isScoutAdmin = userRoles.includes('scout_admin');
+  const isAdmin = isSuperAdmin || isScoutAdmin || (!hasExplicitPerms && userRoles.includes('admin'));
 
   const canCreateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'create'));
-  const canUpdateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'update'));
+  const canUpdateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'edit_player') || hasSubModuleAccess('candidates', 'update'));
   const canEditDriveLink = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'drive_link'));
+
+  // Règle Métier US-DASH-119 :
+  // Seuls Super Admin, Scout Admin, Administrateur (Directeur Administratif) peuvent valider 'Recrutement immédiatement'.
+  // Pour le Scout Manager, 'Recrutement immédiatement' est totalement masqué.
+  const modalJobTitle = (authState?.user?.job_title || '').trim().toLowerCase();
+  const isModalDirecteurAdministratif = Boolean(
+    modalJobTitle.includes('administratif') ||
+    (authState?.user as any)?.role === 'direction' ||
+    authState?.user?.system_role === 'direction'
+  );
+  const isModalScoutManager = Boolean(
+    !isSuperAdmin && !isScoutAdmin && (
+      userRoles.includes('scout_manager') ||
+      userRoles.includes('manager') ||
+      modalJobTitle.includes('scout manager')
+    )
+  );
+  const canProcessRecruitNow = Boolean(
+    !isModalScoutManager && (
+      isSuperAdmin ||
+      isScoutAdmin ||
+      (!hasExplicitPerms && (isAdmin || isModalDirecteurAdministratif)) ||
+      hasSubModuleAccess('candidates', 'recruit_now')
+    )
+  );
+
+  const currentUserId = authState?.user?.id;
+  const isCandidateOwner = Boolean(
+    !candidate ||
+    candidate.discovering_scout === currentUserId ||
+    candidate.discovering_scout_id === currentUserId ||
+    candidate.created_by === currentUserId ||
+    (candidate as any)?.scout_id === currentUserId
+  );
+
+  // Le scout / Scout Manager ne peut modifier le statut QUE pour ses propres joueurs
+  const canChangeStatus = Boolean(
+    isSuperAdmin ||
+    isAdmin ||
+    isScoutAdmin ||
+    canProcessRecruitNow ||
+    isCandidateOwner
+  );
+
+  // Options de statuts disponibles selon les droits :
+  // - Jamais de 'recruit_standby'
+  // - 'recruit_now' disponible pour Direction (canProcessRecruitNow) OU pour le scout découvreur (isCandidateOwner)
+  const availableStatusOptions = useMemo(() => {
+    return PLAYER_RECRUITMENT_STATUS_OPTIONS.filter(opt => {
+      if (opt.value === 'recruit_standby') return false;
+      if (opt.value === 'recruit_now') {
+        return canProcessRecruitNow || isCandidateOwner;
+      }
+      return true;
+    });
+  }, [canProcessRecruitNow, isCandidateOwner]);
 
   const allowedCategories = useMemo(() => {
     if (isSuperAdmin || isAdmin) return RECRUITMENT_AGE_CATEGORIES;
@@ -186,6 +245,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [birthDate, setBirthDate] = useState('');
   const [birthPlace, setBirthPlace] = useState('');
   const [nationality, setNationality] = useState('Marocaine');
+  const [continent, setContinent] = useState('Afrique');
+  const [country, setCountry] = useState('Maroc');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('Rabat');
   const [phone, setPhone] = useState('');
@@ -399,7 +460,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const getSuggestedAgeCategory = (ageVal: number | null): string => {
     let cat = 'U19';
     if (ageVal === null) cat = allowedCategories[0] || 'U19';
-    else if (ageVal <= 13) cat = 'U13';
+    else if (ageVal <= 9) cat = 'U9';
+    else if (ageVal === 10) cat = 'U10';
+    else if (ageVal === 11) cat = 'U11';
+    else if (ageVal === 12) cat = 'U12';
+    else if (ageVal === 13) cat = 'U13';
     else if (ageVal === 14) cat = 'U14';
     else if (ageVal === 15) cat = 'U15';
     else if (ageVal === 16) cat = 'U16';
@@ -418,9 +483,10 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
   const handleBirthDateChange = (dateVal: string) => {
     setBirthDate(dateVal);
-    const newAge = calculateAge(dateVal);
-    if (newAge !== null && !candidate) {
-      setAgeCategory(getSuggestedAgeCategory(newAge));
+    if (dateVal) {
+      // Règle Métier US-DASH-120 : Catégorie d'âge réelle calculée systématiquement via la date de naissance
+      const computedCat = getAgeCategoryFromBirthDate(dateVal);
+      setAgeCategory(computedCat);
     }
   };
 
@@ -436,6 +502,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setBirthDate(candidate.birth_date || '');
       setBirthPlace(candidate.birth_place || '');
       setNationality(candidate.nationality || 'Marocaine');
+      const candCountry = candidate.country || getCountryForNationality(candidate.nationality) || 'Maroc';
+      setCountry(candCountry);
+      setContinent(getContinentForCountry(candCountry));
       setAddress(candidate.address || '');
       setCity(candidate.city || 'Rabat');
       setPhone(candidate.phone || '');
@@ -473,7 +542,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setPreferredFoot(candidate.preferred_foot || 'Droitier');
       setHeightCm(candidate.height_cm ?? 150);
       setWeightKg(candidate.weight_kg ?? 65);
-      setAgeCategory(normalizeAgeCategory(candidate.age_category || 'U19'));
+      // Règle Métier US-DASH-120 : Priorité absolue à la date de naissance pour déterminer la catégorie réelle
+      const realCategory = candidate.birth_date
+        ? getAgeCategoryFromBirthDate(candidate.birth_date, candidate.age_category || 'U19')
+        : normalizeAgeCategory(candidate.age_category || 'U19');
+      setAgeCategory(realCategory);
       setCurrentClub(candidate.current_club || '');
       setPreviousClubs(candidate.previous_clubs || '');
       setMatchesPlayed(candidate.matches_played ?? '');
@@ -755,7 +828,12 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         setAgeCategory(getSuggestedAgeCategory(computedAge));
       }
     }
-    if (p.nationality) setNationality(p.nationality);
+    if (p.nationality) {
+      setNationality(p.nationality);
+      const cCountry = getCountryForNationality(p.nationality);
+      setCountry(cCountry);
+      setContinent(getContinentForCountry(cCountry));
+    }
     if (p.height) setHeightCm(Number(p.height));
     if (p.weight) setWeightKg(Number(p.weight));
 
@@ -1396,6 +1474,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         birth_date: birthDate || undefined,
         birth_place: birthPlace || undefined,
         nationality,
+        country: country || 'Maroc',
         address: address || undefined,
         city: city || undefined,
         phone: phone.trim() || undefined,
@@ -1417,7 +1496,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         preferred_foot: preferredFoot,
         height_cm: heightCm ? Number(heightCm) : undefined,
         weight_kg: weightKg ? Number(weightKg) : undefined,
-        age_category: ageCategory,
+        // Règle Métier US-DASH-120 : Catégorie d'âge réelle indexée obligatoirement selon la date de naissance
+        age_category: birthDate ? getAgeCategoryFromBirthDate(birthDate, ageCategory) : ageCategory,
         surclassement: isUpgradedCategory ? `+${upgradedCategoriesCount}C` : '0C',
         is_upgraded_category: isUpgradedCategory,
         upgraded_categories_count: isUpgradedCategory ? upgradedCategoriesCount : 0,
@@ -1426,7 +1506,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         performance_rating: Number(performanceRating),
         is_starter: isStarter,
         team_formation: teamFormation.trim() || undefined,
-        scout_state_decision: mode === 'player_only' ? candidate?.scout_state_decision : scoutStateDecision,
+        scout_state_decision: scoutStateDecision === 'recruit_standby' ? 'to_follow' : scoutStateDecision,
+        is_recruit_now_validated: scoutStateDecision === 'recruit_now',
         information_source: informationSource,
         information_source_person: informationSourcePerson.trim() || undefined,
 
@@ -1461,7 +1542,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         preferred_locations: preferredLocations.length > 0 ? preferredLocations : undefined,
 
         pipeline_stage: candidate?.pipeline_stage || 'shortlisted',
-        status,
+        status: (scoutStateDecision === 'recruit_now' ? 'selected' : scoutStateDecision === 'recruit_standby' ? 'on_hold' : scoutStateDecision === 'invitation_test' ? 'in_trial' : 'registered') as CandidateStatus,
       }, evaluationPayload);
       onClose();
     } finally {
@@ -1801,8 +1882,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     </div>
                   </div>
 
-                  {/* 2. Date de naissance, Lieu de naissance, Nationalité */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* 2. Date de naissance & Lieu de naissance */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label className="block text-xs font-bold text-slate-800">
@@ -1828,18 +1909,30 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-800 mb-1">
-                        Nationalité
-                      </label>
-                      <input
-                        type="text"
-                        value={nationality}
-                        onChange={(e) => setNationality(e.target.value)}
-                        placeholder="Ex: Marocaine"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                      />
-                    </div>
+                  </div>
+
+                  {/* 3. Sélecteur géographique en cascade (Continent, Pays avec drapeau, Ville, Nationalité) */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <PlayerGeographyFields
+                      continent={continent}
+                      onContinentChange={setContinent}
+                      country={country}
+                      onCountryChange={(newCountry, flag, defaultNat) => {
+                        setCountry(newCountry);
+                        setNationality(defaultNat);
+                      }}
+                      city={city}
+                      onCityChange={(newCity) => {
+                        setCity(newCity);
+                        if (!birthPlace || birthPlace === city) {
+                          setBirthPlace(newCity);
+                        }
+                      }}
+                      birthPlace={birthPlace}
+                      onBirthPlaceChange={setBirthPlace}
+                      nationality={nationality}
+                      onNationalityChange={setNationality}
+                    />
                   </div>
                 </div>
 
@@ -1862,18 +1955,171 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                      Catégorie d'Âge Principale <span className="text-rose-500">*</span>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                      <span>Catégorie d'Âge Principale <span className="text-rose-500">*</span></span>
+                      {(() => {
+                        const pole = groupCategoriesByPole([ageCategory]);
+                        const currentPoleLabel = pole.labellise.length > 0 ? 'Pôle Labellisé' : pole.formation.length > 0 ? 'Pôle Formation' : 'Pôle Senior';
+                        const currentPoleColor = pole.labellise.length > 0 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : pole.formation.length > 0 ? 'bg-blue-50 text-blue-800 border-blue-200' : 'bg-purple-50 text-purple-800 border-purple-200';
+                        return (
+                          <span className={cn("text-[10px] font-black uppercase px-2 py-0.5 rounded-md border", currentPoleColor)}>
+                            {currentPoleLabel}
+                          </span>
+                        );
+                      })()}
                     </label>
                     <select
                       value={ageCategory}
                       onChange={(e) => setAgeCategory(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 cursor-pointer"
                     >
-                      {allowedCategories.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
+                      {(() => {
+                        const groups = groupCategoriesByPole(allowedCategories);
+                        return (
+                          <>
+                            {groups.labellise.length > 0 && (
+                              <optgroup label="⚽ Pôle Labellisé (U9 à U12)">
+                                {groups.labellise.map(cat => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {groups.formation.length > 0 && (
+                              <optgroup label="🎓 Pôle Formation (U13 à U21)">
+                                {groups.formation.map(cat => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {groups.senior.length > 0 && (
+                              <optgroup label="🏆 Pôle Senior (U23 & Senior)">
+                                {groups.senior.map(cat => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {groups.other.length > 0 && (
+                              <optgroup label="Autres Catégories">
+                                {groups.other.map(cat => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </>
+                        );
+                      })()}
                     </select>
+                  </div>
+                </div>
+
+                {/* ── CARTE : STATUT DU JOUEUR & DÉCISION RECRUTEMENT (SECTION A) ── */}
+                <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-700 flex items-center justify-center">
+                        <Target className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                          Statut du Joueur & Décision Recrutement
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Orientation décisionnelle officielle du joueur enregistrée dans la base de données.
+                        </p>
+                      </div>
+                    </div>
+                    <span className={cn(
+                      "text-[10px] font-black uppercase px-2.5 py-1 rounded-full border shadow-2xs",
+                      scoutStateDecision === 'recruit_now' ? "bg-emerald-50 text-emerald-800 border-emerald-300" :
+                      scoutStateDecision === 'invitation_test' ? "bg-blue-50 text-blue-800 border-blue-300" :
+                      "bg-indigo-50 text-indigo-800 border-indigo-300"
+                    )}>
+                      {availableStatusOptions.find(o => o.value === scoutStateDecision)?.label || (scoutStateDecision === 'recruit_now' ? 'Recrutement immédiatement' : 'À suivre')}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                      <span>Statut Officiel du Joueur <span className="text-rose-500">*</span></span>
+                      {isModalScoutManager && !isCandidateOwner && (
+                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          Modification réservée au scout créateur
+                        </span>
+                      )}
+                    </label>
+                    <select
+                      value={scoutStateDecision}
+                      disabled={!canChangeStatus}
+                      onChange={(e) => {
+                        const val = e.target.value as PlayerRecruitmentStatus;
+                        if (!canChangeStatus) {
+                          toast.error("Vous pouvez modifier le statut uniquement pour vos propres joueurs.");
+                          return;
+                        }
+                        if (val === 'recruit_now' && !canProcessRecruitNow && !isCandidateOwner) {
+                          toast.error("Vous pouvez sélectionner 'Recrutement immédiatement' uniquement pour vos propres joueurs.");
+                          return;
+                        }
+                        setScoutStateDecision(val);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 cursor-pointer disabled:cursor-not-allowed disabled:opacity-80"
+                    >
+                      <option value="to_follow">À suivre</option>
+                      <option value="invitation_test">Inviter à un test</option>
+                      {(canProcessRecruitNow || isCandidateOwner) && (
+                        <option value="recruit_now">
+                          Recrutement immédiatement
+                        </option>
+                      )}
+                    </select>
+
+                    {!canProcessRecruitNow && (
+                      <p className="mt-1.5 text-[10px] text-slate-500">
+                        {isCandidateOwner
+                          ? "En tant que scout découvreur, vous pouvez orienter votre joueur vers « À suivre », « Inviter à un test » ou « Recrutement immédiatement »."
+                          : "Ce joueur a été détecté par un autre scout. La modification de statut est réservée à son découvreur ou à la Direction."}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Boutons d'état rapides */}
+                  <div className={cn(
+                    "grid gap-2 pt-1",
+                    availableStatusOptions.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"
+                  )}>
+                    {availableStatusOptions.map((opt) => {
+                      const isSelected = scoutStateDecision === opt.value;
+                      const isOptDisabled = !canChangeStatus || (!canProcessRecruitNow && !isCandidateOwner && opt.value === 'recruit_now');
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          disabled={isOptDisabled && !isSelected}
+                          onClick={() => { if (!isOptDisabled) setScoutStateDecision(opt.value); }}
+                          title={isOptDisabled ? "Modification de statut non autorisée" : undefined}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-1",
+                            isOptDisabled ? "cursor-not-allowed" : "cursor-pointer",
+                            isOptDisabled && !isSelected && "opacity-50",
+                            isSelected
+                              ? opt.value === 'recruit_now'
+                                ? "bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/30 font-bold"
+                                : opt.value === 'invitation_test'
+                                ? "bg-blue-600 text-white border-blue-700 shadow-xs ring-2 ring-blue-500/30 font-bold"
+                                : "bg-indigo-600 text-white border-indigo-700 shadow-xs ring-2 ring-indigo-500/30 font-bold"
+                              : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                          )}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-[11px] font-black uppercase tracking-tight">{opt.shortLabel}</span>
+                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                          </div>
+                          <p className={cn("text-[9px] line-clamp-2 leading-tight", isSelected ? "text-white/90" : "text-slate-500")}>
+                            {opt.description}
+                          </p>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -2346,144 +2592,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   </div>
                 </div>
 
-                {/* 1. ÉTAT DU SCOUT & STATUT D'OBSERVATION (VU vs DÉJÀ VU) */}
+                {/* 1. STATUT D'OBSERVATION (VU vs DÉJÀ VU) */}
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-4">
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <Target className="w-4 h-4 text-primary" />
-                        État / Décision du Rapport *
-                      </label>
-                      <span className="text-[11px] text-muted-foreground font-medium">
-                        Orientations suite à l'observation
-                      </span>
-                    </div>
-
-                    {/* ── TOGGLE : RECRUTEMENT STAND-BY (US-DASH-104) ── */}
-                    {(() => {
-                      const isStandby = scoutStateDecision === 'recruit_standby' || scoutStateDecision === 'recruit_now';
-                      return (
-                        <div className={cn(
-                          "p-4 rounded-2xl border transition-all duration-300",
-                          isStandby
-                            ? "bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border-amber-500/40 shadow-xs ring-1 ring-amber-500/20"
-                            : "bg-white border-slate-200"
-                        )}>
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                              <div className={cn(
-                                "w-10 h-10 rounded-xl flex items-center justify-center transition-all",
-                                isStandby
-                                  ? "bg-amber-600 text-white shadow-md shadow-amber-950/20"
-                                  : "bg-slate-100 text-slate-500"
-                              )}>
-                                <Clock className={cn("w-5 h-5", isStandby ? "text-white" : "")} />
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                                    Recrutement Stand-by
-                                  </span>
-                                  {isStandby && (
-                                    <span className="px-2 py-0.5 rounded-full bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider animate-pulse">
-                                      En attente Direction
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-[11px] text-slate-500">
-                                  Positionne le profil en stand-by de recrutement. Vous continuez le rapport d'observation normalement (sections 2 et 3).
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Switch Toggle */}
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={isStandby}
-                              onClick={() => {
-                                const next = isStandby ? 'invitation_test' : 'recruit_standby';
-                                setScoutStateDecision(next);
-                                if (next === 'recruit_standby') {
-                                  toast.info("Recrutement Stand-by activé : le dossier sera notifié à la Direction pour arbitrage en Database. Poursuivez votre évaluation.");
-                                }
-                              }}
-                              className={cn(
-                                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
-                                isStandby ? "bg-amber-600" : "bg-slate-300"
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
-                                  isStandby ? "translate-x-5" : "translate-x-0"
-                                )}
-                              />
-                            </button>
-                          </div>
-
-                          {isStandby && (
-                            <div className="mt-3 pt-3 border-t border-amber-500/20 flex items-center gap-2 text-xs font-bold text-amber-900 bg-amber-500/10 p-2.5 rounded-xl animate-in fade-in duration-200">
-                              <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0" />
-                              <span>Recrutement Stand-by activé : Une notification a été émise à la Direction. Poursuivez la saisie du rapport en cliquant sur « Suivant (2. Qualités) ».</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Orientations alternatives si le toggle standby est désactivé */}
-                    {scoutStateDecision !== 'recruit_standby' && scoutStateDecision !== 'recruit_now' && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                        {[
-                          {
-                            id: 'invitation_test' as const,
-                            label: 'Invitation Test',
-                            sub: 'Convoquer pour match d’essai / test académie',
-                            icon: Zap,
-                            activeClass: 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-400/40 shadow-sm'
-                          },
-                          {
-                            id: 'to_follow' as const,
-                            label: 'À suivre',
-                            sub: 'Conserver en veille active & prochaines échéances',
-                            icon: Eye,
-                            activeClass: 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-500/40 shadow-sm'
-                          },
-                        ].map((dec) => {
-                          const Icon = dec.icon;
-                          const isSelected = scoutStateDecision === dec.id;
-                          return (
-                            <button
-                              key={dec.id}
-                              type="button"
-                              onClick={() => setScoutStateDecision(dec.id)}
-                              className={cn(
-                                "p-3 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 cursor-pointer",
-                                isSelected
-                                  ? dec.activeClass
-                                  : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50/80"
-                              )}
-                            >
-                              <div className="flex items-center justify-between w-full">
-                                <span className="text-xs font-black flex items-center gap-1.5">
-                                  <Icon className={cn("w-3.5 h-3.5", isSelected ? "text-white" : "text-primary")} />
-                                  {dec.label}
-                                </span>
-                                {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
-                              </div>
-                              <p className={cn("text-[10px] leading-tight", isSelected ? "text-white/90" : "text-muted-foreground")}>
-                                {dec.sub}
-                              </p>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Statut d'Observation : Vu vs Déjà vu avec règle automatique */}
-                  <div className="pt-3 border-t border-slate-200/80">
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
                         <Eye className="w-4 h-4 text-blue-600" />
@@ -3556,7 +3667,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     title={mode !== 'report_only' && (candidate ? !canUpdateCandidate : !canCreateCandidate) ? "Vous n'avez pas la permission CRUD requise" : undefined}
                     className="px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow hover:bg-primary/90 disabled:opacity-50 cursor-pointer flex items-center gap-2"
                   >
-                    {(scoutStateDecision === 'recruit_standby' || scoutStateDecision === 'recruit_now') && <Clock className="w-4 h-4 text-white" />}
+                    {scoutStateDecision === 'recruit_now' && <Clock className="w-4 h-4 text-white" />}
                     <span>
                       {isSubmitting
                         ? 'Enregistrement...'

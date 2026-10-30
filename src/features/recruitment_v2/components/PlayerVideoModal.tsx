@@ -19,7 +19,7 @@ export const PlayerVideoModal: React.FC<PlayerVideoModalProps> = ({
 }) => {
   const { authState } = usePermissions();
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
-  const isSuperAdmin = currentRole === 'super_admin' || authState.isRealSuperAdmin;
+  const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
   const isScout = isScoutBranch(currentRole, authState.user?.job_title);
   // Télécharger et Lien direct masqués pour la cellule Scout (notamment Scout Manager)
   const canDownloadAndOpenDirect = isSuperAdmin || (!isScout && currentRole === 'admin');

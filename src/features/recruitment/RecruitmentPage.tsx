@@ -19,6 +19,7 @@ import type {
 } from './types/recruitment';
 import { RECRUITMENT_AGE_CATEGORIES } from './types/recruitment';
 import { PLAYER_POSITIONS } from '../../constants';
+import { getCountryFlag } from '../../constants/geography';
 
 // Subcomponents
 import CandidateModal from './components/CandidateModal';
@@ -263,7 +264,21 @@ export const RecruitmentPage: React.FC = () => {
       return Array.from(bestMap.values()).map(v => v.candidate);
     }
 
-    return list;
+    // Tri prioritaire : Afficher les profils marocains en premier lieu
+    const isMoroccan = (c: TrialCandidate) => {
+      const text = `${c.nationality || ''} ${c.country || ''}`.toLowerCase();
+      if (!text.trim()) return true;
+      return text.includes('maroc') || text.includes('moroc');
+    };
+
+    return [...list].sort((a, b) => {
+      const aMoroc = isMoroccan(a) ? 1 : 0;
+      const bMoroc = isMoroccan(b) ? 1 : 0;
+      if (bMoroc !== aMoroc) {
+        return bMoroc - aMoroc; // Les profils marocains apparaissent en tête
+      }
+      return new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime();
+    });
   }, [candidates, evaluations, searchQuery, categoryFilter, positionFilter, stageFilter, footFilter, verdictFilter, bestScorePerPositionFilter]);
 
   // 2. Filtrage complet des observations
@@ -889,8 +904,12 @@ export const RecruitmentPage: React.FC = () => {
                         <span className="font-bold">{c.height_cm ? `${c.height_cm}cm` : '-'} / {c.weight_kg ? `${c.weight_kg}kg` : '-'}</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-muted-foreground block">Nationalité</span>
-                        <span className="font-bold">{c.nationality}</span>
+                        <span className="text-[10px] text-muted-foreground block">Nationalité & Origine</span>
+                        <span className="font-bold flex items-center justify-center gap-1 text-slate-900">
+                          <span className="text-xs leading-none">{getCountryFlag(c.country || c.nationality)}</span>
+                          <span>{c.nationality || 'Marocaine'}</span>
+                          {c.city && <span className="text-slate-500 font-medium text-[11px]">({c.city})</span>}
+                        </span>
                       </div>
                     </div>
 

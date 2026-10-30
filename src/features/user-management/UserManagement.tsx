@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseAdmin } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 
-// Client Supabase standard pour les opérations d'administration utilisateur
-const getAdminSupabase = () => supabase;
+// Client Supabase avec privilèges d'administration pour les surcharges de permissions et gestion utilisateurs
+const getAdminSupabase = () => supabaseAdmin;
 
 const DEFAULT_FUS_CLUB_ID = '45642829-a3d7-48de-afdd-3c45a1ced474';
 
@@ -631,7 +631,7 @@ const UserManagement: React.FC = () => {
 
   const { authState, can } = usePermissions();
   const currentUserRole = authState?.user?.system_role?.toLowerCase() || '';
-  const isSuperAdmin = currentUserRole === 'super_admin' || Boolean(authState.isRealSuperAdmin);
+  const isSuperAdmin = !authState.isImpersonating && (currentUserRole === 'super_admin');
   const isScoutAdmin = currentUserRole === 'scout_admin';
   const isGlobalAdmin = isSuperAdmin || currentUserRole === 'admin';
   const hasUserManagementAccess = isGlobalAdmin || isScoutAdmin;
@@ -1548,7 +1548,11 @@ Direction Générale — FUS Rabat`;
       }
 
       try {
-        localStorage.setItem(`fusc_user_perms_${currentUserId}`, JSON.stringify(permsToInsert.map(p => p.permission_id)));
+        const permsList = permsToInsert.map(p => p.permission_id);
+        localStorage.setItem(`fusc_user_perms_${currentUserId}`, JSON.stringify(permsList));
+        window.dispatchEvent(new CustomEvent('fusc_user_perms_updated', {
+          detail: { userId: currentUserId, permissions: permsList }
+        }));
       } catch (e) {
         console.warn('LocalStorage permissions cache notice:', e);
       }

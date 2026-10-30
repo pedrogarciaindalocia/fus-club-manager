@@ -11,7 +11,8 @@ import { cn } from '../../../lib/utils';
 import { NATIONALITIES, normalizeAgeCategory } from '../../../constants';
 import { UNIFIED_POSITION_OPTIONS, formatUnifiedPosition } from '../../../constants/positions';
 import { useMetrics } from '../../../hooks/useMetrics';
-import { GEOGRAPHY_DATA, getContinentForCountry } from '../../../constants/geography';
+import { GEOGRAPHY_DATA, getContinentForCountry, getCountryForNationality, getCountryFlag, getCountryNationality } from '../../../constants/geography';
+import { PlayerGeographyFields } from '../../../components/PlayerGeographyFields';
 import { usePermissions } from '../../../context/PermissionsContext';
 import {
   getScoutPositionConfig,
@@ -135,6 +136,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [birthDate, setBirthDate] = useState('');
   const [birthPlace, setBirthPlace] = useState('');
   const [nationality, setNationality] = useState('Marocaine');
+  const [continent, setContinent] = useState('Afrique');
+  const [country, setCountry] = useState('Maroc');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('Rabat');
   const [phone, setPhone] = useState('');
@@ -302,6 +305,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setBirthDate(candidate.birth_date || '');
       setBirthPlace(candidate.birth_place || '');
       setNationality(candidate.nationality || 'Marocaine');
+      const candCountry = candidate.country || getCountryForNationality(candidate.nationality) || 'Maroc';
+      setCountry(candCountry);
+      setContinent(getContinentForCountry(candCountry));
       setAddress(candidate.address || '');
       setCity(candidate.city || 'Rabat');
       setPhone(candidate.phone || '');
@@ -827,6 +833,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         birth_date: birthDate || undefined,
         birth_place: birthPlace || undefined,
         nationality,
+        country: country || 'Maroc',
         address: address || undefined,
         city: city || undefined,
         phone: phone.trim() || undefined,
@@ -1127,7 +1134,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Date de Naissance</label>
                   <input
@@ -1143,20 +1150,34 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     type="text"
                     value={birthPlace}
                     onChange={(e) => setBirthPlace(e.target.value)}
-                    placeholder="Ex: Salé"
+                    placeholder="Ex: Salé, Rabat..."
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Nationalité</label>
-                  <input
-                    type="text"
-                    value={nationality}
-                    onChange={(e) => setNationality(e.target.value)}
-                    placeholder="Ex: Marocaine"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
-                  />
-                </div>
+              </div>
+
+              {/* Sélecteur géographique en cascade (Continent, Pays avec drapeau, Ville, Nationalité) */}
+              <div className="pt-2 border-t border-slate-100">
+                <PlayerGeographyFields
+                  continent={continent}
+                  onContinentChange={setContinent}
+                  country={country}
+                  onCountryChange={(newCountry, flag, defaultNat) => {
+                    setCountry(newCountry);
+                    setNationality(defaultNat);
+                  }}
+                  city={city}
+                  onCityChange={(newCity) => {
+                    setCity(newCity);
+                    if (!birthPlace || birthPlace === city) {
+                      setBirthPlace(newCity);
+                    }
+                  }}
+                  birthPlace={birthPlace}
+                  onBirthPlaceChange={setBirthPlace}
+                  nationality={nationality}
+                  onNationalityChange={setNationality}
+                />
               </div>
 
               <div className="pt-2 border-t">

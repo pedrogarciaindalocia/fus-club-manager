@@ -1,5 +1,5 @@
 import React from 'react';
-import { Crown, Star, ChevronRight, SlidersHorizontal, Plus } from 'lucide-react';
+import { Crown, Star, ChevronRight, SlidersHorizontal, Plus, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export interface DenseSlotPlayerItem {
@@ -20,6 +20,9 @@ interface ScoutasticDenseSlotCardProps {
   roleCode?: string;
   players: DenseSlotPlayerItem[];
   onSelectPlayer: (player: any) => void;
+  onDragStartPlayer?: (player: any) => void;
+  onDragEndPlayer?: () => void;
+  onRemovePlayer?: (playerId: string) => void;
   onOpenSlotDrawer?: () => void;
   onAddPlayer?: () => void;
   isSelected?: boolean;
@@ -31,6 +34,9 @@ export const ScoutasticDenseSlotCard: React.FC<ScoutasticDenseSlotCardProps> = (
   roleCode,
   players,
   onSelectPlayer,
+  onDragStartPlayer,
+  onDragEndPlayer,
+  onRemovePlayer,
   onOpenSlotDrawer,
   onAddPlayer,
   isSelected,
@@ -117,12 +123,19 @@ export const ScoutasticDenseSlotCard: React.FC<ScoutasticDenseSlotCardProps> = (
           return (
             <div
               key={p.id || idx}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('text/plain', p.id);
+                e.dataTransfer.effectAllowed = 'move';
+                onDragStartPlayer?.(p.raw);
+              }}
+              onDragEnd={() => onDragEndPlayer?.()}
               onClick={(e) => {
                 e.stopPropagation();
                 onSelectPlayer(p.raw);
               }}
-              className="px-2.5 py-1.5 flex items-center justify-between gap-2 hover:bg-emerald-50/80 cursor-pointer transition-colors group"
-              title={`Cliquer pour inspecter ${p.fullName}`}
+              className="px-2.5 py-1.5 flex items-center justify-between gap-2 hover:bg-emerald-50/80 cursor-grab active:cursor-grabbing transition-colors group"
+              title={`Glisser pour déplacer ou cliquer pour inspecter ${p.fullName}`}
             >
               {/* Left: Avatar + Crown + Names */}
               <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -136,9 +149,18 @@ export const ScoutasticDenseSlotCard: React.FC<ScoutasticDenseSlotCardProps> = (
                 )}
 
                 {/* Avatar */}
-                <div className="w-7 h-7 rounded-full overflow-hidden border border-slate-200 shrink-0 bg-slate-900 text-white flex items-center justify-center text-[9px] font-black shadow-xs">
+                <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-200 shrink-0 bg-slate-900 text-white flex items-center justify-center text-[10px] font-black shadow-xs">
                   {p.photoUrl ? (
-                    <img src={p.photoUrl} alt="" crossOrigin="anonymous" className="w-full h-full object-cover" />
+                    <img
+                      src={p.photoUrl}
+                      alt={p.fullName}
+                      crossOrigin="anonymous"
+                      className="h-full w-full object-cover"
+                      onError={(event) => {
+                        event.currentTarget.onerror = null;
+                        event.currentTarget.src = '/assets/avatar.svg';
+                      }}
+                    />
                   ) : (
                     <span>{p.initials}</span>
                   )}
@@ -157,6 +179,11 @@ export const ScoutasticDenseSlotCard: React.FC<ScoutasticDenseSlotCardProps> = (
 
               {/* Right: Score / Rating Badge */}
               <div className="flex items-center gap-1 shrink-0">
+                {onRemovePlayer && (
+                  <button type="button" aria-label={`Retirer ${p.fullName} du terrain`} onClick={event => { event.stopPropagation(); onRemovePlayer(p.id); }} className="rounded-full bg-slate-100 p-1 text-slate-500 transition hover:bg-red-100 hover:text-red-600" title="Retirer du terrain">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
                 {score !== null ? (
                   <div
                     className={cn(

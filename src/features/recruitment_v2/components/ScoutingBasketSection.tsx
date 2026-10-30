@@ -41,7 +41,7 @@ export interface BasketPlayer {
 
 interface ScoutingBasketSectionProps {
   scouts: Scout[];
-  onAssignMissionFromBasket: (player: BasketPlayer, scoutId: string) => Promise<void>;
+  onAssignMissionFromBasket: (player: BasketPlayer, scoutId: string) => Promise<any>;
   onAssignCandidateToScout?: (candidateId: string, scout: Scout, extraData?: any) => Promise<void>;
   isAdmin: boolean;
   isScoutAdmin: boolean;
@@ -72,6 +72,8 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
   const fetchBasketData = useCallback(async () => {
     try {
       const itemsMap = new Map<string, BasketPlayer>();
+      const assignedPlayerIds = new Set<string>();
+      const assignedPlayerNames = new Set<string>();
 
       // 1. Charger depuis la table public.scouting_basket
       try {
@@ -82,7 +84,16 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
 
         if (!basketErr && Array.isArray(dbBasket)) {
           dbBasket.forEach((item: any) => {
-            const key = item.player_id || item.id;
+            const key = String(item.player_id || item.id);
+            const nameKey = (item.full_name || '').trim().toLowerCase();
+
+            // Règle métier : si le joueur est déjà assigné, il NE DOIT PAS apparaître dans le panier
+            if (item.status === 'assigned' || item.assigned_to_id) {
+              assignedPlayerIds.add(key);
+              if (nameKey) assignedPlayerNames.add(nameKey);
+              return;
+            }
+
             itemsMap.set(key, {
               id: item.id || `basket-${key}`,
               player_id: item.player_id || item.id,
@@ -99,10 +110,10 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
               added_by_id: item.added_by_id ?? null,
               added_by_name: item.added_by_name || 'Cellule Détection',
               added_by_role: item.added_by_role || 'Scout / Staff',
-              status: item.status || 'pending',
-              assigned_to_id: item.assigned_to_id ?? null,
-              assigned_to_name: item.assigned_to_name ?? null,
-              assigned_mission_id: item.assigned_mission_id ?? null,
+              status: 'pending',
+              assigned_to_id: null,
+              assigned_to_name: null,
+              assigned_mission_id: null,
               created_at: item.created_at || new Date().toISOString(),
             });
           });
@@ -132,7 +143,17 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
             const allOpponents = [...(m.opponent_lineup || []), ...(m.opponent_subs || [])];
             allOpponents.forEach((opp: any) => {
               if (opp && typeof opp === 'object' && opp.in_scouting_basket) {
+                // Règle métier : si le joueur a déjà un scout assigné, il NE DOIT PAS apparaître dans le panier
+                if (opp.assigned_scout_id) return;
+
                 const pId = String(opp.id || opp.jersey_number || opp.full_name);
+                const nameKey = (opp.full_name || '').trim().toLowerCase();
+
+                // Si déjà marqué comme assigné dans scouting_basket, ne pas l'ajouter
+                if (assignedPlayerIds.has(pId) || (nameKey && assignedPlayerNames.has(nameKey))) {
+                  return;
+                }
+
                 if (!itemsMap.has(pId)) {
                   itemsMap.set(pId, {
                     id: `match-basket-${m.id}-${pId}`,
@@ -157,9 +178,9 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
                     added_by_id: opp.basket_added_by_id ?? null,
                     added_by_name: opp.basket_added_by_name || 'Staff Match',
                     added_by_role: opp.basket_added_by_role || 'Cellule Détection',
-                    status: opp.assigned_scout_id ? 'assigned' : 'pending',
-                    assigned_to_id: opp.assigned_scout_id ?? null,
-                    assigned_to_name: opp.assigned_scout_name ?? null,
+                    status: 'pending',
+                    assigned_to_id: null,
+                    assigned_to_name: null,
                     created_at: opp.basket_added_at || m.match_date || new Date().toISOString(),
                   });
                 }
@@ -172,9 +193,6 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
       }
 
       const list = Array.from(itemsMap.values()).sort((a, b) => {
-        // Mettre en premier les non-assignés (pending), puis les plus récents
-        if (a.status === 'pending' && b.status !== 'pending') return -1;
-        if (a.status !== 'pending' && b.status === 'pending') return 1;
         return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
       });
 
@@ -196,6 +214,9 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
         fetchBasketData();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches' }, () => {
+        fetchBasketData();
+      })
+      .on('broadcast', { event: 'basket_player_restored' }, () => {
         fetchBasketData();
       })
       .subscribe();
@@ -257,22 +278,13 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
   const executeAssignMission = async (player: BasketPlayer, targetScout: Scout) => {
     setIsAssigningId(player.player_id);
     try {
-      await onAssignMissionFromBasket(player, targetScout.id);
+      // 1. Déclencher l'assignation de mission
+      const targetCandidate = await onAssignMissionFromBasket(player, targetScout.id);
 
-      // Mettre à jour localement le joueur au panier
-      setBasketPlayers(prev => prev.map(p => {
-        if (p.player_id === player.player_id) {
-          return {
-            ...p,
-            status: 'assigned',
-            assigned_to_id: targetScout.id,
-            assigned_to_name: targetScout.full_name,
-          };
-        }
-        return p;
-      }));
+      // 2. Faire disparaître IMMÉDIATEMENT le joueur du panier localement (règle stricte)
+      setBasketPlayers(prev => prev.filter(p => p.player_id !== player.player_id && p.id !== player.id));
 
-      // Mettre à jour dans public.scouting_basket
+      // 3. Mettre à jour dans public.scouting_basket (statut 'assigned')
       try {
         await supabase
           .from('scouting_basket')
@@ -280,13 +292,55 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
             status: 'assigned',
             assigned_to_id: targetScout.id,
             assigned_to_name: targetScout.full_name,
+            assigned_mission_id: targetCandidate?.id || player.player_id,
             updated_at: new Date().toISOString(),
           })
           .eq('player_id', player.player_id);
-      } catch {}
+      } catch (basketErr) {
+        console.warn('[ScoutingBasket] Erreur update scouting_basket assign:', basketErr);
+      }
+
+      // 4. Si rattaché à un match, marquer l'assignation dans opponent_lineup / opponent_subs
+      if (player.match_id) {
+        try {
+          const { data: matchData } = await supabase
+            .from('matches')
+            .select('opponent_lineup, opponent_subs')
+            .eq('id', player.match_id)
+            .maybeSingle();
+
+          if (matchData) {
+            const updateArr = (arr: any[]) => (arr || []).map(p => {
+              if (typeof p === 'object' && p !== null) {
+                const matchesId = p.id && String(p.id) === String(player.player_id);
+                const matchesJersey = player.jersey_number != null && String(p.jersey_number) === String(player.jersey_number);
+                const matchesName = p.full_name && player.full_name && p.full_name.trim().toLowerCase() === player.full_name.trim().toLowerCase();
+                if (matchesId || matchesJersey || matchesName) {
+                  return {
+                    ...p,
+                    assigned_scout_id: targetScout.id,
+                    assigned_scout_name: targetScout.full_name,
+                  };
+                }
+              }
+              return p;
+            });
+
+            await supabase
+              .from('matches')
+              .update({
+                opponent_lineup: updateArr(matchData.opponent_lineup),
+                opponent_subs: updateArr(matchData.opponent_subs),
+              })
+              .eq('id', player.match_id);
+          }
+        } catch (matchErr) {
+          console.warn('[ScoutingBasket] Erreur sync match assigned scout:', matchErr);
+        }
+      }
 
       toast.success(`Mission assignée avec succès à ${targetScout.full_name} !`, {
-        description: `Observation & rapport de ${player.full_name} (${player.position || 'Adversaire'})`,
+        description: `Observation & rapport de ${player.full_name} (${player.position || 'Adversaire'}). Transféré du panier vers les missions du scout.`,
       });
     } catch (err: any) {
       console.error('Erreur assignation depuis panier:', err);
@@ -297,18 +351,37 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
     }
   };
 
-  // Suppression d'un joueur du panier de détection avec répercussion dans matches et broadcast
+  // Suppression définitive d'un joueur du panier de détection avec répercussion dans matches et broadcast
   const [playerToDelete, setPlayerToDelete] = useState<BasketPlayer | null>(null);
   const [isDeletingBasketId, setIsDeletingBasketId] = useState<string | null>(null);
 
   const confirmRemoveFromBasket = async (player: BasketPlayer) => {
     setIsDeletingBasketId(player.id);
     try {
-      // 1. Supprimer de la table public.scouting_basket
+      const pId = String(player.player_id);
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(player.id);
+
+      // 1. Supprimer de la table public.scouting_basket par player_id (évite le bug de cast UUID)
       await supabase
         .from('scouting_basket')
         .delete()
-        .or(`id.eq.${player.id},player_id.eq.${player.player_id}`);
+        .eq('player_id', pId);
+
+      // Si player.id est un UUID valide, supprimer également par id
+      if (isUUID) {
+        await supabase
+          .from('scouting_basket')
+          .delete()
+          .eq('id', player.id);
+      }
+
+      // Supprimer aussi par nom complet pour purger les doublons éventuels
+      if (player.full_name) {
+        await supabase
+          .from('scouting_basket')
+          .delete()
+          .ilike('full_name', player.full_name.trim());
+      }
 
       // 2. Mettre à jour la table public.matches (in_scouting_basket = false)
       if (player.match_id) {
@@ -316,16 +389,25 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
           .from('matches')
           .select('id, opponent_lineup, opponent_subs')
           .eq('id', player.match_id)
-          .single();
+          .maybeSingle();
 
         if (matchData) {
           const updateArray = (arr: any[]) => (arr || []).map(p => {
             if (typeof p === 'object' && p !== null) {
-              const matchesId = p.id && String(p.id) === String(player.player_id);
+              const matchesId = p.id && String(p.id) === pId;
               const matchesJersey = player.jersey_number != null && String(p.jersey_number) === String(player.jersey_number);
               const matchesName = p.full_name && player.full_name && p.full_name.trim().toLowerCase() === player.full_name.trim().toLowerCase();
               if (matchesId || matchesJersey || matchesName) {
-                return { ...p, in_scouting_basket: false };
+                return {
+                  ...p,
+                  in_scouting_basket: false,
+                  basket_added_at: null,
+                  basket_added_by_id: null,
+                  basket_added_by_name: null,
+                  basket_added_by_role: null,
+                  assigned_scout_id: null,
+                  assigned_scout_name: null,
+                };
               }
             }
             return p;
@@ -339,6 +421,52 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
             })
             .eq('id', player.match_id);
         }
+      }
+
+      // Purger également sur les 30 derniers matches pour garantir la suppression définitive
+      try {
+        const { data: matchesList } = await supabase
+          .from('matches')
+          .select('id, opponent_lineup, opponent_subs')
+          .limit(30);
+
+        if (Array.isArray(matchesList)) {
+          for (const m of matchesList) {
+            let hasPlayerInBasket = false;
+            const purge = (arr: any[]) => (arr || []).map(p => {
+              if (typeof p === 'object' && p !== null && p.in_scouting_basket) {
+                const matchesId = p.id && String(p.id) === pId;
+                const matchesJersey = player.jersey_number != null && String(p.jersey_number) === String(player.jersey_number);
+                const matchesName = p.full_name && player.full_name && p.full_name.trim().toLowerCase() === player.full_name.trim().toLowerCase();
+                if (matchesId || matchesJersey || matchesName) {
+                  hasPlayerInBasket = true;
+                  return {
+                    ...p,
+                    in_scouting_basket: false,
+                    basket_added_at: null,
+                    basket_added_by_id: null,
+                    basket_added_by_name: null,
+                    basket_added_by_role: null,
+                    assigned_scout_id: null,
+                    assigned_scout_name: null,
+                  };
+                }
+              }
+              return p;
+            });
+
+            const newLineup = purge(m.opponent_lineup);
+            const newSubs = purge(m.opponent_subs);
+            if (hasPlayerInBasket) {
+              await supabase
+                .from('matches')
+                .update({ opponent_lineup: newLineup, opponent_subs: newSubs })
+                .eq('id', m.id);
+            }
+          }
+        }
+      } catch (purgeErr) {
+        console.warn('[ScoutingBasket] Notice purge matches:', purgeErr);
       }
 
       // 3. Diffuser l'événement en temps réel pour fus-app
@@ -357,16 +485,16 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
         console.warn('[ScoutingBasket] Broadcast error:', broadcastErr);
       }
 
-      // 4. Mettre à jour l'état local
+      // 4. Mettre à jour l'état local (suppression immédiate et définitive)
       setBasketPlayers(prev => prev.filter(p => p.id !== player.id && p.player_id !== player.player_id));
       setPlayerToDelete(null);
 
-      toast.success(`${player.full_name} a été retiré du panier de détection`, {
-        description: "Le statut panier a été désactivé dans le match et sur l'application mobile.",
+      toast.success(`${player.full_name} a été définitivement supprimé du panier`, {
+        description: "Le joueur a été retiré du panier de détection et désactivé dans les matches.",
       });
     } catch (err: any) {
-      console.error('Erreur suppression du panier:', err);
-      toast.error(err?.message || "Erreur lors du retrait du panier");
+      console.error('Erreur suppression définitive du panier:', err);
+      toast.error(err?.message || "Erreur lors du retrait définitif du panier");
     } finally {
       setIsDeletingBasketId(null);
     }
@@ -590,12 +718,6 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
                             <h3 className="text-base font-black text-slate-900 tracking-tight">
                               {player.full_name}
                             </h3>
-                            {player.status === 'assigned' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                <CheckCircle2 className="w-3 h-3" />
-                                Assigné à {player.assigned_to_name || 'Scout'}
-                              </span>
-                            )}
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                             <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md border", posBadge.bg)}>
@@ -689,16 +811,14 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
                     </div>
 
                     {/* INVITATION AU GLISSER-DÉPOSER */}
-                    {isTop && (canUserAssign || player.status === 'pending') && (
+                    {isTop && canUserAssign && (
                       <div className="mt-3 py-2 px-3 rounded-xl bg-rose-50 border border-rose-200 text-[#722F37] text-xs font-bold flex items-center justify-between">
                         <span className="flex items-center gap-1.5">
                           <GripVertical className="w-4 h-4 text-[#722F37]" />
-                          {player.status === 'assigned'
-                            ? `Assigné à ${player.assigned_to_name} • Glissez sur un scout à droite pour réassigner ➔`
-                            : `Glissez cette carte sur un scout à droite ➔`}
+                          Glissez cette carte sur un scout à droite pour lui assigner la mission ➔
                         </span>
                         <span className="text-[10px] text-slate-500 font-normal">
-                          {canUserAssign ? 'Direction & Super Admin' : 'ou cliquez sur Assigner'}
+                          Direction & Super Admin
                         </span>
                       </div>
                     )}
@@ -715,14 +835,12 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
                 return (
                   <div
                     key={player.id}
-                    draggable={canUserAssign || player.status === 'pending'}
+                    draggable={canUserAssign}
                     onDragStart={(e) => handleDragStart(e, player)}
                     onDragEnd={handleDragEnd}
                     className={cn(
                       "bg-white rounded-2xl border p-4 shadow-xs transition-all hover:border-[#722F37] relative",
-                      canUserAssign || player.status === 'pending'
-                        ? "cursor-grab active:cursor-grabbing border-slate-200"
-                        : "border-emerald-200 bg-emerald-50/10 opacity-80"
+                      canUserAssign ? "cursor-grab active:cursor-grabbing border-slate-200" : "border-slate-200"
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">

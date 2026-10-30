@@ -32,8 +32,9 @@ const AddReportPage: React.FC = () => {
     authState?.user?.system_role || '',
     authState?.user?.role || ''
   ].map(r => r.toLowerCase().trim());
-  const isSuperAdmin = userRoles.includes('super_admin') || Boolean(authState?.isRealSuperAdmin);
-  const isScoutAdmin = userRoles.includes('scout_admin') || authState?.user?.system_role === 'scout_admin';
+  const hasExplicitPerms = Boolean(authState?.permissions && authState.permissions.length > 0);
+  const isSuperAdmin = Boolean(!authState?.isImpersonating && userRoles.includes('super_admin'));
+  const isScoutAdmin = isSuperAdmin || (!hasExplicitPerms && (userRoles.includes('scout_admin') || authState?.user?.system_role === 'scout_admin'));
   const isScoutManager = Boolean(
     !isSuperAdmin && !isScoutAdmin && (
       userRoles.includes('scout_manager') ||
@@ -41,14 +42,13 @@ const AddReportPage: React.FC = () => {
       (authState?.user?.job_title && authState.user.job_title.toLowerCase().includes('scout manager'))
     )
   );
-  const isRecruitmentAdmin = Boolean((isSuperAdmin || isScoutAdmin) && !isScoutManager);
-  const isAdmin = isSuperAdmin || userRoles.includes('admin') || isScoutAdmin;
+  const isRecruitmentAdmin = Boolean(isSuperAdmin || (!hasExplicitPerms && isScoutAdmin && !isScoutManager));
+  const isAdmin = isSuperAdmin || (!hasExplicitPerms && (userRoles.includes('admin') || isScoutAdmin));
 
   // Permission spécifique de gestion de rapport
   const canManageReports = Boolean(
     isSuperAdmin ||
-    isAdmin ||
-    isScoutManager ||
+    (!hasExplicitPerms && (isAdmin || isScoutManager)) ||
     hasSubModuleAccess('candidates', 'manage_reports') ||
     hasSubModuleAccess('candidates', 'reports')
   );

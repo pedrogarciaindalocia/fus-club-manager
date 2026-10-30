@@ -18,7 +18,7 @@ import { usePermissions } from '../../context/PermissionsContext';
 export const MediaManagementPage: React.FC = () => {
   const { hasSubModuleAccess, authState } = usePermissions();
   const currentRole = authState.user?.system_role?.toLowerCase() || '';
-  const isSuperAdmin = currentRole === 'super_admin' || authState.isRealSuperAdmin;
+  const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
 
   const canCreate = isSuperAdmin || hasSubModuleAccess('media', 'create', 'media');
   const canUpdate = isSuperAdmin || hasSubModuleAccess('media', 'update', 'media');

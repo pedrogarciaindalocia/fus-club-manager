@@ -16,7 +16,14 @@ import {
   Briefcase,
   Layers,
   Users,
-  SmartphoneNfc
+  SmartphoneNfc,
+  Printer,
+  History,
+  FileText,
+  Calendar,
+  X,
+  FileJson,
+  RotateCcw
 } from 'lucide-react';
 import { useAuditLogs, isMobilePlatform, isGuestEntry } from '../../hooks/useAuditLogs';
 import { SessionTimelineModal } from './components/SessionTimelineModal';
@@ -145,9 +152,46 @@ export const AuditLogsPage: React.FC = () => {
   const [groupByPoste, setGroupByPoste] = useState<boolean>(false);
   const [selectedUserForModal, setSelectedUserForModal] = useState<UserSummaryItem | null>(null);
 
+  // Onglet principal : 'supervision' (Cartes / Sessions) ou 'history' (Journal complet des logs)
+  const [mainTab, setMainTab] = useState<'supervision' | 'history'>('supervision');
+
+  // Filtres spécifiques pour l'Historique des Logs
+  const [logSearchTerm, setLogSearchTerm] = useState<string>('');
+  const [logJobTitleFilter, setLogJobTitleFilter] = useState<string>('ALL');
+  const [logActionFilter, setLogActionFilter] = useState<string>('ALL');
+  const [logModuleFilter, setLogModuleFilter] = useState<string>('ALL');
+  const [logStartDateTime, setLogStartDateTime] = useState<string>('');
+  const [logEndDateTime, setLogEndDateTime] = useState<string>('');
+  const [selectedLogForJson, setSelectedLogForJson] = useState<AuditLog | null>(null);
+
   // Présence temps réel (Supabase Realtime Presence)
   const [presenceSnapshot, setPresenceSnapshot] = useState<Map<string, PresenceEntry>>(new Map());
   useEffect(() => PresenceTracker.subscribe(snap => setPresenceSnapshot(new Map(snap))), []);
+
+  const getActionBadgeClass = (action: string) => {
+    switch (action) {
+      case 'CREATE':
+        return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30';
+      case 'UPDATE':
+        return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30';
+      case 'DELETE':
+        return 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30';
+      case 'LOGIN':
+      case 'LOGOUT':
+        return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30';
+      case 'EXPORT':
+      case 'IMPORT':
+      case 'DOWNLOAD':
+      case 'UPLOAD':
+        return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30';
+      case 'PASSWORD_CHANGE':
+      case 'PERMISSION_CHANGE':
+      case 'ROLE_CHANGE':
+        return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30';
+      default:
+        return 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/30';
+    }
+  };
 
   const getJobBadgeClass = (title?: string | null) => {
     const t = (title || '').toLowerCase();
@@ -366,6 +410,100 @@ export const AuditLogsPage: React.FC = () => {
     return Array.from(titles).sort();
   }, [allUserSummaries]);
 
+  // Dictionnaire utilisateur par userId et par email pour enrichir chaque log
+  const userLookup = useMemo(() => {
+    const map = new Map<string, UserSummaryItem>();
+    allUserSummaries.forEach(u => {
+      if (u.userId) map.set(u.userId, u);
+      if (u.userEmail) map.set(u.userEmail.toLowerCase().trim(), u);
+    });
+    return map;
+  }, [allUserSummaries]);
+
+  // Actions distinctes disponibles dans les logs
+  const distinctActions = useMemo(() => {
+    const actions = new Set<string>();
+    ['LOGIN', 'LOGOUT', 'CREATE', 'UPDATE', 'DELETE', 'EXPORT', 'IMPORT', 'PASSWORD_CHANGE', 'PERMISSION_CHANGE', 'ROLE_CHANGE', 'SETTINGS_UPDATE'].forEach(a => actions.add(a));
+    logs.forEach(l => {
+      if (l.action) actions.add(l.action);
+    });
+    return Array.from(actions).sort();
+  }, [logs]);
+
+  // Modules distincts disponibles
+  const distinctModules = useMemo(() => {
+    const modules = new Set<string>();
+    ['AUTH', 'USERS', 'RECRUTEMENT', 'MATCHS', 'PLAYERS', 'STAFF', 'ARBITRES', 'CLUB', 'BACKUPS', 'SYSTEM'].forEach(m => modules.add(m));
+    logs.forEach(l => {
+      if (l.module) modules.add(l.module);
+    });
+    return Array.from(modules).sort();
+  }, [logs]);
+
+  // Filtrage ultra-précis de l'Historique des Logs
+  const filteredAuditLogs = useMemo(() => {
+    return logs.filter(log => {
+      if (isGuestEntry(log.user_email, log.session_id)) return false;
+
+      const user = (log.user_id && userLookup.get(log.user_id)) ||
+                   (log.user_email && userLookup.get(log.user_email.toLowerCase().trim()));
+      const name = user?.userName || log.user_email?.split('@')[0] || '';
+      const email = log.user_email || '';
+      const job = user?.jobTitle || 'Collaborateur';
+
+      // 1. Filtre Nom d'utilisateur / recherche textuelle
+      if (logSearchTerm.trim()) {
+        const q = logSearchTerm.toLowerCase().trim();
+        const matchName = name.toLowerCase().includes(q);
+        const matchEmail = email.toLowerCase().includes(q);
+        const matchDesc = (log.description || '').toLowerCase().includes(q);
+        const matchEntity = (log.entity_type || '').toLowerCase().includes(q);
+        if (!matchName && !matchEmail && !matchDesc && !matchEntity) return false;
+      }
+
+      // 2. Filtre Poste de l'utilisateur
+      if (logJobTitleFilter !== 'ALL') {
+        const target = logJobTitleFilter.toLowerCase();
+        if (!job.toLowerCase().includes(target)) return false;
+      }
+
+      // 3. Filtre Action effectuée
+      if (logActionFilter !== 'ALL' && log.action !== logActionFilter) {
+        return false;
+      }
+
+      // 4. Filtre Module
+      if (logModuleFilter !== 'ALL' && log.module !== logModuleFilter) {
+        return false;
+      }
+
+      // 5. Filtre Intervalle Date et Heure
+      if (logStartDateTime) {
+        const startTime = new Date(logStartDateTime).getTime();
+        const logTime = new Date(log.created_at).getTime();
+        if (logTime < startTime) return false;
+      }
+      if (logEndDateTime) {
+        const endTime = new Date(logEndDateTime).getTime();
+        const logTime = new Date(log.created_at).getTime();
+        if (logTime > endTime) return false;
+      }
+
+      return true;
+    }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [logs, userLookup, logSearchTerm, logJobTitleFilter, logActionFilter, logModuleFilter, logStartDateTime, logEndDateTime]);
+
+  // Statistiques calculées pour l'Historique
+  const logStats = useMemo(() => {
+    return {
+      total: filteredAuditLogs.length,
+      creates: filteredAuditLogs.filter(l => l.action === 'CREATE').length,
+      updates: filteredAuditLogs.filter(l => l.action === 'UPDATE').length,
+      deletes: filteredAuditLogs.filter(l => l.action === 'DELETE').length,
+      auths: filteredAuditLogs.filter(l => l.action === 'LOGIN' || l.action === 'LOGOUT').length,
+    };
+  }, [filteredAuditLogs]);
+
   // Filtrage des utilisateurs (Recherche + Poste + Statut + Plateforme + Période)
   const filteredUsers = useMemo(() => {
     return allUserSummaries.filter(u => {
@@ -438,16 +576,79 @@ export const AuditLogsPage: React.FC = () => {
     downloadAnchor.remove();
   };
 
+  const handleExportLogsCSV = () => {
+    const headers = ['Date_Heure_GMT', 'Utilisateur', 'Email', 'Poste', 'Action', 'Module', 'Description', 'IP', 'Statut'];
+    const rows = filteredAuditLogs.map(l => {
+      const user = (l.user_id && userLookup.get(l.user_id)) || (l.user_email && userLookup.get(l.user_email.toLowerCase().trim()));
+      return [
+        `"${new Date(l.created_at).toISOString()}"`,
+        `"${(user?.userName || l.user_email?.split('@')[0] || '').replace(/"/g, '""')}"`,
+        `"${(l.user_email || '').replace(/"/g, '""')}"`,
+        `"${(user?.jobTitle || 'Collaborateur').replace(/"/g, '""')}"`,
+        `"${l.action}"`,
+        `"${l.module}"`,
+        `"${(l.description || '').replace(/"/g, '""')}"`,
+        `"${l.ip_address || ''}"`,
+        `"${l.status}"`
+      ];
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `FUS_Journal_Audit_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const handleResetLogFilters = () => {
+    setLogSearchTerm('');
+    setLogJobTitleFilter('ALL');
+    setLogActionFilter('ALL');
+    setLogModuleFilter('ALL');
+    setLogStartDateTime('');
+    setLogEndDateTime('');
+  };
+
   return (
     <div className="space-y-8 pb-20 overflow-visible">
+      {/* ── EN-TÊTE IMPRESSION OFFICIELLE (VISIBLE UNIQUEMENT À L'IMPRESSION) ── */}
+      <div className="hidden print:block mb-8 pb-4 border-b-2 border-black text-black">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-2xl font-black uppercase tracking-tight text-red-600">FUS RABAT — JOURNAL OFFICIEL D'AUDIT</div>
+            <p className="text-xs font-semibold text-gray-700 mt-0.5">
+              Traçabilité intégrale des opérations, connexions et modifications des utilisateurs
+            </p>
+          </div>
+          <div className="text-right text-xs space-y-0.5">
+            <div>Édité le : <strong>{new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR')} (GMT)</strong></div>
+            <div>Période : <strong>{logStartDateTime ? new Date(logStartDateTime).toLocaleString('fr-FR') : 'Début'} ➔ {logEndDateTime ? new Date(logEndDateTime).toLocaleString('fr-FR') : 'Actuel'}</strong></div>
+            <div>Total événements : <strong>{filteredAuditLogs.length} logs</strong></div>
+          </div>
+        </div>
+        <div className="mt-3 flex items-center gap-4 text-[11px] text-gray-600 border-t border-gray-200 pt-2">
+          <span>Filtre Utilisateur : <strong>{logSearchTerm || 'Tous'}</strong></span>
+          <span>•</span>
+          <span>Filtre Poste : <strong>{logJobTitleFilter}</strong></span>
+          <span>•</span>
+          <span>Filtre Action : <strong>{logActionFilter}</strong></span>
+          <span>•</span>
+          <span>Filtre Module : <strong>{logModuleFilter}</strong></span>
+        </div>
+      </div>
+
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 print:hidden">
         <div>
           <h2 className="text-3xl font-black tracking-tight text-foreground uppercase italic flex items-center gap-2">
-            Supervision Multi-Plateforme <Sparkles className="w-6 h-6 text-primary" />
+            Supervision & Audit <Sparkles className="w-6 h-6 text-primary" />
           </h2>
           <p className="text-muted-foreground text-sm font-medium">
-            Traçabilité unifiée : utilisateurs connectés sur le <strong className="text-foreground">Dashboard Web</strong> & sur l'application <strong className="text-primary">Fus-App Mobile</strong> en temps réel
+            Traçabilité unifiée : surveillance multi-plateforme en temps réel et journal d'audit complet de toutes les actions
           </p>
         </div>
 
@@ -462,16 +663,73 @@ export const AuditLogsPage: React.FC = () => {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-primary' : ''}`} />
           </Button>
 
-          <Button
-            onClick={handleExportJSON}
-            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-5 rounded-xl font-bold uppercase tracking-wider text-xs shadow-lg shadow-primary/20"
-          >
-            <Download className="w-4 h-4" /> Exporter JSON
-          </Button>
+          {mainTab === 'supervision' ? (
+            <Button
+              onClick={handleExportJSON}
+              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 h-11 px-5 rounded-xl font-bold uppercase tracking-wider text-xs shadow-lg shadow-primary/20 cursor-pointer"
+            >
+              <Download className="w-4 h-4" /> Exporter JSON
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleExportLogsCSV}
+                variant="outline"
+                className="gap-2 h-11 px-4 rounded-xl font-bold uppercase tracking-wider text-xs cursor-pointer"
+              >
+                <Download className="w-4 h-4" /> Exporter CSV
+              </Button>
+
+              <Button
+                onClick={() => window.print()}
+                className="gap-2 bg-red-600 text-white hover:bg-red-700 h-11 px-5 rounded-xl font-black uppercase tracking-wider text-xs shadow-lg shadow-red-600/20 cursor-pointer active:scale-95 transition"
+              >
+                <Printer className="w-4 h-4" /> Imprimer l'historique
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* KPI Cards Summary */}
+      {/* Onglets Principaux : Supervision Collaborateurs vs Historique des Logs */}
+      <div className="flex items-center gap-2 p-1.5 bg-secondary/40 rounded-2xl border border-border w-fit print:hidden">
+        <button
+          onClick={() => setMainTab('supervision')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+            mainTab === 'supervision'
+              ? 'bg-primary text-primary-foreground shadow-md'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>Supervision Collaborateurs</span>
+          <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-black">
+            {stats.totalUsers}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setMainTab('history')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+            mainTab === 'history'
+              ? 'bg-red-600 text-white shadow-md'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <History className="w-4 h-4" />
+          <span>Historique des Logs & Actions</span>
+          <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-black">
+            {filteredAuditLogs.length}
+          </span>
+        </button>
+      </div>
+
+      {mainTab === 'supervision' ? (
+        /* ========================================================================= */
+        /* ONGLET 1 : SUPERVISION MULTI-PLATEFORME (COLLABORATEURS & SESSIONS)       */
+        /* ========================================================================= */
+        <>
+          {/* KPI Cards Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
@@ -814,6 +1072,387 @@ export const AuditLogsPage: React.FC = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+        </>
+      ) : (
+        /* ========================================================================= */
+        /* ONGLET 2 : HISTORIQUE COMPLET DES LOGS & ACTIONS D'AUDIT                  */
+        /* ========================================================================= */
+        <div className="space-y-6">
+          {/* KPI Cards Summary for Logs */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 print:hidden">
+            <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+              <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Total Événements</span>
+              <div className="text-2xl font-black text-foreground mt-1">{logStats.total}</div>
+              <span className="text-[11px] text-muted-foreground">Dans la sélection</span>
+            </div>
+
+            <div className="bg-card border border-emerald-500/30 bg-emerald-500/[0.03] rounded-2xl p-4 shadow-sm relative overflow-hidden">
+              <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">Créations</span>
+              <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{logStats.creates}</div>
+              <span className="text-[11px] text-muted-foreground">Objets créés</span>
+            </div>
+
+            <div className="bg-card border border-blue-500/30 bg-blue-500/[0.03] rounded-2xl p-4 shadow-sm relative overflow-hidden">
+              <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider block">Modifications</span>
+              <div className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">{logStats.updates}</div>
+              <span className="text-[11px] text-muted-foreground">Mises à jour</span>
+            </div>
+
+            <div className="bg-card border border-red-500/30 bg-red-500/[0.03] rounded-2xl p-4 shadow-sm relative overflow-hidden">
+              <span className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-wider block">Suppressions</span>
+              <div className="text-2xl font-black text-red-600 dark:text-red-400 mt-1">{logStats.deletes}</div>
+              <span className="text-[11px] text-muted-foreground">Suppressions tracées</span>
+            </div>
+
+            <div className="bg-card border border-amber-500/30 bg-amber-500/[0.03] rounded-2xl p-4 shadow-sm relative overflow-hidden col-span-2 sm:col-span-1">
+              <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider block">Connexions</span>
+              <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{logStats.auths}</div>
+              <span className="text-[11px] text-muted-foreground">Authentifications</span>
+            </div>
+          </div>
+
+          {/* Control Bar : Filtres complets (Nom, Poste, Action, Module, Intervalle Date et Heure) */}
+          <div className="p-4 rounded-2xl bg-card border border-border shadow-sm space-y-4 print:hidden">
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-3">
+              {/* Recherche textuelle par nom de l'utilisateur ou action */}
+              <div className="relative flex-1 w-full">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  value={logSearchTerm}
+                  onChange={(e) => setLogSearchTerm(e.target.value)}
+                  placeholder="Rechercher par nom de l'utilisateur, email, action effectuée..."
+                  className="pl-10 pr-9 h-11 bg-secondary/30 border-transparent focus:bg-background transition-all rounded-xl font-medium text-sm"
+                />
+                {logSearchTerm && (
+                  <button
+                    onClick={() => setLogSearchTerm('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Bouton de réinitialisation si filtres actifs */}
+              {(logSearchTerm || logJobTitleFilter !== 'ALL' || logActionFilter !== 'ALL' || logModuleFilter !== 'ALL' || logStartDateTime || logEndDateTime) && (
+                <Button
+                  onClick={handleResetLogFilters}
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs text-muted-foreground hover:text-foreground shrink-0 h-10 px-3 rounded-xl cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Réinitialiser les filtres
+                </Button>
+              )}
+            </div>
+
+            {/* Rangée de filtres : Poste, Action, Module, Intervalle Date & Heure Début / Fin */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2 border-t border-border/50 text-xs">
+              {/* 1. Filtre Poste de l'utilisateur */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                  <Briefcase className="w-3 h-3 text-purple-500" /> Poste de l'utilisateur
+                </label>
+                <select
+                  value={logJobTitleFilter}
+                  onChange={(e) => setLogJobTitleFilter(e.target.value)}
+                  className="w-full h-10 bg-secondary/40 text-foreground font-bold rounded-xl border border-border/50 px-2.5 outline-none cursor-pointer"
+                >
+                  <option value="ALL">POSTE : TOUS</option>
+                  {OFFICIAL_JOB_TITLES.map(title => (
+                    <option key={title} value={title}>{title.toUpperCase()}</option>
+                  ))}
+                  {distinctJobTitles
+                    .filter(title => !OFFICIAL_JOB_TITLES.some(o => o.toLowerCase() === title.toLowerCase()))
+                    .map(title => (
+                      <option key={title} value={title}>{title.toUpperCase()} (AUTRE)</option>
+                    ))}
+                </select>
+              </div>
+
+              {/* 2. Filtre Action Effectuée */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                  <Activity className="w-3 h-3 text-primary" /> Action Effectuée
+                </label>
+                <select
+                  value={logActionFilter}
+                  onChange={(e) => setLogActionFilter(e.target.value)}
+                  className="w-full h-10 bg-secondary/40 text-foreground font-bold rounded-xl border border-border/50 px-2.5 outline-none cursor-pointer"
+                >
+                  <option value="ALL">ACTION : TOUTES</option>
+                  {distinctActions.map(act => (
+                    <option key={act} value={act}>{act}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 3. Filtre Module */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                  <Layers className="w-3 h-3 text-blue-500" /> Module
+                </label>
+                <select
+                  value={logModuleFilter}
+                  onChange={(e) => setLogModuleFilter(e.target.value)}
+                  className="w-full h-10 bg-secondary/40 text-foreground font-bold rounded-xl border border-border/50 px-2.5 outline-none cursor-pointer"
+                >
+                  <option value="ALL">MODULE : TOUS</option>
+                  {distinctModules.map(mod => (
+                    <option key={mod} value={mod}>{mod}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 4. Intervalle Date/Heure Début */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-emerald-500" /> Date & Heure Début
+                </label>
+                <input
+                  type="datetime-local"
+                  value={logStartDateTime}
+                  onChange={(e) => setLogStartDateTime(e.target.value)}
+                  className="w-full h-10 px-2.5 bg-secondary/40 text-foreground text-xs font-bold rounded-xl border border-border/50 outline-none cursor-pointer"
+                />
+              </div>
+
+              {/* 5. Intervalle Date/Heure Fin */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-amber-500" /> Date & Heure Fin
+                </label>
+                <input
+                  type="datetime-local"
+                  value={logEndDateTime}
+                  onChange={(e) => setLogEndDateTime(e.target.value)}
+                  className="w-full h-10 px-2.5 bg-secondary/40 text-foreground text-xs font-bold rounded-xl border border-border/50 outline-none cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Tableau de l'Historique Complet des Logs */}
+          <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-sm print:border print:border-gray-300 print:shadow-none print:rounded-none">
+            <div className="overflow-x-auto print:overflow-visible">
+              <table className="w-full print:border-collapse print:text-black">
+                <thead className="bg-secondary/20 border-b border-border print:bg-gray-100 print:border-b-2 print:border-black">
+                  <tr>
+                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Date & Heure (GMT)</th>
+                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Collaborateur</th>
+                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Poste</th>
+                    <th className="text-center py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Action</th>
+                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Module</th>
+                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Description de l'action</th>
+                    <th className="text-center py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Plateforme</th>
+                    <th className="text-right py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:hidden">Détail</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border print:divide-gray-300">
+                  {filteredAuditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-16 text-center text-muted-foreground">
+                        <History className="w-10 h-10 mx-auto text-muted-foreground/40 mb-2" />
+                        <p className="font-bold text-sm text-foreground">Aucun événement ne correspond à vos filtres</p>
+                        <p className="text-xs text-muted-foreground mt-1">Modifiez les filtres de collaborateur, de date ou d'action pour afficher l'historique.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAuditLogs.map(log => {
+                      const user = (log.user_id && userLookup.get(log.user_id)) || (log.user_email && userLookup.get(log.user_email.toLowerCase().trim()));
+                      const userName = user?.userName || log.user_email?.split('@')[0] || 'Utilisateur';
+                      const userJob = user?.jobTitle || 'Collaborateur';
+                      const isMobile = isMobilePlatform(log.session_id, null, log.user_agent, log.module);
+
+                      return (
+                        <tr key={log.id} className="hover:bg-secondary/15 transition-colors group print:break-inside-avoid">
+                          {/* Date & Heure */}
+                          <td className="py-3.5 px-4 whitespace-nowrap text-xs">
+                            <div className="font-bold text-foreground print:text-black">
+                              {new Date(log.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground print:text-gray-600 font-mono">
+                              {new Date(log.created_at).toLocaleTimeString('fr-FR')} • {formatRelativeTime(log.created_at)}
+                            </div>
+                          </td>
+
+                          {/* Collaborateur */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="print:hidden">
+                                <UserSessionAvatar
+                                  name={userName}
+                                  email={log.user_email}
+                                  photoUrl={user?.userAvatar}
+                                  size="sm"
+                                />
+                              </div>
+                              <div>
+                                <div className="font-bold text-xs text-foreground print:text-black">{userName}</div>
+                                <div className="text-[10px] text-muted-foreground print:text-gray-600">{log.user_email || 'Email non renseigné'}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Poste */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-lg text-[9.5px] font-black uppercase tracking-wider border ${getJobBadgeClass(userJob)} print:border-black print:text-black`}>
+                              {userJob}
+                            </span>
+                          </td>
+
+                          {/* Action */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${getActionBadgeClass(log.action)} print:border-black print:text-black`}>
+                              {log.action}
+                            </span>
+                          </td>
+
+                          {/* Module */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className="text-[10px] font-bold text-muted-foreground print:text-black bg-secondary/60 print:bg-transparent px-2 py-0.5 rounded-md">
+                              {log.module}
+                            </span>
+                          </td>
+
+                          {/* Description */}
+                          <td className="py-3.5 px-4 max-w-md">
+                            <div className="text-xs font-medium text-foreground print:text-black leading-snug">
+                              {log.description}
+                            </div>
+                            {log.entity_type && (
+                              <span className="text-[9.5px] text-muted-foreground print:text-gray-600 font-mono mt-0.5 block">
+                                Entité : {log.entity_type} {log.entity_id ? `(#${log.entity_id.slice(0, 8)})` : ''}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Plateforme */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            {isMobile ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-md print:text-black print:bg-transparent">
+                                <Smartphone className="w-3 h-3" /> Mobile
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md print:text-black print:bg-transparent">
+                                <Laptop className="w-3 h-3" /> Web
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Détail JSON */}
+                          <td className="py-3.5 px-4 text-right print:hidden">
+                            {(log.old_values || log.new_values || log.metadata) && (
+                              <Button
+                                onClick={() => setSelectedLogForJson(log)}
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs gap-1 font-bold text-primary hover:bg-primary/10 rounded-lg cursor-pointer"
+                                title="Inspecter le payload JSON"
+                              >
+                                <FileJson className="w-3.5 h-3.5" /> Données
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Inspection JSON des valeurs avant/après d'un Log */}
+      {selectedLogForJson && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 print:hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden p-6 space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-2 text-primary font-black text-sm uppercase tracking-wide">
+                <FileJson className="w-4 h-4" />
+                <span>Payload & Données Modifiées</span>
+              </div>
+              <button
+                onClick={() => setSelectedLogForJson(null)}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto space-y-4 flex-1 text-xs">
+              <div className="grid grid-cols-2 gap-3 bg-secondary/30 p-3 rounded-xl border border-border/60">
+                <div>
+                  <span className="text-[10px] text-muted-foreground font-bold block uppercase">Action & Module</span>
+                  <span className="font-extrabold text-foreground">{selectedLogForJson.action} • {selectedLogForJson.module}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground font-bold block uppercase">Date & Heure</span>
+                  <span className="font-mono text-foreground">{new Date(selectedLogForJson.created_at).toLocaleString('fr-FR')}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground font-bold block uppercase">Adresse IP</span>
+                  <span className="font-mono text-foreground">{selectedLogForJson.ip_address || 'Non capturée'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground font-bold block uppercase">Entité</span>
+                  <span className="font-mono text-foreground">{selectedLogForJson.entity_type || 'N/A'} {selectedLogForJson.entity_id ? `(#${selectedLogForJson.entity_id})` : ''}</span>
+                </div>
+              </div>
+
+              {selectedLogForJson.description && (
+                <div>
+                  <span className="font-bold text-muted-foreground block mb-1">Description :</span>
+                  <div className="p-3 bg-secondary/20 rounded-xl text-foreground font-medium">
+                    {selectedLogForJson.description}
+                  </div>
+                </div>
+              )}
+
+              {selectedLogForJson.old_values && (
+                <div>
+                  <span className="font-bold text-red-500 block mb-1">Valeurs Précédentes (Avant Modification) :</span>
+                  <pre className="p-3 rounded-xl bg-slate-950 text-red-300 font-mono text-[11px] overflow-x-auto border border-red-500/20 max-h-48">
+                    {JSON.stringify(selectedLogForJson.old_values, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {selectedLogForJson.new_values && (
+                <div>
+                  <span className="font-bold text-emerald-500 block mb-1">Nouvelles Valeurs (Après Modification) :</span>
+                  <pre className="p-3 rounded-xl bg-slate-950 text-emerald-300 font-mono text-[11px] overflow-x-auto border border-emerald-500/20 max-h-48">
+                    {JSON.stringify(selectedLogForJson.new_values, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {selectedLogForJson.metadata && (
+                <div>
+                  <span className="font-bold text-purple-400 block mb-1">Métadonnées Complémentaires :</span>
+                  <pre className="p-3 rounded-xl bg-slate-950 text-purple-300 font-mono text-[11px] overflow-x-auto border border-purple-500/20 max-h-48">
+                    {JSON.stringify(selectedLogForJson.metadata, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-border">
+              <Button
+                onClick={() => setSelectedLogForJson(null)}
+                variant="outline"
+                size="sm"
+                className="rounded-xl px-4 text-xs font-bold cursor-pointer"
+              >
+                Fermer
+              </Button>
+            </div>
           </div>
         </div>
       )}

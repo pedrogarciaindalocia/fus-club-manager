@@ -13,6 +13,7 @@ export const MATCH_TRACKING_STATUS = {
 } as const;
 
 export const PLAYER_CATEGORIES = [
+  'SENIOR',
   'U23',
   'U22',
   'U21',
@@ -24,18 +25,23 @@ export const PLAYER_CATEGORIES = [
   'U15',
   'U14',
   'U13',
+  'U12',
+  'U11',
+  'U10',
+  'U9',
 ] as const;
 
 export const UNIFIED_AGE_CATEGORIES = PLAYER_CATEGORIES;
 export type AgeCategoryCode = typeof PLAYER_CATEGORIES[number];
 
 /**
- * Normalise n'importe quelle catégorie (ex: 'Senior', 'U21 / Espoirs', 'u19')
+ * Normalise n'importe quelle catégorie (ex: 'Senior', 'U21 / Espoirs', 'u19', 'u9')
  * vers le code officiel FUS standardisé.
  */
 export const normalizeAgeCategory = (rawCat?: string | null): string => {
-  if (!rawCat) return 'U23'; // Default to highest category if empty
+  if (!rawCat) return 'U19'; // Default category
   const clean = rawCat.trim().toUpperCase();
+  if (clean.includes('SENIOR') || clean === 'SR' || clean === 'SENIORS' || clean.includes('ÉLITE') || clean.includes('ELITE')) return 'SENIOR';
   if (clean.includes('23')) return 'U23';
   if (clean.includes('22')) return 'U22';
   if (clean.includes('21') || clean.includes('ESPOIR')) return 'U21';
@@ -47,6 +53,10 @@ export const normalizeAgeCategory = (rawCat?: string | null): string => {
   if (clean.includes('15')) return 'U15';
   if (clean.includes('14')) return 'U14';
   if (clean.includes('13')) return 'U13';
+  if (clean.includes('12')) return 'U12';
+  if (clean.includes('11')) return 'U11';
+  if (clean.includes('10')) return 'U10';
+  if (clean.includes('9') || clean.includes('U9')) return 'U9';
   return clean;
 };
 

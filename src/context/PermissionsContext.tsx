@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import type { UserProfile } from '../types';
 import { normalizeAgeCategory } from '../constants';
 
@@ -12,6 +12,12 @@ export interface AuthState {
   permissions: string[];
   loading: boolean;
   isRealSuperAdmin: boolean;
+  isImpersonating?: boolean;
+  impersonatedUser?: UserProfile | null;
+  originalUser?: UserProfile | null;
+  originalEmail?: string | null;
+  originalPermissions?: string[];
+  originalCategories?: string[];
 }
 
 export const SUBMODULE_TO_PARENT_MAP: Record<string, string> = {
@@ -54,6 +60,8 @@ interface PermissionsContextType {
   allowedCategories: string[];
   logout: () => Promise<void>;
   loginAs: (role: string, jobTitle?: string, categories?: string[]) => void;
+  impersonateUser: (user: UserProfile, explicitPerms?: string[], categories?: string[]) => Promise<void>;
+  resetImpersonation: () => void;
 }
 
 const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
@@ -88,7 +96,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       let assignedCats: string[] = [];
       try {
-        const { data: catAssignments, error: catErr } = await supabase
+        const { data: catAssignments, error: catErr } = await supabaseAdmin
           .from('user_category_assignments')
           .select('category')
           .eq('user_id', userId);
@@ -112,7 +120,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       // Charger les permissions explicites de l'utilisateur (matrice CRUD et modules)
       let userPerms: string[] = [];
       try {
-        const { data: permOverrides } = await supabase
+        const { data: permOverrides } = await supabaseAdmin
           .from('user_permissions_overrides')
           .select('permission_id')
           .eq('user_id', userId);
@@ -206,6 +214,8 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     parentModule?: string
   ): boolean => {
     const role = authState.user?.system_role?.toLowerCase() || '';
+    const isScoutAdmin = role === 'scout_admin' || authState.user?.role?.toLowerCase() === 'scout_admin' || authState.roles.some(r => r.toLowerCase() === 'scout_admin');
+    if (isScoutAdmin && (parentModule === 'recruitment_v2' || SUBMODULE_TO_PARENT_MAP[subModule] === 'recruitment_v2')) return true;
     const isSuperAdmin = role === 'super_admin';
     if (isSuperAdmin) return true;
 
@@ -263,13 +273,18 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     // 3. Fallback rôles historiques UNIQUEMENT si AUCUNE permission n'a jamais été configurée
     if (perms.length === 0) {
       if (role === 'admin' || role === 'direction') return true;
-      if (role === 'coach') {
-        if (subModule.startsWith('trainings_') || subModule === 'matches' || subModule === 'players' || subModule === 'teams') return true;
+      if (role === 'coach' || authState.user?.job_title?.toLowerCase().includes('coach')) {
+        if (subModule.startsWith('trainings_') || subModule === 'matches' || subModule === 'official_shortlist' || subModule === 'players' || subModule === 'teams' || subModule === 'opponents' || subModule === 'media') return true;
       }
-      if (role.startsWith('scout_')) {
+      if (role.startsWith('scout_') || authState.user?.job_title?.toLowerCase().includes('scout')) {
         if (['candidates', 'missions', 'shortlist', 'sessions', 'compare', 'archives'].includes(subModule)) return true;
-        if (role === 'scout_admin' && subModule === 'scouts') return true;
+        if ((role === 'scout_admin' || role === 'scout_manager' || authState.user?.job_title?.toLowerCase().includes('manager')) && subModule === 'scouts') return true;
+        if (['players', 'opponents', 'matches', 'official_shortlist', 'media'].includes(subModule)) return true;
       }
+      if (role.includes('analyst') || authState.user?.job_title?.toLowerCase().includes('analyst')) {
+        if (['matches', 'official_shortlist', 'arbitres', 'leagues', 'stadiums', 'players', 'teams', 'opponents', 'staff', 'media'].includes(subModule)) return true;
+      }
+      if (subModule === 'media') return true;
     }
 
     return false;
@@ -282,6 +297,8 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
    */
   const hasModuleAccess = (module: string, action: 'create' | 'read' | 'update' | 'delete' = 'read'): boolean => {
     const role = authState.user?.system_role?.toLowerCase() || '';
+    const isScoutAdmin = role === 'scout_admin' || authState.user?.role?.toLowerCase() === 'scout_admin' || authState.roles.some(r => r.toLowerCase() === 'scout_admin');
+    if (isScoutAdmin && module === 'recruitment_v2') return true;
     const isSuperAdmin = role === 'super_admin';
     if (isSuperAdmin) return true;
 
@@ -309,10 +326,16 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     // 4. Fallback rôles historiques si AUCUNE permission n'a jamais été configurée
     if (perms.length === 0) {
       if (role === 'admin' || role === 'direction') return true;
-      if (role === 'coach') {
-        if (module === 'trainings' || module === 'competition' || module === 'effectif') return true;
+      if (role === 'coach' || authState.user?.job_title?.toLowerCase().includes('coach')) {
+        if (module === 'trainings' || module === 'competition' || module === 'effectif' || module === 'media') return true;
       }
-      if (role.startsWith('scout_') && module === 'recruitment_v2') return true;
+      if (role.startsWith('scout_') || authState.user?.job_title?.toLowerCase().includes('scout')) {
+        if (module === 'recruitment_v2' || module === 'effectif' || module === 'competition' || module === 'media') return true;
+      }
+      if (role.includes('analyst') || authState.user?.job_title?.toLowerCase().includes('analyst')) {
+        if (module === 'competition' || module === 'effectif' || module === 'media') return true;
+      }
+      if (module === 'media') return true;
     }
 
     return false;
@@ -323,7 +346,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
    */
   const can = (action: string) => {
     const role = authState.user?.system_role?.toLowerCase() || '';
-    const isSuperAdmin = role === 'super_admin' || authState.isRealSuperAdmin;
+    const isSuperAdmin = !authState.isImpersonating && (role === 'super_admin' || authState.isRealSuperAdmin);
     if (isSuperAdmin) return true;
 
     // Actions système (Gestion Utilisateurs, Plugins, Audit Logs) STRICTEMENT RÉSERVÉES AU SUPER ADMIN
@@ -379,9 +402,20 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }));
       }
     };
+    const handlePermsUpdated = (e: any) => {
+      const { userId, permissions } = e.detail || {};
+      if (userId && authState.user?.id && userId === authState.user.id && Array.isArray(permissions)) {
+        setAuthState(prev => ({
+          ...prev,
+          permissions,
+        }));
+      }
+    };
     window.addEventListener('fusc_user_categories_updated', handleCategoriesUpdated);
+    window.addEventListener('fusc_user_perms_updated', handlePermsUpdated);
     return () => {
       window.removeEventListener('fusc_user_categories_updated', handleCategoriesUpdated);
+      window.removeEventListener('fusc_user_perms_updated', handlePermsUpdated);
     };
   }, [authState.user?.id]);
 
@@ -391,6 +425,9 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     : ['U7', 'U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U21', 'Senior', 'PRO'];
 
   const canManageCategory = (category: string | null | undefined): boolean => {
+    const role = authState.user?.system_role?.toLowerCase() || '';
+    const isScoutAdmin = role === 'scout_admin' || authState.user?.role?.toLowerCase() === 'scout_admin' || authState.roles.some(r => r.toLowerCase() === 'scout_admin');
+    if (isScoutAdmin) return true;
     // 1. RÈGLE STRICTE : Si l'utilisateur possède des catégories assignées explicites (userCategories.length > 0),
     // SEULES CES CATÉGORIES sont autorisées à être gérées et visualisées !
     // Même avec un rôle admin ou direction, le périmètre reste strictement confiné aux catégories cochées.
@@ -402,8 +439,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     // 2. Si AUCUNE catégorie spécifique n'a été restreinte/cochée pour ce compte :
     // Les administrateurs généraux (super_admin, admin, direction) ont accès à tout par défaut.
-    const role = authState.user?.system_role?.toLowerCase() || '';
-    const isSuperAdmin = role === 'super_admin' || authState.isRealSuperAdmin;
+    const isSuperAdmin = !authState.isImpersonating && (role === 'super_admin' || authState.isRealSuperAdmin);
     if (isSuperAdmin || role === 'admin' || role === 'direction') {
       return true;
     }
@@ -412,7 +448,109 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return false;
   };
 
+  const impersonateUser = async (
+    targetUser: UserProfile,
+    explicitPerms?: string[],
+    categories?: string[]
+  ) => {
+    const originalUser = authState.originalUser || authState.user;
+    const originalEmail = authState.originalEmail || authState.email;
+    const originalPerms = authState.originalPermissions || authState.permissions;
+    const originalCats = authState.originalCategories || authState.userCategories;
+
+    let perms = explicitPerms;
+    let cats = categories;
+
+    if (!perms) {
+      perms = [];
+      try {
+        const { data } = await supabaseAdmin
+          .from('user_permissions_overrides')
+          .select('permission_id')
+          .eq('user_id', targetUser.id);
+        if (data && data.length > 0) {
+          perms = data.map(p => p.permission_id);
+          try {
+            localStorage.setItem(`fusc_user_perms_${targetUser.id}`, JSON.stringify(perms));
+          } catch {}
+        } else {
+          const cached = localStorage.getItem(`fusc_user_perms_${targetUser.id}`);
+          if (cached) perms = JSON.parse(cached);
+        }
+      } catch (e) {
+        const cached = localStorage.getItem(`fusc_user_perms_${targetUser.id}`);
+        if (cached) perms = JSON.parse(cached);
+      }
+    }
+
+    if (!cats) {
+      cats = [];
+      try {
+        const { data } = await supabaseAdmin
+          .from('user_category_assignments')
+          .select('category')
+          .eq('user_id', targetUser.id);
+        if (data && data.length > 0) {
+          cats = data.map(c => c.category);
+          try {
+            localStorage.setItem(`fusc_user_categories_${targetUser.id}`, JSON.stringify(cats));
+          } catch {}
+        } else {
+          const cached = localStorage.getItem(`fusc_user_categories_${targetUser.id}`);
+          if (cached) cats = JSON.parse(cached);
+        }
+      } catch (e) {
+        const cached = localStorage.getItem(`fusc_user_categories_${targetUser.id}`);
+        if (cached) cats = JSON.parse(cached);
+      }
+    }
+
+    const isTargetSuper = targetUser.system_role?.toLowerCase() === 'super_admin';
+
+    setAuthState(prev => ({
+      ...prev,
+      email: (targetUser as any).email || prev.email,
+      user: targetUser,
+      roles: targetUser.system_role ? [targetUser.system_role] : ['user'],
+      permissions: perms || [],
+      userCategories: cats || [],
+      isImpersonating: !isTargetSuper,
+      impersonatedUser: isTargetSuper ? null : targetUser,
+      originalUser: prev.originalUser || originalUser,
+      originalEmail: prev.originalEmail || originalEmail,
+      originalPermissions: prev.originalPermissions || originalPerms,
+      originalCategories: prev.originalCategories || originalCats,
+      isRealSuperAdmin: prev.isRealSuperAdmin || originalUser?.system_role === 'super_admin',
+    }));
+  };
+
+  const resetImpersonation = () => {
+    setAuthState(prev => {
+      const restoredUser = prev.originalUser || prev.user;
+      return {
+        ...prev,
+        user: restoredUser,
+        email: prev.originalEmail || prev.email,
+        roles: restoredUser?.system_role ? [restoredUser.system_role] : ['super_admin'],
+        permissions: prev.originalPermissions || [],
+        userCategories: prev.originalCategories || [],
+        isImpersonating: false,
+        impersonatedUser: null,
+        originalUser: null,
+        originalEmail: null,
+        originalPermissions: undefined,
+        originalCategories: undefined,
+      };
+    });
+  };
+
   const loginAs = (role: string, jobTitle?: string, categories?: string[]) => {
+    const isSuper = role === 'super_admin';
+    const originalUser = authState.originalUser || authState.user;
+    const originalEmail = authState.originalEmail || authState.email;
+    const originalPerms = authState.originalPermissions || authState.permissions;
+    const originalCats = authState.originalCategories || authState.userCategories;
+
     setAuthState(prev => ({
       ...prev,
       roles: [role],
@@ -432,7 +570,22 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
             is_active: true,
             created_at: new Date().toISOString()
           },
-      isRealSuperAdmin: prev.isRealSuperAdmin || prev.user?.system_role === 'super_admin',
+      permissions: isSuper ? prev.originalPermissions || [] : [],
+      isImpersonating: !isSuper,
+      impersonatedUser: isSuper ? null : {
+        id: prev.user?.id || 'dev-user-id',
+        full_name: prev.user?.full_name || 'Rôle Simulé',
+        avatar_url: prev.user?.avatar_url || null,
+        system_role: role,
+        job_title: jobTitle || null,
+        is_active: true,
+        created_at: new Date().toISOString()
+      } as UserProfile,
+      originalUser: prev.originalUser || originalUser,
+      originalEmail: prev.originalEmail || originalEmail,
+      originalPermissions: prev.originalPermissions || originalPerms,
+      originalCategories: prev.originalCategories || originalCats,
+      isRealSuperAdmin: prev.isRealSuperAdmin || originalUser?.system_role === 'super_admin',
     }));
   };
 
@@ -446,7 +599,9 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       hasCategoryRestriction,
       allowedCategories,
       logout,
-      loginAs
+      loginAs,
+      impersonateUser,
+      resetImpersonation
     }}>
       {children}
     </PermissionsContext.Provider>

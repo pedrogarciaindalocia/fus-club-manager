@@ -20,7 +20,7 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
 }) => {
   const { authState, hasSubModuleAccess } = usePermissions();
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
-  const isSuperAdmin = currentRole === 'super_admin' || authState.isRealSuperAdmin;
+  const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
   const canEditDriveLink = Boolean(
     isSuperAdmin ||
     hasSubModuleAccess('candidates', 'drive_link')

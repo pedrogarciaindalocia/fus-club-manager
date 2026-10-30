@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PlayerTest, TrialCandidate, SessionStatus, CandidateEvaluation } from '../types/recruitment';
-import { RECRUITMENT_AGE_CATEGORIES } from '../types/recruitment';
+import { RECRUITMENT_AGE_CATEGORIES, groupCategoriesByPole } from '../types/recruitment';
 import { cn } from '../../../lib/utils';
 
 interface TestCalendarViewProps {
@@ -311,12 +311,37 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 font-bold outline-none focus:bg-white focus:ring-2 ring-primary/20 cursor-pointer"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/50 font-bold outline-none focus:bg-white focus:ring-2 ring-primary/20 cursor-pointer text-xs"
             >
               <option value="ALL">Toutes les Catégories</option>
-              {RECRUITMENT_AGE_CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
+              {(() => {
+                const groups = groupCategoriesByPole(RECRUITMENT_AGE_CATEGORIES);
+                return (
+                  <>
+                    {groups.labellise.length > 0 && (
+                      <optgroup label="⚽ Pôle Labellisé (U9 - U12)">
+                        {groups.labellise.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {groups.formation.length > 0 && (
+                      <optgroup label="🎓 Pôle Formation (U13 - U21)">
+                        {groups.formation.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {groups.senior.length > 0 && (
+                      <optgroup label="🏆 Pôle Senior (U23 & Senior)">
+                        {groups.senior.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </>
+                );
+              })()}
             </select>
           </div>
 

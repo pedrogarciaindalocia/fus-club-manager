@@ -6,7 +6,7 @@ import {
   TrendingUp, Trash2, Edit3, CheckCircle2, Clock, AlertCircle,
   Eye, UserCheck, LayoutList, Kanban, HeartHandshake, Briefcase, User, RotateCcw, X, Lock, MapPin, Trophy, Crown,
   Sliders, LayoutGrid, List, ClipboardList, Archive, RefreshCw, FileText, UserPlus, Target, Compass, History, Loader2,
-  Globe, Play, Flame, Video, Bookmark, BookmarkCheck, ArrowRight
+  Globe, Play, Flame, Video, Bookmark, BookmarkCheck, ArrowRight, ChevronDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,10 +20,20 @@ import type {
   PlayerTest,
   Scout,
   ScoutObservation,
-  ScoutMission
+  ScoutMission,
+  PlayerRecruitmentStatus
 } from './types/recruitment';
-import { RECRUITMENT_AGE_CATEGORIES } from './types/recruitment';
+import { RECRUITMENT_AGE_CATEGORIES, groupCategoriesByPole, PLAYER_RECRUITMENT_STATUS_OPTIONS, getAgeCategoryFromBirthDate, getPoleFromCategory } from './types/recruitment';
 import { PLAYER_POSITIONS, normalizeAgeCategory } from '../../constants';
+import { 
+  CONTINENTS, 
+  GEOGRAPHY_DATA, 
+  getCountryFlag, 
+  getContinentForCountry, 
+  getCountryNationality, 
+  getCountryForNationality, 
+  getAllCountriesOrdered 
+} from '../../constants/geography';
 
 // Subcomponents
 import CandidateModal from './components/CandidateModal';
@@ -151,26 +161,30 @@ export const RecruitmentV2Page: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { authState, hasSubModuleAccess, canManageCategory } = usePermissions();
+  const currentUserId = authState?.user?.id;
   const [searchParams, setSearchParams] = useSearchParams();
+  const hasExplicitPerms = Boolean(authState?.permissions && authState.permissions.length > 0);
   const userRole = authState?.user?.system_role?.toLowerCase() || '';
   const userRoles = (authState?.roles ?? []).map(r => r.toLowerCase());
-  const isAdmin = Boolean(
-    userRoles.includes('super_admin') ||
-    userRoles.includes('admin') ||
+  const isSuperAdmin = Boolean(
+    !authState?.isImpersonating && (
+      userRoles.includes('super_admin') ||
+      userRole === 'super_admin'
+    )
+  );
+  // Le Scout Admin conserve la supervision complète de Recrutement V2 même si une matrice de permissions est configurée.
+  const isScoutAdmin = Boolean(
     userRoles.includes('scout_admin') ||
-    userRole === 'super_admin' ||
-    userRole === 'admin' ||
     userRole === 'scout_admin'
   );
-  const isSuperAdmin = Boolean(
-    userRoles.includes('super_admin') ||
-    userRole === 'super_admin'
-  );
-  const isScoutAdmin = Boolean(
+  // En présence de permissions explicites, le rôle admin général reste soumis à la matrice.
+  const isAdmin = Boolean(
     isSuperAdmin ||
-    userRoles.includes('scout_admin') ||
-    userRole === 'scout_admin' ||
-    authState?.user?.system_role === 'scout_admin'
+    isScoutAdmin ||
+    (!hasExplicitPerms && (
+      userRoles.includes('admin') ||
+      userRole === 'admin'
+    ))
   );
 
   // US-DASH: Scout Manager (responsable opérationnel de scouts, mais non administrateur de direction)
@@ -186,13 +200,15 @@ export const RecruitmentV2Page: React.FC = () => {
 
   // Règle Métier : Seule la Direction (Super Admin et Scout Admin) est considérée comme Admin du recrutement.
   // Les Scout Managers et Scouts de terrain sont des utilisateurs opérationnels de terrain.
-  const isRecruitmentAdmin = Boolean((isSuperAdmin || isScoutAdmin) && !isScoutManager);
+  const isRecruitmentAdmin = Boolean(
+    isSuperAdmin ||
+    (isScoutAdmin && !isScoutManager)
+  );
 
   // US-DASH-31: Seule la Direction (Super Admin et Scout Admin) ou les profils avec permission spécifique ont le pouvoir d'assigner des joueurs et d'ordonner des missions.
   const canAssignMissions = Boolean(
     isSuperAdmin ||
-    isScoutAdmin ||
-    isRecruitmentAdmin ||
+    (!hasExplicitPerms && (isScoutAdmin || isRecruitmentAdmin)) ||
     hasSubModuleAccess('candidates', 'assign_mission')
   );
 
@@ -208,24 +224,32 @@ export const RecruitmentV2Page: React.FC = () => {
   );
 
   // Permission de traitement de la procédure administrative de recrutement immédiat
+  // Règle Métier US-DASH-119 : Seuls Super Admin, Scout Admin, Administrateur (Directeur Administratif)
+  // peuvent valider ou traiter un recrutement immédiat. Le Scout Manager en est strictement exclu.
   const canProcessRecruitNow = Boolean(
-    isSuperAdmin ||
-    isRecruitmentAdmin ||
-    isDirecteurAdministratif ||
-    hasSubModuleAccess('candidates', 'recruit_now')
+    !isScoutManager && (
+      isSuperAdmin ||
+      isScoutAdmin ||
+      (!hasExplicitPerms && (isRecruitmentAdmin || isDirecteurAdministratif)) ||
+      hasSubModuleAccess('candidates', 'recruit_now')
+    )
   );
 
   // Détermine si l'utilisateur a pour rôle exclusif / ciblé le traitement du recrutement immédiat
   // (Directeur Administratif ou utilisateur doté de la permission spécifique 'recruit_now' sans être Super Admin ni Scout Admin)
   const isOnlyRecruitNowUser = Boolean(
-    isDirecteurAdministratif ||
-    (hasSubModuleAccess('candidates', 'recruit_now') && !isSuperAdmin && !isRecruitmentAdmin)
+    !isSuperAdmin &&
+    !isScoutAdmin &&
+    (
+      (hasExplicitPerms && hasSubModuleAccess('candidates', 'recruit_now')) ||
+      (!hasExplicitPerms && isDirecteurAdministratif && !isRecruitmentAdmin)
+    )
   );
 
   // US-DASH-60: Permission spécifique de gestion des rapports d'observation
   const canManageReports = Boolean(
     isSuperAdmin ||
-    isRecruitmentAdmin ||
+    (!hasExplicitPerms && isRecruitmentAdmin) ||
     hasSubModuleAccess('candidates', 'manage_reports') ||
     hasSubModuleAccess('candidates', 'reports')
   );
@@ -357,6 +381,51 @@ export const RecruitmentV2Page: React.FC = () => {
     const latestDec = getCandidateLatestDecision(c);
     return latestDec === 'recruit_standby' || c.scout_state_decision === 'recruit_standby';
   }, [getCandidateLatestDecision, isCandidateRecruitNow]);
+
+  // Helper US-DASH-120 : Catégorie d'âge réelle calculée systématiquement via la date de naissance
+  const getCandidateEffectiveCategory = React.useCallback((c: TrialCandidate): string => {
+    if (c.birth_date) {
+      return getAgeCategoryFromBirthDate(c.birth_date, c.age_category || 'U19');
+    }
+    return normalizeAgeCategory(c.age_category || 'U19');
+  }, []);
+
+  // Gestion du changement direct de statut depuis la liste déroulante du tableau
+  const handleTableStatusChange = React.useCallback(async (candidate: TrialCandidate, nextStatus: PlayerRecruitmentStatus) => {
+    const isOwner = Boolean(
+      candidate.discovering_scout === currentUserId ||
+      candidate.discovering_scout_id === currentUserId ||
+      candidate.created_by === currentUserId ||
+      (candidate as any)?.scout_id === currentUserId
+    );
+
+    // Règle Métier US-DASH-121 : Un scout / Scout Manager ne peut modifier le statut QUE pour ses propres joueurs
+    if (!canProcessRecruitNow && !isOwner) {
+      toast.error("Vous pouvez modifier le statut uniquement pour vos propres joueurs.");
+      return;
+    }
+
+    const mappedDbStatus =
+      nextStatus === 'recruit_now' ? 'selected' :
+      nextStatus === 'invitation_test' ? 'in_trial' : 'registered';
+    const isValidated = nextStatus === 'recruit_now';
+
+    try {
+      await updateCandidate({
+        id: candidate.id,
+        updates: {
+          scout_state_decision: nextStatus,
+          status: mappedDbStatus as any,
+          is_recruit_now_validated: isValidated,
+        }
+      });
+      const opt = PLAYER_RECRUITMENT_STATUS_OPTIONS.find(o => o.value === nextStatus);
+      toast.success(`Statut de ${candidate.first_name} ${candidate.last_name} mis à jour : "${opt?.label || nextStatus}"`);
+    } catch (err) {
+      console.error('[RecruitmentV2Page] Erreur lors de la mise à jour du statut:', err);
+      toast.error("Impossible de mettre à jour le statut du joueur");
+    }
+  }, [updateCandidate, canProcessRecruitNow, isCandidateRecruitNow, isScoutManager, authState?.user?.id]);
 
   const todayStr = new Date().toLocaleDateString('en-CA');
 
@@ -535,6 +604,23 @@ export const RecruitmentV2Page: React.FC = () => {
       });
       queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.candidates });
 
+      // Synchroniser avec public.scouting_basket : marquer comme 'assigned' pour disparaître du panier
+      try {
+        const candFullName = `${targetCandidate.first_name} ${targetCandidate.last_name}`.trim();
+        await supabase
+          .from('scouting_basket')
+          .update({
+            status: 'assigned',
+            assigned_to_id: targetScout.id,
+            assigned_to_name: targetScout.full_name,
+            assigned_mission_id: targetCandidate.id,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`assigned_mission_id.eq.${targetCandidate.id},player_id.eq.${targetCandidate.id},full_name.ilike.${candFullName}`);
+      } catch (basketSyncErr) {
+        console.warn('Notice basket status update on assign:', basketSyncErr);
+      }
+
       // Diffuser la notification en temps réel pour le scout / scout manager ciblé
       try {
         await supabase.channel('scouting_missions_broadcast_alerts').send({
@@ -640,6 +726,100 @@ export const RecruitmentV2Page: React.FC = () => {
     });
     queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.candidates });
 
+    // Règle métier : lorsqu'on retire la mission du scout, le joueur revient au panier de détection !
+    try {
+      const candFullName = `${targetCandidate.first_name} ${targetCandidate.last_name}`.trim();
+
+      // Chercher si le joueur existe déjà dans public.scouting_basket
+      const { data: basketRows } = await supabase
+        .from('scouting_basket')
+        .select('id, player_id, match_id')
+        .or(`assigned_mission_id.eq.${targetCandidate.id},player_id.eq.${targetCandidate.id},full_name.ilike.${candFullName}`);
+
+      if (basketRows && basketRows.length > 0) {
+        for (const entry of basketRows) {
+          await supabase
+            .from('scouting_basket')
+            .update({
+              status: 'pending',
+              assigned_to_id: null,
+              assigned_to_name: null,
+              assigned_mission_id: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', entry.id);
+
+          // Si lié à un match, retirer l'assignation scout et s'assurer que in_scouting_basket = true
+          if (entry.match_id) {
+            const { data: matchData } = await supabase
+              .from('matches')
+              .select('id, opponent_lineup, opponent_subs')
+              .eq('id', entry.match_id)
+              .maybeSingle();
+
+            if (matchData) {
+              const resetOpp = (arr: any[]) => (arr || []).map(p => {
+                if (typeof p === 'object' && p !== null) {
+                  const mId = p.id && (String(p.id) === String(entry.player_id) || String(p.id) === String(targetCandidate.id));
+                  const mName = p.full_name && p.full_name.trim().toLowerCase() === candFullName.toLowerCase();
+                  if (mId || mName) {
+                    return {
+                      ...p,
+                      in_scouting_basket: true,
+                      assigned_scout_id: null,
+                      assigned_scout_name: null,
+                    };
+                  }
+                }
+                return p;
+              });
+
+              await supabase
+                .from('matches')
+                .update({
+                  opponent_lineup: resetOpp(matchData.opponent_lineup),
+                  opponent_subs: resetOpp(matchData.opponent_subs),
+                })
+                .eq('id', entry.match_id);
+            }
+          }
+        }
+      } else {
+        // Le joueur n'existait pas encore dans scouting_basket -> réintégration directe au panier
+        await supabase
+          .from('scouting_basket')
+          .insert({
+            player_id: targetCandidate.id,
+            full_name: candFullName,
+            jersey_number: null,
+            position: targetCandidate.primary_position || 'Attaquant',
+            photo_url: targetCandidate.photo_url || null,
+            category: targetCandidate.age_category || 'SENIOR',
+            match_id: targetCandidate.discovery_match || null,
+            match_context: targetCandidate.origin_club ? { away_name: targetCandidate.origin_club, home_name: 'FUS CLUB' } : {},
+            rating: targetCandidate.performance_rating || targetCandidate.potential_rating || null,
+            rating_comment: targetCandidate.notes || "Mission retirée du scout et remise au panier de détection.",
+            added_by_name: assignerName,
+            added_by_role: 'Direction Scouting',
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+      }
+
+      // Diffuser l'événement en direct pour que le Panier de Détection se recharge immédiatement
+      await supabase.channel('scouting_basket_realtime').send({
+        type: 'broadcast',
+        event: 'basket_player_restored',
+        payload: {
+          candidateId: targetCandidate.id,
+          candidateName: candFullName,
+        },
+      });
+    } catch (basketErr) {
+      console.warn('[handleUnassignMission] Erreur réintégration au panier:', basketErr);
+    }
+
     // Diffuser la notification en temps réel
     if (previousScoutId) {
       try {
@@ -663,14 +843,14 @@ export const RecruitmentV2Page: React.FC = () => {
         candidate_id: targetCandidate.id,
         event_type: 'observation_scheduled',
         event_title: `Mission retirée à ${previousScoutName}`,
-        event_description: `La mission a été retirée par ${assignerName}. Le joueur est désormais disponible pour une nouvelle assignation.`,
+        event_description: `La mission a été retirée par ${assignerName}. Le joueur a été remis dans le Panier de Détection.`,
         performed_by: assignerName,
         event_date: new Date().toISOString().split('T')[0],
       });
     } catch {}
 
     toast.success(`Mission retirée avec succès à ${previousScoutName}`, {
-      description: `${targetCandidate.first_name} ${targetCandidate.last_name} est désormais disponible pour une nouvelle assignation.`,
+      description: `${targetCandidate.first_name} ${targetCandidate.last_name} a été remis dans le Panier de Détection.`,
       icon: '↩️',
     });
   };
@@ -765,9 +945,8 @@ export const RecruitmentV2Page: React.FC = () => {
     const userCats = (authState?.userCategories || []).map(c => normalizeAgeCategory(c));
     const hasAssignedCats = userCats.length > 0;
 
-    // Règle Stricte : Si des catégories spécifiques sont assignées à l'utilisateur,
-    // il a UNIQUEMENT accès aux candidats de ces catégories (aucune autre catégorie ne s'affiche).
-    if (hasAssignedCats) {
+    // Les catégories assignées limitent les scouts opérationnels, pas la Direction Scout Admin.
+    if (hasAssignedCats && !isRecruitmentAdmin) {
       return candidates.filter(c => {
         const candCat = normalizeAgeCategory(c.age_category || '');
         return !!candCat && userCats.includes(candCat);
@@ -960,19 +1139,47 @@ export const RecruitmentV2Page: React.FC = () => {
     return isEvaluationAuthoredByScout(ev);
   };
 
+  // Vérifie si l'utilisateur a le droit d'ouvrir et de consulter le dossier détaillé (modal/page) et les rapports du joueur
+  const canViewCandidateDetails = (candidate?: TrialCandidate): boolean => {
+    if (!candidate) return false;
+    if (isSuperAdmin) return true;
+
+    // Si l'utilisateur possède des permissions explicites (user_permissions_overrides) :
+    // S'il n'a que 'drive_link' (sans gestion de rapport, sans modifier le joueur, sans mise à jour, sans création),
+    // la consultation des détails et des rapports lui est strictement interdite.
+    const hasDossierOrReportPermission = Boolean(
+      canManageReports ||
+      hasSubModuleAccess('candidates', 'manage_reports') ||
+      hasSubModuleAccess('candidates', 'reports') ||
+      hasSubModuleAccess('candidates', 'edit_player') ||
+      hasSubModuleAccess('candidates', 'update') ||
+      hasSubModuleAccess('candidates', 'assign_mission') ||
+      hasSubModuleAccess('candidates', 'create')
+    );
+
+    if (hasExplicitPerms) {
+      return hasDossierOrReportPermission;
+    }
+
+    // Fallback rôles historiques uniquement en l'absence de configuration explicite
+    if (isAdmin || isRecruitmentAdmin) return true;
+    if (isScoutManager) return true;
+    if (isCandidateAssignedToScout(candidate) || isCandidateIntroducedByScout(candidate)) return true;
+    return false;
+  };
+
   // Vérifie si l'utilisateur a le droit d'ajouter/modifier le lien Drive pour ce candidat
   const canAddDriveLinkForCandidate = (cand: TrialCandidate): boolean => {
+    if (!cand) return false;
     if (isSuperAdmin) return true;
     if (!canEditDriveLink) return false;
-    if (isAdmin) return true;
     if (!canManageCategory(cand.age_category)) return false;
-    // Règle Scout et Scout Manager : la main CRUD (y compris Drive) est réservée aux joueurs qu'il a introduits
-    if (!isCandidateIntroducedByScout(cand)) return false;
     return true;
   };
 
   // Vérifie si l'utilisateur a le droit de modifier l'intégralité de la fiche du candidat (accès au formulaire complet)
   const canUpdateCandidateFull = (cand: TrialCandidate): boolean => {
+    if (!cand) return false;
     if (isSuperAdmin) return true;
 
     // Vérification de la permission dédiée 'Modifier un joueur' (sub:candidates:edit_player) ou update général
@@ -991,8 +1198,12 @@ export const RecruitmentV2Page: React.FC = () => {
 
   // Règle de suppression : Seule la direction ou le scout ayant introduit le joueur peut le supprimer
   const canDeleteCandidate = (cand: TrialCandidate): boolean => {
-    if (isSuperAdmin || isAdmin) return true;
+    if (!cand) return false;
+    if (isSuperAdmin) return true;
+    // Règle stricte : la permission de suppression candidates:delete est impérativement requise
     if (!hasSubModuleAccess('candidates', 'delete')) return false;
+
+    if (isAdmin) return true;
 
     // Ne peut supprimer QUE les joueurs qu'il a introduits lui-même
     if (isCandidateIntroducedByScout(cand)) {
@@ -1001,6 +1212,9 @@ export const RecruitmentV2Page: React.FC = () => {
 
     return false;
   };
+
+  // Droit global de suppression pour les actions de masse
+  const canDeleteAnyCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'delete'));
 
   // Action rapide : Ajouter / Retirer un joueur de la Shadow List (Shortlist)
   const handleToggleShortlist = async (cand: TrialCandidate) => {
@@ -1033,8 +1247,11 @@ export const RecruitmentV2Page: React.FC = () => {
   const [scoutFilter, setScoutFilter] = useState('ALL');
   const [bestScorePerPositionFilter, setBestScorePerPositionFilter] = useState(false);
   const [myPlayersOnly, setMyPlayersOnly] = useState(false);
-  // Filtre de nationalité sous forme de tags (Marocains par défaut)
-  const [nationalityTagFilter, setNationalityTagFilter] = useState<NationalityTag>('marocains');
+  // Filtre Continent & Pays avec drapeau
+  const [continentFilter, setContinentFilter] = useState('ALL');
+  const [countryFilter, setCountryFilter] = useState('ALL');
+  // Aucun filtre de nationalité au chargement : la base doit afficher tous les joueurs.
+  const [nationalityTagFilter, setNationalityTagFilter] = useState<NationalityTag>('all');
   // Filtre de statut / décision scout
   const [decisionFilter, setDecisionFilter] = useState<'ALL' | 'recruit_now' | 'recruit_standby' | 'invitation_test' | 'to_follow'>('ALL');
 
@@ -1081,6 +1298,8 @@ export const RecruitmentV2Page: React.FC = () => {
     positionFilter !== 'ALL' ||
     footFilter !== 'ALL' ||
     scoutFilter !== 'ALL' ||
+    continentFilter !== 'ALL' ||
+    countryFilter !== 'ALL' ||
     bestScorePerPositionFilter ||
     myPlayersOnly ||
     decisionFilter !== 'ALL' ||
@@ -1093,6 +1312,8 @@ export const RecruitmentV2Page: React.FC = () => {
     setPositionFilter('ALL');
     setFootFilter('ALL');
     setScoutFilter('ALL');
+    setContinentFilter('ALL');
+    setCountryFilter('ALL');
     setBestScorePerPositionFilter(false);
     setMyPlayersOnly(false);
     setNationalityTagFilter('all');
@@ -1121,8 +1342,9 @@ export const RecruitmentV2Page: React.FC = () => {
         return false;
       }
 
-      // Catégorie d'âge
-      if (categoryFilter !== 'ALL' && normalizeAgeCategory(c.age_category || '') !== normalizeAgeCategory(categoryFilter)) {
+      // Catégorie d'âge (Règle Métier US-DASH-120 : Traitement et indexation systématiques par âge réel via date de naissance)
+      const effectiveCat = getCandidateEffectiveCategory(c);
+      if (categoryFilter !== 'ALL' && normalizeAgeCategory(effectiveCat) !== normalizeAgeCategory(categoryFilter)) {
         return false;
       }
 
@@ -1181,6 +1403,28 @@ export const RecruitmentV2Page: React.FC = () => {
         }
       }
 
+      // Filtre Continent
+      if (continentFilter !== 'ALL') {
+        const candCountry = c.country || getCountryForNationality(c.nationality) || '';
+        const candContinent = getContinentForCountry(candCountry);
+        if (candContinent !== continentFilter) {
+          return false;
+        }
+      }
+
+      // Filtre Pays avec drapeau
+      if (countryFilter !== 'ALL') {
+        const cCountry = (c.country || '').toLowerCase().trim();
+        const cNat = (c.nationality || '').toLowerCase().trim();
+        const target = countryFilter.toLowerCase().trim();
+        const targetNat = getCountryNationality(countryFilter).toLowerCase().trim();
+        const matchesCountry = cCountry === target || cCountry.includes(target) || target.includes(cCountry);
+        const matchesNat = cNat.includes(target) || cNat.includes(targetNat) || targetNat.includes(cNat);
+        if (!matchesCountry && !matchesNat) {
+          return false;
+        }
+      }
+
       // Règle Directeur Administratif / Permission Recruter Immédiatement :
       // Afficher exclusivement les profils à recruter immédiatement
       if (isOnlyRecruitNowUser && !isCandidateRecruitNow(c)) {
@@ -1224,11 +1468,23 @@ export const RecruitmentV2Page: React.FC = () => {
         }
       });
 
-      return Array.from(bestMap.values()).map(v => v.candidate);
+      return Array.from(bestMap.values())
+        .map(v => v.candidate)
+        .sort((a, b) => (isCandidateMoroccan(b) ? 1 : 0) - (isCandidateMoroccan(a) ? 1 : 0));
     }
 
-    return list;
-  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, bestScorePerPositionFilter, myPlayersOnly, currentScout, authState?.user, nationalityTagFilter, decisionFilter, isOnlyRecruitNowUser, isCandidateRecruitNow, getCandidateLatestDecision]);
+    // Tri prioritaire : Afficher les profils marocains en premier lieu
+    const sorted = [...list].sort((a, b) => {
+      const aMoroc = isCandidateMoroccan(a) ? 1 : 0;
+      const bMoroc = isCandidateMoroccan(b) ? 1 : 0;
+      if (bMoroc !== aMoroc) {
+        return bMoroc - aMoroc; // Les profils marocains apparaissent en tête
+      }
+      return new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime();
+    });
+
+    return sorted;
+  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, continentFilter, countryFilter, bestScorePerPositionFilter, myPlayersOnly, currentScout, authState?.user, nationalityTagFilter, decisionFilter, isOnlyRecruitNowUser, isCandidateRecruitNow, getCandidateLatestDecision]);
 
   // 1b. Filtrage des candidats archivés pour l'onglet Archives
   const filteredArchivedCandidates = React.useMemo(() => {
@@ -1414,16 +1670,26 @@ export const RecruitmentV2Page: React.FC = () => {
   // Sélection du dossier candidat en mode pleine page (non modal)
   const candidateIdParam = searchParams.get('candidateId');
   const detailTabParam = searchParams.get('detailTab') as any;
-  const activeCandidate = candidateIdParam ? (candidates.find(c => c.id === candidateIdParam) || detailCandidate) : null;
+  const rawTargetCandidate = candidateIdParam ? (candidates.find(c => c.id === candidateIdParam) || detailCandidate) : null;
+  const activeCandidate = (rawTargetCandidate && canViewCandidateDetails(rawTargetCandidate)) ? rawTargetCandidate : null;
 
-  // Si l'utilisateur clique sur une rubrique (Database, Shadow list, etc.) sans candidateId, refermer automatiquement le dossier
+  // Si l'utilisateur clique sur une rubrique sans candidateId ou s'il n'a pas le droit de consulter, refermer automatiquement le dossier
   useEffect(() => {
     if (!candidateIdParam && detailCandidate) {
       setDetailCandidate(null);
     }
-  }, [candidateIdParam, detailCandidate]);
+    if (candidateIdParam) {
+      const cand = candidates.find(c => c.id === candidateIdParam);
+      if (cand && !canViewCandidateDetails(cand)) {
+        closeCandidateDetail();
+      }
+    }
+  }, [candidateIdParam, detailCandidate, candidates]);
 
   const openCandidateDetail = (candidate: TrialCandidate, initialDetailTab?: 'scout' | 'personal' | 'sport' | 'evaluations' | 'report') => {
+    if (!canViewCandidateDetails(candidate)) {
+      return;
+    }
     setDetailCandidate(candidate);
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
@@ -1882,52 +2148,79 @@ export const RecruitmentV2Page: React.FC = () => {
                   )}
                 </div>
 
-                {/* Filtre Rapide : Recrutement Stand-by (US-DASH-104) */}
-                <div className="inline-flex items-center p-1 bg-amber-50 rounded-2xl border border-amber-200/80">
+                {/* Filtre Rapide : À suivre */}
+                <div className="inline-flex items-center p-1 bg-indigo-50 rounded-2xl border border-indigo-200/80">
                   <button
                     type="button"
-                    onClick={() => setDecisionFilter(prev => prev === 'recruit_standby' ? 'ALL' : 'recruit_standby')}
+                    onClick={() => setDecisionFilter(prev => prev === 'to_follow' ? 'ALL' : 'to_follow')}
                     className={cn(
                       "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                      decisionFilter === 'recruit_standby'
-                        ? "bg-amber-600 text-white font-black shadow-xs ring-2 ring-amber-400/40"
-                        : "text-amber-800 hover:bg-white"
+                      decisionFilter === 'to_follow'
+                        ? "bg-indigo-600 text-white font-black shadow-xs ring-2 ring-indigo-400/40"
+                        : "text-indigo-800 hover:bg-white"
                     )}
-                    title="Filtrer les talents en Recrutement Stand-by (en attente de validation)"
+                    title="Filtrer les talents positionnés en veille active (À suivre)"
                   >
-                    <Clock className="w-3.5 h-3.5 text-current" />
-                    <span>Recrutement Stand-by</span>
+                    <Eye className="w-3.5 h-3.5 text-current" />
+                    <span>À suivre</span>
                     <span className={cn(
                       "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
-                      decisionFilter === 'recruit_standby'
+                      decisionFilter === 'to_follow'
                         ? "bg-white/20 text-white"
-                        : "bg-amber-200 text-amber-900"
+                        : "bg-indigo-200 text-indigo-900"
                     )}>
-                      {scopedCandidates.filter(c => isCandidateRecruitStandby(c)).length}
+                      {scopedCandidates.filter(c => getCandidateLatestDecision(c) === 'to_follow').length}
                     </span>
                   </button>
                 </div>
 
+                {/* Filtre Rapide : Inviter à un test */}
+                <div className="inline-flex items-center p-1 bg-blue-50 rounded-2xl border border-blue-200/80">
+                  <button
+                    type="button"
+                    onClick={() => setDecisionFilter(prev => prev === 'invitation_test' ? 'ALL' : 'invitation_test')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                      decisionFilter === 'invitation_test'
+                        ? "bg-blue-600 text-white font-black shadow-xs ring-2 ring-blue-400/40"
+                        : "text-blue-800 hover:bg-white"
+                    )}
+                    title="Filtrer les talents convoqués pour match d'essai ou détection"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-current" />
+                    <span>Inviter à un test</span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                      decisionFilter === 'invitation_test'
+                        ? "bg-white/20 text-white"
+                        : "bg-blue-200 text-blue-900"
+                    )}>
+                      {scopedCandidates.filter(c => getCandidateLatestDecision(c) === 'invitation_test').length}
+                    </span>
+                  </button>
+                </div>
+
+
                 {/* Filtre Rapide : À recruter immédiatement */}
-                <div className="inline-flex items-center p-1 bg-rose-50 rounded-2xl border border-rose-200/80">
+                <div className="inline-flex items-center p-1 bg-emerald-50 rounded-2xl border border-emerald-200/80">
                   <button
                     type="button"
                     onClick={() => setDecisionFilter(prev => prev === 'recruit_now' ? 'ALL' : 'recruit_now')}
                     className={cn(
                       "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
                       decisionFilter === 'recruit_now'
-                        ? "bg-rose-600 text-white font-black shadow-xs ring-2 ring-rose-400/40"
-                        : "text-rose-700 hover:bg-white"
+                        ? "bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-400/40"
+                        : "text-emerald-800 hover:bg-white"
                     )}
                     title="Filtrer uniquement les talents validés à recruter immédiatement"
                   >
                     <Flame className="w-3.5 h-3.5 fill-current text-current" />
-                    <span>À recruter immédiatement</span>
+                    <span>Recrutement immédiatement</span>
                     <span className={cn(
                       "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
                       decisionFilter === 'recruit_now'
                         ? "bg-white/20 text-white"
-                        : "bg-rose-200 text-rose-800"
+                        : "bg-emerald-200 text-emerald-900"
                     )}>
                       {scopedCandidates.filter(c => isCandidateRecruitNow(c)).length}
                     </span>
@@ -2061,8 +2354,8 @@ export const RecruitmentV2Page: React.FC = () => {
               </div>
             </div>
 
-            {/* LIGNE 2 : Sélecteurs déroulants de filtrage complet */}
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1 border-t border-slate-100">
+            {/* LIGNE 2 : Sélecteurs déroulants de filtrage complet (avec Continent et Pays/Drapeau) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1 border-t border-slate-100">
               {/* 1. Catégorie d'Âge */}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
@@ -2078,12 +2371,42 @@ export const RecruitmentV2Page: React.FC = () => {
                       : "border-slate-200 bg-white text-slate-700"
                   )}
                 >
-                  {visibleRecruitmentCategories.length > 1 && (
-                    <option value="ALL">Toutes les catégories</option>
-                  )}
-                  {visibleRecruitmentCategories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
+                  <option value="ALL">Toutes les catégories</option>
+                  {(() => {
+                    const groups = groupCategoriesByPole(visibleRecruitmentCategories);
+                    return (
+                      <>
+                        {groups.labellise.length > 0 && (
+                          <optgroup label="⚽ Pôle Labellisé (U9 - U12)">
+                            {groups.labellise.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {groups.formation.length > 0 && (
+                          <optgroup label="🎓 Pôle Formation (U13 - U21)">
+                            {groups.formation.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {groups.senior.length > 0 && (
+                          <optgroup label="🏆 Pôle Senior (U23 & Senior)">
+                            {groups.senior.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {groups.other.length > 0 && (
+                          <optgroup label="Autres">
+                            {groups.other.map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </>
+                    );
+                  })()}
                 </select>
               </div>
 
@@ -2111,7 +2434,7 @@ export const RecruitmentV2Page: React.FC = () => {
                 </select>
               </div>
 
-              {/* 4. Pied Fort */}
+              {/* 3. Pied Fort */}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
                   Pied Fort
@@ -2132,9 +2455,71 @@ export const RecruitmentV2Page: React.FC = () => {
                 </select>
               </div>
 
-              {/* 5. Scout (Réservé à la Direction) */}
-              {isRecruitmentAdmin && (
-                <div className="col-span-2 sm:col-span-1">
+              {/* 4. Continent */}
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+                  <Globe className="w-3 h-3 text-primary" />
+                  <span>Continent</span>
+                </label>
+                <select
+                  value={continentFilter}
+                  onChange={(e) => {
+                    const newCont = e.target.value;
+                    setContinentFilter(newCont);
+                    // Si le pays sélectionné ne fait pas partie du continent, réinitialiser
+                    if (newCont !== 'ALL' && countryFilter !== 'ALL') {
+                      const countriesInCont = Object.keys(GEOGRAPHY_DATA[newCont] || {});
+                      if (!countriesInCont.includes(countryFilter)) {
+                        setCountryFilter('ALL');
+                      }
+                    }
+                  }}
+                  className={cn(
+                    "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
+                    continentFilter !== 'ALL'
+                      ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
+                      : "border-slate-200 bg-white text-slate-700"
+                  )}
+                >
+                  <option value="ALL">Tous les continents</option>
+                  {CONTINENTS.map(c => (
+                    <option key={c} value={c}>
+                      {c === 'Afrique' ? '🌍 Afrique' : c === 'Europe' ? '🇪🇺 Europe' : c === 'Amérique' ? '🌎 Amérique' : '🌏 Asie/Océanie'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 5. Pays avec Drapeau (Maroc affiché en 1er) */}
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1 flex items-center justify-between">
+                  <span>Pays</span>
+                  {countryFilter !== 'ALL' && (
+                    <span className="text-xs">{getCountryFlag(countryFilter)}</span>
+                  )}
+                </label>
+                <select
+                  value={countryFilter}
+                  onChange={(e) => setCountryFilter(e.target.value)}
+                  className={cn(
+                    "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
+                    countryFilter !== 'ALL'
+                      ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
+                      : "border-slate-200 bg-white text-slate-700"
+                  )}
+                >
+                  <option value="ALL">Tous les pays</option>
+                  {getAllCountriesOrdered(continentFilter).map(item => (
+                    <option key={item.name} value={item.name}>
+                      {item.flag} {item.name} {item.name === 'Maroc' ? '(National)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 6. Scout (Réservé à la Direction) */}
+              {isRecruitmentAdmin ? (
+                <div>
                   <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
                     Scout
                   </label>
@@ -2161,6 +2546,8 @@ export const RecruitmentV2Page: React.FC = () => {
                     })}
                   </select>
                 </div>
+              ) : (
+                <div className="hidden lg:block" />
               )}
             </div>
 
@@ -2271,15 +2658,17 @@ export const RecruitmentV2Page: React.FC = () => {
                   <span>Archiver ({selectedCandidateIds.length})</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setIsBulkDeleteModalOpen(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Supprimer définitivement les joueurs sélectionnés"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Supprimer ({selectedCandidateIds.length})</span>
-                </button>
+                {canDeleteAnyCandidate && (
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkDeleteModalOpen(true)}
+                    className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Supprimer définitivement les joueurs sélectionnés"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Supprimer ({selectedCandidateIds.length})</span>
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -2316,17 +2705,19 @@ export const RecruitmentV2Page: React.FC = () => {
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
                     <tr>
-                      <th className="py-3.5 px-3 w-10 text-center">
-                        <input
-                          ref={headerCheckboxRef}
-                          type="checkbox"
-                          checked={isAllSelected}
-                          onChange={handleToggleSelectAll}
-                          className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all"
-                          title={isAllSelected ? "Tout désélectionner" : "Tout sélectionner"}
-                          aria-label="Sélectionner tous les joueurs visibles"
-                        />
-                      </th>
+                      {canDeleteAnyCandidate && (
+                        <th className="py-3.5 px-3 w-10 text-center">
+                          <input
+                            ref={headerCheckboxRef}
+                            type="checkbox"
+                            checked={isAllSelected}
+                            onChange={handleToggleSelectAll}
+                            className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all"
+                            title={isAllSelected ? "Tout désélectionner" : "Tout sélectionner"}
+                            aria-label="Sélectionner tous les joueurs visibles"
+                          />
+                        </th>
+                      )}
                       <th className="py-3.5 px-4">Joueur</th>
                       <th className="py-3.5 px-3">Scout Détecteur</th>
                       {isRecruitmentAdmin && (
@@ -2384,16 +2775,18 @@ export const RecruitmentV2Page: React.FC = () => {
                             isSelected ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-slate-50/70"
                           )}
                         >
-                          {/* Case à cocher 1ère colonne */}
-                          <td className="py-3 px-3 w-10 text-center">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleToggleSelectCandidate(c.id)}
-                              className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all"
-                              aria-label={`Sélectionner ${c.first_name} ${c.last_name}`}
-                            />
-                          </td>
+                          {/* Case à cocher 1ère colonne (uniquement si suppression autorisée) */}
+                          {canDeleteAnyCandidate && (
+                            <td className="py-3 px-3 w-10 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleSelectCandidate(c.id)}
+                                className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all"
+                                aria-label={`Sélectionner ${c.first_name} ${c.last_name}`}
+                              />
+                            </td>
+                          )}
 
                           {/* Joueur (avec l'intégralité du profil, poste en français et caractéristiques) */}
                           <td className="py-3 px-4">
@@ -2412,18 +2805,34 @@ export const RecruitmentV2Page: React.FC = () => {
                                 />
                               </div>
                               <div className="space-y-1.5 min-w-[220px]">
-                                <span
-                                  onClick={() => openCandidateDetail(c)}
-                                  className="font-bold text-sm text-slate-900 hover:text-primary cursor-pointer transition-colors block"
-                                >
-                                  {c.first_name} {c.last_name}
-                                </span>
+                                {canViewCandidateDetails(c) ? (
+                                  <span
+                                    onClick={() => openCandidateDetail(c)}
+                                    className="font-bold text-sm text-slate-900 hover:text-primary cursor-pointer transition-colors block"
+                                  >
+                                    {c.first_name} {c.last_name}
+                                  </span>
+                                ) : (
+                                  <span className="font-bold text-sm text-slate-900 block select-none">
+                                    {c.first_name} {c.last_name}
+                                  </span>
+                                )}
 
                                 {/* Ligne 1 : Catégorie + Poste principal en français sans abréviation + Statut */}
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200/80 shadow-2xs">
-                                    {c.age_category || 'U19'}
+                                    {getCandidateEffectiveCategory(c)}
                                   </span>
+                                  {(() => {
+                                    const effCat = getCandidateEffectiveCategory(c);
+                                    const isUpgraded = c.is_upgraded_category || (c.age_category && normalizeAgeCategory(c.age_category) !== normalizeAgeCategory(effCat));
+                                    if (!isUpgraded) return null;
+                                    return (
+                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-amber-50 text-amber-800 border border-amber-200" title={`Surclassé : a évolué en ${c.age_category}`}>
+                                        ⬆️ {c.surclassement && c.surclassement !== '0C' ? c.surclassement : (c.age_category ? `en ${c.age_category}` : 'Surclassé')}
+                                      </span>
+                                    );
+                                  })()}
                                   <span className="font-bold text-slate-900 text-xs tracking-tight">
                                     {getFrenchPositionLabel(c.primary_position)}
                                   </span>
@@ -2464,9 +2873,10 @@ export const RecruitmentV2Page: React.FC = () => {
                                   )}
 
                                   {(c.preferred_foot || c.height_cm || c.weight_kg) && <span className="text-slate-300">•</span>}
-                                  <span className="inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px] border border-emerald-100" title="Nationalité">
-                                    <Globe className="w-2.5 h-2.5 text-emerald-600" />
-                                    {c.nationality || 'Marocaine'}
+                                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md text-[10px] border border-emerald-200/80" title={`Nationalité: ${c.nationality || 'Marocaine'} - Pays: ${c.country || 'Maroc'}`}>
+                                    <span className="text-xs leading-none">{getCountryFlag(c.country || c.nationality)}</span>
+                                    <span>{c.nationality || 'Marocaine'}</span>
+                                    {c.city && <span className="text-slate-500 font-normal">• {c.city}</span>}
                                   </span>
                                 </div>
                               </div>
@@ -2538,55 +2948,80 @@ export const RecruitmentV2Page: React.FC = () => {
                                 physScore={physScore}
                                 mentScore={mentScore}
                                 potentialScore={potentialScore}
-                                onOpenDetail={() => openCandidateDetail(c)}
+                                onOpenDetail={canViewCandidateDetails(c) ? () => openCandidateDetail(c) : undefined}
                               />
                             </td>
                           )}
 
-                          {/* Colonne Statut du joueur */}
-                          <td className="py-3 px-3">
+                          {/* Colonne Statut du joueur : Liste déroulante interactive directe dans la table */}
+                          <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
                             {(() => {
                               const candDecision = getCandidateLatestDecision(c);
-                              if (isCandidateRecruitNow(c) || candDecision === 'recruit_now') {
-                                return (
-                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 text-emerald-800 w-fit shadow-2xs">
-                                    <Flame className="w-3.5 h-3.5 text-emerald-600 animate-pulse shrink-0" />
-                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">Recrutement Validé</span>
-                                  </div>
-                                );
-                              }
-                              if (isCandidateRecruitStandby(c) || candDecision === 'recruit_standby') {
-                                return (
-                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 w-fit shadow-2xs">
-                                    <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">Recrutement Stand-by</span>
-                                  </div>
-                                );
-                              }
-                              if (candDecision === 'invitation_test') {
-                                return (
-                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-700 w-fit shadow-2xs">
-                                    <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">Convocation Test</span>
-                                  </div>
-                                );
-                              }
-                              if (candDecision === 'to_follow') {
-                                return (
-                                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 w-fit shadow-2xs">
-                                    <Eye className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                    <span className="text-[11px] font-black uppercase tracking-wider whitespace-nowrap">À suivre</span>
-                                  </div>
-                                );
-                              }
+                              const currentStatus: PlayerRecruitmentStatus =
+                                (isCandidateRecruitNow(c) || candDecision === 'recruit_now' || c.scout_state_decision === 'recruit_now') ? 'recruit_now' :
+                                (isCandidateRecruitStandby(c) || candDecision === 'recruit_standby' || c.scout_state_decision === 'recruit_standby') ? 'recruit_standby' :
+                                (candDecision === 'invitation_test' || c.scout_state_decision === 'invitation_test' || c.status === 'in_trial') ? 'invitation_test' :
+                                'to_follow';
+
+                              const getBadgeTheme = (st: PlayerRecruitmentStatus) => {
+                                switch (st) {
+                                  case 'recruit_now':
+                                    return "bg-gradient-to-r from-emerald-500/15 to-teal-500/15 border-emerald-500/40 text-emerald-900 focus:ring-emerald-400";
+                                  case 'recruit_standby':
+                                    return "bg-amber-500/15 border-amber-500/40 text-amber-900 focus:ring-amber-400";
+                                  case 'invitation_test':
+                                    return "bg-blue-500/15 border-blue-500/35 text-blue-900 focus:ring-blue-400";
+                                  case 'to_follow':
+                                  default:
+                                    return "bg-indigo-500/15 border-indigo-500/35 text-indigo-900 focus:ring-indigo-400";
+                                }
+                              };
+
+                              const isOwner = Boolean(
+                                c.discovering_scout === currentUserId ||
+                                c.discovering_scout_id === currentUserId ||
+                                c.created_by === currentUserId ||
+                                (c as any)?.scout_id === currentUserId
+                              );
+                              const isStatusLocked = !canProcessRecruitNow && !isOwner;
+
                               return (
-                                <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 w-fit">
-                                  <span className="text-[11px] font-semibold capitalize whitespace-nowrap">
-                                    {c.pipeline_stage === 'shortlisted' ? 'Shortlisté' :
-                                     c.pipeline_stage === 'signed' ? 'Signé' :
-                                     c.pipeline_stage === 'trial' ? 'À l\'essai' :
-                                     c.pipeline_stage === 'eliminated' ? 'Éliminé' : 'En observation'}
-                                  </span>
+                                <div className="relative inline-block w-fit">
+                                  <select
+                                    value={currentStatus}
+                                    disabled={isStatusLocked}
+                                    onChange={async (e) => {
+                                      e.stopPropagation();
+                                      const nextVal = e.target.value as PlayerRecruitmentStatus;
+                                      await handleTableStatusChange(c, nextVal);
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className={cn(
+                                      "appearance-none text-[11px] font-black uppercase tracking-wider pl-2.5 pr-7 py-1.5 rounded-xl border transition-all shadow-2xs focus:outline-hidden focus:ring-2 select-none",
+                                      isStatusLocked ? "cursor-not-allowed opacity-80" : "cursor-pointer",
+                                      getBadgeTheme(currentStatus)
+                                    )}
+                                    title={
+                                      isStatusLocked
+                                        ? "Vous pouvez modifier le statut uniquement pour vos propres joueurs"
+                                        : "Changer le statut de recrutement de ce joueur"
+                                    }
+                                  >
+                                    <option value="to_follow" className="text-slate-900 bg-white font-bold py-1">
+                                      👁️ À suivre
+                                    </option>
+                                    <option value="invitation_test" className="text-slate-900 bg-white font-bold py-1">
+                                      📅 Inviter à un test
+                                    </option>
+                                    {(canProcessRecruitNow || isOwner) && (
+                                      <option value="recruit_now" className="text-slate-900 bg-white font-bold py-1">
+                                        🔥 Recrutement immédiatement
+                                      </option>
+                                    )}
+                                  </select>
+                                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-slate-500">
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                  </div>
                                 </div>
                               );
                             })()}
@@ -2655,51 +3090,45 @@ export const RecruitmentV2Page: React.FC = () => {
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-2.5">
                                 {/* Toggle interactif Recrutement Stand-by / Validé (US-DASH-104) */}
-                                {(isCandidateRecruitStandby(c) || isCandidateRecruitNow(c)) && (
+                                {canProcessRecruitNow && (isCandidateRecruitStandby(c) || isCandidateRecruitNow(c)) && (
                                   <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs">
                                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 whitespace-nowrap">
                                       {isCandidateRecruitNow(c) ? 'Validé' : 'Stand-by'}
                                     </span>
-                                    {canProcessRecruitNow ? (
-                                      <button
-                                        type="button"
-                                        role="switch"
-                                        aria-checked={isCandidateRecruitNow(c)}
-                                        onClick={async (e) => {
-                                          e.stopPropagation();
-                                          const willValidate = !isCandidateRecruitNow(c);
-                                          await updateCandidate({
-                                            id: c.id,
-                                            updates: {
-                                              scout_state_decision: willValidate ? 'recruit_now' : 'recruit_standby',
-                                              is_recruit_now_validated: willValidate,
-                                              status: willValidate ? 'recruit_now' : (c.status === 'recruit_now' ? 'registered' : c.status),
-                                            }
-                                          });
-                                          if (willValidate) {
-                                            toast.success(`Recrutement Immédiat validé pour ${c.first_name} ${c.last_name} ! Procédure débloquée.`, { icon: '🔥' });
-                                          } else {
-                                            toast.info(`Joueur ${c.first_name} ${c.last_name} replacé en Recrutement Stand-by.`);
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={isCandidateRecruitNow(c)}
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const willValidate = !isCandidateRecruitNow(c);
+                                        await updateCandidate({
+                                          id: c.id,
+                                          updates: {
+                                            scout_state_decision: willValidate ? 'recruit_now' : 'recruit_standby',
+                                            is_recruit_now_validated: willValidate,
+                                            status: willValidate ? 'recruit_now' : (c.status === 'recruit_now' ? 'registered' : c.status),
                                           }
-                                        }}
+                                        });
+                                        if (willValidate) {
+                                          toast.success(`Recrutement Immédiat validé pour ${c.first_name} ${c.last_name} ! Procédure débloquée.`, { icon: '🔥' });
+                                        } else {
+                                          toast.info(`Joueur ${c.first_name} ${c.last_name} replacé en Recrutement Stand-by.`);
+                                        }
+                                      }}
+                                      className={cn(
+                                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                                        isCandidateRecruitNow(c) ? "bg-emerald-600" : "bg-amber-400"
+                                      )}
+                                      title={isCandidateRecruitNow(c) ? "Cliquer pour replacer en Recrutement Stand-by" : "Cliquer pour valider officiellement le Recrutement Immédiat"}
+                                    >
+                                      <span
                                         className={cn(
-                                          "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
-                                          isCandidateRecruitNow(c) ? "bg-emerald-600" : "bg-amber-400"
+                                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
+                                          isCandidateRecruitNow(c) ? "translate-x-4" : "translate-x-0"
                                         )}
-                                        title={isCandidateRecruitNow(c) ? "Cliquer pour replacer en Recrutement Stand-by" : "Cliquer pour valider officiellement le Recrutement Immédiat"}
-                                      >
-                                        <span
-                                          className={cn(
-                                            "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
-                                            isCandidateRecruitNow(c) ? "translate-x-4" : "translate-x-0"
-                                          )}
-                                        />
-                                      </button>
-                                    ) : (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 whitespace-nowrap">
-                                        Stand-by
-                                      </span>
-                                    )}
+                                      />
+                                    </button>
                                   </div>
                                 )}
 
@@ -2719,15 +3148,27 @@ export const RecruitmentV2Page: React.FC = () => {
 
                                 {/* Bouton Vidéo Google Drive */}
                                 {c.video_url ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setPlayerToWatchVideo(c)}
-                                    className="w-[115px] h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs cursor-pointer active:scale-95 shrink-0 whitespace-nowrap"
-                                    title="Visionner la vidéo du joueur (Google Drive)"
-                                  >
-                                    <Play className="w-3.5 h-3.5 fill-current" />
-                                    <span>Play</span>
-                                  </button>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPlayerToWatchVideo(c)}
+                                      className="w-[80px] h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs cursor-pointer active:scale-95 shrink-0 whitespace-nowrap"
+                                      title="Visionner la vidéo du joueur (Google Drive)"
+                                    >
+                                      <Play className="w-3.5 h-3.5 fill-current" />
+                                      <span>Play</span>
+                                    </button>
+                                    {canAddDriveLinkForCandidate(c) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setCandidateForDriveLink(c)}
+                                        className="w-8 h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 transition-all flex items-center justify-center text-xs font-bold shadow-2xs cursor-pointer shrink-0"
+                                        title="Modifier le lien vidéo Google Drive"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
                                 ) : canAddDriveLinkForCandidate(c) ? (
                                   <button
                                     type="button"
@@ -2743,30 +3184,26 @@ export const RecruitmentV2Page: React.FC = () => {
                                 )}
 
                                 {/* Bouton Rapport [N] */}
-                                {(() => {
+                                {canManageReports && (() => {
                                   const candEvals = [
                                     ...evaluations.filter(e => e.candidate_id === c.id),
                                     ...(c.evaluations || [])
                                   ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
-                                  const count = candEvals.filter(canViewEvaluation).length;
+                                  const totalCount = candEvals.length;
+                                  const myCount = candEvals.filter(isEvaluationStrictlyAuthoredByCurrentScout).length;
+                                  const count = (isRecruitmentAdmin || isScoutManager) ? totalCount : myCount;
+                                  const titleText = isScoutManager
+                                    ? `${totalCount} rapport${totalCount > 1 ? 's' : ''} au total (${myCount} rédigé${myCount > 1 ? 's' : ''} par vous, ${totalCount - myCount} par d'autres scouts — confidentiels)`
+                                    : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`;
                                   return (
                                     <button
                                       type="button"
-                                      disabled={!canManageReports}
-                                      onClick={() => canManageReports && openCandidateDetail(c, 'report')}
-                                      className={cn(
-                                        "w-[115px] h-8 rounded-full transition-all flex items-center justify-center gap-2 text-xs font-bold shadow-xs shrink-0 whitespace-nowrap",
-                                        !canManageReports
-                                          ? "bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed border border-slate-200"
-                                          : "bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
-                                      )}
-                                      title={!canManageReports ? "Consultation des rapports non autorisée (permission Gestion de rapport requise)" : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`}
+                                      onClick={() => openCandidateDetail(c, 'report')}
+                                      className="w-[115px] h-8 rounded-full transition-all flex items-center justify-center gap-2 text-xs font-bold shadow-xs shrink-0 whitespace-nowrap bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
+                                      title={titleText}
                                     >
-                                      <span className={cn("font-bold text-xs", !canManageReports ? "text-slate-400" : "text-white")}>Rapport</span>
-                                      <span className={cn(
-                                        "w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs",
-                                        !canManageReports ? "bg-slate-200 text-slate-500" : "bg-amber-400 text-slate-950"
-                                      )}>
+                                      <span className="font-bold text-xs text-white">Rapport</span>
+                                      <span className="w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs bg-amber-400 text-slate-950">
                                         {count}
                                       </span>
                                     </button>
@@ -2774,24 +3211,16 @@ export const RecruitmentV2Page: React.FC = () => {
                                 })()}
 
                                 {/* Bouton Assigner Mission */}
-                                {(() => {
-                                  return (
-                                    <button
-                                      type="button"
-                                      disabled={!canAssignMissions}
-                                      onClick={() => canAssignMissions && openAssignModal(c)}
-                                      className={cn(
-                                        "w-8 h-8 rounded-full border flex items-center justify-center shrink-0 transition-colors",
-                                        !canAssignMissions
-                                          ? "border-slate-200 bg-slate-50 text-slate-400 opacity-60 cursor-not-allowed"
-                                          : "border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer"
-                                      )}
-                                      title={!canAssignMissions ? "Assignation de joueur et mission réservée à la Direction (Scout Admin et Super Admin)" : "Assigner à un scout & confier une mission"}
-                                    >
-                                      {!canAssignMissions ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <UserPlus className="w-3.5 h-3.5" />}
-                                    </button>
-                                  );
-                                })()}
+                                {canAssignMissions && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openAssignModal(c)}
+                                    className="w-8 h-8 rounded-full border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
+                                    title="Assigner à un scout & confier une mission"
+                                  >
+                                    <UserPlus className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
 
                                 {/* Modifier la fiche complète */}
                                 {canUpdateCandidateFull(c) && (
@@ -2806,7 +3235,7 @@ export const RecruitmentV2Page: React.FC = () => {
                                   </button>
                                 )}
 
-                                {canDeleteCandidate(c) ? (
+                                {canDeleteCandidate(c) && (
                                   <button
                                     onClick={() => setCandidateToDelete(c)}
                                     className="w-8 h-8 rounded-full border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
@@ -2814,13 +3243,6 @@ export const RecruitmentV2Page: React.FC = () => {
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
-                                ) : (
-                                  <span
-                                    className="w-8 h-8 rounded-full border border-slate-100 text-slate-300 bg-slate-50/80 cursor-not-allowed inline-flex items-center justify-center shrink-0"
-                                    title="Profil créé par l'administration : modification autorisée, suppression réservée aux administrateurs"
-                                  >
-                                    <Lock className="w-3.5 h-3.5" />
-                                  </span>
                                 )}
                               </div>
                             </td>
@@ -2897,17 +3319,33 @@ export const RecruitmentV2Page: React.FC = () => {
                           />
                         </div>
                         <div>
-                          <h3
-                            onClick={() => openCandidateDetail(c)}
-                            className="font-bold text-sm text-foreground hover:text-primary cursor-pointer transition-colors"
-                          >
-                            {c.first_name} {c.last_name}
-                          </h3>
+                          {canViewCandidateDetails(c) ? (
+                            <h3
+                              onClick={() => openCandidateDetail(c)}
+                              className="font-bold text-sm text-foreground hover:text-primary cursor-pointer transition-colors"
+                            >
+                              {c.first_name} {c.last_name}
+                            </h3>
+                          ) : (
+                            <h3 className="font-bold text-sm text-foreground select-none">
+                              {c.first_name} {c.last_name}
+                            </h3>
+                          )}
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             <span className="text-xs text-muted-foreground font-medium">{c.primary_position}</span>
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              {c.age_category || 'U19'}
+                              {getCandidateEffectiveCategory(c)}
                             </span>
+                            {(() => {
+                              const effCat = getCandidateEffectiveCategory(c);
+                              const isUpgraded = c.is_upgraded_category || (c.age_category && normalizeAgeCategory(c.age_category) !== normalizeAgeCategory(effCat));
+                              if (!isUpgraded) return null;
+                              return (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-amber-50 text-amber-800 border border-amber-200" title={`Surclassé : a évolué en ${c.age_category}`}>
+                                  ⬆️ {c.surclassement && c.surclassement !== '0C' ? c.surclassement : (c.age_category ? `en ${c.age_category}` : 'Surclassé')}
+                                </span>
+                              );
+                            })()}
                             {(isCandidateRecruitNow(c) || getCandidateLatestDecision(c) === 'recruit_now') && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
                                 <Flame className="w-3 h-3 text-emerald-600" />
@@ -2947,8 +3385,12 @@ export const RecruitmentV2Page: React.FC = () => {
                         <span className="font-bold">{c.height_cm ? `${c.height_cm}cm` : '-'} / {c.weight_kg ? `${c.weight_kg}kg` : '-'}</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-muted-foreground block">Nationalité</span>
-                        <span className="font-bold">{c.nationality || 'Marocaine'}</span>
+                        <span className="text-[10px] text-muted-foreground block">Nationalité & Origine</span>
+                        <span className="font-bold flex items-center gap-1 text-slate-900">
+                          <span className="text-xs leading-none">{getCountryFlag(c.country || c.nationality)}</span>
+                          <span>{c.nationality || 'Marocaine'}</span>
+                          {c.city && <span className="text-slate-500 font-medium text-[11px]">({c.city})</span>}
+                        </span>
                       </div>
                     </div>
 
@@ -3177,15 +3619,27 @@ export const RecruitmentV2Page: React.FC = () => {
                         <div className="flex items-center justify-between gap-2.5">
                           {/* Bouton Vidéo Google Drive : Play uniquement si le lien est présent, sinon + Drive */}
                           {c.video_url ? (
-                            <button
-                              type="button"
-                              onClick={() => setPlayerToWatchVideo(c)}
-                              className="flex-1 h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95 whitespace-nowrap"
-                              title="Visionner la vidéo du joueur (Google Drive)"
-                            >
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                              <span>Play</span>
-                            </button>
+                            <div className="flex-1 flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setPlayerToWatchVideo(c)}
+                                className="flex-1 h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+                                title="Visionner la vidéo du joueur (Google Drive)"
+                              >
+                                <Play className="w-3.5 h-3.5 fill-current" />
+                                <span>Play</span>
+                              </button>
+                              {canAddDriveLinkForCandidate(c) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setCandidateForDriveLink(c)}
+                                  className="w-8 h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 font-bold text-xs flex items-center justify-center shadow-2xs transition-all cursor-pointer shrink-0"
+                                  title="Modifier le lien vidéo Google Drive"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           ) : canAddDriveLinkForCandidate(c) ? (
                             <button
                               type="button"
@@ -3198,54 +3652,42 @@ export const RecruitmentV2Page: React.FC = () => {
                             </button>
                           ) : null}
 
-                          {(() => {
+                          {canManageReports && (() => {
                             const candEvals = [
                               ...evaluations.filter(e => e.candidate_id === c.id),
                               ...(c.evaluations || [])
                             ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
-                            const count = candEvals.filter(canViewEvaluation).length;
+                            const totalCount = candEvals.length;
+                            const myCount = candEvals.filter(isEvaluationStrictlyAuthoredByCurrentScout).length;
+                            const count = (isRecruitmentAdmin || isScoutManager) ? totalCount : myCount;
+                            const titleText = isScoutManager
+                              ? `${totalCount} rapport${totalCount > 1 ? 's' : ''} au total (${myCount} rédigé${myCount > 1 ? 's' : ''} par vous, ${totalCount - myCount} par d'autres scouts — confidentiels)`
+                              : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`;
                             return (
                               <button
                                 type="button"
-                                disabled={!canManageReports}
-                                onClick={() => canManageReports && openCandidateDetail(c, 'report')}
-                                className={cn(
-                                  "flex-1 h-8 rounded-full text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs whitespace-nowrap",
-                                  !canManageReports
-                                    ? "bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed border border-slate-200"
-                                    : "bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
-                                )}
-                                title={!canManageReports ? "Consultation des rapports non autorisée (permission Gestion de rapport requise)" : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`}
+                                onClick={() => openCandidateDetail(c, 'report')}
+                                className="flex-1 h-8 rounded-full text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs whitespace-nowrap bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
+                                title={titleText}
                               >
-                                <span className={cn("font-bold text-xs", !canManageReports ? "text-slate-400" : "text-white")}>Rapport</span>
-                                <span className={cn(
-                                  "w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs",
-                                  !canManageReports ? "bg-slate-200 text-slate-500" : "bg-amber-400 text-slate-950"
-                                )}>
+                                <span className="font-bold text-xs text-white">Rapport</span>
+                                <span className="w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs bg-amber-400 text-slate-950">
                                   {count}
                                 </span>
                               </button>
                             );
                           })()}
 
-                          {(() => {
-                            return (
-                              <button
-                                type="button"
-                                disabled={!canAssignMissions}
-                                onClick={() => canAssignMissions && openAssignModal(c)}
-                                className={cn(
-                                  "w-8 h-8 rounded-full border flex items-center justify-center shrink-0 transition-colors",
-                                  !canAssignMissions
-                                    ? "border-slate-200 bg-slate-50 text-slate-400 opacity-60 cursor-not-allowed"
-                                    : "border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer"
-                                )}
-                                title={!canAssignMissions ? "Assignation de joueur et mission réservée à la Direction (Scout Admin et Super Admin)" : "Assigner à un scout & confier une mission"}
-                              >
-                                {!canAssignMissions ? <Lock className="w-3.5 h-3.5 text-slate-400" /> : <UserPlus className="w-3.5 h-3.5" />}
-                              </button>
-                            );
-                          })()}
+                          {canAssignMissions && (
+                            <button
+                              type="button"
+                              onClick={() => openAssignModal(c)}
+                              className="w-8 h-8 rounded-full border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
+                              title="Assigner à un scout & confier une mission"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
 
                           {/* Modifier la fiche complète (protégé par CRUD update et catégorie) */}
                           {canUpdateCandidateFull(c) && (
@@ -3260,7 +3702,7 @@ export const RecruitmentV2Page: React.FC = () => {
                             </button>
                           )}
 
-                          {canDeleteCandidate(c) ? (
+                          {canDeleteCandidate(c) && (
                             <button
                               onClick={() => setCandidateToDelete(c)}
                               className="w-8 h-8 rounded-full border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
@@ -3268,13 +3710,6 @@ export const RecruitmentV2Page: React.FC = () => {
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                          ) : (
-                            <span
-                              className="w-8 h-8 rounded-full border border-slate-100 text-slate-300 bg-slate-50/80 cursor-not-allowed inline-flex items-center justify-center shrink-0"
-                              title="Profil créé par l'administration : modification autorisée, suppression réservée aux administrateurs"
-                            >
-                              <Lock className="w-3.5 h-3.5" />
-                            </span>
                           )}
                         </div>
                       </>
@@ -3356,7 +3791,7 @@ export const RecruitmentV2Page: React.FC = () => {
           evaluations={evaluations}
           scouts={scouts}
           isAdmin={isRecruitmentAdmin}
-          onOpenCandidateDetail={(c) => openCandidateDetail(c)}
+          onOpenCandidateDetail={(c) => canViewCandidateDetails(c) && openCandidateDetail(c)}
           onOpenEvaluationForCandidate={(c) => {
             setEvaluatingCandidate(c);
             setEvaluationInitialMode('create');
@@ -3459,21 +3894,17 @@ export const RecruitmentV2Page: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              disabled={!canManageReports}
-                              onClick={() => canManageReports && openCandidateDetail(c, 'report')}
-                              className={cn(
-                                "px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all shadow-xs",
-                                !canManageReports
-                                  ? "bg-slate-100 text-slate-400 opacity-60 cursor-not-allowed border border-slate-200"
-                                  : "bg-slate-900 text-white hover:bg-slate-800 cursor-pointer"
-                              )}
-                              title={!canManageReports ? "Consultation des rapports non autorisée" : "Consulter les rapports et l'historique"}
-                            >
-                              <Eye className={cn("w-3.5 h-3.5", !canManageReports ? "text-slate-400" : "text-primary")} />
-                              <span>Consulter</span>
-                            </button>
+                            {canManageReports && (
+                              <button
+                                type="button"
+                                onClick={() => openCandidateDetail(c, 'report')}
+                                className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all shadow-xs bg-slate-900 text-white hover:bg-slate-800 cursor-pointer"
+                                title="Consulter les rapports et l'historique"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-primary" />
+                                <span>Consulter</span>
+                              </button>
+                            )}
 
                             <button
                               type="button"
@@ -3488,19 +3919,21 @@ export const RecruitmentV2Page: React.FC = () => {
                               <span>Restaurer</span>
                             </button>
 
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (confirm(`Supprimer DÉFINITIVEMENT ${c.first_name} ${c.last_name} et tous ses rapports de la base de données ?`)) {
-                                  await deleteCandidate(c.id);
-                                  toast.success(`Le joueur a été supprimé définitivement.`);
-                                }
-                              }}
-                              className="p-1.5 rounded-xl border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                              title="Supprimer définitivement"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {canDeleteCandidate(c) && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (confirm(`Supprimer DÉFINITIVEMENT ${c.first_name} ${c.last_name} et tous ses rapports de la base de données ?`)) {
+                                    await deleteCandidate(c.id);
+                                    toast.success(`Le joueur a été supprimé définitivement.`);
+                                  }
+                                }}
+                                className="p-1.5 rounded-xl border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                title="Supprimer définitivement"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -3867,14 +4300,16 @@ export const RecruitmentV2Page: React.FC = () => {
               <span>Archiver ({selectedCandidateIds.length})</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsBulkDeleteModalOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black shadow-md flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Supprimer ({selectedCandidateIds.length})</span>
-            </button>
+            {canDeleteAnyCandidate && (
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black shadow-md flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Supprimer ({selectedCandidateIds.length})</span>
+              </button>
+            )}
 
             <button
               type="button"

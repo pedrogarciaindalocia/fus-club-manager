@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Scout, TrialCandidate, CandidateEvaluation, ScoutObservation, SavedShortlistConfig } from '../types/recruitment';
-import { RECRUITMENT_AGE_CATEGORIES } from '../types/recruitment';
+import { RECRUITMENT_AGE_CATEGORIES, groupCategoriesByPole } from '../types/recruitment';
 import { GEOGRAPHY_DATA } from '../../../constants/geography';
 import {
   User, Plus, Phone, Mail, MapPin, Award, CheckCircle2,
@@ -2520,48 +2520,70 @@ Cellule Détection & Scouting — FUS Rabat`;
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                    {RECRUITMENT_AGE_CATEGORIES.map(cat => {
-                      const isAllowed = isSuperAdmin || allowedCategories.includes(cat);
-                      const isChecked = assignedCategories.includes(cat) && isAllowed;
-                      const canEdit = (isSuperAdmin || isAdmin) && isAllowed;
+                  {(() => {
+                    const groups = groupCategoriesByPole(RECRUITMENT_AGE_CATEGORIES);
+                    const poleSections = [
+                      { title: '⚽ Pôle Labellisé (École de Football : U9 à U12)', list: groups.labellise, badgeClass: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+                      { title: '🎓 Pôle Formation (Académie & Élite : U13 à U21)', list: groups.formation, badgeClass: 'text-blue-700 bg-blue-50 border-blue-200' },
+                      { title: '🏆 Pôle Senior (Équipe Première & Espoirs : U23, Senior)', list: groups.senior, badgeClass: 'text-purple-700 bg-purple-50 border-purple-200' },
+                    ];
 
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          disabled={!canEdit}
-                          title={!isAllowed ? "Catégorie non allouée au Scout Admin par le Super Admin" : undefined}
-                          onClick={() => canEdit && toggleCategory(cat)}
-                          className={cn(
-                            "px-2.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5",
-                            !isAllowed
-                              ? "opacity-35 cursor-not-allowed bg-slate-100 dark:bg-slate-800/40 text-slate-400 border-dashed border-slate-300 dark:border-slate-700"
-                              : !canEdit
-                                ? "opacity-70 cursor-not-allowed"
-                                : "cursor-pointer",
-                            isChecked
-                              ? "bg-primary text-white border-primary shadow-sm"
-                              : isAllowed
-                                ? "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                                : ""
-                          )}
-                        >
-                          {isAllowed ? (
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => { }}
-                              className="w-3.5 h-3.5 rounded text-primary focus:ring-0 pointer-events-none"
-                            />
-                          ) : (
-                            <Lock className="w-3 h-3 text-slate-400 shrink-0" />
-                          )}
-                          <span className={cn(!isAllowed && "line-through")}>{cat}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                    return (
+                      <div className="space-y-3">
+                        {poleSections.map(pole => (
+                          <div key={pole.title} className="space-y-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                            <div className="flex items-center justify-between">
+                              <span className={cn("text-[10px] font-black uppercase px-2 py-0.5 rounded-md border", pole.badgeClass)}>
+                                {pole.title}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-1.5 pt-1">
+                              {pole.list.map(cat => {
+                                const isAllowed = isSuperAdmin || allowedCategories.includes(cat);
+                                const isChecked = assignedCategories.includes(cat) && isAllowed;
+                                const canEdit = (isSuperAdmin || isAdmin) && isAllowed;
+
+                                return (
+                                  <button
+                                    key={cat}
+                                    type="button"
+                                    disabled={!canEdit}
+                                    title={!isAllowed ? "Catégorie non allouée au Scout Admin par le Super Admin" : undefined}
+                                    onClick={() => canEdit && toggleCategory(cat)}
+                                    className={cn(
+                                      "px-2 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1.5",
+                                      !isAllowed
+                                        ? "opacity-35 cursor-not-allowed bg-slate-100 text-slate-400 border-dashed border-slate-300"
+                                        : !canEdit
+                                          ? "opacity-70 cursor-not-allowed"
+                                          : "cursor-pointer",
+                                      isChecked
+                                        ? "bg-primary text-white border-primary shadow-xs font-black"
+                                        : isAllowed
+                                          ? "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                                          : ""
+                                    )}
+                                  >
+                                    {isAllowed ? (
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => { }}
+                                        className="w-3 h-3 rounded text-primary focus:ring-0 pointer-events-none"
+                                      />
+                                    ) : (
+                                      <Lock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                    )}
+                                    <span className={cn(!isAllowed && "line-through")}>{cat}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div>

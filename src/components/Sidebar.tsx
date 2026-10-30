@@ -163,21 +163,22 @@ const Sidebar: React.FC<SidebarProps> = ({
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
   const realIsSuperAdmin = currentRole === 'super_admin' || authState.isRealSuperAdmin;
 
-  // Détection du mode Miroir : si le Super Admin a ciblé un utilisateur en direct
+  // Détection du mode Miroir ou Simulation d'utilisateur :
+  const isImpersonating = Boolean(authState.isImpersonating || selectedUserId);
   const targetedUser = (realIsSuperAdmin && selectedUserId)
     ? (allOnlineUsers.find(u => u.userId === selectedUserId) || null)
     : null;
   const isMirrorMode = Boolean(targetedUser);
 
-  // En mode miroir, les habilitations de navigation et rubriques deviennent celles de l'utilisateur ciblé
+  // En mode miroir ou simulation, les habilitations de navigation et rubriques deviennent celles de l'utilisateur ciblé
   // et toutes les rubriques exclusives Super Admin disparaissent !
   const effectiveRole = targetedUser ? targetedUser.role.toLowerCase() : currentRole;
   const effectiveJob = targetedUser ? (targetedUser.jobTitle || '') : (authState.user?.job_title || '');
-  const isSuperAdmin = isMirrorMode 
+  const isSuperAdmin = isImpersonating 
     ? (effectiveRole === 'super_admin') 
-    : realIsSuperAdmin;
+    : (currentRole === 'super_admin');
   const isScout = isScoutBranch(effectiveRole, effectiveJob);
-  const isScoutAdmin = isMirrorMode
+  const isScoutAdmin = isImpersonating
     ? (effectiveRole === 'scout_admin' || effectiveRole === 'super_admin')
     : (currentRole === 'scout_admin' || realIsSuperAdmin || currentRole === 'admin');
 
@@ -306,7 +307,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       return true;
     })
     .map(cat => {
-      if (isSuperAdmin && !isMirrorMode) return cat;
+      if (isSuperAdmin) return cat;
 
       const filteredItems = cat.items
         .map(item => {

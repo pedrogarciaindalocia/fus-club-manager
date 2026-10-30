@@ -14,6 +14,8 @@ import { Input } from '../../components/ui/input';
 import { Skeleton } from '../../components/ui/skeleton';
 import { useOpponentPlayers } from '../../hooks/useOpponentPlayers';
 import PlayerMatchEvaluationModal from './components/PlayerMatchEvaluationModal';
+import PlayerActionHubModal from './components/PlayerActionHubModal';
+import type { PlayerActionTarget } from './components/PlayerActionHubModal';
 import { inferMatchFormat, getHorizontalFormationPositions, FORMATIONS_BY_FORMAT } from './tacticalFormations';
 import {
   Trophy,
@@ -173,6 +175,109 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
   const [modalComment, setModalComment] = useState<string>('');
   const [savingRating, setSavingRating] = useState(false);
   const [ratingSuccess, setRatingSuccess] = useState(false);
+
+  // Player Action Hub State & Handlers
+  const [actionHubPlayer, setActionHubPlayer] = useState<PlayerActionTarget | null>(null);
+
+  const openPlayerActionHub = (
+    p: any,
+    isOpp: boolean = false,
+    isStarter: boolean = true
+  ) => {
+    if (!p) return;
+    const mpRecord = !isOpp ? currentMatch.match_players?.find((mp: any) => mp.player_id === p.id) : null;
+    const subEvt = events.find(e => 
+      e.type === 'substitution' && 
+      (isOpp 
+        ? (e.extra?.opponent_ref === p.id || e.player_id === p.id || e.extra?.player_in_name === p.full_name) 
+        : (e.related_player_id === p.id || e.extra?.player_in_id === p.id))
+    );
+
+    const target: PlayerActionTarget = {
+      id: p.id,
+      full_name: p.full_name || p.name || (isOpp ? `Adversaire N°${p.jersey_number || '?'}` : 'Joueur'),
+      jersey_number: p.jersey_number ?? null,
+      position: p.position || (isOpp ? 'Adversaire' : 'Joueur'),
+      photo_url: p.photo_url || null,
+      is_opponent: isOpp,
+      is_starter: isStarter,
+      has_entered: !!subEvt,
+      entered_minute: subEvt?.minute ?? null,
+      rating: mpRecord?.rating != null ? Number(mpRecord.rating) : null,
+      rating_comment: mpRecord?.rating_comment || null,
+      opponent_ref: isOpp ? (p.opponent_ref || p.id) : null,
+    };
+
+    setActionHubPlayer(target);
+  };
+
+  const handleAddEventFromHub = async (payload: any) => {
+    await addEvent(payload);
+    // Score update
+    if (payload.type === 'goal' || (payload.type === 'penalty' && payload.extra?.result === 'scored')) {
+      const isOpp = payload.extra?.team === 'away' || !payload.player_id;
+      const addHome = currentMatch.is_home ? !isOpp : isOpp;
+      if (addHome) {
+        await updateMatch({ id: matchId, data: { score_home: (currentMatch.score_home || 0) + 1 } });
+      } else {
+        await updateMatch({ id: matchId, data: { score_away: (currentMatch.score_away || 0) + 1 } });
+      }
+    } else if (payload.type === 'own_goal') {
+      const isOpp = payload.extra?.team === 'away';
+      const addHome = currentMatch.is_home ? isOpp : !isOpp;
+      if (addHome) {
+        await updateMatch({ id: matchId, data: { score_home: (currentMatch.score_home || 0) + 1 } });
+      } else {
+        await updateMatch({ id: matchId, data: { score_away: (currentMatch.score_away || 0) + 1 } });
+      }
+    }
+  };
+
+  const handleUpdateEventFromHub = async (id: string, updates: any) => {
+    await updateEvent({ id, updates });
+  };
+
+  const handleDeleteEventFromHub = async (id: string) => {
+    const ev = events.find(e => e.id === id);
+    await deleteEvent(id);
+    if (ev) {
+      if (ev.type === 'goal' || (ev.type === 'penalty' && ev.extra?.result === 'scored')) {
+        const isOpp = ev.extra?.team === 'away' || !ev.player_id;
+        const decHome = currentMatch.is_home ? !isOpp : isOpp;
+        if (decHome) {
+          await updateMatch({ id: matchId, data: { score_home: Math.max(0, (currentMatch.score_home || 0) - 1) } });
+        } else {
+          await updateMatch({ id: matchId, data: { score_away: Math.max(0, (currentMatch.score_away || 0) - 1) } });
+        }
+      } else if (ev.type === 'own_goal') {
+        const isOpp = ev.extra?.team === 'away';
+        const decHome = currentMatch.is_home ? isOpp : !isOpp;
+        if (decHome) {
+          await updateMatch({ id: matchId, data: { score_home: Math.max(0, (currentMatch.score_home || 0) - 1) } });
+        } else {
+          await updateMatch({ id: matchId, data: { score_away: Math.max(0, (currentMatch.score_away || 0) - 1) } });
+        }
+      }
+    }
+  };
+
+  const handleSaveRatingFromHub = async (playerId: string, rating: number, comment: string) => {
+    await matchService.savePlayerRating(currentMatch.id, playerId, rating, comment.trim() || null);
+    if (!currentMatch.match_players) currentMatch.match_players = [];
+    const target = currentMatch.match_players.find((mp: any) => mp.player_id === playerId);
+    if (target) {
+      target.rating = rating;
+      target.rating_comment = comment.trim() || null;
+    } else {
+      currentMatch.match_players.push({
+        match_id: currentMatch.id,
+        player_id: playerId,
+        rating: rating,
+        rating_comment: comment.trim() || null,
+        is_starting: false
+      });
+    }
+  };
 
   const handleSaveRating = async () => {
     if (!currentMatch?.id || !ratingModalPlayer?.id) return;
@@ -807,30 +912,98 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                   </div>
 
                   {/* THE PITCH */}
-                  <div className="relative aspect-[16/10] w-full max-w-5xl mx-auto rounded-[3rem] overflow-hidden border-[1px] border-white/20 shadow-2xl bg-[#1a4d2e]">
-                     {/* Surface Texture */}
-                     <div className="absolute inset-0 opacity-40">
-                        {/* Cut Grass effect */}
+                  <div className="relative aspect-[16/9.5] w-full max-w-6xl mx-auto rounded-[3.5rem] overflow-hidden border-2 border-white/20 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.6)] bg-gradient-to-b from-[#134e2a] via-[#165b32] to-[#0f3d21]">
+                     {/* Surface Lighting & Vignette */}
+                     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white/10 via-transparent to-black/40 pointer-events-none" />
+
+                     {/* Cut Grass effect */}
+                     <div className="absolute inset-0 opacity-30 pointer-events-none">
                         <div className="absolute inset-0 flex flex-col">
-                           {[...Array(10)].map((_, i) => (
-                              <div key={i} className={`flex-1 ${i % 2 === 0 ? 'bg-black/20' : ''}`} />
+                           {[...Array(12)].map((_, i) => (
+                              <div key={i} className={`flex-1 ${i % 2 === 0 ? 'bg-black/25' : 'bg-transparent'}`} />
                            ))}
                         </div>
                      </div>
                      
                      {/* Lines */}
-                     <div className="absolute inset-0 border-[2px] border-white/20 m-6" /> {/* Perimeter */}
-                     <div className="absolute inset-y-6 left-1/2 -translate-x-1/2 w-px bg-white/20" /> {/* Halfway line */}
-                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-[2px] border-white/20" /> {/* Center circle */}
-                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/20" /> {/* Center spot */}
+                     <div className="absolute inset-0 border-[2px] border-white/25 m-6 rounded-2xl pointer-events-none" /> {/* Perimeter */}
+                     <div className="absolute inset-y-6 left-1/2 -translate-x-1/2 w-px bg-white/25 pointer-events-none" /> {/* Halfway line */}
+                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-36 h-36 rounded-full border-[2px] border-white/25 pointer-events-none" /> {/* Center circle */}
+                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-white/50 pointer-events-none" /> {/* Center spot */}
                      
-                     {/* Goal areas (left) */}
-                     <div className="absolute inset-y-1/4 left-6 w-32 border-y-[2px] border-r-[2px] border-white/20" />
-                     <div className="absolute inset-y-[40%] left-6 w-12 border-y-[2px] border-r-[2px] border-white/20" />
+                     {/* Goal areas (left - Home) */}
+                     <div className="absolute inset-y-1/4 left-6 w-36 border-y-[2px] border-r-[2px] border-white/25 pointer-events-none" />
+                     <div className="absolute inset-y-[38%] left-6 w-14 border-y-[2px] border-r-[2px] border-white/25 pointer-events-none" />
+                     <div className="absolute top-1/2 left-28 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/40 pointer-events-none" />
                      
-                     {/* Goal areas (right) */}
-                     <div className="absolute inset-y-1/4 right-6 w-32 border-y-[2px] border-l-[2px] border-white/20" />
-                     <div className="absolute inset-y-[40%] right-6 w-12 border-y-[2px] border-l-[2px] border-white/20" />
+                     {/* Goal areas (right - Away) */}
+                     <div className="absolute inset-y-1/4 right-6 w-36 border-y-[2px] border-l-[2px] border-white/25 pointer-events-none" />
+                     <div className="absolute inset-y-[38%] right-6 w-14 border-y-[2px] border-l-[2px] border-white/25 pointer-events-none" />
+                     <div className="absolute top-1/2 right-28 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white/40 pointer-events-none" />
+
+                     {/* Corner Arcs */}
+                     <div className="absolute top-6 left-6 w-6 h-6 border-b-[2px] border-r-[2px] border-white/25 rounded-br-full pointer-events-none" />
+                     <div className="absolute bottom-6 left-6 w-6 h-6 border-t-[2px] border-r-[2px] border-white/25 rounded-tr-full pointer-events-none" />
+                     <div className="absolute top-6 right-6 w-6 h-6 border-b-[2px] border-l-[2px] border-white/25 rounded-bl-full pointer-events-none" />
+                     <div className="absolute bottom-6 right-6 w-6 h-6 border-t-[2px] border-l-[2px] border-white/25 rounded-tl-full pointer-events-none" />
+
+                     {/* ── COIN 1: CLUB DOMICILE + CATÉGORIE MISE EN ÉVIDENCE (HAUT GAUCHE) ── */}
+                     <div className="absolute top-4 left-6 z-30 flex items-center gap-3 bg-slate-950/85 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/20 shadow-2xl animate-in fade-in duration-500">
+                        <div className="w-9 h-9 rounded-xl bg-white p-1.5 flex items-center justify-center shrink-0 shadow-md">
+                           {currentMatch.is_home ? (
+                              mainClub?.logo_url ? <img src={mainClub.logo_url} alt="" className="w-full h-full object-contain" /> : <ShieldCheck className="w-5 h-5 text-primary" />
+                           ) : (
+                              getOpponentLogo(currentMatch.opponent_id) ? <img src={getOpponentLogo(currentMatch.opponent_id)} alt="" className="w-full h-full object-contain" /> : <Trophy className="w-5 h-5 text-slate-400" />
+                           )}
+                        </div>
+                        <div className="flex flex-col">
+                           <span className="text-[11px] font-black uppercase text-white tracking-wider leading-tight">
+                              {currentMatch.is_home ? (mainClub?.club_name || 'FUS de Rabat') : getOpponentName(currentMatch.opponent_id)}
+                           </span>
+                           <div className="flex items-center gap-2 mt-0.5">
+                              <span className="px-2.5 py-0.5 rounded-md bg-primary text-white text-[9px] font-black tracking-widest uppercase shadow-[0_0_14px_rgba(255,55,55,0.7)] border border-primary/40 ring-1 ring-white/30 animate-pulse">
+                                 CATÉGORIE {currentMatch.category || "U??"}
+                              </span>
+                              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                                 {currentMatch.is_home ? 'Domicile' : 'Extérieur'}
+                              </span>
+                           </div>
+                        </div>
+                     </div>
+
+                     {/* ── COIN 2: CLUB ADVERSAIRE + CATÉGORIE MISE EN ÉVIDENCE (HAUT DROIT) ── */}
+                     <div className="absolute top-4 right-6 z-30 flex items-center gap-3 bg-slate-950/85 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/20 shadow-2xl flex-row-reverse text-right animate-in fade-in duration-500">
+                        <div className="w-9 h-9 rounded-xl bg-white p-1.5 flex items-center justify-center shrink-0 shadow-md">
+                           {!currentMatch.is_home ? (
+                              mainClub?.logo_url ? <img src={mainClub.logo_url} alt="" className="w-full h-full object-contain" /> : <ShieldCheck className="w-5 h-5 text-primary" />
+                           ) : (
+                              getOpponentLogo(currentMatch.opponent_id) ? <img src={getOpponentLogo(currentMatch.opponent_id)} alt="" className="w-full h-full object-contain" /> : <Trophy className="w-5 h-5 text-slate-400" />
+                           )}
+                        </div>
+                        <div className="flex flex-col items-end">
+                           <span className="text-[11px] font-black uppercase text-white tracking-wider leading-tight">
+                              {!currentMatch.is_home ? (mainClub?.club_name || 'FUS de Rabat') : getOpponentName(currentMatch.opponent_id)}
+                           </span>
+                           <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                                 {!currentMatch.is_home ? 'Domicile' : 'Extérieur'}
+                              </span>
+                              <span className="px-2.5 py-0.5 rounded-md bg-amber-500 text-slate-950 text-[9px] font-black tracking-widest uppercase shadow-[0_0_14px_rgba(245,158,11,0.6)] border border-amber-300 ring-1 ring-white/30">
+                                 CATÉGORIE {currentMatch.category || "U??"}
+                              </span>
+                           </div>
+                        </div>
+                     </div>
+
+                     {/* Bottom zone labels */}
+                     <div className="absolute bottom-3 left-6 z-20 hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-950/60 backdrop-blur-sm border border-white/10 text-white/50 text-[8px] font-black uppercase tracking-widest">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <span>Zone Domicile · {currentMatch.lineup?.formation || 'Tactique'}</span>
+                     </div>
+                     <div className="absolute bottom-3 right-6 z-20 hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-950/60 backdrop-blur-sm border border-white/10 text-white/50 text-[8px] font-black uppercase tracking-widest">
+                        <span>Zone Extérieur · {currentMatch.opponent_formation || '4-3-3'}</span>
+                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                     </div>
 
                      {/* PLAYER ICONS ON PITCH */}
                      <div className="absolute inset-0 z-20">
@@ -858,16 +1031,12 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                                           key={pId} 
                                           className="absolute -translate-x-1/2 -translate-y-1/2 group cursor-pointer" 
                                           style={{ left: pos.left, top: pos.top }}
-                                          onClick={() => {
-                                             setRatingModalPlayer(player);
-                                             setModalRating(mpRecord?.rating != null ? Number(mpRecord.rating) : 7);
-                                             setModalComment(mpRecord?.rating_comment || '');
-                                          }}
-                                          title={mpRecord?.rating != null ? `Note : ${mpRecord.rating}/10 (Cliquer pour modifier)` : `Cliquer pour évaluer ${player.full_name} (${isCurrentMatchFriendly ? 'Amical' : currentLeagueName})`}
+                                          onClick={() => openPlayerActionHub(player, false, true)}
+                                          title={`Cliquer pour gérer événements & note : ${player.full_name}`}
                                        >
                                           <div className="relative flex flex-col items-center">
                                              {/* Event Badges Layer */}
-                                             <div className="absolute -top-8 flex gap-1 group-hover:scale-125 transition-transform">
+                                             <div className="absolute -top-8 flex gap-1 group-hover:scale-125 transition-transform z-30">
                                                 {pEvents.map(e => (
                                                    <div key={e.id} className="relative flex items-center justify-center p-1 rounded-md bg-white shadow-lg border border-slate-200">
                                                       {e.type === 'goal' && <Target className="w-3 h-3 text-emerald-500" />}
@@ -887,13 +1056,13 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                                                    </span>
                                                 ) : (
                                                    <span className="hidden group-hover:flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500 text-white font-black text-[8px] shadow-lg border border-white">
-                                                      +⭐ Noter
+                                                      +⭐ Action
                                                    </span>
                                                 )}
                                              </div>
 
                                              {/* Player Circle */}
-                                             <div className={`w-10 h-10 md:w-14 md:h-14 rounded-full bg-white shadow-2xl flex items-center justify-center border-4 ${mpRecord?.rating != null ? 'border-amber-400 ring-2 ring-amber-400/30' : 'border-primary'} relative overflow-hidden group-hover:border-white group-hover:scale-110 transition-all duration-300`}>
+                                             <div className={`w-11 h-11 md:w-14 md:h-14 rounded-full bg-white shadow-2xl flex items-center justify-center border-4 ${mpRecord?.rating != null ? 'border-amber-400 ring-2 ring-amber-400/30' : 'border-primary'} relative overflow-hidden group-hover:border-white group-hover:scale-110 transition-all duration-300`}>
                                                 {player.photo_url ? (
                                                    <img 
                                                       src={player.photo_url} 
@@ -931,10 +1100,23 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                                     const oppEvents = events.filter(e => e.extra?.opponent_ref === oppRef || e.player_id === oppRef || (e.extra?.opponent_ref && e.extra.opponent_ref.split('-')[1] === (idx + 1).toString()));
 
                                     return (
-                                       <div key={idx} className="absolute translate-x-1/2 -translate-y-1/2 group" style={{ right: pos.right, top: pos.top }}>
+                                       <div 
+                                          key={idx} 
+                                          className="absolute translate-x-1/2 -translate-y-1/2 group cursor-pointer" 
+                                          style={{ right: pos.right, top: pos.top }}
+                                          onClick={() => openPlayerActionHub({
+                                             id: oppRef,
+                                             full_name: oppName,
+                                             jersey_number: oppJersey,
+                                             position: 'ADV',
+                                             photo_url: null,
+                                             opponent_ref: oppRef
+                                          }, true, true)}
+                                          title={`Cliquer pour gérer événements adverse : ${oppName}`}
+                                       >
                                           <div className="relative flex flex-col items-center">
                                              {/* Event Badges Layer */}
-                                             <div className="absolute -top-8 flex gap-1">
+                                             <div className="absolute -top-8 flex gap-1 z-30">
                                                 {oppEvents.map(e => (
                                                    <div key={e.id} className="relative flex items-center justify-center p-1 rounded-md bg-white shadow-lg border border-slate-200">
                                                       {e.type === 'goal' && <Target className="w-3 h-3 text-red-500" />}
@@ -946,10 +1128,10 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                                                 ))}
                                              </div>
 
-                                             <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-slate-900 shadow-xl flex items-center justify-center border-4 border-slate-800 relative group-hover:scale-110 transition-all">
+                                             <div className="w-11 h-11 md:w-13 md:h-13 rounded-full bg-slate-900 shadow-xl flex items-center justify-center border-4 border-slate-800 relative group-hover:scale-110 group-hover:border-amber-400 transition-all">
                                                 <span className="text-white font-black text-xs md:text-sm">{oppJersey}</span>
                                              </div>
-                                             <div className="mt-2 text-white/40 text-[7px] font-bold uppercase tracking-widest whitespace-nowrap">{oppName}</div>
+                                             <div className="mt-2 text-white/60 text-[7px] md:text-[8px] font-bold uppercase tracking-widest whitespace-nowrap group-hover:text-amber-400">{oppName}</div>
                                           </div>
                                        </div>
                                     );
@@ -960,8 +1142,259 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                      </div>
                   </div>
 
-                  {/* Pitch Legend */}
-                  <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6 relative z-20">
+                  {/* ── SECTION REMPLAÇANTS DIRECTEMENT SOUS LE TERRAIN ── */}
+                  <div className="mt-10 pt-10 border-t border-white/10 space-y-8 relative z-20">
+                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                           <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center text-primary border border-primary/30">
+                              <ArrowLeftRight className="w-6 h-6" />
+                           </div>
+                           <div>
+                              <h4 className="text-xl font-black uppercase italic tracking-tight text-white flex items-center gap-3">
+                                 Bancs des Remplaçants
+                                 <Badge className="bg-primary text-white border-none text-[9px] font-black uppercase px-2 py-0.5 shadow-sm">
+                                    Sous le terrain
+                                 </Badge>
+                              </h4>
+                              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mt-0.5">
+                                 Cliquer sur un remplaçant pour lui ajouter un événement (but, carton, entrée en jeu) ou pour le noter
+                              </p>
+                           </div>
+                        </div>
+                     </div>
+
+                     {/* DUAL BENCH COLUMNS */}
+                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* 1. BANC FUS CLUB (DOMICILE) */}
+                        <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-6 backdrop-blur-md space-y-4">
+                           <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                              <div className="flex items-center gap-2.5">
+                                 <div className="w-7 h-7 rounded-lg bg-white p-1 flex items-center justify-center">
+                                    {currentMatch.is_home ? (
+                                       mainClub?.logo_url ? <img src={mainClub.logo_url} className="w-full h-full object-contain" alt="" /> : <ShieldCheck className="w-4 h-4 text-primary" />
+                                    ) : (
+                                       getOpponentLogo(currentMatch.opponent_id) ? <img src={getOpponentLogo(currentMatch.opponent_id)} className="w-full h-full object-contain" alt="" /> : <Trophy className="w-4 h-4 text-slate-400" />
+                                    )}
+                                 </div>
+                                 <span className="text-xs font-black uppercase tracking-wider text-white">
+                                    Banc {currentMatch.is_home ? (mainClub?.club_name || 'FUS Club') : getOpponentName(currentMatch.opponent_id)}
+                                 </span>
+                              </div>
+                              <Badge className="bg-primary/20 text-primary border border-primary/30 text-[9px] font-black uppercase">
+                                 {(currentMatch.lineup?.substitutes || []).length} Remplaçant(s)
+                              </Badge>
+                           </div>
+
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {(currentMatch.lineup?.substitutes || []).map((pId: string) => {
+                                 const player = players.find(p => p.id === pId);
+                                 if (!player) return null;
+                                 const subEvt = events.find(e => e.type === 'substitution' && (e.related_player_id === pId || e.extra?.player_in_id === pId));
+                                 const subMpRecord = currentMatch.match_players?.find((mp: any) => mp.player_id === pId);
+                                 const subEvents = events.filter(e => e.player_id === pId);
+
+                                 return (
+                                    <div
+                                       key={pId}
+                                       onClick={() => openPlayerActionHub(player, false, false)}
+                                       className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 group hover:scale-[1.02] ${
+                                          subEvt
+                                             ? 'bg-emerald-500/15 border-emerald-500/30 hover:border-emerald-500/50'
+                                             : 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/10'
+                                       }`}
+                                    >
+                                       <div className="flex items-center gap-3 min-w-0">
+                                          <div className="relative w-10 h-10 rounded-xl bg-slate-950 border border-white/20 overflow-hidden flex items-center justify-center shrink-0">
+                                             {player.photo_url ? (
+                                                <img src={player.photo_url} alt="" className="w-full h-full object-cover" />
+                                             ) : (
+                                                <span className="font-black text-xs text-white">{player.jersey_number || '•'}</span>
+                                             )}
+                                             {player.jersey_number && player.photo_url && (
+                                                <div className="absolute bottom-0 right-0 bg-primary text-white text-[7px] font-black px-1 rounded-tl-md">
+                                                   #{player.jersey_number}
+                                                </div>
+                                             )}
+                                          </div>
+
+                                          <div className="min-w-0">
+                                             <p className="text-xs font-black uppercase text-white truncate group-hover:text-primary transition-colors">
+                                                {player.full_name}
+                                             </p>
+                                             <div className="flex items-center gap-1.5 mt-0.5">
+                                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                                   {player.position || 'Remplaçant'}
+                                                </span>
+                                                {subEvt && (
+                                                   <Badge className="bg-emerald-500 text-white text-[7px] font-black uppercase px-1.5 py-0.5 shadow-sm">
+                                                      ENTRÉ {subEvt.minute ? `(${subEvt.minute}')` : ''}
+                                                   </Badge>
+                                                )}
+                                             </div>
+                                          </div>
+                                       </div>
+
+                                       {/* Badges & Rating */}
+                                       <div className="flex items-center gap-2 shrink-0">
+                                          {subEvents.length > 0 && (
+                                             <div className="flex gap-1">
+                                                {subEvents.slice(0, 2).map(e => (
+                                                   <div key={e.id} className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[9px] font-black">
+                                                      {e.type === 'goal' && '⚽'}
+                                                      {e.type === 'yellow_card' && '🟨'}
+                                                      {e.type === 'red_card' && '🟥'}
+                                                      {e.type === 'substitution' && '🔄'}
+                                                   </div>
+                                                ))}
+                                             </div>
+                                          )}
+
+                                          {subMpRecord?.rating != null ? (
+                                             <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-400 text-slate-950 text-[10px] font-black shadow-sm">
+                                                <Star className="w-2.5 h-2.5 fill-slate-950 text-slate-950" />
+                                                <span>{subMpRecord.rating}</span>
+                                             </div>
+                                          ) : (
+                                             <div className="px-2 py-1 rounded-lg bg-white/10 text-slate-400 text-[8px] font-black uppercase group-hover:bg-primary group-hover:text-white transition-colors">
+                                                + Action
+                                             </div>
+                                          )}
+                                       </div>
+                                    </div>
+                                 );
+                              })}
+                              {(currentMatch.lineup?.substitutes || []).length === 0 && (
+                                 <div className="col-span-full py-8 text-center text-slate-500 italic text-[10px] font-black uppercase">
+                                    Aucun remplaçant FUS répertorié pour ce match
+                                 </div>
+                              )}
+                           </div>
+                        </div>
+
+                        {/* 2. BANC ÉQUIPE ADVERSE (EXTÉRIEUR) */}
+                        <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-6 backdrop-blur-md space-y-4">
+                           <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                              <div className="flex items-center gap-2.5">
+                                 <div className="w-7 h-7 rounded-lg bg-white p-1 flex items-center justify-center">
+                                    {!currentMatch.is_home ? (
+                                       mainClub?.logo_url ? <img src={mainClub.logo_url} className="w-full h-full object-contain" alt="" /> : <ShieldCheck className="w-4 h-4 text-primary" />
+                                    ) : (
+                                       getOpponentLogo(currentMatch.opponent_id) ? <img src={getOpponentLogo(currentMatch.opponent_id)} className="w-full h-full object-contain" alt="" /> : <Trophy className="w-4 h-4 text-slate-400" />
+                                    )}
+                                 </div>
+                                 <span className="text-xs font-black uppercase tracking-wider text-white">
+                                    Banc {!currentMatch.is_home ? (mainClub?.club_name || 'FUS Club') : getOpponentName(currentMatch.opponent_id)}
+                                 </span>
+                              </div>
+                              <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-black uppercase">
+                                 Remplaçants Adversaires
+                              </Badge>
+                           </div>
+
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {(() => {
+                                 const matchFormat = inferMatchFormat(currentMatch);
+                                 const oppLineupList = Array.isArray(currentMatch.opponent_lineup) ? currentMatch.opponent_lineup : [];
+                                 const oppStartingIds = new Set(
+                                    oppLineupList.slice(0, matchFormat).map((o: any) => typeof o === 'object' ? (o.id || o.player_id) : String(o))
+                                 );
+
+                                 const rawOppSubs = Array.isArray(currentMatch.opponent_subs) ? currentMatch.opponent_subs : [];
+                                 const oppSubsList = rawOppSubs.length > 0
+                                    ? rawOppSubs.map((sub: any, idx: number) => {
+                                         if (typeof sub === 'object' && sub !== null) return sub;
+                                         const found = opponentPlayers.find((op: any) => op.id === sub || op.jersey_number === Number(sub));
+                                         return found || {
+                                            id: `OPP-SUB-${idx + 1}`,
+                                            full_name: `Remplaçant ADV #${sub}`,
+                                            jersey_number: isNaN(Number(sub)) ? idx + 12 : Number(sub),
+                                            position: 'Remp',
+                                            photo_url: null,
+                                            opponent_ref: `OPP-SUB-${idx + 1}`
+                                         };
+                                      })
+                                    : opponentPlayers.filter((op: any) => !oppStartingIds.has(op.id));
+
+                                 if (oppSubsList.length === 0) {
+                                    return (
+                                       <div className="col-span-full py-8 text-center text-slate-500 italic text-[10px] font-black uppercase">
+                                          Aucun remplaçant adverse répertorié
+                                       </div>
+                                    );
+                                 }
+
+                                 return oppSubsList.map((oppSub: any, idx: number) => {
+                                    const oppRef = oppSub.id || `OPP-SUB-${idx + 1}`;
+                                    const oppJersey = oppSub.jersey_number || idx + 12;
+                                    const oppName = oppSub.full_name || oppSub.name || `Remplaçant #${oppJersey}`;
+                                    const subEvt = events.find(e => e.type === 'substitution' && (e.extra?.opponent_ref === oppRef || e.player_id === oppRef || e.extra?.player_in_name === oppName));
+                                    const oppEvents = events.filter(e => e.extra?.opponent_ref === oppRef || e.player_id === oppRef);
+
+                                    return (
+                                       <div
+                                          key={oppRef}
+                                          onClick={() => openPlayerActionHub({
+                                             id: oppRef,
+                                             full_name: oppName,
+                                             jersey_number: oppJersey,
+                                             position: 'ADV Remp',
+                                             photo_url: oppSub.photo_url || null,
+                                             opponent_ref: oppRef
+                                          }, true, false)}
+                                          className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 group hover:scale-[1.02] ${
+                                             subEvt
+                                                ? 'bg-amber-500/15 border-amber-500/30 hover:border-amber-500/50'
+                                                : 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/10'
+                                          }`}
+                                       >
+                                          <div className="flex items-center gap-3 min-w-0">
+                                             <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-700 flex items-center justify-center shrink-0 text-white font-black text-xs">
+                                                #{oppJersey}
+                                             </div>
+                                             <div className="min-w-0">
+                                                <p className="text-xs font-black uppercase text-slate-300 truncate group-hover:text-amber-400 transition-colors">
+                                                   {oppName}
+                                                </p>
+                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                   <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">
+                                                      {oppSub.position || 'Adversaire Remp'}
+                                                   </span>
+                                                   {subEvt && (
+                                                      <Badge className="bg-amber-500 text-slate-950 text-[7px] font-black uppercase px-1.5 py-0.5 shadow-sm">
+                                                         ENTRÉ {subEvt.minute ? `(${subEvt.minute}')` : ''}
+                                                      </Badge>
+                                                   )}
+                                                </div>
+                                             </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-2 shrink-0">
+                                             {oppEvents.length > 0 && (
+                                                <div className="flex gap-1">
+                                                   {oppEvents.slice(0, 2).map(e => (
+                                                      <div key={e.id} className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[9px] font-black">
+                                                         {e.type === 'goal' && '⚽'}
+                                                         {e.type === 'yellow_card' && '🟨'}
+                                                         {e.type === 'red_card' && '🟥'}
+                                                      </div>
+                                                   ))}
+                                                </div>
+                                             )}
+                                             <div className="px-2 py-1 rounded-lg bg-white/10 text-slate-400 text-[8px] font-black uppercase group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
+                                                + Action
+                                             </div>
+                                          </div>
+                                       </div>
+                                    );
+                                 });
+                              })()}
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+
+                  {/* Pitch Legend & Tactical Summary */}
+                  <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-6 relative z-20">
                      <Card className="bg-white/5 border border-white/10 rounded-[2.5rem] p-6 backdrop-blur-md">
                         <div className="flex items-center gap-4">
                            <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center text-primary">
@@ -996,101 +1429,51 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                         </div>
                      </Card>
                   </div>
+
+                  {/* Staff Technique Card */}
+                  <div className="mt-8 relative z-20">
+                     <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-6 backdrop-blur-md">
+                        <div className="flex items-center justify-between mb-4">
+                           <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center text-primary">
+                                 <Briefcase className="w-4 h-4" />
+                              </div>
+                              <h5 className="text-sm font-black italic uppercase tracking-wider text-white">Staff Technique Assigné</h5>
+                           </div>
+                           <Badge className="bg-white/10 text-slate-300 border-none text-[8px] font-black uppercase">
+                              {(currentMatch.staff_ids || []).length} Membre(s)
+                           </Badge>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                           {(currentMatch.staff_ids || []).map((sId: string) => {
+                              const member = staff.find(s => s.id === sId);
+                              if (!member) return null;
+                              return (
+                                 <div key={sId} className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10">
+                                    <div className="w-10 h-10 rounded-xl bg-white overflow-hidden shadow-sm shrink-0">
+                                       <img
+                                          src={(member.photo_url && member.photo_url !== 'null') ? member.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(member.full_name)}&background=random&color=fff&size=100`}
+                                          className="w-full h-full object-cover"
+                                          alt=""
+                                       />
+                                    </div>
+                                    <div className="min-w-0">
+                                       <p className="text-xs font-black uppercase text-white truncate">{member.full_name}</p>
+                                       <p className="text-[8px] font-black text-primary uppercase tracking-widest mt-0.5">{member.role || 'Staff Member'}</p>
+                                    </div>
+                                 </div>
+                              );
+                           })}
+                           {(currentMatch.staff_ids || []).length === 0 && (
+                              <div className="col-span-full py-4 text-center text-slate-500 italic text-[10px] font-black uppercase">
+                                 Aucun staff technique assigné à ce match
+                              </div>
+                           )}
+                        </div>
+                     </div>
+                  </div>
                </div>
             </Card>
-
-            {/* BENCH & STAFF SECTION */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-               <Card className="lg:col-span-8 rounded-[3rem] border border-slate-100 p-10 bg-white shadow-xl">
-                  <h4 className="text-lg font-black italic uppercase tracking-tighter mb-8 flex items-center gap-3">
-                     <ArrowLeftRight className="w-6 h-6 text-slate-400" /> Banc de Touche
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                     {(currentMatch.lineup?.substitutes || []).map((pId: string) => {
-                        const player = players.find(p => p.id === pId);
-                        if (!player) return null;
-                        const hasEntered = events.some(e => e.type === 'substitution' && e.related_player_id === pId);
-                        const subMpRecord = currentMatch.match_players?.find((mp: any) => mp.player_id === pId);
-                        return (
-                           <div key={pId} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${hasEntered ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
-                              <div className="w-12 h-12 rounded-xl bg-white overflow-hidden shadow-sm border border-slate-100 flex items-center justify-center shrink-0">
-                                 {player.photo_url ? (
-                                    <img src={player.photo_url} className="w-full h-full object-cover" alt="" />
-                                 ) : (
-                                    <span className="font-black text-xs text-slate-400">{player.jersey_number || '•'}</span>
-                                 )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                 <p className="text-xs font-black uppercase text-slate-900 truncate">{player.full_name}</p>
-                                 <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{player.position}</span>
-                                    {hasEntered && <Badge className="bg-emerald-500 text-white text-[7px] font-black uppercase shadow-sm">ENTRÉ</Badge>}
-                                 </div>
-                              </div>
-                              <div className="shrink-0">
-                                 {subMpRecord?.rating != null ? (
-                                    <button
-                                       onClick={() => {
-                                          setRatingModalPlayer(player);
-                                          setModalRating(Number(subMpRecord.rating));
-                                          setModalComment(subMpRecord.rating_comment || '');
-                                       }}
-                                       className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-100/80 border border-amber-300 text-amber-900 text-xs font-black hover:bg-amber-200 transition-colors shadow-sm"
-                                       title={subMpRecord.rating_comment || undefined}
-                                    >
-                                       <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                                       <span>{subMpRecord.rating}/10</span>
-                                    </button>
-                                 ) : (
-                                    <button
-                                       onClick={() => {
-                                          setRatingModalPlayer(player);
-                                          setModalRating(7);
-                                          setModalComment('');
-                                       }}
-                                       className="flex items-center gap-1 px-2.5 py-1 rounded-xl border border-dashed border-amber-500/50 text-amber-800 text-[10px] font-black hover:bg-amber-50 transition-colors"
-                                       title="Noter ce remplaçant"
-                                    >
-                                       <Star className="w-3 h-3 text-amber-500" />
-                                       <span>Noter</span>
-                                    </button>
-                                 )}
-                              </div>
-                           </div>
-                        );
-                     })}
-                     {(currentMatch.lineup?.substitutes || []).length === 0 && (
-                        <div className="col-span-full py-10 text-center opacity-20 italic text-[10px] font-black uppercase">Aucun remplaçant répertorié</div>
-                     )}
-                  </div>
-               </Card>
-
-               <Card className="lg:col-span-4 rounded-[3rem] border border-slate-100 p-10 bg-white shadow-xl">
-                  <h4 className="text-lg font-black italic uppercase tracking-tighter mb-8 flex items-center gap-3">
-                     <Briefcase className="w-6 h-6 text-slate-400" /> Staff Technique
-                  </h4>
-                  <div className="space-y-4">
-                     { (currentMatch.staff_ids || []).map((sId: string) => {
-                        const member = staff.find(s => s.id === sId);
-                        if (!member) return null;
-                        return (
-                           <div key={sId} className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                              <div className="w-12 h-12 rounded-xl bg-white overflow-hidden shadow-sm border border-slate-100">
-                                 <img src={(member.photo_url && member.photo_url !== 'null') ? member.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(member.full_name)}&background=random&color=fff&size=100`} className="w-full h-full object-cover" />
-                              </div>
-                              <div>
-                                 <p className="text-xs font-black uppercase text-slate-900">{member.full_name}</p>
-                                 <p className="text-[8px] font-black text-primary uppercase tracking-widest mt-1">{member.role || 'Staff Member'}</p>
-                              </div>
-                           </div>
-                        );
-                     })}
-                     {(currentMatch.staff_ids || []).length === 0 && (
-                        <div className="py-10 text-center opacity-20 italic text-[10px] font-black uppercase">Aucun staff assigné</div>
-                     )}
-                  </div>
-               </Card>
-            </div>
          </div>
        )}
 
@@ -1340,11 +1723,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                         </span>
                         {mpRecord?.rating != null ? (
                           <button
-                            onClick={() => {
-                              setRatingModalPlayer(stat.player);
-                              setModalRating(Number(mpRecord.rating));
-                              setModalComment(mpRecord.rating_comment || '');
-                            }}
+                            onClick={() => openPlayerActionHub(stat.player, false, (currentMatch?.lineup?.startingXI || []).includes(stat.player.id))}
                             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-black hover:bg-amber-100 transition-colors"
                             title={mpRecord.rating_comment || undefined}
                           >
@@ -1353,15 +1732,11 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                           </button>
                         ) : (
                           <button
-                            onClick={() => {
-                              setRatingModalPlayer(stat.player);
-                              setModalRating(7);
-                              setModalComment('');
-                            }}
+                            onClick={() => openPlayerActionHub(stat.player, false, (currentMatch?.lineup?.startingXI || []).includes(stat.player.id))}
                             className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-dashed border-primary/40 text-primary text-[10px] font-black hover:bg-primary/5 transition-colors"
                           >
                             <Plus className="w-3 h-3" />
-                            <span>Noter (1–10)</span>
+                            <span>Action / Note (1–10)</span>
                           </button>
                         )}
                       </div>
@@ -2212,8 +2587,35 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                }}
              />
            )}
+
+           {/* Modal Complet Événements Live & Évaluation Joueur */}
+           {actionHubPlayer && (
+             <PlayerActionHubModal
+               isOpen={!!actionHubPlayer}
+               player={actionHubPlayer}
+               matchId={matchId}
+               currentMatch={currentMatch}
+               matchEvents={events}
+               homePlayers={players}
+               opponentPlayers={opponentPlayers}
+               onClose={() => setActionHubPlayer(null)}
+               onAddEvent={handleAddEventFromHub}
+               onUpdateEvent={handleUpdateEventFromHub}
+               onDeleteEvent={handleDeleteEventFromHub}
+               onSaveRating={handleSaveRatingFromHub}
+               onOpenDeepEvaluation={(p) => {
+                 setRatingModalPlayer(p);
+                 const mpRecord = currentMatch.match_players?.find((mp: any) => mp.player_id === p.id);
+                 setModalRating(mpRecord?.rating != null ? Number(mpRecord.rating) : 7);
+                 setModalComment(mpRecord?.rating_comment || '');
+               }}
+               mainClubName={mainClub?.club_name || 'FUS de Rabat'}
+               opponentClubName={getOpponentName(currentMatch.opponent_id)}
+             />
+           )}
     </div>
   );
 };
 
 export default MatchStatsView;
+

@@ -1,6 +1,83 @@
 export type FootType = 'Droitier' | 'Gaucher' | 'Ambidextre';
 
-export type CandidateStatus = 'registered' | 'in_trial' | 'selected' | 'rejected' | 'on_hold' | 'archived';
+export type PlayerRecruitmentStatus = 'to_follow' | 'invitation_test' | 'recruit_standby' | 'recruit_now';
+
+export type CandidateStatus =
+  | 'registered'
+  | 'in_trial'
+  | 'selected'
+  | 'rejected'
+  | 'on_hold'
+  | 'archived'
+  | PlayerRecruitmentStatus;
+
+export interface CategoryGroup {
+  id: 'labellise' | 'formation' | 'senior';
+  label: string;
+  shortLabel: string;
+  badgeClass: string;
+  categories: readonly string[];
+}
+
+export const RECRUITMENT_CATEGORY_GROUPS: CategoryGroup[] = [
+  {
+    id: 'labellise',
+    label: 'Pôle Labellisé (École de Football)',
+    shortLabel: 'Labellisé',
+    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    categories: ['U9', 'U10', 'U11', 'U12'],
+  },
+  {
+    id: 'formation',
+    label: 'Pôle Formation (Académie & Élite)',
+    shortLabel: 'Formation',
+    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+    categories: ['U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U20', 'U21', 'U22'],
+  },
+  {
+    id: 'senior',
+    label: 'Pôle Senior (Équipe Première & Espoirs)',
+    shortLabel: 'Senior',
+    badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
+    categories: ['U23', 'SENIOR'],
+  },
+];
+
+export interface PlayerStatusOption {
+  value: PlayerRecruitmentStatus;
+  label: string;
+  shortLabel: string;
+  description: string;
+  badgeClass: string;
+  colorClass: string;
+}
+
+export const PLAYER_RECRUITMENT_STATUS_OPTIONS: PlayerStatusOption[] = [
+  {
+    value: 'to_follow',
+    label: 'À suivre',
+    shortLabel: 'À suivre',
+    description: 'Conserver en veille active et planifier de futures observations terrain',
+    badgeClass: 'bg-indigo-500/10 text-indigo-700 border-indigo-500/30',
+    colorClass: 'text-indigo-600',
+  },
+  {
+    value: 'invitation_test',
+    label: 'Inviter à un test',
+    shortLabel: 'Invitation test',
+    description: 'Convoquer pour match d’essai ou détection officielle à l’Académie',
+    badgeClass: 'bg-blue-500/10 text-blue-700 border-blue-500/30',
+    colorClass: 'text-blue-600',
+  },
+  {
+    value: 'recruit_now',
+    label: 'Recrutement immédiatement',
+    shortLabel: 'Recrutement immédiat',
+    description: 'Signature prioritaire et contractualisation immédiate par le Club',
+    badgeClass: 'bg-emerald-500/10 text-emerald-800 border-emerald-500/40',
+    colorClass: 'text-emerald-600',
+  },
+];
 
 export type SessionStatus = 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
 
@@ -11,6 +88,82 @@ import { PLAYER_CATEGORIES } from '../../../constants';
 export const RECRUITMENT_AGE_CATEGORIES = PLAYER_CATEGORIES;
 
 export type RecruitmentAgeCategory = typeof RECRUITMENT_AGE_CATEGORIES[number];
+
+/**
+ * Calcul exact de l'âge d'un candidat à partir de sa date de naissance
+ */
+export function calculateCandidateAge(birthDateStr?: string | null): number | null {
+  if (!birthDateStr) return null;
+  const birth = new Date(birthDateStr);
+  if (isNaN(birth.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age >= 0 ? age : null;
+}
+
+/**
+ * Déduit automatiquement la catégorie d'âge officielle FUS à partir de la date de naissance
+ * (ex: 13 ans -> U13).
+ */
+export function getAgeCategoryFromBirthDate(birthDateStr?: string | null, fallbackCategory = 'U19'): string {
+  const age = calculateCandidateAge(birthDateStr);
+  if (age === null) return fallbackCategory;
+  if (age <= 9) return 'U9';
+  if (age === 10) return 'U10';
+  if (age === 11) return 'U11';
+  if (age === 12) return 'U12';
+  if (age === 13) return 'U13';
+  if (age === 14) return 'U14';
+  if (age === 15) return 'U15';
+  if (age === 16) return 'U16';
+  if (age === 17) return 'U17';
+  if (age === 18) return 'U18';
+  if (age === 19) return 'U19';
+  if (age === 20) return 'U20';
+  if (age === 21) return 'U21';
+  if (age === 22) return 'U22';
+  if (age === 23) return 'U23';
+  return 'SENIOR';
+}
+
+/**
+ * Renvoie le pôle FUS (Labellisé, Formation, Senior) correspondant à une catégorie
+ */
+export function getPoleFromCategory(category?: string | null): CategoryGroup | null {
+  if (!category) return null;
+  const upper = category.toUpperCase().trim();
+  for (const group of RECRUITMENT_CATEGORY_GROUPS) {
+    if (group.categories.map(c => c.toUpperCase()).includes(upper)) {
+      return group;
+    }
+  }
+  return null;
+}
+
+/**
+ * Regroupe une liste de catégories d'âge selon les 3 pôles FUS (Labellisé, Formation, Senior)
+ */
+export function groupCategoriesByPole(categories: readonly string[] | string[]) {
+  const labelliseCats = ['U9', 'U10', 'U11', 'U12'];
+  const formationCats = ['U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U20', 'U21', 'U22'];
+  const seniorCats = ['U23', 'SENIOR'];
+
+  const inLabellise = categories.filter(c => labelliseCats.includes(c));
+  const inFormation = categories.filter(c => formationCats.includes(c));
+  const inSenior = categories.filter(c => seniorCats.includes(c));
+  const otherCats = categories.filter(c => !labelliseCats.includes(c) && !formationCats.includes(c) && !seniorCats.includes(c));
+
+  return {
+    labellise: inLabellise,
+    formation: inFormation,
+    senior: inSenior,
+    other: otherCats,
+  };
+}
 
 export type PipelineStage = 
   | 'prospect'          // New Prospect

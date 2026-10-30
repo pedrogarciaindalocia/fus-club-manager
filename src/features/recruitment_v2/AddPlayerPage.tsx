@@ -38,8 +38,9 @@ const AddPlayerPage: React.FC = () => {
     authState?.user?.system_role || '',
     authState?.user?.role || ''
   ].map(r => r.toLowerCase().trim());
-  const isSuperAdmin = userRoles.includes('super_admin') || Boolean(authState?.isRealSuperAdmin);
-  const isAdmin = isSuperAdmin || userRoles.includes('admin') || userRoles.includes('scout_admin');
+  const hasExplicitPerms = Boolean(authState?.permissions && authState.permissions.length > 0);
+  const isSuperAdmin = Boolean(!authState?.isImpersonating && userRoles.includes('super_admin'));
+  const isAdmin = isSuperAdmin || (!hasExplicitPerms && (userRoles.includes('admin') || userRoles.includes('scout_admin')));
   const isScoutManager = !isAdmin && (
     userRoles.includes('scout_manager') ||
     userRoles.includes('manager') ||
@@ -55,7 +56,7 @@ const AddPlayerPage: React.FC = () => {
 
   useEffect(() => {
     // 1. Mode ajout d'un joueur : vérification du droit CRUD 'create'
-    if (!candidateToEdit && !editIdParam && !isAdmin && !isSuperAdmin && !canCreateCandidate) {
+    if (!candidateToEdit && !editIdParam && !canCreateCandidate) {
       toast.error("Action refusée : vous n'avez pas la permission d'ajouter un joueur (candidates:create).");
       navigate(`/recruitment-v2?tab=${returnTab}`);
       return;
@@ -63,7 +64,7 @@ const AddPlayerPage: React.FC = () => {
 
     // 2. Mode modification d'un joueur : vérification du droit CRUD 'update', de la catégorie et de l'appartenance
     if (candidateToEdit) {
-      if (!isAdmin && !isSuperAdmin && !canUpdateCandidate) {
+      if (!canUpdateCandidate) {
         toast.error("Action refusée : vous n'avez pas la permission de modifier ce joueur (candidates:update).");
         navigate(`/recruitment-v2?tab=${returnTab}`);
         return;

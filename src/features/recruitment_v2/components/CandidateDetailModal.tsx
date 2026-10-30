@@ -8,6 +8,7 @@ import type {
   Scout,
   AdministrativeDocument
 } from '../types/recruitment';
+import { getAgeCategoryFromBirthDate, getPoleFromCategory } from '../types/recruitment';
 import { ScoutAvatar } from './ScoutAvatar';
 import PlayerRadarChart, { type RadarTabMode } from './PlayerRadarChart';
 import { QualityPillarsBlock } from './QualityPillarsBlock';
@@ -24,6 +25,7 @@ import {
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, ChartTooltip, ChartLegend);
 import { getScoutPositionConfig, type ScoutPillarKey } from '../constants/scoutCriteriaByPosition';
+import { getCountryFlag } from '../../../constants/geography';
 import { useMetrics } from '../../../hooks/useMetrics';
 import {
   X, User, Shield, Calendar, Award, Sparkles, Phone, Mail,
@@ -40,6 +42,7 @@ import type { Club } from '../../../types';
 import { OpponentClubFormModal } from '../../club-management/components/OpponentClubFormModal';
 import { AdministrativeDossierForm } from './AdministrativeDossierForm';
 import { PlayerVideoModal } from './PlayerVideoModal';
+import { usePermissions } from '../../../context/PermissionsContext';
 
 const calculateAge = (birthDate?: string) => {
   if (!birthDate) return null;
@@ -190,8 +193,31 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   currentUserId,
   currentUserName,
 }) => {
+  const { authState, hasSubModuleAccess } = usePermissions();
+  const hasExplicitPerms = Boolean(authState?.permissions && authState.permissions.length > 0);
+  const isSuperAdminUser = Boolean(
+    !authState?.isImpersonating && (
+      authState?.roles?.includes('super_admin') ||
+      authState?.user?.system_role === 'super_admin'
+    )
+  );
+  const hasDossierOrReportPermission = Boolean(
+    canManageReports ||
+    hasSubModuleAccess('candidates', 'manage_reports') ||
+    hasSubModuleAccess('candidates', 'reports') ||
+    hasSubModuleAccess('candidates', 'edit_player') ||
+    hasSubModuleAccess('candidates', 'update') ||
+    hasSubModuleAccess('candidates', 'assign_mission') ||
+    hasSubModuleAccess('candidates', 'create')
+  );
+
   const [activeTab, setActiveTab] = useState<'scout' | 'personal' | 'report'>((canManageReports !== false && (initialTab === 'sport' || initialTab === 'evaluations' || initialTab === 'report')) ? 'report' : (initialTab as any) === 'admin' ? 'personal' : (initialTab as any) || 'scout');
   const { getPositionByCode } = useMetrics();
+
+  // Garde-fou strict : si l'utilisateur n'a pas la permission de consulter le dossier ou les rapports
+  if (hasExplicitPerms && !isSuperAdminUser && !hasDossierOrReportPermission) {
+    return null;
+  }
 
   const resolvePositionConfig = (posCode?: string) => {
     const custom = getPositionByCode(posCode);
@@ -1763,7 +1789,11 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
         {[
           { id: 'scout', label: '1. Scout', icon: Compass },
           { id: 'personal', label: '2. État Civil & Contact', icon: User },
-          ...(canManageReports !== false ? [{ id: 'report', label: `3. Rapports (${candidateEvals.length})`, icon: FileText }] : []),
+          ...(canManageReports !== false ? [{
+            id: 'report',
+            label: `3. Rapports (${(isRecruitmentAdmin || isScoutManager) ? multiScoutMetrics.totalReportsCount : candidateEvals.length})`,
+            icon: FileText
+          }] : []),
         ].map((tab) => {
             const Icon = tab.icon;
             return (
@@ -2348,7 +2378,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
 
                     <div>
                       <span className="text-muted-foreground block text-[11px]">Nationalité</span>
-                      <span className="font-bold text-slate-900">{candidate.nationality || 'Marocaine'}</span>
+                      <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                        <span className="text-sm leading-none">{getCountryFlag(candidate.country || candidate.nationality)}</span>
+                        <span>{candidate.nationality || 'Marocaine'}</span>
+                      </span>
                     </div>
 
                     <div>
@@ -2358,7 +2391,28 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
 
                     <div>
                       <span className="text-muted-foreground block text-[11px]">Catégorie Officielle</span>
-                      <span className="font-bold text-primary">{candidate.age_category || 'U19'}</span>
+                      {(() => {
+                        const effectiveCat = candidate.birth_date
+                          ? getAgeCategoryFromBirthDate(candidate.birth_date, candidate.age_category || 'U19')
+                          : (candidate.age_category || 'U19');
+                        const pole = getPoleFromCategory(effectiveCat);
+                        const isUpgraded = candidate.is_upgraded_category || (candidate.age_category && candidate.age_category !== effectiveCat);
+                        return (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-primary">{effectiveCat}</span>
+                            {pole && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">
+                                {pole.shortLabel}
+                              </span>
+                            )}
+                            {isUpgraded && (
+                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+                                ⬆️ {candidate.surclassement && candidate.surclassement !== '0C' ? candidate.surclassement : (candidate.age_category ? `en ${candidate.age_category}` : 'Surclassé')}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -2438,8 +2492,9 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
 
                   <div>
                     <span className="text-muted-foreground block text-[11px]">Pays de Résidence</span>
-                    <span className="font-bold text-slate-900">
-                      {candidate.country || candidate.nationality || 'Maroc'}
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                      <span className="text-sm leading-none">{getCountryFlag(candidate.country || candidate.nationality)}</span>
+                      <span>{candidate.country || candidate.nationality || 'Maroc'}</span>
                     </span>
                   </div>
                 </div>
@@ -2501,7 +2556,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                     </div>
                     <div>
                       <h4 className="font-bold text-slate-900 text-sm">
-                        Rapports de Scout & Observations ({candidateEvals.length})
+                        Rapports de Scout & Observations ({(isRecruitmentAdmin || isScoutManager) ? multiScoutMetrics.totalReportsCount : candidateEvals.length})
                       </h4>
                       <p className="text-[11px] text-muted-foreground">
                         Historique des séances d'observation. Consultez l'ensemble des analyses, données terrain et évaluations du scout en vue dashboard.
@@ -2533,7 +2588,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                         ? `Aucun rapport de scout n'a encore été rédigé pour ${candidate.first_name} ${candidate.last_name}.`
                         : `Vous n'avez pas encore rédigé de rapport pour ${candidate.first_name} ${candidate.last_name}.`}
                     </p>
-                    {Boolean(onAddReport || onOpenEvaluation) ? (
+                    {Boolean(onAddReport || onOpenEvaluation) && (
                       <button
                         type="button"
                         onClick={() => onAddReport ? onAddReport(candidate) : onOpenEvaluation?.({ mode: 'create' })}
@@ -2542,11 +2597,6 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                         <Award className="w-3.5 h-3.5" />
                         <span>Rédiger mon premier rapport</span>
                       </button>
-                    ) : (
-                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-500 text-xs font-medium border border-slate-200">
-                        <Lock className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Rapports en lecture seule</span>
-                      </div>
                     )}
                   </div>
                 ) : (
@@ -2989,12 +3039,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                 )}
-                                {currentSelectedReport && canEditEvaluation && !canEditEvaluation(currentSelectedReport) && canDeleteEvaluation && !canDeleteEvaluation(currentSelectedReport) && (
-                                  <span className="px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-500 font-semibold text-[11px] border border-slate-200 flex items-center gap-1.5" title="Ce rapport a été rédigé par un autre scout. Consultation en lecture seule.">
-                                    <Lock className="w-3 h-3 text-slate-400" />
-                                    <span>Lecture seule</span>
-                                  </span>
-                                )}
+
                               </div>
                             </div>
                           </div>

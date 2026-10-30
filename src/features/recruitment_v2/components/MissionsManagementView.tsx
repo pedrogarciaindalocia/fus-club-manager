@@ -168,7 +168,7 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
   };
 
   // Assignation automatique d'une mission à partir d'un joueur adverse présent dans le Panier de Détection
-  const handleAssignMissionFromBasket = async (player: BasketPlayer, scoutId: string) => {
+  const handleAssignMissionFromBasket = async (player: BasketPlayer, scoutId: string): Promise<TrialCandidate | null> => {
     // 1. Chercher si le candidat existe déjà dans la base des candidats
     let targetCand = candidates.find(c => {
       const cName = `${c.first_name} ${c.last_name}`.toLowerCase().trim();
@@ -199,6 +199,7 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
         recommendation_priority: 'high',
         notes: `Joueur adverse repéré lors du match : ${matchInfo}. Ajouté au panier de détection par ${player.added_by_name} (${player.added_by_role || 'Staff'}).${obsText}`,
         rating: player.rating || undefined,
+        discovery_match: player.match_id || undefined,
       });
 
       targetCand = createdCand;
@@ -218,6 +219,8 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
         priority: 'high',
       }, targetCand);
     }
+
+    return targetCand || null;
   };
 
   // Permet d'assigner ou réassigner n'importe quel candidat / mission par glisser-déposer sur un scout
@@ -479,7 +482,7 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
           )}
 
           {/* ACTION ASSIGNER MISSION : RÉSERVÉE EXCLUSIVEMENT AUX SCOUT ADMINS */}
-          {hasAdminSupervision ? (
+          {hasAdminSupervision && (
             <button
               type="button"
               onClick={() => {
@@ -492,14 +495,6 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
               <Target className="w-4 h-4" />
               <span>+ Assigner une mission</span>
             </button>
-          ) : (
-            <div
-              className="px-3 py-2 rounded-xl bg-slate-100 text-slate-400 font-semibold text-xs flex items-center gap-1.5 border border-slate-200 cursor-not-allowed"
-              title="Seuls le Super Admin et les Scout Admins peuvent assigner des missions aux scouts"
-            >
-              <Lock className="w-3.5 h-3.5 text-slate-400" />
-              <span>Assignation réservée à la Direction</span>
-            </div>
           )}
         </div>
       </div>

@@ -21,6 +21,7 @@ import { useMetrics } from '../../../hooks/useMetrics';
 import type { Club } from '../../../types';
 import { OpponentClubFormModal } from '../../club-management/components/OpponentClubFormModal';
 import DOMPurify from 'dompurify';
+import { getCountryFlag } from '../../../constants/geography';
 
 interface CandidateDetailModalProps {
   isOpen: boolean;
@@ -335,7 +336,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   </div>
                   <div>
                     <span className="text-muted-foreground block">Nationalité</span>
-                    <span className="font-bold">{candidate.nationality}</span>
+                    <span className="font-bold flex items-center gap-1.5">
+                      <span className="text-sm leading-none">{getCountryFlag(candidate.country || candidate.nationality)}</span>
+                      <span>{candidate.nationality || 'Marocaine'}</span>
+                    </span>
                   </div>
                   <div>
                     <span className="text-muted-foreground block">Téléphone</span>
@@ -347,7 +351,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   </div>
                   <div>
                     <span className="text-muted-foreground block">Ville & Pays</span>
-                    <span className="font-bold">{candidate.city || '-'} {candidate.country ? `(${candidate.country})` : ''}</span>
+                    <span className="font-bold flex items-center gap-1.5">
+                      <span className="text-sm leading-none">{getCountryFlag(candidate.country || candidate.nationality)}</span>
+                      <span>{candidate.city || '-'} {candidate.country ? `(${candidate.country})` : ''}</span>
+                    </span>
                   </div>
                   <div className="sm:col-span-3">
                     <span className="text-muted-foreground block">Adresse de Résidence</span>

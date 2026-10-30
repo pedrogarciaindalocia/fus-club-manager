@@ -104,7 +104,7 @@ const AppContent: React.FC = () => {
   const { authState, hasModuleAccess, hasSubModuleAccess } = usePermissions();
 
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
-  const isSuperAdmin = currentRole === 'super_admin' || authState.isRealSuperAdmin;
+  const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
   const isScout = isScoutBranch(currentRole, authState.user?.job_title);
 
   // 1. Redirection de la racine et dashboard vers Détection & Recrutements pour la branche Scout
