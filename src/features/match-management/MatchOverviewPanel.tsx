@@ -42,6 +42,7 @@ import { useCompetitions } from '../../hooks/useCompetitions';
 import { useStaff } from '../../hooks/useStaff';
 import { matchService } from '../../services/matchService';
 import { MatchDriveVideoModal } from './components/MatchDriveVideoModal';
+import { MatchDriveVideoCard } from './components/MatchDriveVideoCard';
 import { supabase } from '../../lib/supabase';
 import type { Match } from '../../types';
 
