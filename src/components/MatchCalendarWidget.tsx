@@ -242,7 +242,7 @@ const MatchCalendarWidget: React.FC = () => {
               </div>
 
               {/* Footer info */}
-              <div className="flex items-center justify-center gap-5 mt-4 pt-4 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-5 mt-4 pt-4 border-t border-slate-100">
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
                   <Clock className="w-3 h-3 text-primary/60" />
                   <span>{displayedMatch.match_date} {displayedMatch.match_time ? `· ${displayedMatch.match_time}` : ''}</span>
@@ -253,6 +253,25 @@ const MatchCalendarWidget: React.FC = () => {
                     <span className="truncate max-w-[120px]">{getStadium(displayedMatch.stadium_id)?.name}</span>
                   </div>
                 )}
+                {/* Opérateur Live mention (US-MATCH-124) */}
+                {Boolean((displayedMatch as any).live_operator_name || (displayedMatch as any).lineup?.live_operator?.name) && (() => {
+                  const opName = (displayedMatch as any).live_operator_name || (displayedMatch as any).lineup?.live_operator?.name;
+                  const opPhoto = (displayedMatch as any).live_operator_avatar_url || (displayedMatch as any).lineup?.live_operator?.avatar_url;
+                  const initials = (opName || 'OP').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+                  return (
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-600 dark:text-slate-300">
+                      <span className="text-[10px]">🎙️</span>
+                      {opPhoto ? (
+                        <img src={opPhoto} alt={opName} className="w-3.5 h-3.5 rounded-full object-cover border border-slate-300 shrink-0" />
+                      ) : (
+                        <div className="w-3.5 h-3.5 rounded-full bg-primary/20 text-primary font-black text-[7px] flex items-center justify-center border border-primary/30 shrink-0">
+                          {initials}
+                        </div>
+                      )}
+                      <span className="truncate max-w-[100px]">{opName}</span>
+                    </div>
+                  );
+                })()}
                 <Badge className={`text-[9px] font-black border-none ${displayedMatch.is_home ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
                   {displayedMatch.is_home ? 'Domicile' : 'Extérieur'}
                 </Badge>

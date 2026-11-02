@@ -562,15 +562,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   Style : {candidate.reference_player_style}
                 </span>
               )}
-              {latestDecision === 'recruit_now' ? (
+              {latestDecision === 'recruit_now' || latestDecision === 'recruit_standby' ? (
                 <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
                   <Flame className="w-3 h-3 text-emerald-400" />
-                  Recrutement Validé
-                </span>
-              ) : latestDecision === 'recruit_standby' ? (
-                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-200 border border-amber-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                  <Clock className="w-3 h-3 text-amber-300" />
-                  Recrutement Stand-by
+                  Recrutement Immédiat
                 </span>
               ) : latestDecision === 'invitation_test' ? (
                 <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-200 border border-blue-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
@@ -3066,21 +3061,17 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                 <span className="text-xs font-bold text-slate-700">Décision d'Observation :</span>
                                 <span className={cn(
                                   "px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider inline-flex items-center gap-1.5 shadow-2xs border",
-                                  dispDecision === 'recruit_now'
+                                  (dispDecision === 'recruit_now' || dispDecision === 'recruit_standby')
                                     ? "bg-emerald-600 text-white border-emerald-700"
-                                    : dispDecision === 'recruit_standby'
-                                    ? "bg-amber-600 text-white border-amber-700"
                                     : dispDecision === 'invitation_test'
                                     ? "bg-blue-600 text-white border-blue-700"
                                     : "bg-indigo-600 text-white border-indigo-700"
                                   )}>
-                                  {dispDecision === 'recruit_now' && <Flame className="w-3.5 h-3.5" />}
-                                  {dispDecision === 'recruit_standby' && <Clock className="w-3.5 h-3.5" />}
+                                  {(dispDecision === 'recruit_now' || dispDecision === 'recruit_standby') && <Flame className="w-3.5 h-3.5" />}
                                   {dispDecision === 'invitation_test' && <Zap className="w-3.5 h-3.5" />}
                                   {(!dispDecision || dispDecision === 'to_follow') && <Eye className="w-3.5 h-3.5" />}
                                   <span>
-                                    {dispDecision === 'recruit_now' ? 'Recrutement Validé' :
-                                     dispDecision === 'recruit_standby' ? 'Recrutement Stand-by' :
+                                    {(dispDecision === 'recruit_now' || dispDecision === 'recruit_standby') ? 'Recrutement Immédiat' :
                                      dispDecision === 'invitation_test' ? 'Invitation Test' : 'À suivre'}
                                   </span>
                                 </span>

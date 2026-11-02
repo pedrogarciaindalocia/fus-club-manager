@@ -42,7 +42,7 @@ import { useCompetitions } from '../../hooks/useCompetitions';
 import { useStaff } from '../../hooks/useStaff';
 import { matchService } from '../../services/matchService';
 import { MatchDriveVideoModal } from './components/MatchDriveVideoModal';
-import { MatchDriveVideoCard } from './components/MatchDriveVideoCard';
+import { supabase } from '../../lib/supabase';
 import type { Match } from '../../types';
 
 interface MatchOverviewPanelProps {
@@ -140,6 +140,109 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
       matchService.getMatchLineup(match.id).then(setMatchLineupPlayers).catch(() => setMatchLineupPlayers([]));
     }
   }, [match?.id]);
+
+  // Opérateur Live Fus-App (Nom, Prénom, Photo, Poste)
+  const initialOpId = (match as any).live_operator_id || (match.lineup as any)?.live_operator?.id;
+  const initialOpName = (match as any).live_operator_name || (match.lineup as any)?.live_operator?.name;
+  const initialOpRole = (match as any).live_operator_role || (match.lineup as any)?.live_operator?.role;
+  const initialOpAvatar = (match as any).live_operator_avatar_url || (match.lineup as any)?.live_operator?.avatar_url;
+
+  const [operatorDetails, setOperatorDetails] = useState<{
+    id: string | null;
+    name: string | null;
+    role: string | null;
+    avatar_url: string | null;
+  }>({
+    id: initialOpId || null,
+    name: initialOpName || null,
+    role: initialOpRole || null,
+    avatar_url: initialOpAvatar || null,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchOperatorProfile = async () => {
+      const opId = (match as any).live_operator_id || (match.lineup as any)?.live_operator?.id;
+      const opName = (match as any).live_operator_name || (match.lineup as any)?.live_operator?.name;
+      const opRole = (match as any).live_operator_role || (match.lineup as any)?.live_operator?.role;
+      const opAvatar = (match as any).live_operator_avatar_url || (match.lineup as any)?.live_operator?.avatar_url;
+
+      if (opId) {
+        try {
+          const { data } = await supabase
+            .from('user_profiles')
+            .select('id, full_name, first_name, last_name, avatar_url, job_title, system_role')
+            .eq('id', opId)
+            .maybeSingle();
+          if (data && isMounted) {
+            const resolvedFullName = data.full_name || `${data.first_name || ''} ${data.last_name || ''}`.trim() || opName;
+            const resolvedRole = data.job_title || (data.system_role === 'admin' ? 'Administrateur' : data.system_role === 'super_admin' ? 'Super Administrateur' : 'Opérateur Live');
+            setOperatorDetails({
+              id: data.id,
+              name: resolvedFullName || opName || 'Opérateur Live',
+              role: resolvedRole || opRole || 'Opérateur Live Fus-App',
+              avatar_url: data.avatar_url || opAvatar || null,
+            });
+            return;
+          }
+        } catch (err) {
+          console.warn('[MatchOverviewPanel] Error fetching operator profile:', err);
+        }
+      }
+
+      if (opName && isMounted) {
+        setOperatorDetails({
+          id: opId || null,
+          name: opName,
+          role: opRole || 'Opérateur Live Fus-App',
+          avatar_url: opAvatar || null,
+        });
+        return;
+      }
+
+      if (match.id && isMounted) {
+        try {
+          const { data: logs } = await supabase
+            .from('audit_logs')
+            .select('user_id, metadata')
+            .or(`entity_id.eq.${match.id},metadata->>match_id.eq.${match.id}`)
+            .not('user_id', 'is', null)
+            .limit(1);
+          if (logs && logs.length > 0 && logs[0].user_id) {
+            const uid = logs[0].user_id;
+            const { data: prof } = await supabase
+              .from('user_profiles')
+              .select('id, full_name, first_name, last_name, avatar_url, job_title, system_role')
+              .eq('id', uid)
+              .maybeSingle();
+            if (prof && isMounted) {
+              const resolvedFullName = prof.full_name || `${prof.first_name || ''} ${prof.last_name || ''}`.trim();
+              const resolvedRole = prof.job_title || (prof.system_role === 'admin' ? 'Administrateur' : prof.system_role === 'super_admin' ? 'Super Administrateur' : 'Opérateur Live');
+              setOperatorDetails({
+                id: prof.id,
+                name: resolvedFullName || 'Opérateur Live',
+                role: resolvedRole || 'Opérateur Live Fus-App',
+                avatar_url: prof.avatar_url || null,
+              });
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (isMounted) {
+        setOperatorDetails({
+          id: opId || null,
+          name: opName || null,
+          role: opRole || null,
+          avatar_url: opAvatar || null,
+        });
+      }
+    };
+
+    fetchOperatorProfile();
+    return () => { isMounted = false; };
+  }, [match?.id, (match as any)?.live_operator_id, (match as any)?.live_operator_name, (match?.lineup as any)?.live_operator]);
 
   if (!match) {
     return (
@@ -813,6 +916,41 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                 {match.match_time && <span className="text-slate-500">· {match.match_time.slice(0, 5)}</span>}
               </div>
 
+              {/* Opérateur Live Fus-App Pill */}
+              {operatorDetails.name && (
+                <div className="flex items-center justify-center pt-0.5 pb-1">
+                  <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/80 shadow-md text-white backdrop-blur-sm">
+                    <div className="relative shrink-0">
+                      {operatorDetails.avatar_url ? (
+                        <img 
+                          src={operatorDetails.avatar_url} 
+                          alt={operatorDetails.name} 
+                          className="w-6 h-6 rounded-full object-cover border border-slate-500 shadow-xs" 
+                        />
+                      ) : (
+                        <div className="w-6 h-6 rounded-full bg-red-600 text-white font-black text-[9px] flex items-center justify-center border border-red-400">
+                          {operatorDetails.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <span className="absolute -bottom-0.5 -right-0.5 text-[8px]" title="Opérateur Fus-App">📱</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-left">
+                      <div className="flex flex-col">
+                        <span className="text-[11px] font-black text-white leading-tight">
+                          {operatorDetails.name}
+                        </span>
+                        <span className="text-[9px] font-semibold text-slate-400 leading-tight">
+                          {operatorDetails.role || 'Opérateur Live Fus-App'}
+                        </span>
+                      </div>
+                      <span className="text-[8px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-2 py-0.5 rounded-full uppercase shrink-0">
+                        📱 Fus-App
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Clubs and Real Score */}
               <div className="flex items-center justify-between px-2">
                 {/* Home Club (Domicile - Gauche) */}
@@ -1118,6 +1256,66 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                     </span>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── CARD OPÉRATEUR DU MATCH (FUS-APP) ── */}
+          <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-1.5 text-slate-900 font-black text-[11px] uppercase tracking-wider">
+                <span className="text-sm">🎙️</span>
+                <span>Opérateur Fus-App</span>
+              </div>
+              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase flex items-center gap-1 ${
+                match.status === 'live' 
+                  ? 'bg-red-50 text-red-600 border border-red-200 animate-pulse' 
+                  : operatorDetails.name 
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                  : 'bg-slate-100 text-slate-500'
+              }`}>
+                {match.status === 'live' ? '🔴 En Direct' : operatorDetails.name ? '📱 Opéré avec Fus-App' : 'Non assigné'}
+              </span>
+            </div>
+
+            {operatorDetails.name ? (
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-slate-50 to-slate-100/70 border border-slate-200/80 shadow-xs">
+                <div className="relative shrink-0">
+                  {operatorDetails.avatar_url ? (
+                    <img 
+                      src={operatorDetails.avatar_url} 
+                      alt={operatorDetails.name} 
+                      className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-md" 
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white font-black text-sm flex items-center justify-center border-2 border-white shadow-md">
+                      {operatorDetails.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-red-600 text-white text-[9px] flex items-center justify-center border-2 border-white shadow-xs" title="Application mobile Fus-App">
+                    📱
+                  </div>
+                </div>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs sm:text-sm font-black text-slate-900 truncate tracking-tight">
+                      {operatorDetails.name}
+                    </h4>
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] font-bold text-red-600 truncate mt-0.5">
+                    {operatorDetails.role || 'Opérateur Live'}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[8.5px] font-semibold text-slate-500 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      Saisie mobile des événements terrain en direct
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-4 text-center text-slate-400 text-[10px] font-medium italic">
+                Aucun opérateur désigné pour ce match
               </div>
             )}
           </div>

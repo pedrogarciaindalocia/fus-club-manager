@@ -519,7 +519,16 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
         map[p.id] = overrides[p.id];
         return;
       }
-      const s = surclassements.find(sr => {
+      const matchAssignment = surclassements.find(sr => {
+        if (sr.player_id !== p.id || sr.status !== 'active' || !currentMatch?.id) return false;
+        try {
+          const notes = typeof sr.notes === 'string' ? JSON.parse(sr.notes) : sr.notes;
+          return String(notes?.match_id || '') === String(currentMatch.id);
+        } catch {
+          return false;
+        }
+      });
+      const s = matchAssignment || surclassements.find(sr => {
         const promoted = new Date(sr.promoted_at).getTime();
         const reverted = sr.reverted_at ? new Date(sr.reverted_at).getTime() : null;
         return sr.player_id === p.id && promoted <= t && (reverted === null || reverted >= t);
@@ -527,7 +536,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
       map[p.id] = (s as any)?.target_jersey_number ?? p.jersey_number ?? null;
     });
     return map;
-  }, [players, surclassements, currentMatch?.match_date, (currentMatch as any)?.lineup?.jerseyOverrides]);
+  }, [players, surclassements, currentMatch?.id, currentMatch?.match_date, (currentMatch as any)?.lineup?.jerseyOverrides]);
 
   // Stats par joueur
   const playerStats = players

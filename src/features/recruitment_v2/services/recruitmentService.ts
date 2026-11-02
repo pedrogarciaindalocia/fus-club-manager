@@ -261,8 +261,8 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
       payload.status = candidate.status;
     } else if (candidate.status === 'recruit_now') {
       payload.status = 'selected';
-    } else if (candidate.status === 'recruit_standby') {
-      payload.status = 'on_hold';
+    } else if (candidate.status === 'recruit_standby' || candidate.status === 'on_hold') {
+      payload.status = 'selected';
     } else if (candidate.status === 'invitation_test') {
       payload.status = 'in_trial';
     } else if (candidate.status === 'to_follow') {
@@ -279,6 +279,11 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
     if (SUPABASE_CANDIDATE_COLUMNS.has(key) && val !== undefined) {
       payload[key] = val;
     }
+  }
+
+  if (payload.scout_state_decision === 'recruit_standby') {
+    payload.scout_state_decision = 'recruit_now';
+    payload.status = 'selected';
   }
 
   // Mapping si origin_club est manquant

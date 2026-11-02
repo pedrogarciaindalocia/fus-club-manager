@@ -6,7 +6,6 @@ import {
   Clock,
   CheckCircle2,
   Calendar,
-  AlertTriangle,
   CheckSquare,
   Square,
   Shield,
@@ -82,11 +81,8 @@ export default function SurclassementModal({
   player,
   teams,
   originalTeam,
-  activeSurclassement,
   history,
   historyLoading,
-  isReverting,
-  onConfirmRevert,
   onClose,
 }: Props) {
   const queryClient = useQueryClient();
@@ -96,9 +92,8 @@ export default function SurclassementModal({
   const currentCategory = currentTeam?.category ?? player.category ?? '';
 
   const [tab, setTab] = useState<'action' | 'history'>('action');
-  const [confirmRevert, setConfirmRevert] = useState(false);
 
-  // Matchs à venir éligibles au surclassement
+  // Matchs éligibles : passés, à venir et en direct. Chaque affectation est indépendante.
   const [matches, setMatches] = useState<any[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [selectedMatchIds, setSelectedMatchIds] = useState<Set<string>>(new Set());
@@ -108,7 +103,7 @@ export default function SurclassementModal({
   const [targetJerseyNumber, setTargetJerseyNumber] = useState<string>('');
   const [notes, setNotes] = useState('');
 
-  // ── Chargement des matchs planifiés à venir (catégories supérieures uniquement) ──
+  // ── Chargement des matchs de toute date (catégories supérieures uniquement) ──
   useEffect(() => {
     let isMounted = true;
     const fetchUpcomingMatches = async () => {
@@ -122,7 +117,6 @@ export default function SurclassementModal({
             club:clubs!club_id(id, name, logo_url),
             league:leagues!league_id(name)
           `)
-          .neq('status', 'finished')
           .order('match_date', { ascending: true });
 
         if (error) throw error;
@@ -133,9 +127,42 @@ export default function SurclassementModal({
         // RÈGLE MÉTIER STRICTE :
         // Uniquement les matchs en catégorie strictement supérieure (UX -> UX+1, UX+2...)
         // Le sous-classement (UX-1) est formellement interdit et impossible par règlement
+        const { data: activeAssignments, error: assignmentsError } = await supabase
+          .from('player_surclassements')
+          .select('id, notes, original_category, target_category, target_jersey_number')
+          .eq('player_id', player.id)
+          .eq('status', 'active');
+        if (assignmentsError) throw assignmentsError;
+
+        const assignmentsByMatch = new Map<string, any>();
+        (activeAssignments || []).forEach((assignment: any) => {
+          try {
+            const details = typeof assignment.notes === 'string' ? JSON.parse(assignment.notes) : assignment.notes;
+            if (details?.match_id) assignmentsByMatch.set(String(details.match_id), assignment);
+          } catch { /* ignore ancienne note non JSON */ }
+        });
+
         const higherMatches = raw.filter(m =>
           m.category && isHigherCategory(currentCategory, m.category)
-        );
+        ).map(m => {
+          const assignment = assignmentsByMatch.get(String(m.id));
+          if (!assignment || m.lineup?.surclasses?.[player.id]) return m;
+          return {
+            ...m,
+            lineup: {
+              ...(m.lineup || {}),
+              surclasses: {
+                ...(m.lineup?.surclasses || {}),
+                [player.id]: {
+                  player_id: player.id,
+                  original_category: assignment.original_category || currentCategory,
+                  target_category: assignment.target_category || m.category,
+                  match_id: m.id,
+                },
+              },
+            },
+          };
+        });
 
         setMatches(higherMatches);
 
@@ -177,8 +204,9 @@ export default function SurclassementModal({
 
   // ── Sauvegarde du surclassement sur les matchs sélectionnés ──
   const handleSaveSurclassementBatch = async () => {
-    if (selectedMatchIds.size === 0) {
-      toast.error('Cochez au moins un match à venir pour y programmer le surclassement de ce joueur.');
+    const hasCurrentAssignments = matches.some(m => !!m.lineup?.surclasses?.[player.id]);
+    if (selectedMatchIds.size === 0 && !hasCurrentAssignments) {
+      toast.error('Sélectionnez au moins un match.');
       return;
     }
 
@@ -200,9 +228,9 @@ export default function SurclassementModal({
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['players'] });
 
-      toast.success(
-        `Surclassement enregistré ! ${player.full_name} est programmé sur ${selectedMatchIds.size} match(s).`
-      );
+      toast.success(selectedMatchIds.size === 0
+        ? `Les affectations décochées de ${player.full_name} ont été annulées et historisées.`
+        : `Surclassements mis à jour : ${player.full_name} est affecté à ${selectedMatchIds.size} match(s).`);
       onClose();
     } catch (err: any) {
       toast.error(err?.message || 'Impossible d’enregistrer le surclassement.');
@@ -248,9 +276,9 @@ export default function SurclassementModal({
                   <ArrowUpCircle className="w-3.5 h-3.5 text-amber-200" />
                   Surclassement par Match Planifié
                 </span>
-                {activeSurclassement && (
+                {history.some(s => s.status === 'active') && (
                   <Badge className="bg-amber-400 text-slate-900 border-none text-[9px] font-black uppercase">
-                    Actif ({activeSurclassement.target_category})
+                    {history.filter(s => s.status === 'active').length} match(s) actif(s)
                   </Badge>
                 )}
               </div>
@@ -475,7 +503,7 @@ export default function SurclassementModal({
                 {matches.length > 0 && (
                   <Button
                     onClick={handleSaveSurclassementBatch}
-                    disabled={selectedMatchIds.size === 0 || savingBatch}
+                    disabled={(selectedMatchIds.size === 0 && !matches.some(m => !!m.lineup?.surclasses?.[player.id])) || savingBatch}
                     className="w-full h-12 rounded-2xl font-black uppercase tracking-widest text-xs gap-2 text-white bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 shadow-lg shadow-orange-200 transition-all"
                   >
                     {savingBatch ? (
@@ -486,7 +514,7 @@ export default function SurclassementModal({
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        Planifier le surclassement ({selectedMatchIds.size} match{selectedMatchIds.size > 1 ? 's' : ''})
+                        Valider les changements ({selectedMatchIds.size} match{selectedMatchIds.size > 1 ? 's' : ''} sélectionné{selectedMatchIds.size > 1 ? 's' : ''})
                       </>
                     )}
                   </Button>
@@ -501,62 +529,9 @@ export default function SurclassementModal({
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-4"
               >
-                {/* Bloc de réintégration si surclassement actif */}
-                {activeSurclassement && (
-                  <div className="rounded-2xl p-4 space-y-3 bg-orange-50 border border-orange-200">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" />
-                        <span className="text-xs font-black uppercase tracking-widest text-orange-800">
-                          Surclassement Actif
-                        </span>
-                      </div>
-                      <Badge className="bg-orange-500 text-white border-none text-[9px] font-black uppercase">
-                        {activeSurclassement.original_category} ➔ {activeSurclassement.target_category}
-                      </Badge>
-                    </div>
-
-                    {!confirmRevert ? (
-                      <Button
-                        onClick={() => setConfirmRevert(true)}
-                        className="w-full h-11 rounded-xl font-black uppercase tracking-widest text-xs gap-2 bg-slate-800 hover:bg-slate-900 text-white shadow-md transition-all"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                        Réintégrer définitivement dans {activeSurclassement.original_category}
-                      </Button>
-                    ) : (
-                      <div className="space-y-3 pt-1">
-                        <div className="rounded-xl bg-red-50 border border-red-200 p-3 flex gap-2.5">
-                          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                          <p className="text-xs text-red-700 font-semibold leading-relaxed">
-                            Confirmer la fin du surclassement de <strong>{player.full_name}</strong> et sa réintégration dans sa catégorie d'origine ({activeSurclassement.original_category}) ?
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            onClick={() => setConfirmRevert(false)}
-                            className="flex-1 h-10 rounded-xl font-bold uppercase text-xs"
-                          >
-                            Annuler
-                          </Button>
-                          <Button
-                            onClick={() => onConfirmRevert(activeSurclassement.id)}
-                            disabled={isReverting}
-                            className="flex-1 h-10 rounded-xl font-black uppercase text-xs bg-red-600 hover:bg-red-700 text-white gap-2"
-                          >
-                            {isReverting ? (
-                              <span className="flex items-center gap-1.5">
-                                <span className="w-3 h-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                                Réintégration…
-                              </span>
-                            ) : (
-                              <><RotateCcw className="w-3.5 h-3.5" />Confirmer</>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                {history.some(s => s.status === 'active') && (
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-xs font-semibold text-orange-900">
+                    Les surclassements sont associés séparément à chaque match. Pour en annuler un, décochez ce match dans l’onglet Action puis validez ; son entrée restera dans l’historique.
                   </div>
                 )}
 

@@ -463,6 +463,43 @@ class AuditLoggerService {
     return this.log({ action: 'DELETE', module, entity_type: entityType, entity_id: entityId, old_values: oldValues, description });
   }
 
+  /**
+   * Enregistre une opération du direct (Live Tracking) pour un match donné
+   * avec traçabilité complète de l'opérateur, du match, de la minute et du score.
+   */
+  async logLiveMatchOperation(params: {
+    matchId: string;
+    matchLabel?: string | null;
+    action: AuditAction;
+    description: string;
+    operatorName?: string | null;
+    minute?: number | null;
+    score?: string | null;
+    period?: string | null;
+    metadata?: any;
+  }) {
+    const meta = {
+      ...(params.metadata || {}),
+      match_id: params.matchId,
+      entity_id: params.matchId,
+      entity_type: 'match',
+      match_label: params.matchLabel,
+      operator_name: params.operatorName,
+      minute: params.minute ?? null,
+      score: params.score ?? null,
+      period: params.period ?? null,
+    };
+    return this.log({
+      action: params.action,
+      module: 'LIVE_TRACKING',
+      entity_type: 'match',
+      entity_id: params.matchId,
+      description: params.description,
+      metadata: meta,
+      status: 'SUCCESS'
+    });
+  }
+
   // --- Stockage & Recouvrement local (Fallback Offline) ---
 
   private cacheLogLocally(log: Omit<AuditLog, 'id'>) {

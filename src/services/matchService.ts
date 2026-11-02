@@ -46,9 +46,19 @@ export const matchService = {
         }
       });
       
+      const resolvedOperatorId = m.live_operator_id || (m.lineup as any)?.live_operator?.id || null;
+      const resolvedOperatorName = m.live_operator_name || (m.lineup as any)?.live_operator?.name || null;
+      const resolvedOperatorRole = m.live_operator_role || (m.lineup as any)?.live_operator?.role || null;
+      const resolvedOperatorAvatar = m.live_operator_avatar_url || (m.lineup as any)?.live_operator?.avatar_url || null;
+
       return {
         ...m,
+        live_operator_id: resolvedOperatorId,
+        live_operator_name: resolvedOperatorName,
+        live_operator_role: resolvedOperatorRole,
+        live_operator_avatar_url: resolvedOperatorAvatar,
         lineup: {
+          ...(typeof m.lineup === 'object' && m.lineup !== null ? m.lineup : {}),
           startingXI,
           substitutes,
           formation: (m.lineup as any)?.formation ?? m.formation ?? '4-3-3',
@@ -146,6 +156,11 @@ export const matchService = {
         delete safePayload.referee_fourth_id;
         delete safePayload.referee_commissaire_id;
         delete safePayload.referees_assigned;
+        delete safePayload.live_operator_id;
+        delete safePayload.live_operator_name;
+        delete safePayload.live_operator_role;
+        delete safePayload.live_operator_avatar_url;
+        delete safePayload.live_operator_permissions;
 
         const { data: retryData, error: retryError } = await supabase
           .from('matches')
@@ -224,6 +239,11 @@ export const matchService = {
         delete sanitized.opponent_lineup;
         delete sanitized.opponent_subs;
         delete sanitized.opponent_lineup_positions;
+        delete sanitized.live_operator_id;
+        delete sanitized.live_operator_name;
+        delete sanitized.live_operator_role;
+        delete sanitized.live_operator_avatar_url;
+        delete sanitized.live_operator_permissions;
 
         const { data: retryData, error: retryError } = await supabase
           .from('matches')

@@ -64,14 +64,6 @@ interface PermissionsContextType {
   resetImpersonation: () => void;
 }
 
-const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
-
-export const usePermissions = () => {
-  const ctx = useContext(PermissionsContext);
-  if (!ctx) throw new Error("usePermissions doit être utilisé dans un PermissionsProvider");
-  return ctx;
-};
-
 const EMPTY_STATE: AuthState = {
   email: null,
   isAuthenticated: false,
@@ -81,6 +73,31 @@ const EMPTY_STATE: AuthState = {
   permissions: [],
   loading: true,
   isRealSuperAdmin: false,
+};
+
+export const DEFAULT_PERMISSIONS_CONTEXT: PermissionsContextType = {
+  authState: EMPTY_STATE,
+  can: () => false,
+  hasModuleAccess: () => false,
+  hasSubModuleAccess: () => false,
+  canManageCategory: () => true,
+  hasCategoryRestriction: false,
+  allowedCategories: [],
+  logout: async () => {},
+  loginAs: () => {},
+  impersonateUser: async () => {},
+  resetImpersonation: () => {},
+};
+
+const PermissionsContext = createContext<PermissionsContextType>(DEFAULT_PERMISSIONS_CONTEXT);
+
+export const usePermissions = () => {
+  const ctx = useContext(PermissionsContext);
+  if (!ctx) {
+    console.warn("[usePermissions] usePermissions appelé hors de PermissionsProvider ou désynchronisé lors du rechargement à chaud (HMR). Utilisation du contexte sécurisé par défaut.");
+    return DEFAULT_PERMISSIONS_CONTEXT;
+  }
+  return ctx;
 };
 
 export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -369,9 +386,9 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
         hasModuleAccess('competition', 'update')
       );
     }
-    if (action === 'create_match' || action === 'plan_match') {
+    if (action === 'create_match' || action === 'plan_match' || action === 'schedule_match') {
       if (perms.length > 0) {
-        return perms.includes('sub:matches:plan_match');
+        return perms.includes('sub:matches:plan_match') || perms.includes('schedule_match');
       }
       if (role === 'admin' || role === 'direction' || role === 'coach') {
         return true;

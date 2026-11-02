@@ -357,7 +357,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [subInHalf, setSubInHalf] = useState<'1st' | '2nd'>('2nd');
   const [subInMinute, setSubInMinute] = useState<number | ''>(60);
   const [teamFormation, setTeamFormation] = useState<string>('4-3-3');
-  const [scoutStateDecision, setScoutStateDecision] = useState<'invitation_test' | 'recruit_standby' | 'recruit_now' | 'to_follow'>('to_follow');
+  const [scoutStateDecision, setScoutStateDecision] = useState<'invitation_test' | 'recruit_now' | 'to_follow'>('to_follow');
   const [informationSource, setInformationSource] = useState<'terrain' | 'recommandation_interne' | 'recommandation_externe'>('terrain');
   const [informationSourcePerson, setInformationSourcePerson] = useState('');
 
@@ -1377,7 +1377,6 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     // L'évaluation n'est incluse que si on est en mode 'report_only', si 'À recruter immédiatement' est coché, ou si un vrai titre/contenu de rapport a été renseigné.
     const hasEvalData = mode === 'player_only' ? false : (
       mode === 'report_only' ||
-      scoutStateDecision === 'recruit_standby' ||
       scoutStateDecision === 'recruit_now' ||
       Boolean(
         reportTitle.trim() ||
@@ -1400,7 +1399,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       created_at: evaluation?.created_at || new Date().toISOString(),
       potential_rating: Number(potentialRating) || (candidate?.potential_rating != null ? Number(candidate.potential_rating) : undefined),
       scout_state_decision: scoutStateDecision,
-      report_title: reportTitle.trim() || (scoutStateDecision === 'recruit_standby' ? 'Recommandation : Recrutement Stand-by' : scoutStateDecision === 'recruit_now' ? 'Signalement : À recruter immédiatement' : undefined),
+      report_title: reportTitle.trim() || (scoutStateDecision === 'recruit_now' ? 'Signalement : À recruter immédiatement' : undefined),
       position_evaluated: positionConfig.code || primaryPosition,
       report_data: {
         scout_state_decision: scoutStateDecision,
@@ -1506,7 +1505,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         performance_rating: Number(performanceRating),
         is_starter: isStarter,
         team_formation: teamFormation.trim() || undefined,
-        scout_state_decision: scoutStateDecision === 'recruit_standby' ? 'to_follow' : scoutStateDecision,
+        scout_state_decision: scoutStateDecision,
         is_recruit_now_validated: scoutStateDecision === 'recruit_now',
         information_source: informationSource,
         information_source_person: informationSourcePerson.trim() || undefined,
@@ -1542,7 +1541,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         preferred_locations: preferredLocations.length > 0 ? preferredLocations : undefined,
 
         pipeline_stage: candidate?.pipeline_stage || 'shortlisted',
-        status: (scoutStateDecision === 'recruit_now' ? 'selected' : scoutStateDecision === 'recruit_standby' ? 'on_hold' : scoutStateDecision === 'invitation_test' ? 'in_trial' : 'registered') as CandidateStatus,
+        status: (scoutStateDecision === 'recruit_now' ? 'selected' : scoutStateDecision === 'invitation_test' ? 'in_trial' : 'registered') as CandidateStatus,
       }, evaluationPayload);
       onClose();
     } finally {

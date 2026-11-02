@@ -318,6 +318,14 @@ export interface Database {
           // Penalty shootout scores
           penalty_score_home: number;
           penalty_score_away: number;
+          live_operator_id?: string | null;
+          live_operator_name?: string | null;
+          live_operator_role?: string | null;
+          live_operator_avatar_url?: string | null;
+          live_operator_permissions?: string[] | null;
+          live_started_at?: string | null;
+          live_operator_status?: string | null;
+          live_operator_acknowledged_at?: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -352,6 +360,14 @@ export interface Database {
           added_time_second_half?: number;
           penalty_score_home?: number;
           penalty_score_away?: number;
+          live_operator_id?: string | null;
+          live_operator_name?: string | null;
+          live_operator_role?: string | null;
+          live_operator_avatar_url?: string | null;
+          live_operator_permissions?: string[] | null;
+          live_started_at?: string | null;
+          live_operator_status?: string | null;
+          live_operator_acknowledged_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

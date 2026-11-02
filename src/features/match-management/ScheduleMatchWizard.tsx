@@ -916,6 +916,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
           match_type: setup.match_type,
           pitch_number: pitch_number || null,
           internal_opposition: internalMeta,
+          live_operator: (initialMatch?.lineup as any)?.live_operator ?? null,
           jerseyOverrides: Object.fromEntries(
             Array.from(surclassedTargetMap.entries())
               .filter(([_, s]) => s.target_jersey_number != null)
@@ -933,6 +934,11 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         opponent_lineup: opponentLineup,
         opponent_subs: opponentSubs,
         staff_ids: selectedStaffIds,
+        live_operator_id: initialMatch?.live_operator_id ?? null,
+        live_operator_name: initialMatch?.live_operator_name ?? null,
+        live_operator_role: initialMatch?.live_operator_role ?? null,
+        live_operator_avatar_url: initialMatch?.live_operator_avatar_url ?? null,
+        live_operator_permissions: initialMatch?.live_operator_permissions ?? null,
         referee_central_id: selectedReferees.central_id,
         referee_assistant1_id: selectedReferees.assistant1_id,
         referee_assistant2_id: selectedReferees.assistant2_id,
@@ -985,30 +991,39 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
   };
   const getLeagueName = (id: string) => leagues.find(l => l.id === id)?.name || '—';
   const getStadiumName = (id: string) => stadiums.find(s => s.id === id)?.name || '—';
-  // Map des joueurs surclassés vers l'équipe / catégorie cible de ce match
+  // Ne reprendre que les affectations de cette rencontre, jamais celles d'un autre match.
   const surclassedTargetMap = useMemo(() => {
-    const map = new Map<string, (typeof surclassements)[0]>();
+    const map = new Map<string, any>();
+    const lineupSurclasses = ((initialMatch as any)?.lineup as any)?.surclasses;
+    const lineupEntries: Array<[string, any]> = Array.isArray(lineupSurclasses)
+      ? lineupSurclasses.map((item: any) => [String(item.player_id), item])
+      : Object.entries(lineupSurclasses || {});
+    lineupEntries.forEach(([playerId, assignment]) => {
+      const rosterPlayer = players.find(p => p.id === playerId);
+      if (!rosterPlayer) return;
+      map.set(playerId, {
+        ...assignment,
+        player_id: playerId,
+        original_category: assignment?.original_category || (rosterPlayer as any).category,
+        target_category: assignment?.target_category || initialMatch?.category || setup.category,
+        original_team_id: rosterPlayer.team_id,
+        target_team_id: initialMatch?.team_id || setup.team_id,
+        target_jersey_number: assignment?.target_jersey_number ?? assignment?.jersey_number ?? null,
+      });
+    });
+
     surclassements.forEach(s => {
-      if (s.status !== 'active') return;
+      if (s.status !== 'active' || !initialMatch?.id) return;
+      try {
+        const details = typeof s.notes === 'string' ? JSON.parse(s.notes) : s.notes;
+        if (String(details?.match_id || '') !== String(initialMatch.id)) return;
+      } catch { return; }
       const matchesTeam = setup.team_id ? s.target_team_id === setup.team_id : false;
       const matchesCat = setup.category ? normalizeAgeCategory(s.target_category) === normalizeAgeCategory(setup.category) : false;
-      if (matchesTeam || matchesCat) {
-        map.set(s.player_id, s);
-      }
+      if (matchesTeam || matchesCat) map.set(s.player_id, s);
     });
     return map;
-  }, [surclassements, setup.team_id, setup.category]);
-
-  // Map de tous les surclassements actifs club par playerId
-  const activeSurclassementByPlayerId = useMemo(() => {
-    const map = new Map<string, (typeof surclassements)[0]>();
-    surclassements.forEach(s => {
-      if (s.status === 'active') {
-        map.set(s.player_id, s);
-      }
-    });
-    return map;
-  }, [surclassements]);
+  }, [surclassements, setup.team_id, setup.category, initialMatch, players]);
 
   const getPlayerById = (id: string) => {
     const p = players.find(pl => pl.id === id);
@@ -1954,7 +1969,6 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                 const isSub = substitutes.includes(p.id);
                                 const positionColor = getPositionColor(p.position);
                                 const surclass = surclassedTargetMap.get(p.id);
-                                const originSurclass = !surclass ? activeSurclassementByPlayerId.get(p.id) : null;
                                 const displayJersey = surclass?.target_jersey_number ?? p.jersey_number;
                                 const isSousClass = surclass ? isLowerCategory(surclass.original_category, surclass.target_category) : false;
                                 return (
@@ -1999,18 +2013,6 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                             {isSousClass ? '⬇️ Sous-classé' : '⭐ Surclassé'} ({surclass.original_category})
                                           </span>
                                         )}
-                                        {originSurclass && (() => {
-                                          const isOriginSousClass = isLowerCategory(originSurclass.original_category, originSurclass.target_category);
-                                          return (
-                                            <span className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${
-                                              isStarter
-                                                ? 'bg-white/20 text-white'
-                                                : 'bg-secondary text-muted-foreground'
-                                            }`}>
-                                              {isOriginSousClass ? '↓' : '↑'} {originSurclass.target_category}
-                                            </span>
-                                          );
-                                        })()}
                                       </div>
                                       <p className={`text-[8px] font-bold opacity-60 ${isStarter ? 'text-white/80' : 'text-muted-foreground'}`}>
                                         #{displayJersey} • {p.position} {surclass ? `• Origine : ${surclass.original_category}` : ''}

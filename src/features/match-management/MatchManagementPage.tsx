@@ -86,19 +86,22 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
       : (isFriendly ? 'Match Amical' : (league?.name || (match as any).league?.name || 'Compétition Officielle'));
 
    const getVariantStyles = () => {
+      if (isLive) {
+         return isSelected 
+            ? 'bg-gradient-to-br from-red-500/15 via-white to-red-500/10 border-red-500 shadow-2xl shadow-red-500/25 ring-2 ring-red-500' 
+            : 'bg-gradient-to-br from-red-50 via-white to-red-50/40 border-red-400 hover:border-red-500 shadow-lg shadow-red-500/15 ring-1 ring-red-400/60';
+      }
       switch (variant) {
-         case 'live':
-            return isSelected 
-               ? 'bg-red-50/50 border-red-400 shadow-lg shadow-red-500/10' 
-               : 'bg-white border-red-200 hover:border-red-300';
          case 'upcoming':
             return isSelected 
-               ? 'bg-emerald-50/50 border-emerald-400 shadow-lg shadow-emerald-500/10' 
-               : 'bg-white border-emerald-200 hover:border-emerald-300';
+               ? 'bg-emerald-50/50 border-emerald-500 shadow-lg shadow-emerald-500/10 ring-2 ring-emerald-400' 
+               : 'bg-white border-slate-200 hover:border-emerald-300';
          case 'past':
             return isSelected 
                ? 'bg-slate-50 border-slate-400 shadow-lg' 
                : 'bg-white border-slate-200 hover:border-slate-300';
+         default:
+            return 'bg-white border-slate-200';
       }
    };
 
@@ -135,9 +138,9 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
 
       return (
          <div className="flex flex-col items-center">
-            <div className={`flex items-center gap-1.5 text-base font-black tabular-nums ${isLive ? 'text-red-600 scale-105' : 'text-slate-900'}`}>
+            <div className={`flex items-center gap-2 text-xl font-black tabular-nums ${isLive ? 'text-red-600 scale-110 animate-pulse' : 'text-slate-900'}`}>
                <span>{leftScore}</span>
-               <span className={isLive ? 'text-red-400 font-bold' : 'text-muted-foreground'}>-</span>
+               <span className={isLive ? 'text-red-500 font-bold' : 'text-muted-foreground'}>-</span>
                <span>{rightScore}</span>
             </div>
             {hasPenalties && (
@@ -166,23 +169,35 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
             className="absolute top-3 left-3 z-10 p-1 cursor-pointer"
             title={isMultiSelected ? "Désélectionner" : "Sélectionner ce match"}
          >
-            <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${isMultiSelected ? 'bg-primary border-primary text-white shadow-sm scale-110' : 'bg-white/80 border-slate-300 text-transparent group-hover:border-primary'}`}>
+            <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${isMultiSelected ? 'bg-[#FF3737] border-[#FF3737] text-white shadow-sm scale-110' : 'bg-white/80 border-slate-300 text-transparent group-hover:border-primary'}`}>
                <Check className="w-3.5 h-3.5" />
             </div>
          </div>
 
-         {/* Type de match (Amical vs Interne vs Nom de Ligue) badge en haut à droite */}
-         <div className="absolute top-3 right-3 z-10 pointer-events-none">
-            {isInternal ? (
-               <Badge className="bg-purple-100 text-purple-900 border-purple-300 text-[8px] font-black uppercase px-2 py-0.5 shadow-sm">
+         {/* Catégorie FUS mise en évidence PROÉMINENTE (US-UX-126) */}
+         <div className="absolute top-3 left-11 z-10">
+            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-[#FF3737] text-white shadow-md border border-white/20">
+               {match.category || 'Équipe'}
+            </span>
+         </div>
+
+         {/* Statut LIVE ou Type de match badge en haut à droite */}
+         <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+            {isLive ? (
+               <Badge className="bg-red-600 text-white text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full shadow-md shadow-red-600/30 animate-pulse flex items-center gap-1 border border-red-400">
+                  <Radio className="w-3 h-3 animate-spin" />
+                  🔴 LIVE
+               </Badge>
+            ) : isInternal ? (
+               <Badge className="bg-purple-100 text-purple-900 border-purple-300 text-[9px] font-black uppercase px-2.5 py-0.5 shadow-xs">
                   ⚔️ Interne
                </Badge>
             ) : isFriendly ? (
-               <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-[8px] font-black uppercase px-2 py-0.5 shadow-sm">
+               <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-[9px] font-black uppercase px-2.5 py-0.5 shadow-xs">
                   🤝 Amical
                </Badge>
             ) : (
-               <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 text-[8px] font-black uppercase px-2 py-0.5 shadow-sm flex items-center gap-1.5 truncate max-w-[150px]" title={leagueName}>
+               <Badge className="bg-emerald-100 text-emerald-900 border-emerald-300 text-[9px] font-black uppercase px-2.5 py-0.5 shadow-xs flex items-center gap-1.5 truncate max-w-[150px]" title={leagueName}>
                   {league?.logo_url ? (
                      <img src={league.logo_url} alt="" className="w-3.5 h-3.5 object-contain shrink-0" />
                   ) : (
@@ -193,50 +208,40 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
             )}
          </div>
 
-         <div className="flex items-center justify-between w-full pt-4">
+         <div className="flex items-center justify-between w-full pt-6">
             {/* Club Domicile (Gauche) */}
-            <div className="flex flex-col items-center gap-1 w-1/3">
+            <div className="flex flex-col items-center gap-1.5 w-1/3">
                <div className="relative">
-                  <div className={`w-14 h-14 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center p-1.5 shadow-sm transition-all overflow-hidden ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
+                  <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center p-1.5 shadow-sm transition-all overflow-hidden ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
                      {leftClubLogo ? (
                         <img src={leftClubLogo} alt="" className="w-full h-full object-contain rounded-full" />
                      ) : (
-                        <div className="bg-yellow-500 w-full h-full text-white font-black text-[12px] flex items-center justify-center rounded-full">
+                        <div className="bg-yellow-500 w-full h-full text-white font-black text-xs flex items-center justify-center rounded-full">
                            {leftIsFus ? 'FUS' : leftClubName.substring(0, 3).toUpperCase()}
                         </div>
                      )}
                   </div>
-                  {leftIsFus && match.category && (
-                     <span className="absolute -bottom-1 -right-1 bg-primary text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm leading-none">
-                        {match.category}
-                     </span>
-                  )}
-                  {!leftIsFus && league?.logo_url && (
-                     <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white p-0.5 border-2 border-slate-200 shadow-sm flex items-center justify-center overflow-hidden" title={league.name}>
-                        <img src={league.logo_url} alt="" className="w-full h-full object-contain" />
-                     </div>
-                  )}
                </div>
-               <span className="text-[10px] font-black uppercase tracking-tight text-foreground truncate max-w-full text-center">
+               <span className="text-xs font-black uppercase tracking-tight text-foreground truncate max-w-full text-center">
                   {leftClubName}
                </span>
-               <span className="text-[8px] font-bold text-slate-400 uppercase -mt-0.5">
+               <span className="text-[9px] font-bold text-slate-400 uppercase -mt-1">
                   DOM
                </span>
             </div>
 
             <div className="flex flex-col items-center justify-center w-1/3 text-center">
                {hasScore ? getScoreBadge() : (
-                  <span className="text-xl font-black text-slate-300">-</span>
+                  <span className="text-2xl font-black text-slate-300">-</span>
                )}
-               <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-2 opacity-80 whitespace-nowrap">
-                  {match.match_date}
+               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mt-2 opacity-90 whitespace-nowrap">
+                  {match.match_date} {match.match_time ? `• ${match.match_time.slice(0, 5)}` : ''}
                </p>
-               <div className="mt-1 flex flex-col items-center gap-0.5">
-                  <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider">
+               <div className="mt-1 flex flex-col items-center gap-1">
+                  <span className="bg-[#FF3737]/10 text-[#FF3737] px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider">
                      {match.category || 'Équipe'}
                   </span>
-                  <div className="flex items-center justify-center gap-1 text-[8px] font-black uppercase tracking-wider text-muted-foreground">
+                  <div className="flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-wider text-muted-foreground">
                      {league?.logo_url && (
                         <img src={league.logo_url} alt="" className="w-3 h-3 object-contain shrink-0 inline" />
                      )}
@@ -246,44 +251,34 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
                   </div>
                </div>
                {isLive && (
-                  <Badge className="mt-1 bg-red-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm shadow-red-500/20">
-                     LIVE
+                  <Badge className="mt-1.5 bg-red-600 text-white text-[9px] font-black px-2.5 py-0.5 rounded-full animate-pulse shadow-md shadow-red-500/30">
+                     🔴 EN DIRECT
                   </Badge>
                )}
             </div>
 
             {/* Club Extérieur (Droite) */}
-            <div className="flex flex-col items-center gap-1 w-1/3">
+            <div className="flex flex-col items-center gap-1.5 w-1/3">
                <div className="relative">
-                  <div className={`w-14 h-14 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center p-1.5 shadow-sm transition-all overflow-hidden ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
+                  <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center p-1.5 shadow-sm transition-all overflow-hidden ${isSelected ? 'ring-2 ring-primary/20' : ''}`}>
                      {rightClubLogo ? (
                         <img src={rightClubLogo} alt="" className="w-full h-full object-contain rounded-full" />
                      ) : (
-                        <div className="bg-yellow-500 w-full h-full text-white font-black text-[12px] flex items-center justify-center rounded-full">
+                        <div className="bg-slate-700 w-full h-full text-white font-black text-xs flex items-center justify-center rounded-full">
                            {rightIsFus ? 'FUS' : rightClubName.substring(0, 3).toUpperCase()}
                         </div>
                      )}
                   </div>
-                  {rightIsFus && match.category && (
-                     <span className="absolute -bottom-1 -right-1 bg-primary text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm leading-none">
-                        {match.category}
-                     </span>
-                  )}
-                  {!rightIsFus && league?.logo_url && (
-                     <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white p-0.5 border-2 border-slate-200 shadow-sm flex items-center justify-center overflow-hidden" title={league.name}>
-                        <img src={league.logo_url} alt="" className="w-full h-full object-contain" />
-                     </div>
-                  )}
                </div>
-               <span className="text-[10px] font-black uppercase tracking-tight text-foreground truncate max-w-full text-center">
+               <span className="text-xs font-black uppercase tracking-tight text-foreground truncate max-w-full text-center">
                   {rightClubName}
                </span>
-               <span className="text-[8px] font-bold text-slate-400 uppercase -mt-0.5">
+               <span className="text-[9px] font-bold text-slate-400 uppercase -mt-1">
                   EXT
                </span>
             </div>
          </div>
-         
+          
          <div className="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-slate-100 w-full">
             <div className="flex items-center gap-1.5">
                {match.match_phase === 'won' && (
@@ -297,6 +292,39 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
                      <Video className="w-3.5 h-3.5" />
                   </div>
                )}
+               {Boolean((match as any).live_operator_name || (match as any).lineup?.live_operator?.name) && (() => {
+                  const opName = (match as any).live_operator_name || (match as any).lineup?.live_operator?.name;
+                  const opPhoto = (match as any).live_operator_avatar_url || (match as any).lineup?.live_operator?.avatar_url;
+                  const opRole = (match as any).live_operator_role || (match as any).lineup?.live_operator?.role || 'Opérateur Live';
+                  const initials = (opName || 'OP').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+                  return (
+                     <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-900 rounded-xl border border-slate-700 shadow-sm text-white" title={`Opérateur Fus-App : ${opName} (${opRole})`}>
+                        <div className="relative shrink-0">
+                           {opPhoto ? (
+                              <img src={opPhoto} alt={opName} className="w-4 h-4 rounded-full object-cover border border-slate-600 shrink-0" />
+                           ) : (
+                              <div className="w-4 h-4 rounded-full bg-red-600 text-white font-black text-[7.5px] flex items-center justify-center border border-red-400 shrink-0">
+                                 {initials}
+                              </div>
+                           )}
+                           <span className="absolute -bottom-1 -right-1 text-[7px]" title="Opéré avec Fus-App">📱</span>
+                        </div>
+                        <div className="flex flex-col text-left min-w-0">
+                           <div className="flex items-center gap-1">
+                              <span className="text-[8.5px] font-black text-slate-100 truncate max-w-[95px] leading-tight">
+                                 {opName}
+                              </span>
+                              <span className="text-[6.5px] font-black bg-red-500/20 text-red-300 border border-red-500/30 px-1 py-0.2 rounded uppercase leading-none">
+                                 Fus-App
+                              </span>
+                           </div>
+                           <span className="text-[7.5px] font-semibold text-slate-400 truncate max-w-[105px] leading-tight">
+                              {opRole}
+                           </span>
+                        </div>
+                     </div>
+                  );
+               })()}
                {(Boolean(match.referee_central_id || (match.referees_assigned as any)?.central_id || (match as any).referee_commissaire_id || (match.referees_assigned as any)?.commissaire_id)) && (
                   <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-600 bg-slate-100 px-2 py-1 rounded-md border border-slate-200" title="Officiels désignés pour ce match">
                      <UserCheck className="w-3 h-3 text-primary shrink-0" />
@@ -359,7 +387,7 @@ const MatchManagementPage: React.FC = () => {
    const [selectedMatchIds, setSelectedMatchIds] = useState<Set<string>>(new Set());
    const [editingMatch, setEditingMatch] = useState<Match | null>(null);
    const [activeTab, setActiveTab] = useState<'details' | 'preparation' | 'live' | 'wizard' | 'stats' | 'overview'>('details');
-   const [listFilter, setListFilter] = useState<'all' | 'scheduled' | 'finished' | 'today'>('all');
+   const [listFilter, setListFilter] = useState<'today' | 'upcoming' | 'finished' | 'all'>('all');
    const [deletingId, setDeletingId] = useState<string | null>(null);
    const [deleteModalState, setDeleteModalState] = useState<{
       isOpen: boolean;
@@ -373,18 +401,18 @@ const MatchManagementPage: React.FC = () => {
    const [categoryFilter, setCategoryFilter] = useState<string>('All');
 
    const availableCategoryFilters = useMemo(() => {
-      const allowed = PLAYER_CATEGORIES.filter(cat => canManageCategory(cat));
+      const allowed = PLAYER_CATEGORIES.filter(cat => (canManageCategory ? canManageCategory(cat) : true));
       if (allowed.length < PLAYER_CATEGORIES.length && allowed.length > 0) {
          return allowed.length === 1 ? allowed : ['All', ...allowed];
       }
       return ['All', ...PLAYER_CATEGORIES];
-   }, [canManageCategory, authState.userCategories]);
+   }, [canManageCategory, authState?.userCategories]);
 
    useEffect(() => {
-      if (authState.userCategories && authState.userCategories.length === 1) {
+      if (authState?.userCategories && authState.userCategories.length === 1) {
          setCategoryFilter(normalizeAgeCategory(authState.userCategories[0]));
       }
-   }, [authState.userCategories]);
+   }, [authState?.userCategories]);
    const [leagueFilter, setLeagueFilter] = useState<string>('All');
    const [dateFilter, setDateFilter] = useState<string>('');
    const [editingVideoUrl, setEditingVideoUrl] = useState<string>('');
@@ -536,7 +564,13 @@ const MatchManagementPage: React.FC = () => {
    // Auto-select first match once loaded
    React.useEffect(() => {
       if (!selectedMatchId && matches.length > 0) {
-         const first = matches.find(m => m.status === (listFilter === 'today' ? 'live' : listFilter))?.id || matches[0].id;
+         const todayStrLocal = new Date().toLocaleDateString('en-CA');
+         const first = matches.find(m => {
+            if (listFilter === 'today') return m.status === 'live' || m.match_date === todayStrLocal;
+            if (listFilter === 'upcoming') return m.status === 'scheduled';
+            if (listFilter === 'finished') return m.status === 'finished';
+            return true;
+         })?.id || matches[0].id;
          setSelectedMatchId(first);
       }
    }, [matches, selectedMatchId, listFilter]);
@@ -630,6 +664,41 @@ const MatchManagementPage: React.FC = () => {
       return counts;
    }, [matches, leagueFilter, mainClub, canManageCategory]);
 
+   const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
+
+   const chronoCounts = useMemo(() => {
+      let todayCount = 0;
+      let upcomingCount = 0;
+      let finishedCount = 0;
+      let liveCount = 0;
+
+      matches.forEach(m => {
+         const normCat = normalizeAgeCategory(m.category);
+         if (!canManageCategory(normCat)) return;
+         if (categoryFilter !== 'All' && normCat !== categoryFilter) return;
+         if (!matchBelongsToLeague(m, leagueFilter)) return;
+
+         if (m.status === 'live') {
+            liveCount++;
+            todayCount++;
+         } else if (m.match_date === todayStr) {
+            todayCount++;
+         } else if (m.status === 'scheduled' || m.match_date > todayStr) {
+            upcomingCount++;
+         } else if (m.status === 'finished' || m.match_date < todayStr) {
+            finishedCount++;
+         }
+      });
+
+      return {
+         today: todayCount,
+         upcoming: upcomingCount,
+         finished: finishedCount,
+         live: liveCount,
+         all: todayCount + upcomingCount + finishedCount,
+      };
+   }, [matches, categoryFilter, leagueFilter, canManageCategory, todayStr]);
+
    const filteredMatches = useMemo(() => {
       return matches.filter(m => {
          const normCat = normalizeAgeCategory(m.category);
@@ -648,13 +717,32 @@ const MatchManagementPage: React.FC = () => {
 
          if (listFilter === 'all') return true;
 
-         const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
          if (listFilter === 'today') {
-            return m.match_date === todayStr;
+            return m.match_date === todayStr || m.status === 'live';
          }
-         return m.status === listFilter;
+
+         if (listFilter === 'upcoming') {
+            return (m.status === 'scheduled' || m.status === 'draft') && m.match_date >= todayStr && m.status !== 'live';
+         }
+
+         if (listFilter === 'finished') {
+            return m.status === 'finished' || (m.status !== 'live' && m.match_date < todayStr);
+         }
+
+         return true;
+      }).sort((a, b) => {
+         // Les matchs en direct passent TOUJOURS en premier
+         if (a.status === 'live' && b.status !== 'live') return -1;
+         if (b.status === 'live' && a.status !== 'live') return 1;
+
+         if (a.match_date !== b.match_date) {
+            return listFilter === 'finished'
+               ? b.match_date.localeCompare(a.match_date)
+               : a.match_date.localeCompare(b.match_date);
+         }
+         return (a.match_time || '').localeCompare(b.match_time || '');
       });
-   }, [matches, categoryFilter, listFilter, leagueFilter, dateFilter, mainClub, canManageCategory]);
+   }, [matches, categoryFilter, listFilter, leagueFilter, dateFilter, canManageCategory, todayStr]);
 
    const isAllSelected = useMemo(() => {
       return filteredMatches.length > 0 && filteredMatches.every(m => selectedMatchIds.has(m.id));
@@ -764,72 +852,220 @@ const MatchManagementPage: React.FC = () => {
                      </span>
                   </nav>
 
-                  {/* Premium Dashboard Header */}
-                  <div className="relative bg-gradient-to-r from-blue-900 to-indigo-900 rounded-3xl sm:rounded-[3rem] px-4 sm:px-6 lg:px-10 py-6 sm:py-8 lg:py-12 text-white overflow-hidden shadow-2xl border-b-4 sm:border-b-[8px] border-blue-500/20">
-                     <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: 'repeating-linear-gradient(45deg,#fff 0,#fff 1px,transparent 0,transparent 50%)', backgroundSize: '20px 20px' }} />
-                     <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6 lg:gap-8">
-                        <div className="flex items-center gap-4 sm:gap-6 lg:gap-8">
-                           <div className="w-12 h-12 sm:w-16 sm:h-16 lg:w-20 lg:h-20 rounded-2xl sm:rounded-3xl lg:rounded-[2.5rem] bg-white/10 flex items-center justify-center text-blue-400 shadow-2xl border border-white/20 ring-4 sm:ring-6 lg:ring-8 ring-white/5 shrink-0">
-                              <Activity className="w-6 h-6 sm:w-8 sm:h-8 lg:w-10 lg:h-10" />
-                           </div>
-                           <div className="min-w-0">
-                              <h1 className="text-2xl sm:text-3xl lg:text-5xl font-black tracking-tighter uppercase italic leading-none">Centre de Matchs</h1>
-                              <p className="text-white/40 text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] sm:tracking-[0.4em] mt-2 sm:mt-3">Gestion des rencontres & analyses</p>
-                           </div>
+                  {/* Sleek Modern Control Bar (replaces heavy blue header, retains view mode switchers & planning button) */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-sm">
+                     <div className="flex items-center gap-3 sm:gap-4">
+                        <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-[#FF3737]/10 flex items-center justify-center text-[#FF3737] shadow-inner shrink-0 border border-[#FF3737]/20">
+                           <Activity className="w-6 h-6" />
                         </div>
-                        <div className="flex items-center gap-2">
-                             <div className="flex items-center bg-white/10 p-1 rounded-xl sm:rounded-2xl border border-white/20 shadow-2xl shrink-0">
-                               <button
-                                  onClick={() => setViewMode('planning')}
-                                  className={`h-9 sm:h-12 px-3 sm:px-5 rounded-lg sm:rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-2 transition-all ${
-                                     viewMode === 'planning' 
-                                        ? 'bg-white text-blue-950 shadow-lg' 
-                                        : 'text-white/70 hover:text-white hover:bg-white/5'
-                                  }`}
-                                  title="Vue calendrier mensuelle interactive"
-                               >
-                                  <Calendar className="w-3.5 h-3.5 shrink-0" />
-                                  <span>Calendrier</span>
-                               </button>
-                               <button
-                                  onClick={() => setViewMode('grid')}
-                                  className={`h-9 sm:h-12 px-3 sm:px-5 rounded-lg sm:rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-2 transition-all ${
-                                     viewMode === 'grid' 
-                                        ? 'bg-white text-blue-950 shadow-lg' 
-                                        : 'text-white/70 hover:text-white hover:bg-white/5'
-                                  }`}
-                                  title="Vue en cartes de match"
-                               >
-                                  <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
-                                  <span>Grille</span>
-                               </button>
-                               <button
-                                  onClick={() => setViewMode('table')}
-                                  className={`h-9 sm:h-12 px-3 sm:px-5 rounded-lg sm:rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-2 transition-all ${
-                                     viewMode === 'table' 
-                                        ? 'bg-white text-blue-950 shadow-lg' 
-                                        : 'text-white/70 hover:text-white hover:bg-white/5'
-                                  }`}
-                                  title="Vue en tableau condensé"
-                               >
-                                  <Table className="w-3.5 h-3.5 shrink-0" />
-                                  <span>Tableau</span>
-                               </button>
-                            </div>
-                           {can('create_match') && (
-                             <Button onClick={() => navigate('/matches/new' + (categoryFilter !== 'All' ? `?category=${encodeURIComponent(categoryFilter)}` : ''))} className="bg-white hover:bg-white/90 text-blue-900 h-11 sm:h-14 lg:h-16 px-4 sm:px-6 lg:px-10 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] gap-2 sm:gap-4 shadow-2xl transition-all hover:scale-105 active:scale-95 group shrink-0">
-                                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:rotate-90 transition-transform duration-500" /> 
-                                <span className="hidden sm:inline">Planifier un Match</span>
-                                <span className="sm:hidden">Planifier</span>
-                             </Button>
-                           )}
+                        <div className="min-w-0">
+                           <div className="flex items-center gap-2.5 flex-wrap">
+                              <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-slate-900 uppercase italic leading-none">
+                                 Centre de Matchs
+                              </h1>
+                              {chronoCounts.live > 0 && (
+                                 <span className="inline-flex items-center gap-1.5 bg-red-600 text-white font-black text-[10px] sm:text-xs uppercase px-2.5 py-0.5 rounded-full shadow-sm animate-pulse">
+                                    <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                                    {chronoCounts.live} EN DIRECT
+                                 </span>
+                              )}
+                           </div>
+                           <p className="text-slate-400 text-[10px] sm:text-[11px] font-black uppercase tracking-widest mt-1">
+                              Gestion des rencontres & analyses FUS
+                           </p>
                         </div>
+                     </div>
+
+                     <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap sm:flex-nowrap">
+                        {/* View Mode Switcher (Calendrier, Grille, Tableau) */}
+                        <div className="flex items-center bg-slate-100 p-1 rounded-xl sm:rounded-2xl border border-slate-200 shrink-0">
+                           <button
+                              type="button"
+                              onClick={() => setViewMode('planning')}
+                              className={`h-9 sm:h-11 px-3 sm:px-4 rounded-lg sm:rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-2 transition-all ${
+                                 viewMode === 'planning'
+                                    ? 'bg-white text-slate-900 shadow-md font-black'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                              }`}
+                              title="Vue calendrier mensuelle interactive"
+                           >
+                              <Calendar className="w-3.5 h-3.5 shrink-0 text-[#FF3737]" />
+                              <span>Calendrier</span>
+                           </button>
+                           <button
+                              type="button"
+                              onClick={() => setViewMode('grid')}
+                              className={`h-9 sm:h-11 px-3 sm:px-4 rounded-lg sm:rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-2 transition-all ${
+                                 viewMode === 'grid'
+                                    ? 'bg-white text-slate-900 shadow-md font-black'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                              }`}
+                              title="Vue en cartes de match"
+                           >
+                              <LayoutGrid className="w-3.5 h-3.5 shrink-0 text-[#FF3737]" />
+                              <span>Grille</span>
+                           </button>
+                           <button
+                              type="button"
+                              onClick={() => setViewMode('table')}
+                              className={`h-9 sm:h-11 px-3 sm:px-4 rounded-lg sm:rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-2 transition-all ${
+                                 viewMode === 'table'
+                                    ? 'bg-white text-slate-900 shadow-md font-black'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                              }`}
+                              title="Vue en tableau condensé"
+                           >
+                              <Table className="w-3.5 h-3.5 shrink-0 text-[#FF3737]" />
+                              <span>Tableau</span>
+                           </button>
+                        </div>
+
+                        {/* Planifier un match Button */}
+                        {can('create_match') && (
+                           <Button
+                              onClick={() => navigate('/matches/new' + (categoryFilter !== 'All' ? `?category=${encodeURIComponent(categoryFilter)}` : ''))}
+                              className="bg-[#FF3737] hover:bg-[#e02e2e] text-white h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-[11px] gap-2 shadow-lg shadow-red-500/25 transition-all hover:scale-[1.02] active:scale-95 group shrink-0"
+                           >
+                              <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
+                              <span className="hidden sm:inline">Planifier un Match</span>
+                              <span className="sm:hidden">Planifier</span>
+                           </Button>
+                        )}
                      </div>
                   </div>
 
                   {/* Filters Bar */}
                   <div className="flex flex-col gap-3 sm:gap-4">
-                     {/* 1. Competition Logo Filters Bar */}
+                     {/* 1. Catégories d'âge (Mise en valeur UX proéminente, boutons agrandis, FUS Rouge) */}
+                     <div className="bg-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs flex flex-col gap-2.5">
+                        <div className="flex items-center justify-between px-1">
+                           <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                              <Users className="w-4 h-4 text-[#FF3737]" />
+                              Catégories d'Équipe
+                           </span>
+                           {categoryFilter !== 'All' && (
+                              <button
+                                 onClick={() => setCategoryFilter('All')}
+                                 className="text-[10px] font-black text-[#FF3737] hover:underline uppercase flex items-center gap-1 transition-all"
+                              >
+                                 <X className="w-3 h-3" /> Réinitialiser
+                              </button>
+                           )}
+                        </div>
+                        <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-hide -mx-2 px-2 sm:mx-0 sm:px-0">
+                           {availableCategoryFilters.map(cat => {
+                              const count = cat === 'All' ? filteredMatches.length : (categoryCounts[cat] || 0);
+                              const isSelected = categoryFilter === cat;
+                              return (
+                                 <button
+                                    key={cat}
+                                    onClick={() => setCategoryFilter(cat)}
+                                    className={`h-11 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl font-black uppercase tracking-wider text-xs sm:text-sm flex items-center gap-2.5 transition-all shrink-0 ${
+                                       isSelected
+                                          ? 'bg-[#FF3737] text-white shadow-lg shadow-red-500/30 scale-[1.02] border-2 border-[#FF3737]'
+                                          : count === 0
+                                             ? 'bg-slate-50 text-slate-300 border border-slate-200/50 hover:bg-slate-100'
+                                             : 'bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-200 hover:border-slate-300 shadow-xs'
+                                    }`}
+                                 >
+                                    <span>{cat === 'All' ? 'Toutes' : cat}</span>
+                                    <span className={`text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                       isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-600'
+                                    }`}>
+                                       {count}
+                                    </span>
+                                 </button>
+                              );
+                           })}
+                        </div>
+                     </div>
+
+                     {/* 2. Filtres Chronologiques (Aujourd'hui, À venir, Passé, Tout) + Date + Tout Sélectionner */}
+                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
+                        <div className="bg-slate-100 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl flex border border-slate-200 shadow-inner overflow-x-auto">
+                           {[
+                              { id: 'today', label: "Aujourd'hui", icon: Timer, shortLabel: 'Auj', count: chronoCounts.today, isLive: chronoCounts.live > 0 },
+                              { id: 'upcoming', label: 'À venir', icon: Calendar, shortLabel: 'À venir', count: chronoCounts.upcoming },
+                              { id: 'finished', label: 'Passé', icon: History, shortLabel: 'Passé', count: chronoCounts.finished },
+                              { id: 'all', label: 'Tout', icon: LayoutGrid, shortLabel: 'Tout', count: chronoCounts.all },
+                           ].map(f => {
+                              const isSelected = listFilter === f.id;
+                              return (
+                                 <button
+                                    key={f.id}
+                                    onClick={() => {
+                                       const nextFilter = f.id as 'today' | 'upcoming' | 'finished' | 'all';
+                                       setListFilter(nextFilter);
+                                       if (viewMode === 'planning') {
+                                          setViewMode('grid');
+                                       }
+                                    }}
+                                    className={`flex-1 sm:flex-none px-3.5 sm:px-5 py-2.5 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all gap-2 flex items-center justify-center shrink-0 ${
+                                       isSelected 
+                                          ? 'bg-slate-900 text-white shadow-md' 
+                                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                    }`}
+                                 >
+                                    <f.icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-[#FF3737]' : ''}`} />
+                                    <span className="hidden sm:inline">{f.label}</span>
+                                    <span className="sm:hidden">{f.shortLabel}</span>
+                                    {f.isLive ? (
+                                       <span className="bg-red-600 text-white font-black text-[9px] px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1 shadow-xs">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                                          LIVE
+                                       </span>
+                                    ) : (
+                                       <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                          {f.count}
+                                       </span>
+                                    )}
+                                 </button>
+                              );
+                           })}
+                        </div>
+
+                        <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+                           {/* Date Filter */}
+                           <div className="flex items-center gap-2 bg-white p-1 sm:p-1.5 px-3 rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm shrink-0">
+                              <Calendar className="w-4 h-4 text-[#FF3737] shrink-0" />
+                              <input
+                                 type="date"
+                                 value={dateFilter}
+                                 onChange={(e) => setDateFilter(e.target.value)}
+                                 className="bg-transparent border-none text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-slate-700 outline-none focus:ring-0 cursor-pointer"
+                                 placeholder="Choisir une date"
+                              />
+                              {dateFilter && (
+                                 <button 
+                                    onClick={() => setDateFilter('')}
+                                    className="w-6 h-6 flex items-center justify-center bg-slate-100 hover:bg-red-50 hover:text-red-500 rounded-full transition-all text-slate-400"
+                                 >
+                                    <X className="w-3.5 h-3.5" />
+                                 </button>
+                              )}
+                           </div>
+
+                           {/* Tout Sélectionner Button */}
+                           <button
+                              type="button"
+                              onClick={toggleSelectAll}
+                              className={`h-10 sm:h-11 px-3 sm:px-4 rounded-xl border text-[10px] font-black uppercase tracking-wider flex items-center gap-2 transition-all shrink-0 ${
+                                 isAllSelected 
+                                    ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
+                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-sm'
+                              }`}
+                           >
+                              {isAllSelected ? <CheckSquare className="w-4 h-4 text-[#FF3737]" /> : <Square className="w-4 h-4" />}
+                              <span className="hidden sm:inline">{isAllSelected ? 'Tout Décocher' : 'Tout Sélectionner'}</span>
+                              <span className="sm:hidden">{isAllSelected ? 'Décocher' : 'Sélectionner'}</span>
+                              <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full text-[9px] font-black">
+                                 {selectedMatchIds.size}/{filteredMatches.length}
+                              </span>
+                           </button>
+                        </div>
+                     </div>
+
+                     {/* 3. Competition Logo Filters Bar */}
                      <div className="flex flex-col gap-1.5">
                         <div className="flex items-center justify-between px-1">
                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
@@ -841,7 +1077,7 @@ const MatchManagementPage: React.FC = () => {
                                  onClick={() => setLeagueFilter('All')}
                                  className="text-[9px] font-black text-primary hover:underline uppercase flex items-center gap-1 transition-all"
                               >
-                                 <X className="w-3 h-3" /> Réinitialiser le filtre
+                                 <X className="w-3 h-3" /> Réinitialiser
                               </button>
                            )}
                         </div>
@@ -851,7 +1087,7 @@ const MatchManagementPage: React.FC = () => {
                               onClick={() => setLeagueFilter('All')}
                               className={`flex items-center gap-2.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border transition-all shrink-0 ${
                                  leagueFilter === 'All'
-                                    ? 'bg-gradient-to-r from-blue-900 to-indigo-950 text-white border-blue-900 shadow-md shadow-blue-900/20 scale-[1.02]'
+                                    ? 'bg-slate-900 text-white border-slate-900 shadow-md scale-[1.02]'
                                     : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/80 hover:border-slate-300 shadow-sm'
                               }`}
                            >
@@ -880,7 +1116,7 @@ const MatchManagementPage: React.FC = () => {
                                     onClick={() => setLeagueFilter(isSelected ? 'All' : l.id)}
                                     className={`flex items-center gap-2.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border transition-all shrink-0 group ${
                                        isSelected
-                                          ? 'bg-primary text-white border-primary shadow-lg shadow-primary/25 scale-[1.02]'
+                                          ? 'bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-900/25 scale-[1.02]'
                                           : count === 0
                                              ? 'bg-white/60 text-slate-400 border-slate-200/60 opacity-60 hover:opacity-100 hover:bg-white hover:text-slate-700'
                                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/80 hover:border-slate-300 shadow-sm'
@@ -893,7 +1129,7 @@ const MatchManagementPage: React.FC = () => {
                                        {l.logo_url ? (
                                           <img src={l.logo_url} alt={l.name} className="w-full h-full object-contain" />
                                        ) : (
-                                          <Trophy className={`w-4 h-4 ${isSelected ? 'text-primary' : 'text-amber-500'}`} />
+                                          <Trophy className={`w-4 h-4 ${isSelected ? 'text-amber-400' : 'text-amber-500'}`} />
                                        )}
                                     </div>
                                     <div className="flex flex-col text-left">
@@ -961,100 +1197,50 @@ const MatchManagementPage: React.FC = () => {
                            )}
                         </div>
                      </div>
-
-                     {/* 2. Category filters directly below competitions - scrollable on mobile */}
-                     <div className="flex flex-col gap-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-1">
-                           Catégorie d'âge
-                        </span>
-                        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0">
-                           {availableCategoryFilters.map(cat => {
-                              const count = cat === 'All' ? filteredMatches.length : (categoryCounts[cat] || 0);
-                              return (
-                              <Button
-                                 key={cat}
-                                 variant={categoryFilter === cat ? 'default' : 'ghost'}
-                                 onClick={() => setCategoryFilter(cat)}
-                                 className={`rounded-xl sm:rounded-[1.2rem] px-3 sm:px-4 lg:px-6 font-black uppercase tracking-widest text-[9px] sm:text-[10px] h-10 sm:h-11 transition-all gap-1.5 sm:gap-2 shrink-0 ${categoryFilter === cat ? 'bg-primary text-white shadow-xl shadow-primary/20 scale-105' : count === 0 ? 'opacity-30 text-muted-foreground hover:bg-secondary' : 'text-muted-foreground hover:bg-secondary'}`}
-                              >
-                                 {cat}
-                                 <span className={`text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded-md ${categoryFilter === cat ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'}`}>
-                                    {count}
-                                 </span>
-                              </Button>
-                              );
-                           })}
-                        </div>
-                     </div>
-                     
-                     {/* 3. Secondary filters (Tout, Aujourd'hui, Passé - sans "Calendrier") + Date + Tout Sélectionner */}
-                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 pt-1">
-                        <div className="bg-secondary/40 p-1 sm:p-1.5 rounded-xl sm:rounded-[1.5rem] flex border shadow-inner overflow-x-auto">
-                           {[
-                              { id: 'all', label: 'Tout', icon: LayoutGrid, shortLabel: 'All' },
-                              { id: 'today', label: 'Aujourd\'hui', icon: Timer, shortLabel: 'Auj' },
-                              { id: 'finished', label: 'Passé', icon: History, shortLabel: 'Passé' }
-                           ].map(f => (
-                              <button
-                                 key={f.id}
-                                 onClick={() => {
-                                    const nextFilter = f.id as 'all' | 'finished' | 'today';
-                                    setListFilter(nextFilter);
-                                    if (viewMode === 'planning') {
-                                       setViewMode('grid');
-                                    }
-                                 }}
-                                 className={`flex-1 sm:flex-none px-3 sm:px-4 lg:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-[9px] font-black uppercase tracking-widest transition-all gap-1.5 sm:gap-2 flex items-center justify-center shrink-0 ${listFilter === f.id ? 'bg-primary text-white shadow-lg' : 'text-muted-foreground hover:bg-white/50'}`}
-                              >
-                                 <f.icon className="w-3.5 h-3.5 shrink-0" /> 
-                                 <span className="hidden sm:inline">{f.label}</span>
-                                 <span className="sm:hidden">{f.shortLabel}</span>
-                              </button>
-                           ))}
-                        </div>
-
-                        {/* Date Filter */}
-                        <div className="flex items-center gap-2 shrink-0">
-                           <div className="flex items-center gap-2 sm:gap-3 bg-white p-1 sm:p-1.5 px-2 sm:px-4 rounded-xl sm:rounded-[1.5rem] border shadow-sm">
-                              <Calendar className="w-4 h-4 text-primary shrink-0" />
-                              <input
-                                 type="date"
-                                 value={dateFilter}
-                                 onChange={(e) => setDateFilter(e.target.value)}
-                                 className="bg-transparent border-none text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-slate-700 outline-none focus:ring-0 cursor-pointer"
-                                 placeholder="Choisir une date"
-                              />
-                           </div>
-                           {dateFilter && (
-                              <button 
-                                 onClick={() => setDateFilter('')}
-                                 className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-slate-100 hover:bg-red-50 hover:text-red-500 rounded-full transition-all border border-slate-200 shrink-0"
-                              >
-                                 <X className="w-4 h-4" />
-                              </button>
-                           )}
-                        </div>
-
-                        {/* Tout Sélectionner Button */}
-                        <div className="shrink-0 ml-auto">
-                           <button
-                              type="button"
-                              onClick={toggleSelectAll}
-                              className={`h-10 sm:h-12 px-4 rounded-xl border text-[10px] font-black uppercase tracking-wider flex items-center gap-2 transition-all ${
-                                 isAllSelected 
-                                    ? 'bg-primary text-white border-primary shadow-md' 
-                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                              }`}
-                           >
-                              {isAllSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-                              <span>{isAllSelected ? 'Tout Décocher' : 'Tout Sélectionner'}</span>
-                              <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[9px] font-black ml-1">
-                                 {selectedMatchIds.size}/{filteredMatches.length}
-                              </span>
-                           </button>
-                        </div>
-                     </div>
                   </div>
+
+                  {/* Live Match Spotlight Banner (US-MATCH-LIVE-HIGHLIGHT) */}
+                  {chronoCounts.live > 0 && (listFilter === 'today' || listFilter === 'all') && (
+                     <div className="relative overflow-hidden bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xl shadow-red-600/25 border-2 border-red-400/40">
+                        <div className="absolute top-0 right-0 -mt-6 -mr-6 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                           <div className="flex items-center gap-3 sm:gap-4">
+                              <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30 shadow-inner">
+                                 <Radio className="w-6 h-6 animate-pulse text-white" />
+                              </div>
+                              <div>
+                                 <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-black text-xs uppercase tracking-widest bg-white text-red-600 px-2.5 py-0.5 rounded-full shadow-sm flex items-center gap-1.5">
+                                       <span className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
+                                       MATCH EN DIRECT ({chronoCounts.live})
+                                    </span>
+                                    <span className="text-white/80 text-[10px] sm:text-xs font-bold uppercase tracking-wider">
+                                       Aujourd'hui en temps réel
+                                    </span>
+                                 </div>
+                                 <p className="text-white font-black text-sm sm:text-base mt-1 tracking-tight">
+                                    Rencontre FUS en cours — Scores et statistiques actualisés en direct
+                                 </p>
+                              </div>
+                           </div>
+                           <div className="flex items-center gap-2 self-end md:self-center">
+                              {filteredMatches.filter(m => m.status === 'live').slice(0, 2).map(liveM => (
+                                 <button
+                                    key={liveM.id}
+                                    onClick={() => {
+                                       setSelectedMatchId(liveM.id);
+                                       setActiveTab('live');
+                                    }}
+                                    className="h-10 sm:h-11 px-4 sm:px-5 rounded-xl sm:rounded-2xl bg-white text-red-600 hover:bg-white/90 font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg transition-transform hover:scale-105 active:scale-95 shrink-0"
+                                 >
+                                    <Play className="w-3.5 h-3.5 fill-current" />
+                                    <span>Console Live {liveM.category ? `• ${liveM.category}` : ''}</span>
+                                 </button>
+                              ))}
+                           </div>
+                        </div>
+                     </div>
+                  )}
 
                   {viewMode === 'planning' ? (
                       <motion.div 
@@ -1454,11 +1640,42 @@ const MatchManagementPage: React.FC = () => {
                                           </div>
 
                                           {/* Bottom action bar */}
-                                          <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-t border-slate-700/50 bg-slate-800/40">
-                                             <span className="text-[9px] font-bold text-slate-400 flex items-center gap-1.5">
-                                                <MapPin className="w-3 h-3" />
-                                                {match.match_date}
-                                             </span>
+                                          <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-3 border-t border-slate-700/50 bg-slate-800/40">
+                                             <div className="flex items-center gap-2.5 flex-wrap">
+                                                <span className="text-[9px] font-bold text-slate-400 flex items-center gap-1.5">
+                                                   <MapPin className="w-3 h-3" />
+                                                   {match.match_date}
+                                                </span>
+
+                                                {/* Mention Opérateur Live (US-MATCH-124) */}
+                                                {Boolean((match as any).live_operator_name || (match as any).lineup?.live_operator?.name) && (() => {
+                                                   const opName = (match as any).live_operator_name || (match as any).lineup?.live_operator?.name;
+                                                   const opPhoto = (match as any).live_operator_avatar_url || (match as any).lineup?.live_operator?.avatar_url;
+                                                   const opRole = (match as any).live_operator_role || (match as any).lineup?.live_operator?.role || 'Opérateur Live';
+                                                   const initials = (opName || 'OP').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+                                                   return (
+                                                      <div className="flex items-center gap-2 px-3 py-1 bg-slate-900 rounded-full border border-slate-700 shadow-xs" title={`Opérateur Live : ${opName} (${opRole})`}>
+                                                         <div className="relative shrink-0">
+                                                            {opPhoto ? (
+                                                               <img src={opPhoto} alt={opName} className="w-5 h-5 rounded-full object-cover border border-slate-600" />
+                                                            ) : (
+                                                               <div className="w-5 h-5 rounded-full bg-red-600 text-white font-black text-[8px] flex items-center justify-center border border-red-400">
+                                                                  {initials}
+                                                               </div>
+                                                            )}
+                                                            <span className="absolute -bottom-1 -right-1 text-[7px]">📱</span>
+                                                         </div>
+                                                         <div className="flex flex-col text-left">
+                                                            <div className="flex items-center gap-1">
+                                                               <span className="text-[9.5px] font-black text-white leading-tight">{opName}</span>
+                                                               <span className="text-[7px] font-black bg-red-500/20 text-red-300 border border-red-500/30 px-1 py-0.2 rounded-full uppercase leading-none">Fus-App</span>
+                                                            </div>
+                                                            <span className="text-[8px] font-semibold text-slate-400 leading-tight">{opRole}</span>
+                                                         </div>
+                                                      </div>
+                                                   );
+                                                })()}
+                                             </div>
                                              <div className="flex items-center gap-2">
                                                 {match.status === 'scheduled' && (
                                                    <button
@@ -1516,6 +1733,7 @@ const MatchManagementPage: React.FC = () => {
                                     <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Date & Heure</th>
                                     <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Adversaire</th>
                                     <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Catégorie</th>
+                                    <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Opérateur Fus-App</th>
                                     <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Statut</th>
                                     <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Score</th>
                                     <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
@@ -1523,8 +1741,19 @@ const MatchManagementPage: React.FC = () => {
                               </thead>
                               <tbody>
                                  {filteredMatches.map(match => (
-                                    <tr key={match.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors group">
-                                       <td className="py-4 px-3 text-center">
+                                    <tr 
+                                       key={match.id} 
+                                       className={`border-b transition-colors group cursor-pointer ${
+                                          match.status === 'live' 
+                                             ? 'bg-red-50/80 hover:bg-red-100/80 border-l-4 border-l-red-600 ring-1 ring-red-200' 
+                                             : 'border-slate-50 hover:bg-slate-50/50'
+                                       }`}
+                                       onClick={() => {
+                                          setSelectedMatchId(match.id);
+                                          setActiveTab(match.status === 'live' ? 'live' : 'overview');
+                                       }}
+                                    >
+                                       <td className="py-4 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                                           <input
                                              type="checkbox"
                                              checked={selectedMatchIds.has(match.id)}
@@ -1552,11 +1781,55 @@ const MatchManagementPage: React.FC = () => {
                                           </div>
                                        </td>
                                        <td className="py-4 px-4 whitespace-nowrap">
-                                          <Badge className="bg-slate-100 text-slate-700 border-none text-[9px] font-bold">{match.category}</Badge>
+                                          <span className="inline-block bg-[#FF3737] text-white text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md shadow-xs">
+                                             {match.category || 'Équipe'}
+                                          </span>
+                                       </td>
+                                       <td className="py-4 px-4 whitespace-nowrap">
+                                          {Boolean((match as any).live_operator_name || (match as any).lineup?.live_operator?.name) ? (() => {
+                                             const opName = (match as any).live_operator_name || (match as any).lineup?.live_operator?.name;
+                                             const opPhoto = (match as any).live_operator_avatar_url || (match as any).lineup?.live_operator?.avatar_url;
+                                             const opRole = (match as any).live_operator_role || (match as any).lineup?.live_operator?.role || 'Opérateur Live';
+                                             const initials = (opName || 'OP').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+                                             return (
+                                                <div className="flex items-center gap-2">
+                                                   <div className="relative shrink-0">
+                                                      {opPhoto ? (
+                                                         <img src={opPhoto} alt={opName} className="w-7 h-7 rounded-full object-cover border border-slate-300 shadow-xs" />
+                                                      ) : (
+                                                         <div className="w-7 h-7 rounded-full bg-slate-900 text-white font-black text-[9px] flex items-center justify-center border border-slate-700">
+                                                            {initials}
+                                                         </div>
+                                                      )}
+                                                      <span className="absolute -bottom-1 -right-1 text-[8px]" title="Opéré avec Fus-App">📱</span>
+                                                   </div>
+                                                   <div className="flex flex-col text-left">
+                                                      <span className="text-xs font-black text-slate-800 leading-tight flex items-center gap-1">
+                                                         {opName}
+                                                         <span className="text-[7.5px] font-bold bg-red-100 text-red-600 px-1 py-0.2 rounded uppercase">
+                                                            Fus-App
+                                                         </span>
+                                                      </span>
+                                                      <span className="text-[9.5px] font-semibold text-slate-500 leading-tight">
+                                                         {opRole}
+                                                      </span>
+                                                   </div>
+                                                </div>
+                                             );
+                                          })() : (
+                                             <span className="text-xs text-slate-400 italic">Non assigné</span>
+                                          )}
                                        </td>
                                        <td className="py-4 px-4 text-center whitespace-nowrap">
-                                          <Badge className={`border-none text-[9px] font-black uppercase ${match.status === 'finished' ? 'bg-slate-800 text-white' : match.status === 'live' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                                             {match.status === 'finished' ? 'Terminé' : match.status === 'live' ? 'En cours' : 'À venir'}
+                                          <Badge className={`border-none text-[9px] font-black uppercase tracking-wider px-2.5 py-1 ${
+                                             match.status === 'finished' 
+                                                ? 'bg-slate-800 text-white' 
+                                                : match.status === 'live' 
+                                                   ? 'bg-red-600 text-white shadow-md shadow-red-500/30 animate-pulse inline-flex items-center gap-1' 
+                                                   : 'bg-emerald-100 text-emerald-700'
+                                          }`}>
+                                             {match.status === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />}
+                                             {match.status === 'finished' ? 'Terminé' : match.status === 'live' ? 'EN DIRECT' : 'À venir'}
                                           </Badge>
                                        </td>
                                        <td className="py-4 px-4 text-center whitespace-nowrap text-sm font-black tabular-nums">

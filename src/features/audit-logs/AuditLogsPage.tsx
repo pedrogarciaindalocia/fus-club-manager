@@ -16,16 +16,25 @@ import {
   Briefcase,
   Layers,
   Users,
-  SmartphoneNfc,
   Printer,
   History,
   FileText,
   Calendar,
   X,
   FileJson,
-  RotateCcw
+  RotateCcw,
+  Zap,
+  Play,
+  CalendarDays,
+  UserCheck,
+  ArrowUpRight,
+  SlidersHorizontal,
+  CheckCircle2,
+  AlertCircle,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuditLogs, isMobilePlatform, isGuestEntry } from '../../hooks/useAuditLogs';
+import type { AuditLog } from '../../types/audit';
 import { SessionTimelineModal } from './components/SessionTimelineModal';
 import { UserAuditDetailModal } from './components/UserAuditDetailModal';
 import type { UserSummaryItem, UserLatestAction } from './components/UserAuditDetailModal';
@@ -39,6 +48,175 @@ import {
   PRESENCE_META 
 } from '../../services/presenceService';
 import type { PresenceEntry, PresenceStatus } from '../../services/presenceService';
+
+export type FusAppActionCategory =
+  | 'LIVE_MATCH'
+  | 'SPEED_ACTION'
+  | 'REPORT_MATCH'
+  | 'CONVOCATION'
+  | 'SURCLASSEMENT'
+  | 'TACTICAL'
+  | 'OTHER_MOBILE';
+
+export interface FusAppActionMeta {
+  isFusApp: boolean;
+  category?: FusAppActionCategory;
+  badgeLabel: string;
+  badgeClass: string;
+  badgeIcon: string;
+  summaryTitle: string;
+}
+
+/**
+ * Détecte et catégorise précisément les actions opérationnelles exécutées depuis l'application mobile Fus-App
+ * (Lancer le live, speed actions, reports de match, convocations, surclassements, modifications tactiques)
+ */
+export const classifyLogAction = (log: { description?: string | null; module?: string | null; action?: string | null; session_id?: string | null; user_agent?: string | null; metadata?: any }): FusAppActionMeta => {
+  const isMob = isMobilePlatform(log.session_id, null, log.user_agent, log.module);
+  const desc = (log.description || '').toLowerCase();
+  const mod = (log.module || '').toUpperCase();
+  const act = (log.action || '').toUpperCase();
+
+  // 1. Lancer le Live & gestion du chronomètre & opérations live
+  if (
+    mod === 'LIVE_TRACKING' ||
+    act === 'START_LIVE' ||
+    act === 'PAUSE_LIVE' ||
+    act === 'RESUME_LIVE' ||
+    act === 'PERIOD_CHANGE' ||
+    act === 'TIMER_ADJUST' ||
+    act === 'END_MATCH' ||
+    desc.includes('live du match démarré') ||
+    desc.includes('live démarré') ||
+    desc.includes('live annulé') ||
+    desc.includes('chronomètre ajusté') ||
+    desc.includes('chronomètre en pause') ||
+    desc.includes('chronomètre repris') ||
+    desc.includes('coup d\'envoi') ||
+    desc.includes('phase changée') ||
+    desc.includes('match clôturé') ||
+    (desc.includes('live') && (desc.includes('démarré') || desc.includes('lancer') || desc.includes('minute') || desc.includes('terminé')))
+  ) {
+    const isEnd = act === 'END_MATCH' || desc.includes('clôturé') || desc.includes('terminé');
+    const isPause = act === 'PAUSE_LIVE' || desc.includes('pause');
+    const isResume = act === 'RESUME_LIVE' || desc.includes('repris');
+    const isPeriod = act === 'PERIOD_CHANGE' || desc.includes('phase') || desc.includes('mi-temps');
+    return {
+      isFusApp: true,
+      category: 'LIVE_MATCH',
+      badgeLabel: isEnd ? 'Fin de Match' : isPause ? 'Pause Chrono' : isResume ? 'Reprise Live' : isPeriod ? 'Période Live' : 'Opération Live',
+      badgeClass: 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30',
+      badgeIcon: '🔴',
+      summaryTitle: 'Live de Match & Opérations Chronomètre'
+    };
+  }
+
+  // 2. Speed Action (Action rapide du match : but, tir, passe, carton, arrêt...)
+  if (
+    desc.includes('action rapide') ||
+    desc.includes('action du match') ||
+    desc.includes('speed action') ||
+    desc.includes('tir au but') ||
+    desc.includes('enregistré par') ||
+    log.metadata?.event_type ||
+    ((mod === 'MATCHES' || mod === 'LIVE_TRACKING') && (desc.includes('à la ') && desc.includes('minute')))
+  ) {
+    return {
+      isFusApp: true,
+      category: 'SPEED_ACTION',
+      badgeLabel: 'Speed Action',
+      badgeClass: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30',
+      badgeIcon: '⚡',
+      summaryTitle: 'Action Rapide du Match'
+    };
+  }
+
+  // 3. Report de match
+  if (
+    desc.includes('match reporté') ||
+    desc.includes('reporté au') ||
+    desc.includes('rappel de match') ||
+    (desc.includes('report') && mod === 'MATCHES')
+  ) {
+    return {
+      isFusApp: true,
+      category: 'REPORT_MATCH',
+      badgeLabel: 'Report de Match',
+      badgeClass: 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30',
+      badgeIcon: '📅',
+      summaryTitle: 'Report / Décalage de Match'
+    };
+  }
+
+  // 4. Convocations
+  if (
+    desc.includes('convocation') ||
+    desc.includes('effectif adverse') ||
+    desc.includes('joueurs myclub')
+  ) {
+    return {
+      isFusApp: true,
+      category: 'CONVOCATION',
+      badgeLabel: 'Convocation',
+      badgeClass: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30',
+      badgeIcon: '📋',
+      summaryTitle: 'Gestion des Convocations'
+    };
+  }
+
+  // 5. Surclassements
+  if (
+    desc.includes('surclassement') ||
+    desc.includes('surclass')
+  ) {
+    return {
+      isFusApp: true,
+      category: 'SURCLASSEMENT',
+      badgeLabel: 'Surclassement',
+      badgeClass: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+      badgeIcon: '⬆️',
+      summaryTitle: 'Surclassement de Joueur'
+    };
+  }
+
+  // 6. Modifications tactiques
+  if (
+    desc.includes('tactique') ||
+    desc.includes('modifications tactiques') ||
+    desc.includes('formation') ||
+    desc.includes('composition')
+  ) {
+    return {
+      isFusApp: true,
+      category: 'TACTICAL',
+      badgeLabel: 'Modif Tactique',
+      badgeClass: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-500/30',
+      badgeIcon: '♟️',
+      summaryTitle: 'Configuration Tactique'
+    };
+  }
+
+  // 7. Autre action Mobile Fus-App
+  if (isMob) {
+    return {
+      isFusApp: true,
+      category: 'OTHER_MOBILE',
+      badgeLabel: 'Fus-App Mobile',
+      badgeClass: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30',
+      badgeIcon: '📱',
+      summaryTitle: 'Opération Fus-App Mobile'
+    };
+  }
+
+  // 8. Action Web Dashboard
+  return {
+    isFusApp: false,
+    badgeLabel: act || 'ACTION',
+    badgeClass: 'bg-primary/10 text-primary border-primary/20',
+    badgeIcon: '💻',
+    summaryTitle: 'Opération Dashboard Web'
+  };
+};
 
 /** Convertit le statut de la carte en statut de présence (vert / orange / gris) */
 const toPresence = (status?: string): PresenceStatus =>
@@ -152,17 +330,47 @@ export const AuditLogsPage: React.FC = () => {
   const [groupByPoste, setGroupByPoste] = useState<boolean>(false);
   const [selectedUserForModal, setSelectedUserForModal] = useState<UserSummaryItem | null>(null);
 
-  // Onglet principal : 'supervision' (Cartes / Sessions) ou 'history' (Journal complet des logs)
-  const [mainTab, setMainTab] = useState<'supervision' | 'history'>('supervision');
+  // Onglet principal : 'history' (Journal complet des logs et actions Fus-App) ou 'supervision' (Cartes / Sessions)
+  const [mainTab, setMainTab] = useState<'supervision' | 'history'>('history');
 
-  // Filtres spécifiques pour l'Historique des Logs
+  // Filtres simples pour l'Historique des Logs : Utilisateur, Date, Intervalle d'heure, et Type d'action Fus-App
   const [logSearchTerm, setLogSearchTerm] = useState<string>('');
-  const [logJobTitleFilter, setLogJobTitleFilter] = useState<string>('ALL');
-  const [logActionFilter, setLogActionFilter] = useState<string>('ALL');
-  const [logModuleFilter, setLogModuleFilter] = useState<string>('ALL');
-  const [logStartDateTime, setLogStartDateTime] = useState<string>('');
-  const [logEndDateTime, setLogEndDateTime] = useState<string>('');
+  const [logDate, setLogDate] = useState<string>('');
+  const [logStartTime, setLogStartTime] = useState<string>('');
+  const [logEndTime, setLogEndTime] = useState<string>('');
+  const [selectedMatchFilter, setSelectedMatchFilter] = useState<string>('ALL');
+  const [matchList, setMatchList] = useState<Array<{ id: string; label: string }>>([]);
+  const [selectedActionCategory, setSelectedActionCategory] = useState<
+    'ALL' | 'FUS_APP_ALL' | FusAppActionCategory
+  >('ALL');
   const [selectedLogForJson, setSelectedLogForJson] = useState<AuditLog | null>(null);
+
+  // Chargement des matchs pour le filtrage par match
+  useEffect(() => {
+    async function loadMatches() {
+      try {
+        const { data } = await supabase
+          .from('matches')
+          .select('id, category, match_date, status, club:clubs!club_id(name), opponent:opponents!opponent_id(name)')
+          .order('match_date', { ascending: false })
+          .limit(60);
+        if (data) {
+          const list = data.map((m: any) => {
+            const clubName = Array.isArray(m.club) ? m.club[0]?.name : m.club?.name;
+            const oppName = Array.isArray(m.opponent) ? m.opponent[0]?.name : m.opponent?.name;
+            const d = m.match_date ? new Date(m.match_date).toLocaleDateString('fr-FR') : '';
+            const statusLabel = m.status === 'live' ? '🔴 Live' : m.status === 'finished' ? '🏁 Terminé' : '📅 Prévu';
+            return {
+              id: m.id,
+              label: `${statusLabel} ${clubName || 'FUS'} vs ${oppName || 'Adversaire'}${m.category ? ` (${m.category})` : ''} ${d ? `· ${d}` : ''}`
+            };
+          });
+          setMatchList(list);
+        }
+      } catch (_) {}
+    }
+    loadMatches();
+  }, []);
 
   // Présence temps réel (Supabase Realtime Presence)
   const [presenceSnapshot, setPresenceSnapshot] = useState<Map<string, PresenceEntry>>(new Map());
@@ -420,27 +628,22 @@ export const AuditLogsPage: React.FC = () => {
     return map;
   }, [allUserSummaries]);
 
-  // Actions distinctes disponibles dans les logs
-  const distinctActions = useMemo(() => {
-    const actions = new Set<string>();
-    ['LOGIN', 'LOGOUT', 'CREATE', 'UPDATE', 'DELETE', 'EXPORT', 'IMPORT', 'PASSWORD_CHANGE', 'PERMISSION_CHANGE', 'ROLE_CHANGE', 'SETTINGS_UPDATE'].forEach(a => actions.add(a));
+  // Liste des matchs distincts pour le sélecteur
+  const distinctMatches = useMemo(() => {
+    const map = new Map<string, string>();
+    matchList.forEach(m => map.set(m.id, m.label));
     logs.forEach(l => {
-      if (l.action) actions.add(l.action);
+      const mId = l.entity_id || l.metadata?.match_id;
+      if (mId && (l.entity_type === 'match' || l.metadata?.match_id)) {
+        if (!map.has(mId)) {
+          map.set(mId, l.metadata?.match_label || `Match #${mId.slice(0, 8)}`);
+        }
+      }
     });
-    return Array.from(actions).sort();
-  }, [logs]);
+    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
+  }, [matchList, logs]);
 
-  // Modules distincts disponibles
-  const distinctModules = useMemo(() => {
-    const modules = new Set<string>();
-    ['AUTH', 'USERS', 'RECRUTEMENT', 'MATCHS', 'PLAYERS', 'STAFF', 'ARBITRES', 'CLUB', 'BACKUPS', 'SYSTEM'].forEach(m => modules.add(m));
-    logs.forEach(l => {
-      if (l.module) modules.add(l.module);
-    });
-    return Array.from(modules).sort();
-  }, [logs]);
-
-  // Filtrage ultra-précis de l'Historique des Logs
+  // Filtrage simple par nom, date, plage horaire, match et catégorie d'action Fus-App
   const filteredAuditLogs = useMemo(() => {
     return logs.filter(log => {
       if (isGuestEntry(log.user_email, log.session_id)) return false;
@@ -449,51 +652,97 @@ export const AuditLogsPage: React.FC = () => {
                    (log.user_email && userLookup.get(log.user_email.toLowerCase().trim()));
       const name = user?.userName || log.user_email?.split('@')[0] || '';
       const email = log.user_email || '';
-      const job = user?.jobTitle || 'Collaborateur';
 
-      // 1. Filtre Nom d'utilisateur / recherche textuelle
+      // 1. Filtre simple : Nom ou Email de l'utilisateur (ou texte dans la description)
       if (logSearchTerm.trim()) {
         const q = logSearchTerm.toLowerCase().trim();
         const matchName = name.toLowerCase().includes(q);
         const matchEmail = email.toLowerCase().includes(q);
         const matchDesc = (log.description || '').toLowerCase().includes(q);
-        const matchEntity = (log.entity_type || '').toLowerCase().includes(q);
-        if (!matchName && !matchEmail && !matchDesc && !matchEntity) return false;
+        if (!matchName && !matchEmail && !matchDesc) return false;
       }
 
-      // 2. Filtre Poste de l'utilisateur
-      if (logJobTitleFilter !== 'ALL') {
-        const target = logJobTitleFilter.toLowerCase();
-        if (!job.toLowerCase().includes(target)) return false;
+      // 2. Filtre simple : Date précise (au format YYYY-MM-DD en heure locale)
+      if (logDate) {
+        const d = new Date(log.created_at);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const logDateStr = `${year}-${month}-${day}`;
+        if (logDateStr !== logDate) return false;
       }
 
-      // 3. Filtre Action effectuée
-      if (logActionFilter !== 'ALL' && log.action !== logActionFilter) {
-        return false;
+      // 3. Filtre simple : Intervalle de l'heure (heure début et heure fin)
+      const logDateTime = new Date(log.created_at);
+      const minutesSinceMidnight = logDateTime.getHours() * 60 + logDateTime.getMinutes();
+      if (logStartTime) {
+        const [hours, minutes] = logStartTime.split(':').map(Number);
+        if (minutesSinceMidnight < hours * 60 + minutes) return false;
+      }
+      if (logEndTime) {
+        const [hours, minutes] = logEndTime.split(':').map(Number);
+        if (minutesSinceMidnight > hours * 60 + minutes) return false;
       }
 
-      // 4. Filtre Module
-      if (logModuleFilter !== 'ALL' && log.module !== logModuleFilter) {
-        return false;
+      // 4. Filtre par Match spécifique
+      if (selectedMatchFilter !== 'ALL') {
+        const mId = log.entity_id || log.metadata?.match_id;
+        if (mId !== selectedMatchFilter) return false;
       }
 
-      // 5. Filtre Intervalle Date et Heure
-      if (logStartDateTime) {
-        const startTime = new Date(logStartDateTime).getTime();
-        const logTime = new Date(log.created_at).getTime();
-        if (logTime < startTime) return false;
-      }
-      if (logEndDateTime) {
-        const endTime = new Date(logEndDateTime).getTime();
-        const logTime = new Date(log.created_at).getTime();
-        if (logTime > endTime) return false;
+      // 5. Filtre par type d'action Fus-App
+      if (selectedActionCategory !== 'ALL') {
+        const meta = classifyLogAction(log);
+        if (selectedActionCategory === 'FUS_APP_ALL') {
+          if (!meta.isFusApp) return false;
+        } else {
+          if (meta.category !== selectedActionCategory) return false;
+        }
       }
 
       return true;
     }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [logs, userLookup, logSearchTerm, logJobTitleFilter, logActionFilter, logModuleFilter, logStartDateTime, logEndDateTime]);
+  }, [logs, userLookup, logSearchTerm, logDate, logStartTime, logEndTime, selectedMatchFilter, selectedActionCategory]);
 
-  // Statistiques calculées pour l'Historique
+  // Statistiques calculées pour l'Historique des actions Fus-App
+  const fusAppStats = useMemo(() => {
+    let totalLogs = 0;
+    let totalMobile = 0;
+    let liveMatch = 0;
+    let speedAction = 0;
+    let reportMatch = 0;
+    let convocation = 0;
+    let surclassement = 0;
+    let tactical = 0;
+
+    logs.forEach(l => {
+      if (isGuestEntry(l.user_email, l.session_id)) return;
+      totalLogs++;
+      const meta = classifyLogAction(l);
+      if (meta.isFusApp) {
+        totalMobile++;
+        if (meta.category === 'LIVE_MATCH') liveMatch++;
+        else if (meta.category === 'SPEED_ACTION') speedAction++;
+        else if (meta.category === 'REPORT_MATCH') reportMatch++;
+        else if (meta.category === 'CONVOCATION') convocation++;
+        else if (meta.category === 'SURCLASSEMENT') surclassement++;
+        else if (meta.category === 'TACTICAL') tactical++;
+      }
+    });
+
+    return {
+      totalLogs,
+      totalMobile,
+      liveMatch,
+      speedAction,
+      reportMatch,
+      convocation,
+      surclassement,
+      tactical,
+    };
+  }, [logs]);
+
+  // Statistiques calculées pour l'Historique général
   const logStats = useMemo(() => {
     return {
       total: filteredAuditLogs.length,
@@ -512,25 +761,12 @@ export const AuditLogsPage: React.FC = () => {
         (u.userEmail && u.userEmail.toLowerCase().includes(filters.searchTerm.toLowerCase())) ||
         u.jobTitle.toLowerCase().includes(filters.searchTerm.toLowerCase());
 
-      const matchJobTitle = filters.jobTitle === 'ALL' ||
-        u.jobTitle.trim().toLowerCase() === filters.jobTitle.trim().toLowerCase() ||
-        u.jobTitle.toLowerCase().includes(filters.jobTitle.toLowerCase());
-
-      const matchStatus = filters.status === 'ALL' ||
-        (filters.status === 'ACTIVE' && (u.status === 'ACTIVE' || u.status === 'IDLE')) ||
-        u.status === filters.status;
-
-      // Filtrage par Plateforme : Dashboard Web vs Mobile Fus-App
-      const matchPlatform = filters.platform === 'ALL' ||
-        (filters.platform === 'MOBILE' && (u.activePlatform === 'mobile' || u.activePlatform === 'both' || (u.status !== 'ACTIVE' && u.lastPlatform === 'mobile'))) ||
-        (filters.platform === 'WEB' && (u.activePlatform === 'web' || u.activePlatform === 'both' || (u.status !== 'ACTIVE' && u.lastPlatform === 'web')));
-
       const matchStart = !filters.startDate || new Date(u.lastActivity) >= new Date(filters.startDate);
       const matchEnd = !filters.endDate || new Date(u.lastActivity) <= new Date(filters.endDate + 'T23:59:59');
 
-      return matchSearch && matchJobTitle && matchStatus && matchPlatform && matchStart && matchEnd;
+      return matchSearch && matchStart && matchEnd;
     });
-  }, [allUserSummaries, filters]);
+  }, [allUserSummaries, filters.searchTerm, filters.startDate, filters.endDate]);
 
   // Groupement des utilisateurs par poste
   const groupedUsersByPoste = useMemo(() => {
@@ -606,11 +842,11 @@ export const AuditLogsPage: React.FC = () => {
 
   const handleResetLogFilters = () => {
     setLogSearchTerm('');
-    setLogJobTitleFilter('ALL');
-    setLogActionFilter('ALL');
-    setLogModuleFilter('ALL');
-    setLogStartDateTime('');
-    setLogEndDateTime('');
+    setLogDate('');
+    setLogStartTime('');
+    setLogEndTime('');
+    setSelectedMatchFilter('ALL');
+    setSelectedActionCategory('ALL');
   };
 
   return (
@@ -626,18 +862,14 @@ export const AuditLogsPage: React.FC = () => {
           </div>
           <div className="text-right text-xs space-y-0.5">
             <div>Édité le : <strong>{new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR')} (GMT)</strong></div>
-            <div>Période : <strong>{logStartDateTime ? new Date(logStartDateTime).toLocaleString('fr-FR') : 'Début'} ➔ {logEndDateTime ? new Date(logEndDateTime).toLocaleString('fr-FR') : 'Actuel'}</strong></div>
+            <div>Période : <strong>{logDate || 'Toutes les dates'} {logStartTime || logEndTime ? `· ${logStartTime || '00:00'} ➔ ${logEndTime || '23:59'}` : ''}</strong></div>
             <div>Total événements : <strong>{filteredAuditLogs.length} logs</strong></div>
           </div>
         </div>
         <div className="mt-3 flex items-center gap-4 text-[11px] text-gray-600 border-t border-gray-200 pt-2">
           <span>Filtre Utilisateur : <strong>{logSearchTerm || 'Tous'}</strong></span>
           <span>•</span>
-          <span>Filtre Poste : <strong>{logJobTitleFilter}</strong></span>
-          <span>•</span>
-          <span>Filtre Action : <strong>{logActionFilter}</strong></span>
-          <span>•</span>
-          <span>Filtre Module : <strong>{logModuleFilter}</strong></span>
+          <span>Intervalle : <strong>{logStartTime || '00:00'} ➔ {logEndTime || '23:59'}</strong></span>
         </div>
       </div>
 
@@ -782,7 +1014,7 @@ export const AuditLogsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Control Bar : Mode Toggle + Search + Platform Filter + Status + Dates */}
+      {/* Control Bar : recherche et filtres de supervision */}
       <div className="flex flex-col lg:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-card border border-border shadow-sm">
         {/* Search */}
         <div className="relative flex-1 w-full">
@@ -796,56 +1028,8 @@ export const AuditLogsPage: React.FC = () => {
           />
         </div>
 
-        {/* Dropdown Filters & Controls */}
+        {/* Simple Controls : Période & Affichage */}
         <div className="flex items-center flex-wrap gap-2 w-full lg:w-auto">
-          {/* Filter by Platform (Web Dashboard vs Mobile Fus-App) */}
-          <div className="flex items-center gap-1.5 bg-secondary/40 rounded-xl px-2.5 py-1 border border-border/50">
-            <SmartphoneNfc className="w-3.5 h-3.5 text-primary shrink-0" />
-            <select
-              value={filters.platform}
-              onChange={(e) => setFilters({ ...filters, platform: e.target.value as any })}
-              className="h-8 bg-transparent text-foreground text-xs font-bold uppercase tracking-wider border-none outline-none cursor-pointer pr-2"
-            >
-              <option value="ALL">PLATEFORME: TOUTES</option>
-              <option value="WEB">💻 WEB DASHBOARD</option>
-              <option value="MOBILE">📱 FUS-APP MOBILE</option>
-            </select>
-          </div>
-
-          {/* Filter by Poste (job_title) */}
-          <div className="flex items-center gap-1.5 bg-secondary/40 rounded-xl px-2.5 py-1 border border-border/50">
-            <Briefcase className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            <select
-              value={filters.jobTitle}
-              onChange={(e) => setFilters({ ...filters, jobTitle: e.target.value })}
-              className="h-8 bg-transparent text-foreground text-xs font-bold uppercase tracking-wider border-none outline-none cursor-pointer pr-2"
-            >
-              <option value="ALL">POSTE : TOUS</option>
-              {OFFICIAL_JOB_TITLES.map(title => (
-                <option key={title} value={title}>{title.toUpperCase()}</option>
-              ))}
-              {distinctJobTitles
-                .filter(title => !OFFICIAL_JOB_TITLES.some(o => o.toLowerCase() === title.toLowerCase()))
-                .map(title => (
-                  <option key={title} value={title}>{title.toUpperCase()} (AUTRE)</option>
-                ))}
-            </select>
-          </div>
-
-          {/* Filter by Status */}
-          <div className="flex items-center gap-1.5 bg-secondary/40 rounded-xl px-2.5 py-1 border border-border/50">
-            <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-              className="h-8 bg-transparent text-foreground text-xs font-bold uppercase tracking-wider border-none outline-none cursor-pointer pr-2"
-            >
-              <option value="ALL">STATUT: TOUS</option>
-              <option value="ACTIVE">EN LIGNE (ACTIF)</option>
-              <option value="IDLE">INACTIF</option>
-              <option value="LOGGED_OUT">DÉCONNECTÉ</option>
-            </select>
-          </div>
 
           {/* Date Picker Start */}
           <input
@@ -1081,50 +1265,116 @@ export const AuditLogsPage: React.FC = () => {
         /* ONGLET 2 : HISTORIQUE COMPLET DES LOGS & ACTIONS D'AUDIT                  */
         /* ========================================================================= */
         <div className="space-y-6">
-          {/* KPI Cards Summary for Logs */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 print:hidden">
-            <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          {/* KPI Cards Summary : Focalisation sur les Actions Fus-App */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 print:hidden">
+            <div 
+              onClick={() => setSelectedActionCategory('ALL')}
+              className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                selectedActionCategory === 'ALL'
+                  ? 'bg-primary/10 border-primary shadow-sm'
+                  : 'bg-card border-border/80 hover:border-primary/40'
+              }`}
+            >
               <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Total Événements</span>
-              <div className="text-2xl font-black text-foreground mt-1">{logStats.total}</div>
-              <span className="text-[11px] text-muted-foreground">Dans la sélection</span>
+              <div className="text-xl font-black text-foreground mt-1">{fusAppStats.totalLogs}</div>
+              <span className="text-[10px] text-muted-foreground font-medium">Tous les logs</span>
             </div>
 
-            <div className="bg-card border border-emerald-500/30 bg-emerald-500/[0.03] rounded-2xl p-4 shadow-sm relative overflow-hidden">
-              <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">Créations</span>
-              <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{logStats.creates}</div>
-              <span className="text-[11px] text-muted-foreground">Objets créés</span>
+            <div 
+              onClick={() => setSelectedActionCategory('LIVE_MATCH')}
+              className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                selectedActionCategory === 'LIVE_MATCH'
+                  ? 'bg-red-500/20 border-red-500 shadow-sm'
+                  : 'bg-card border-red-500/20 hover:border-red-500/40'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-wider block">Lancer le Live</span>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                </span>
+              </div>
+              <div className="text-xl font-black text-red-600 dark:text-red-400 mt-1">{fusAppStats.liveMatch}</div>
+              <span className="text-[10px] text-muted-foreground font-medium">Lives & chrono</span>
             </div>
 
-            <div className="bg-card border border-blue-500/30 bg-blue-500/[0.03] rounded-2xl p-4 shadow-sm relative overflow-hidden">
-              <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider block">Modifications</span>
-              <div className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">{logStats.updates}</div>
-              <span className="text-[11px] text-muted-foreground">Mises à jour</span>
+            <div 
+              onClick={() => setSelectedActionCategory('SPEED_ACTION')}
+              className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                selectedActionCategory === 'SPEED_ACTION'
+                  ? 'bg-amber-500/20 border-amber-500 shadow-sm'
+                  : 'bg-card border-amber-500/20 hover:border-amber-500/40'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider block">Speed Actions</span>
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+              </div>
+              <div className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">{fusAppStats.speedAction}</div>
+              <span className="text-[10px] text-muted-foreground font-medium">Actions rapides match</span>
             </div>
 
-            <div className="bg-card border border-red-500/30 bg-red-500/[0.03] rounded-2xl p-4 shadow-sm relative overflow-hidden">
-              <span className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-wider block">Suppressions</span>
-              <div className="text-2xl font-black text-red-600 dark:text-red-400 mt-1">{logStats.deletes}</div>
-              <span className="text-[11px] text-muted-foreground">Suppressions tracées</span>
+            <div 
+              onClick={() => setSelectedActionCategory('REPORT_MATCH')}
+              className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                selectedActionCategory === 'REPORT_MATCH'
+                  ? 'bg-purple-500/20 border-purple-500 shadow-sm'
+                  : 'bg-card border-purple-500/20 hover:border-purple-500/40'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider block">Reports</span>
+                <CalendarDays className="w-3.5 h-3.5 text-purple-500" />
+              </div>
+              <div className="text-xl font-black text-purple-600 dark:text-purple-400 mt-1">{fusAppStats.reportMatch}</div>
+              <span className="text-[10px] text-muted-foreground font-medium">Matchs reportés</span>
             </div>
 
-            <div className="bg-card border border-amber-500/30 bg-amber-500/[0.03] rounded-2xl p-4 shadow-sm relative overflow-hidden col-span-2 sm:col-span-1">
-              <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider block">Connexions</span>
-              <div className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{logStats.auths}</div>
-              <span className="text-[11px] text-muted-foreground">Authentifications</span>
+            <div 
+              onClick={() => setSelectedActionCategory('CONVOCATION')}
+              className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                selectedActionCategory === 'CONVOCATION'
+                  ? 'bg-blue-500/20 border-blue-500 shadow-sm'
+                  : 'bg-card border-blue-500/20 hover:border-blue-500/40'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider block">Convocations</span>
+                <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+              </div>
+              <div className="text-xl font-black text-blue-600 dark:text-blue-400 mt-1">{fusAppStats.convocation}</div>
+              <span className="text-[10px] text-muted-foreground font-medium">MyClub & adverse</span>
+            </div>
+
+            <div 
+              onClick={() => setSelectedActionCategory('SURCLASSEMENT')}
+              className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                selectedActionCategory === 'SURCLASSEMENT'
+                  ? 'bg-emerald-500/20 border-emerald-500 shadow-sm'
+                  : 'bg-card border-emerald-500/20 hover:border-emerald-500/40'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">Surclassements</span>
+                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+              </div>
+              <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{fusAppStats.surclassement}</div>
+              <span className="text-[10px] text-muted-foreground font-medium">Joueurs surclassés</span>
             </div>
           </div>
 
-          {/* Control Bar : Filtres complets (Nom, Poste, Action, Module, Intervalle Date et Heure) */}
+          {/* Filtres simples : Nom du collaborateur, Date et Intervalle de l'heure */}
           <div className="p-4 rounded-2xl bg-card border border-border shadow-sm space-y-4 print:hidden">
             <div className="flex flex-col lg:flex-row items-center justify-between gap-3">
-              {/* Recherche textuelle par nom de l'utilisateur ou action */}
+              {/* Recherche simple par nom de l'utilisateur ou email */}
               <div className="relative flex-1 w-full">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   type="text"
                   value={logSearchTerm}
                   onChange={(e) => setLogSearchTerm(e.target.value)}
-                  placeholder="Rechercher par nom de l'utilisateur, email, action effectuée..."
+                  placeholder="Rechercher par nom de collaborateur, email ou mot-clé..."
                   className="pl-10 pr-9 h-11 bg-secondary/30 border-transparent focus:bg-background transition-all rounded-xl font-medium text-sm"
                 />
                 {logSearchTerm && (
@@ -1137,8 +1387,8 @@ export const AuditLogsPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Bouton de réinitialisation si filtres actifs */}
-              {(logSearchTerm || logJobTitleFilter !== 'ALL' || logActionFilter !== 'ALL' || logModuleFilter !== 'ALL' || logStartDateTime || logEndDateTime) && (
+              {/* Bouton de réinitialisation si un filtre est actif */}
+              {(logSearchTerm || logDate || logStartTime || logEndTime || selectedMatchFilter !== 'ALL' || selectedActionCategory !== 'ALL') && (
                 <Button
                   onClick={handleResetLogFilters}
                   variant="ghost"
@@ -1150,104 +1400,204 @@ export const AuditLogsPage: React.FC = () => {
               )}
             </div>
 
-            {/* Rangée de filtres : Poste, Action, Module, Intervalle Date & Heure Début / Fin */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2 border-t border-border/50 text-xs">
-              {/* 1. Filtre Poste de l'utilisateur */}
+            {/* Sélecteurs de date, intervalle d'heure et Match */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-border/50 text-xs">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                  <Briefcase className="w-3 h-3 text-purple-500" /> Poste de l'utilisateur
-                </label>
-                <select
-                  value={logJobTitleFilter}
-                  onChange={(e) => setLogJobTitleFilter(e.target.value)}
-                  className="w-full h-10 bg-secondary/40 text-foreground font-bold rounded-xl border border-border/50 px-2.5 outline-none cursor-pointer"
-                >
-                  <option value="ALL">POSTE : TOUS</option>
-                  {OFFICIAL_JOB_TITLES.map(title => (
-                    <option key={title} value={title}>{title.toUpperCase()}</option>
-                  ))}
-                  {distinctJobTitles
-                    .filter(title => !OFFICIAL_JOB_TITLES.some(o => o.toLowerCase() === title.toLowerCase()))
-                    .map(title => (
-                      <option key={title} value={title}>{title.toUpperCase()} (AUTRE)</option>
-                    ))}
-                </select>
-              </div>
-
-              {/* 2. Filtre Action Effectuée */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                  <Activity className="w-3 h-3 text-primary" /> Action Effectuée
-                </label>
-                <select
-                  value={logActionFilter}
-                  onChange={(e) => setLogActionFilter(e.target.value)}
-                  className="w-full h-10 bg-secondary/40 text-foreground font-bold rounded-xl border border-border/50 px-2.5 outline-none cursor-pointer"
-                >
-                  <option value="ALL">ACTION : TOUTES</option>
-                  {distinctActions.map(act => (
-                    <option key={act} value={act}>{act}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 3. Filtre Module */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                  <Layers className="w-3 h-3 text-blue-500" /> Module
-                </label>
-                <select
-                  value={logModuleFilter}
-                  onChange={(e) => setLogModuleFilter(e.target.value)}
-                  className="w-full h-10 bg-secondary/40 text-foreground font-bold rounded-xl border border-border/50 px-2.5 outline-none cursor-pointer"
-                >
-                  <option value="ALL">MODULE : TOUS</option>
-                  {distinctModules.map(mod => (
-                    <option key={mod} value={mod}>{mod}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 4. Intervalle Date/Heure Début */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-emerald-500" /> Date & Heure Début
+                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-blue-500" /> Date
+                  </span>
+                  {logDate && (
+                    <button onClick={() => setLogDate('')} className="text-[10px] text-muted-foreground hover:text-foreground">
+                      Effacer
+                    </button>
+                  )}
                 </label>
                 <input
-                  type="datetime-local"
-                  value={logStartDateTime}
-                  onChange={(e) => setLogStartDateTime(e.target.value)}
+                  type="date"
+                  value={logDate}
+                  onChange={(e) => setLogDate(e.target.value)}
                   className="w-full h-10 px-2.5 bg-secondary/40 text-foreground text-xs font-bold rounded-xl border border-border/50 outline-none cursor-pointer"
                 />
               </div>
 
-              {/* 5. Intervalle Date/Heure Fin */}
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-amber-500" /> Date & Heure Fin
+                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-emerald-500" /> Heure de début
+                  </span>
+                  {logStartTime && (
+                    <button onClick={() => setLogStartTime('')} className="text-[10px] text-muted-foreground hover:text-foreground">
+                      Effacer
+                    </button>
+                  )}
                 </label>
                 <input
-                  type="datetime-local"
-                  value={logEndDateTime}
-                  onChange={(e) => setLogEndDateTime(e.target.value)}
+                  type="time"
+                  value={logStartTime}
+                  onChange={(e) => setLogStartTime(e.target.value)}
                   className="w-full h-10 px-2.5 bg-secondary/40 text-foreground text-xs font-bold rounded-xl border border-border/50 outline-none cursor-pointer"
                 />
               </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-amber-500" /> Heure de fin
+                  </span>
+                  {logEndTime && (
+                    <button onClick={() => setLogEndTime('')} className="text-[10px] text-muted-foreground hover:text-foreground">
+                      Effacer
+                    </button>
+                  )}
+                </label>
+                <input
+                  type="time"
+                  value={logEndTime}
+                  onChange={(e) => setLogEndTime(e.target.value)}
+                  className="w-full h-10 px-2.5 bg-secondary/40 text-foreground text-xs font-bold rounded-xl border border-border/50 outline-none cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Activity className="w-3 h-3 text-red-500" /> Match / Rencontre
+                  </span>
+                  {selectedMatchFilter !== 'ALL' && (
+                    <button onClick={() => setSelectedMatchFilter('ALL')} className="text-[10px] text-muted-foreground hover:text-foreground">
+                      Tous
+                    </button>
+                  )}
+                </label>
+                <select
+                  value={selectedMatchFilter}
+                  onChange={(e) => setSelectedMatchFilter(e.target.value)}
+                  className="w-full h-10 px-2.5 bg-secondary/40 text-foreground text-xs font-bold rounded-xl border border-border/50 outline-none cursor-pointer"
+                >
+                  <option value="ALL">🏟️ Tous les matchs ({distinctMatches.length})</option>
+                  {distinctMatches.map(m => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Chips de filtrage rapide par Action Fus-App */}
+            <div className="pt-2 border-t border-border/50 flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-black uppercase text-muted-foreground tracking-wider mr-1">
+                Filtrer par action :
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setSelectedActionCategory('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  selectedActionCategory === 'ALL'
+                    ? 'bg-foreground text-background shadow-sm'
+                    : 'bg-secondary/40 text-muted-foreground hover:text-foreground border border-border/50'
+                }`}
+              >
+                Toutes ({fusAppStats.totalLogs})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedActionCategory('FUS_APP_ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedActionCategory === 'FUS_APP_ALL'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 border border-purple-500/30'
+                }`}
+              >
+                📱 Fus-App ({fusAppStats.totalMobile})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedActionCategory('LIVE_MATCH')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedActionCategory === 'LIVE_MATCH'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 border border-red-500/30'
+                }`}
+              >
+                🔴 Lancer le Live ({fusAppStats.liveMatch})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedActionCategory('SPEED_ACTION')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedActionCategory === 'SPEED_ACTION'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/30'
+                }`}
+              >
+                ⚡ Speed Actions ({fusAppStats.speedAction})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedActionCategory('REPORT_MATCH')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedActionCategory === 'REPORT_MATCH'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 border border-purple-500/30'
+                }`}
+              >
+                📅 Reports ({fusAppStats.reportMatch})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedActionCategory('CONVOCATION')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedActionCategory === 'CONVOCATION'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/30'
+                }`}
+              >
+                📋 Convocations ({fusAppStats.convocation})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedActionCategory('SURCLASSEMENT')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedActionCategory === 'SURCLASSEMENT'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30'
+                }`}
+              >
+                ⬆️ Surclassements ({fusAppStats.surclassement})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedActionCategory('TACTICAL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedActionCategory === 'TACTICAL'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/30'
+                }`}
+              >
+                ♟️ Modifs Tactiques ({fusAppStats.tactical})
+              </button>
             </div>
           </div>
 
-          {/* Tableau de l'Historique Complet des Logs */}
+          {/* Tableau des Actions & Logs Fus-App */}
           <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-sm print:border print:border-gray-300 print:shadow-none print:rounded-none">
             <div className="overflow-x-auto print:overflow-visible">
               <table className="w-full print:border-collapse print:text-black">
                 <thead className="bg-secondary/20 border-b border-border print:bg-gray-100 print:border-b-2 print:border-black">
                   <tr>
-                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Date & Heure (GMT)</th>
+                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Date & Heure</th>
                     <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Collaborateur</th>
                     <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Poste</th>
-                    <th className="text-center py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Action</th>
-                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Module</th>
-                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Description de l'action</th>
+                    <th className="text-center py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Action Fus-App</th>
+                    <th className="text-left py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Description & Détails de l'action</th>
                     <th className="text-center py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black">Plateforme</th>
                     <th className="text-right py-3.5 px-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground print:hidden">Détail</th>
                   </tr>
@@ -1255,10 +1605,10 @@ export const AuditLogsPage: React.FC = () => {
                 <tbody className="divide-y divide-border print:divide-gray-300">
                   {filteredAuditLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-16 text-center text-muted-foreground">
+                      <td colSpan={7} className="py-16 text-center text-muted-foreground">
                         <History className="w-10 h-10 mx-auto text-muted-foreground/40 mb-2" />
                         <p className="font-bold text-sm text-foreground">Aucun événement ne correspond à vos filtres</p>
-                        <p className="text-xs text-muted-foreground mt-1">Modifiez les filtres de collaborateur, de date ou d'action pour afficher l'historique.</p>
+                        <p className="text-xs text-muted-foreground mt-1">Modifiez les critères de nom d'utilisateur, de date ou d'intervalle horaire.</p>
                       </td>
                     </tr>
                   ) : (
@@ -1267,6 +1617,7 @@ export const AuditLogsPage: React.FC = () => {
                       const userName = user?.userName || log.user_email?.split('@')[0] || 'Utilisateur';
                       const userJob = user?.jobTitle || 'Collaborateur';
                       const isMobile = isMobilePlatform(log.session_id, null, log.user_agent, log.module);
+                      const meta = classifyLogAction(log);
 
                       return (
                         <tr key={log.id} className="hover:bg-secondary/15 transition-colors group print:break-inside-avoid">
@@ -1305,41 +1656,74 @@ export const AuditLogsPage: React.FC = () => {
                             </span>
                           </td>
 
-                          {/* Action */}
+                          {/* Action Fus-App */}
                           <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${getActionBadgeClass(log.action)} print:border-black print:text-black`}>
-                              {log.action}
+                            <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border inline-flex items-center gap-1 shadow-xs ${meta.badgeClass} print:border-black print:text-black`}>
+                              <span>{meta.badgeIcon}</span>
+                              <span>{meta.badgeLabel}</span>
                             </span>
                           </td>
 
-                          {/* Module */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span className="text-[10px] font-bold text-muted-foreground print:text-black bg-secondary/60 print:bg-transparent px-2 py-0.5 rounded-md">
-                              {log.module}
-                            </span>
-                          </td>
-
-                          {/* Description */}
-                          <td className="py-3.5 px-4 max-w-md">
-                            <div className="text-xs font-medium text-foreground print:text-black leading-snug">
+                          {/* Description & Métadonnées Métier */}
+                          <td className="py-3.5 px-4 max-w-lg">
+                            <div className="text-xs font-semibold text-foreground print:text-black leading-snug">
                               {log.description}
                             </div>
-                            {log.entity_type && (
-                              <span className="text-[9.5px] text-muted-foreground print:text-gray-600 font-mono mt-0.5 block">
-                                Entité : {log.entity_type} {log.entity_id ? `(#${log.entity_id.slice(0, 8)})` : ''}
-                              </span>
-                            )}
+                            
+                            {/* Badges contextuels pour les métadonnées Fus-App / Live Match */}
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                              {(log.metadata?.match_label || (log.entity_type === 'match' && log.entity_id)) && (
+                                <span className="text-[9.5px] px-2 py-0.5 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 font-black border border-red-500/20 flex items-center gap-1">
+                                  🏟️ {log.metadata?.match_label || (log.entity_id ? `Match #${log.entity_id.slice(0, 8)}` : 'Match')}
+                                </span>
+                              )}
+                              {log.metadata?.operator_name && (
+                                <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 font-bold border border-purple-500/20">
+                                  🎙️ Opérateur: {log.metadata.operator_name}
+                                </span>
+                              )}
+                              {log.metadata?.score && (
+                                <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
+                                  🔢 Score: {log.metadata.score}
+                                </span>
+                              )}
+                              {log.metadata?.minute !== undefined && (
+                                <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/20">
+                                  ⏱️ {log.metadata.minute}e min
+                                </span>
+                              )}
+                              {log.metadata?.player_name && (
+                                <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/20">
+                                  👤 {log.metadata.player_name}
+                                </span>
+                              )}
+                              {log.metadata?.event_type && (
+                                <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 font-bold border border-purple-500/20 uppercase">
+                                  ⚡ {log.metadata.event_type}
+                                </span>
+                              )}
+                              {log.metadata?.formation && (
+                                <span className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold border border-indigo-500/20">
+                                  ♟️ {log.metadata.formation}
+                                </span>
+                              )}
+                              {log.entity_type && log.entity_type !== 'match' && (
+                                <span className="text-[9.5px] text-muted-foreground print:text-gray-600 font-mono">
+                                  {log.entity_type} {log.entity_id ? `(#${log.entity_id.slice(0, 8)})` : ''}
+                                </span>
+                              )}
+                            </div>
                           </td>
 
                           {/* Plateforme */}
                           <td className="py-3.5 px-4 text-center whitespace-nowrap">
                             {isMobile ? (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-md print:text-black print:bg-transparent">
-                                <Smartphone className="w-3 h-3" /> Mobile
+                                <Smartphone className="w-3 h-3" /> Fus-App
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-md print:text-black print:bg-transparent">
-                                <Laptop className="w-3 h-3" /> Web
+                                <Laptop className="w-3 h-3" /> Dashboard
                               </span>
                             )}
                           </td>

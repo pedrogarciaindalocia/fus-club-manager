@@ -17,7 +17,13 @@ export type AuditAction =
   | 'PASSWORD_CHANGE'
   | 'PERMISSION_CHANGE'
   | 'ROLE_CHANGE'
-  | 'SETTINGS_UPDATE';
+  | 'SETTINGS_UPDATE'
+  | 'START_LIVE'
+  | 'PAUSE_LIVE'
+  | 'RESUME_LIVE'
+  | 'PERIOD_CHANGE'
+  | 'TIMER_ADJUST'
+  | 'END_MATCH';
 
 export type AuditModule = 
   | 'AUTH'
@@ -27,6 +33,7 @@ export type AuditModule =
   | 'STAFF'
   | 'ARBITRES'
   | 'MATCHES'
+  | 'LIVE_TRACKING'
   | 'CLUB'
   | 'BLOG'
   | 'BACKUPS'
