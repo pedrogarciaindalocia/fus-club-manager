@@ -30,7 +30,9 @@ import {
   Maximize2,
   Sparkles,
   Radio,
-  Timer
+  Timer,
+  GripVertical,
+  RotateCcw
 } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -244,6 +246,96 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     fetchOperatorProfile();
     return () => { isMounted = false; };
   }, [match?.id, (match as any)?.live_operator_id, (match as any)?.live_operator_name, (match?.lineup as any)?.live_operator]);
+
+  // ── Drag & Drop Layout State for Blocks (US-CUSTOM-LAYOUT) ──
+  type ColumnId = 'col1' | 'col2' | 'col3';
+  interface LayoutState {
+    col1: string[];
+    col2: string[];
+    col3: string[];
+  }
+  const DEFAULT_LAYOUT: LayoutState = {
+    col1: ['scoreboard', 'video', 'timeline'],
+    col2: ['stats', 'officials', 'operator', 'upcoming'],
+    col3: ['compositions'],
+  };
+
+  const [layout, setLayout] = useState<LayoutState>(() => {
+    try {
+      const saved = localStorage.getItem('fus_match_overview_blocks_layout_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const allBlocks = ['scoreboard', 'video', 'timeline', 'stats', 'officials', 'operator', 'upcoming', 'compositions'];
+        const present = [...(parsed.col1 || []), ...(parsed.col2 || []), ...(parsed.col3 || [])];
+        if (allBlocks.every(b => present.includes(b))) {
+          return parsed;
+        }
+      }
+    } catch (_) {}
+    return DEFAULT_LAYOUT;
+  });
+
+  const [draggedBlock, setDraggedBlock] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ colId: ColumnId; index: number } | null>(null);
+
+  const updateLayout = (newLayout: LayoutState) => {
+    setLayout(newLayout);
+    try {
+      localStorage.setItem('fus_match_overview_blocks_layout_v2', JSON.stringify(newLayout));
+    } catch (_) {}
+  };
+
+  const resetLayout = () => {
+    setLayout(DEFAULT_LAYOUT);
+    try {
+      localStorage.removeItem('fus_match_overview_blocks_layout_v2');
+    } catch (_) {}
+  };
+
+  const handleDragStart = (e: React.DragEvent, blockId: string) => {
+    e.dataTransfer.setData('text/plain', blockId);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedBlock(blockId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, colId: ColumnId, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!dropTarget || dropTarget.colId !== colId || dropTarget.index !== index) {
+      setDropTarget({ colId, index });
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetColId: ColumnId, targetIndex: number) => {
+    e.preventDefault();
+    const blockId = e.dataTransfer.getData('text/plain') || draggedBlock;
+    setDraggedBlock(null);
+    setDropTarget(null);
+    if (!blockId) return;
+
+    const sourceColId = (Object.keys(layout) as ColumnId[]).find(col => layout[col]?.includes(blockId));
+    const currentIndex = sourceColId ? layout[sourceColId].indexOf(blockId) : -1;
+
+    let adjustedIndex = targetIndex;
+    if (sourceColId === targetColId && currentIndex !== -1 && currentIndex < targetIndex) {
+      adjustedIndex = Math.max(0, targetIndex - 1);
+    }
+
+    const newLayout: LayoutState = {
+      col1: (layout.col1 || []).filter(b => b !== blockId),
+      col2: (layout.col2 || []).filter(b => b !== blockId),
+      col3: (layout.col3 || []).filter(b => b !== blockId),
+    };
+
+    adjustedIndex = Math.min(adjustedIndex, newLayout[targetColId].length);
+    newLayout[targetColId].splice(adjustedIndex, 0, blockId);
+    updateLayout(newLayout);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedBlock(null);
+    setDropTarget(null);
+  };
 
   if (!match) {
     return (
@@ -773,109 +865,12 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   const topTeamPositions = getFormationPositions(topFormation, matchFormat);
   const bottomTeamPositions = getFormationPositions(bottomFormation, matchFormat);
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      className="space-y-4 max-w-[1750px] mx-auto pb-10 font-sans select-none"
-    >
-      {/* ════ TOP DARK CONTEXT BAR (Real DB metadata) ════ */}
-      <div className="bg-[#121e28] border border-slate-800 text-slate-200 rounded-xl px-4 py-2.5 shadow-xl flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-4 flex-wrap">
-          {/* Back button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-black text-[10px] uppercase tracking-wider rounded-lg h-8 px-3 gap-1"
-          >
-            <ChevronRight className="w-3.5 h-3.5 rotate-180" /> Retour
-          </Button>
 
-          {/* Country */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-400 font-medium text-[11px]">Pays:</span>
-            <div className="flex items-center gap-1.5 bg-[#1a2836] px-3 py-1 rounded-lg text-white font-bold border border-slate-700/60 text-[11px]">
-              <span>🇲🇦</span>
-              <span>Maroc</span>
-            </div>
-          </div>
-
-          {/* Competition / Type de match */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-400 font-medium text-[11px]">{isFriendly ? 'Type:' : 'Compétition:'}</span>
-            {isFriendly ? (
-              <div className="flex items-center gap-1.5 bg-amber-500/20 px-3 py-1 rounded-lg text-amber-300 font-black border border-amber-500/40 text-[11px] shadow-sm">
-                <span>🤝</span>
-                <span>Match Amical</span>
-                {match.category && <span className="opacity-75 font-bold">({match.category})</span>}
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 bg-[#1a2836] px-3 py-1 rounded-lg text-white font-bold border border-slate-700/60 text-[11px] truncate max-w-[220px]">
-                <span className="text-amber-400">🏆</span>
-                <span>{leagueName}</span>
-                {match.category && <span className="text-slate-400 text-[10px]">({match.category})</span>}
-              </div>
-            )}
-          </div>
-
-          {/* Match Date */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-400 font-medium text-[11px]">Date:</span>
-            <div className="flex items-center gap-1.5 bg-[#1a2836] px-3 py-1 rounded-lg text-slate-300 font-medium border border-slate-700/60 text-[11px]">
-              <span>{match.match_date || 'Aujourd’hui'}</span>
-              <Calendar className="w-3.5 h-3.5 text-emerald-400 ml-2" />
-            </div>
-          </div>
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-2">
-          {/* Bouton Post-Match (Drive) */}
-          <Button
-            onClick={() => setIsVideoModalOpen(true)}
-            className={`font-black uppercase tracking-wider text-[10px] h-8 px-3 rounded-lg gap-1.5 transition-all shadow-md ${
-              currentVideoUrl
-                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30'
-                : isFinished
-                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black animate-pulse shadow-amber-500/30'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
-            }`}
-            title={currentVideoUrl ? "Voir ou modifier la vidéo post-match (Google Drive)" : "Ajouter le résumé vidéo post-match (Google Drive)"}
-          >
-            <Video className="w-3.5 h-3.5" />
-            {currentVideoUrl ? 'Post-Match (Drive)' : isFinished ? '+ Post-Match (Drive)' : 'Post-Match'}
-          </Button>
-
-          {onOrchestrate && (
-            <Button
-              onClick={onOrchestrate}
-              className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black uppercase tracking-wider text-[10px] h-8 px-3 rounded-lg gap-1.5 shadow-md"
-            >
-              <LayoutPanelLeft className="w-3.5 h-3.5" /> Orchestrer
-            </Button>
-          )}
-          {onStats && (
-            <Button
-              onClick={onStats}
-              className="bg-slate-800 hover:bg-slate-700 text-white font-black uppercase tracking-wider text-[10px] h-8 px-3 rounded-lg gap-1.5"
-            >
-              <BarChart3 className="w-3.5 h-3.5" /> Saisir Stats
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* ════ 3-COLUMN MAIN LAYOUT GRID (REAL DB DATA) ════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-        
-        {/* ────────────────────────────────────────────────────────── */}
-        {/* 1. COLUMN 1: LIVE SCOREBOARD + CARD MATCHS À VENIR + FEED  */}
-        {/* ────────────────────────────────────────────────────────── */}
-        <div className="lg:col-span-5 space-y-4">
-          
-          {/* Scoreboard Card */}
+  // ── Render Individual Reorderable Block Content ──
+  const renderBlockContent = (blockId: string): React.ReactNode => {
+    switch (blockId) {
+      case 'scoreboard':
+        return (
           <div className="rounded-2xl overflow-hidden shadow-xl border border-slate-800 bg-[#121e28]">
             {/* Top Status Header */}
             <div className={`px-4 py-2 flex items-center justify-between font-black text-[10px] uppercase ${isLive ? 'bg-red-500 text-white animate-pulse' : isFinished ? 'bg-[#2ecc71] text-[#0b141d]' : 'bg-blue-600 text-white'}`}>
@@ -1020,8 +1015,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               </div>
             </div>
           </div>
-
-          {/* 🎥 Bloc Vidéo Google Drive du Match */}
+        );
+      case 'video':
+        return (
           <MatchDriveVideoCard
             match={match}
             currentVideoUrl={currentVideoUrl}
@@ -1031,8 +1027,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
             }}
             onOpenModal={() => setIsVideoModalOpen(true)}
           />
-
-          {/* Play to Play & Narration Tabs + Real Vertical Timeline Feed */}
+        );
+      case 'timeline':
+        return (
           <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-200 space-y-4">
             
             {/* Tab Switcher Pills */}
@@ -1167,15 +1164,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
             )}
 
           </div>
-
-        </div>
-
-        {/* ────────────────────────────────────────────────────────── */}
-        {/* 2. COLUMN 2: STATS & MATCHS À VENIR                        */}
-        {/* ────────────────────────────────────────────────────────── */}
-        <div className="lg:col-span-3 space-y-4">
-          
-          {/* STATS Card */}
+        );
+      case 'stats':
+        return (
           <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">STATS MATCH</h3>
@@ -1214,8 +1205,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               <StatBar label="Cartons Rouges" icon="🟥" home={homeReds} away={awayReds} />
             </div>
           </div>
-
-          {/* ── CARD CORPS D'ARBITRAGE & COMMISSAIRE DU MATCH ── */}
+        );
+      case 'officials':
+        return (
           <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-1.5 text-slate-900 font-black text-[11px] uppercase tracking-wider">
@@ -1260,8 +1252,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               </div>
             )}
           </div>
-
-          {/* ── CARD OPÉRATEUR DU MATCH (FUS-APP) ── */}
+        );
+      case 'operator':
+        return (
           <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-1.5 text-slate-900 font-black text-[11px] uppercase tracking-wider">
@@ -1320,8 +1313,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               </div>
             )}
           </div>
-
-          {/* ── CARD MATCHS À VENIR (Real DB Fixtures) ── */}
+        );
+      case 'upcoming':
+        return (
           <div className="bg-[#121e28] border border-slate-800 rounded-2xl p-4 shadow-xl text-white space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -1390,13 +1384,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               </div>
             )}
           </div>
-
-        </div>
-
-        {/* ────────────────────────────────────────────────────────── */}
-        {/* 3. COLUMN 3: LINE UP REAL TACTICAL PITCH & BENCHES         */}
-        {/* ────────────────────────────────────────────────────────── */}
-        <div className="lg:col-span-4 space-y-4">
+        );
+      case 'compositions':
+        return (
           <div className="rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-[#28963c] text-white flex flex-col">
             
             {/* Header: LINE UP & Half selector */}
@@ -1856,8 +1846,205 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
             </div>
 
           </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // ── Render Reorderable Draggable Block Wrapper ──
+  const renderDraggableBlock = (blockId: string, colId: ColumnId, index: number) => {
+    const isThisDragged = draggedBlock === blockId;
+    const isTargetSlot = dropTarget && dropTarget.colId === colId && dropTarget.index === index && !isThisDragged;
+
+    return (
+      <div
+        key={blockId}
+        draggable
+        onDragStart={(e) => handleDragStart(e, blockId)}
+        onDragEnd={handleDragEnd}
+        onDragOver={(e) => handleDragOver(e, colId, index)}
+        onDrop={(e) => handleDrop(e, colId, index)}
+        className={`group/block relative transition-all duration-200 cursor-move ${
+          isThisDragged ? 'opacity-40 scale-[0.98] ring-2 ring-emerald-500/50 rounded-2xl' : 'opacity-100'
+        }`}
+      >
+        {/* Drop Slot Indicator before this block */}
+        {isTargetSlot && (
+          <div className="mb-3 py-2.5 px-4 rounded-xl border-2 border-dashed border-emerald-400 bg-emerald-500/10 text-emerald-400 text-xs font-black flex items-center justify-center gap-2 animate-pulse shadow-inner">
+            <GripVertical className="w-4 h-4" />
+            <span>Déposer ici</span>
+          </div>
+        )}
+
+        {/* Floating Grab Indicator Handle on hover */}
+        <div
+          className="absolute top-2.5 right-2.5 z-30 opacity-80 group-hover/block:opacity-100 transition-opacity bg-slate-950/85 hover:bg-slate-900 text-slate-200 hover:text-white px-2.5 py-1 rounded-lg text-[9px] font-black flex items-center gap-1.5 shadow-lg border border-slate-700/80 backdrop-blur cursor-grab active:cursor-grabbing select-none"
+          title="Glisser pour déplacer et repositionner ce bloc"
+        >
+          <GripVertical className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Glisser</span>
         </div>
 
+        {renderBlockContent(blockId)}
+      </div>
+    );
+  };
+
+  // ── Render Column with Drop Zone ──
+  const renderColumn = (colId: ColumnId, colSpanClass: string) => {
+    const blocks = layout[colId] || [];
+    const isDroppingAtEnd = dropTarget && dropTarget.colId === colId && dropTarget.index === blocks.length;
+
+    return (
+      <div className={`${colSpanClass} space-y-4`}>
+        {blocks.map((blockId, idx) => renderDraggableBlock(blockId, colId, idx))}
+
+        {/* Column Bottom Drop Zone or Empty Column placeholder */}
+        <div
+          onDragOver={(e) => handleDragOver(e, colId, blocks.length)}
+          onDrop={(e) => handleDrop(e, colId, blocks.length)}
+          className={`rounded-2xl transition-all duration-200 ${
+            isDroppingAtEnd
+              ? 'py-4 px-4 border-2 border-dashed border-emerald-400 bg-emerald-500/10 text-emerald-400 text-xs font-black flex items-center justify-center gap-2 animate-pulse shadow-inner'
+              : blocks.length === 0
+              ? 'py-10 border-2 border-dashed border-slate-700 bg-slate-800/40 text-slate-400 text-xs font-bold flex flex-col items-center justify-center gap-2 rounded-2xl'
+              : 'min-h-[14px]'
+          }`}
+        >
+          {blocks.length === 0 ? (
+            <>
+              <GripVertical className="w-5 h-5 text-slate-500" />
+              <span>Zone vide — Déposez un bloc ici</span>
+            </>
+          ) : isDroppingAtEnd ? (
+            <>
+              <GripVertical className="w-4 h-4" />
+              <span>Déposer à la fin de cette colonne</span>
+            </>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      className="space-y-4 max-w-[1750px] mx-auto pb-10 font-sans select-none"
+    >
+      {/* ════ TOP DARK CONTEXT BAR (Real DB metadata) ════ */}
+      <div className="bg-[#121e28] border border-slate-800 text-slate-200 rounded-xl px-4 py-2.5 shadow-xl flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* Back button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            className="bg-slate-800 hover:bg-slate-700 text-white font-black text-[10px] uppercase tracking-wider rounded-lg h-8 px-3 gap-1"
+          >
+            <ChevronRight className="w-3.5 h-3.5 rotate-180" /> Retour
+          </Button>
+
+          {/* Country */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400 font-medium text-[11px]">Pays:</span>
+            <div className="flex items-center gap-1.5 bg-[#1a2836] px-3 py-1 rounded-lg text-white font-bold border border-slate-700/60 text-[11px]">
+              <span>🇲🇦</span>
+              <span>Maroc</span>
+            </div>
+          </div>
+
+          {/* Competition / Type de match */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400 font-medium text-[11px]">{isFriendly ? 'Type:' : 'Compétition:'}</span>
+            {isFriendly ? (
+              <div className="flex items-center gap-1.5 bg-amber-500/20 px-3 py-1 rounded-lg text-amber-300 font-black border border-amber-500/40 text-[11px] shadow-sm">
+                <span>🤝</span>
+                <span>Match Amical</span>
+                {match.category && <span className="opacity-75 font-bold">({match.category})</span>}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-[#1a2836] px-3 py-1 rounded-lg text-white font-bold border border-slate-700/60 text-[11px] truncate max-w-[220px]">
+                <span className="text-amber-400">🏆</span>
+                <span>{leagueName}</span>
+                {match.category && <span className="text-slate-400 text-[10px]">({match.category})</span>}
+              </div>
+            )}
+          </div>
+
+          {/* Match Date */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400 font-medium text-[11px]">Date:</span>
+            <div className="flex items-center gap-1.5 bg-[#1a2836] px-3 py-1 rounded-lg text-slate-300 font-medium border border-slate-700/60 text-[11px]">
+              <span>{match.match_date || 'Aujourd’hui'}</span>
+              <Calendar className="w-3.5 h-3.5 text-emerald-400 ml-2" />
+            </div>
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Badge Drag & Drop actif */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[10px] font-bold">
+            <GripVertical className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Glisser-déposer actif</span>
+          </div>
+
+          {/* Bouton Réinitialiser Disposition */}
+          <Button
+            onClick={resetLayout}
+            variant="ghost"
+            size="sm"
+            className="text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 text-[10px] font-bold h-8 px-2.5 rounded-lg gap-1.5 border border-slate-700/80"
+            title="Rétablir l'ordre d'affichage par défaut de tous les blocs"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden md:inline">Disposition par défaut</span>
+          </Button>
+
+          {/* Bouton Post-Match (Drive) */}
+          <Button
+            onClick={() => setIsVideoModalOpen(true)}
+            className={`font-black uppercase tracking-wider text-[10px] h-8 px-3 rounded-lg gap-1.5 transition-all shadow-md ${
+              currentVideoUrl
+                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30'
+                : isFinished
+                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black animate-pulse shadow-amber-500/30'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+            }`}
+            title={currentVideoUrl ? "Voir ou modifier la vidéo post-match (Google Drive)" : "Ajouter le résumé vidéo post-match (Google Drive)"}
+          >
+            <Video className="w-3.5 h-3.5" />
+            {currentVideoUrl ? 'Post-Match (Drive)' : isFinished ? '+ Post-Match (Drive)' : 'Post-Match'}
+          </Button>
+
+          {onOrchestrate && (
+            <Button
+              onClick={onOrchestrate}
+              className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black uppercase tracking-wider text-[10px] h-8 px-3 rounded-lg gap-1.5 shadow-md"
+            >
+              <LayoutPanelLeft className="w-3.5 h-3.5" /> Orchestrer
+            </Button>
+          )}
+          {onStats && (
+            <Button
+              onClick={onStats}
+              className="bg-slate-800 hover:bg-slate-700 text-white font-black uppercase tracking-wider text-[10px] h-8 px-3 rounded-lg gap-1.5"
+            >
+              <BarChart3 className="w-3.5 h-3.5" /> Saisir Stats
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* ════ 3-COLUMN MAIN LAYOUT GRID (DRAGGABLE & REORDERABLE) ════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        {renderColumn('col1', 'lg:col-span-5')}
+        {renderColumn('col2', 'lg:col-span-3')}
+        {renderColumn('col3', 'lg:col-span-4')}
       </div>
 
       {/* Modal Post-Match Video Drive */}
