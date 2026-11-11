@@ -1028,7 +1028,11 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                                   type="button"
                                   onClick={async () => {
                                     if (window.confirm(`Supprimer la session "${test.test_name}" ?`)) {
-                                      await onDeleteTest(test.id);
+                                      try {
+                                        await onDeleteTest(test.id);
+                                      } catch {
+                                        // Erreur déjà remontée par la mutation React Query
+                                      }
                                     }
                                   }}
                                   className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
@@ -1211,7 +1215,11 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                         type="button"
                         onClick={async () => {
                           if (window.confirm(`Supprimer la session "${test.test_name}" ?`)) {
-                            await onDeleteTest(test.id);
+                            try {
+                              await onDeleteTest(test.id);
+                            } catch {
+                              // Erreur déjà remontée par la mutation React Query
+                            }
                           }
                         }}
                         className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors cursor-pointer"

@@ -1536,6 +1536,7 @@ export const recruitmentService = {
     const isCleared = getLocal<boolean>(KEY_CLEARED, false);
     const local = getLocal<PlayerTest[] | null>(KEY_TESTS, null);
     let testsList: PlayerTest[] = [];
+    let supabaseLoaded = false;
 
     try {
       const { data, error } = await supabase
@@ -1545,7 +1546,8 @@ export const recruitmentService = {
 
       if (error) {
         console.warn('[RecruitmentService] Erreur Supabase getTests, bascule sur local:', error.message);
-      } else if (data && data.length > 0) {
+      } else if (Array.isArray(data)) {
+        supabaseLoaded = true;
         testsList = data.map(s => {
           let parsedNotesData: any = {};
           if (s.notes) {
@@ -1556,9 +1558,9 @@ export const recruitmentService = {
             }
           }
 
-          const candidateIds: string[] = Array.isArray(parsedNotesData.candidate_ids) 
-            ? parsedNotesData.candidate_ids 
-            : (s.notes && s.notes.includes('candidate_id:') 
+          const candidateIds: string[] = Array.isArray(parsedNotesData.candidate_ids)
+            ? parsedNotesData.candidate_ids
+            : (s.notes && s.notes.includes('candidate_id:')
                 ? [s.notes.split('candidate_id:')[1]?.split(';')[0]?.trim()].filter(Boolean)
                 : []);
 
@@ -1586,56 +1588,40 @@ export const recruitmentService = {
         });
 
         setLocal(KEY_TESTS, testsList);
-      } else if (!error && data && data.length === 0 && local !== null) {
-        testsList = [];
-        setLocal(KEY_TESTS, []);
       }
     } catch (err) {
       console.warn('[RecruitmentService] Exception réseau getTests, bascule sur local:', err);
     }
 
-    if (testsList.length === 0) {
+    if (!supabaseLoaded) {
       if (isCleared) return [];
-      testsList = local !== null ? local : [...initialMockTests];
+      const cleanedLocal = (local !== null ? local : [...initialMockTests]).filter(
+        t => t && t.id && !String(t.id).startsWith('test-eval-')
+      );
+      if (local !== null && cleanedLocal.length !== local.length) {
+        setLocal(KEY_TESTS, cleanedLocal);
+      }
+      testsList = cleanedLocal;
     }
 
-    if (isCleared) return testsList;
+    if (isCleared || testsList.length === 0) return testsList;
 
-    // Synchronisation automatique : lier toute évaluation existante
+    // Synchronisation du statut uniquement sur les sessions réellement planifiées (sans jamais créer de faux plannings depuis les rapports)
     try {
       const evals = getLocal<CandidateEvaluation[]>(KEY_EVALS, []);
-      const candidates = getLocal<TrialCandidate[]>(KEY_CANDIDATES, []);
 
-      evals.forEach((ev, idx) => {
-        const matchingTest = testsList.find(t => 
+      evals.forEach((ev) => {
+        const matchingTest = testsList.find(t =>
           (ev.test_id && t.id === ev.test_id) ||
-          (t.candidate_id === ev.candidate_id && t.test_date === ev.evaluation_date)
+          (
+            (t.candidate_id === ev.candidate_id || t.candidate_ids?.includes(ev.candidate_id)) &&
+            t.test_date === ev.evaluation_date
+          )
         );
 
         if (matchingTest) {
           if (!matchingTest.candidate_id) matchingTest.candidate_id = ev.candidate_id;
           matchingTest.status = 'completed';
-        } else {
-          const cand = candidates.find(c => c.id === ev.candidate_id);
-          const autoTestId = ev.test_id || `test-eval-${ev.id}`;
-          testsList.push({
-            id: autoTestId,
-            candidate_id: ev.candidate_id,
-            test_name: ev.test_name || `Session d'Évaluation #${evals.length - idx} (${cand ? `${cand.first_name} ${cand.last_name}` : 'Candidat'})`,
-            test_date: ev.evaluation_date || new Date().toISOString().split('T')[0],
-            start_time: '10:00',
-            end_time: '12:00',
-            location: 'Complexe Sportif FUS - Académie',
-            training_ground: 'Terrain Synthétique 1',
-            target_team: cand ? `Académie FUS ${cand.age_category || 'U19'}` : 'Académie FUS',
-            age_category: cand?.age_category || 'U19',
-            assigned_coaches: ['Staff Technique Académie FUS'],
-            assigned_scouts: ev.evaluator_name ? [ev.evaluator_name] : ['Cellule Recrutement'],
-            test_type: 'comprehensive',
-            status: 'completed',
-            notes: (ev as any).recommendation || `Évaluation enregistrée : score ${ev.overall_score}/10 (${ev.verdict})`,
-            created_at: ev.created_at || new Date().toISOString(),
-          });
         }
       });
     } catch (e) {
@@ -1856,7 +1842,7 @@ export const recruitmentService = {
         if (error) {
           console.warn(`[RecruitmentService] Erreur Supabase updateTest (${id}):`, error.message);
         } else {
-          AuditLogger.logUpdate('RECRUITMENT', 'TRIAL_SESSION', id, existing, updates, `Mise à jour séance test ${updates.test_name || id}`);
+          AuditLogger.logUpdate('PLAYERS', 'TRIAL_SESSION', id, existing, updates, `Mise à jour séance test ${updates.test_name || id}`);
         }
       }
     } catch (err) {
@@ -1875,15 +1861,6 @@ export const recruitmentService = {
 
     const cleanIds = Array.from(new Set(ids.filter(Boolean)));
     const idSet = new Set(cleanIds);
-    const list = getLocal<PlayerTest[]>(KEY_TESTS, initialMockTests);
-    setLocal(
-      KEY_TESTS,
-      list.filter(t => {
-        if (idSet.has(t.id)) return false;
-        // Supprimer aussi d'éventuelles entrées locales héritées de type "<uuid>-<suffix>"
-        return !cleanIds.some(baseId => isValidUuid(baseId) && t.id.startsWith(`${baseId}-`));
-      })
-    );
 
     const validUuids = Array.from(
       new Set(
@@ -1898,23 +1875,41 @@ export const recruitmentService = {
     );
 
     if (validUuids.length > 0) {
-      try {
-        const { error } = await supabase.from('trial_sessions').delete().in('id', validUuids);
-        if (error) {
-          console.warn(`[RecruitmentService] Erreur Supabase deleteTests:`, error.message);
-        } else {
-          AuditLogger.logDelete(
-            'PLAYERS',
-            'TRIAL_SESSION',
-            validUuids.join(','),
-            null,
-            `Suppression multiple de ${validUuids.length} session(s) de test`
-          );
-        }
-      } catch (err) {
-        console.warn(`[RecruitmentService] Exception réseau deleteTests:`, err);
+      const { error } = await supabase.from('trial_sessions').delete().in('id', validUuids);
+      if (error) {
+        console.warn('[RecruitmentService] Erreur Supabase deleteTests:', error.message);
+        throw new Error(`Impossible de supprimer dans Supabase : ${error.message}`);
       }
+
+      // Vérifier qu'aucune ligne ciblée ne subsiste (détecte un blocage RLS silencieux sur DELETE)
+      const { data: stillPresent, error: verifyError } = await supabase
+        .from('trial_sessions')
+        .select('id')
+        .in('id', validUuids);
+      if (!verifyError && stillPresent && stillPresent.length > 0) {
+        throw new Error('Suppression bloquée côté base de données (permissions RLS sur trial_sessions).');
+      }
+
+      AuditLogger.logDelete(
+        'PLAYERS',
+        'TRIAL_SESSION',
+        validUuids.join(','),
+        null,
+        `Suppression multiple de ${validUuids.length} session(s) de test`
+      );
     }
+
+    const list = getLocal<PlayerTest[]>(KEY_TESTS, initialMockTests);
+    setLocal(
+      KEY_TESTS,
+      list.filter(t => {
+        if (!t || !t.id) return false;
+        if (String(t.id).startsWith('test-eval-')) return false;
+        if (idSet.has(t.id)) return false;
+        // Supprimer aussi d'éventuelles entrées locales héritées de type "<uuid>-<suffix>"
+        return !cleanIds.some(baseId => isValidUuid(baseId) && t.id.startsWith(`${baseId}-`));
+      })
+    );
   },
 
   // 4. EVALUATIONS (Persistance Supabase public.candidate_evaluations avec respect CHECK constraint et GENERATED ALWAYS)

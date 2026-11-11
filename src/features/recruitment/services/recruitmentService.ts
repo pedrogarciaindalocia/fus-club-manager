@@ -337,6 +337,7 @@ export const recruitmentService = {
     const isCleared = getLocal<boolean>(KEY_CLEARED, false);
     const local = getLocal<PlayerTest[] | null>(KEY_TESTS, null);
     let testsList: PlayerTest[] = [];
+    let supabaseLoaded = false;
 
     try {
       const { data, error } = await supabase
@@ -345,7 +346,8 @@ export const recruitmentService = {
         .order('session_date', { ascending: false });
       if (error) {
         console.warn('[RecruitmentService] Erreur Supabase getTests, bascule sur local:', error.message);
-      } else if (data && data.length > 0) {
+      } else if (Array.isArray(data)) {
+        supabaseLoaded = true;
         testsList = data.map(s => ({
           id: s.id,
           candidate_id: s.candidate_id || (s.notes && s.notes.includes('candidate_id:') ? s.notes.split('candidate_id:')[1]?.split(';')[0]?.trim() : undefined),
@@ -364,55 +366,35 @@ export const recruitmentService = {
           notes: s.notes || undefined,
           created_at: s.created_at,
         }));
+        setLocal(KEY_TESTS, testsList);
       }
     } catch (err) {
       console.warn('[RecruitmentService] Exception réseau getTests, bascule sur local:', err);
     }
 
-    if (testsList.length === 0) {
+    if (!supabaseLoaded) {
       if (isCleared) return [];
-      testsList = local !== null ? local : [...initialMockTests];
+      const cleanedLocal = (local !== null ? local : [...initialMockTests]).filter(
+        t => t && t.id && !String(t.id).startsWith('test-eval-')
+      );
+      testsList = cleanedLocal;
     }
 
-    if (isCleared) return testsList;
+    if (isCleared || testsList.length === 0) return testsList;
 
-    // Synchronisation automatique : toute évaluation existante doit être liée et visible dans le calendrier des tests
+    // Synchronisation du statut uniquement sur les sessions réellement planifiées
     try {
       const evals = getLocal<CandidateEvaluation[]>(KEY_EVALS, []);
-      const candidates = getLocal<TrialCandidate[]>(KEY_CANDIDATES, []);
 
-      evals.forEach((ev, idx) => {
-        const matchingTest = testsList.find(t => 
+      evals.forEach((ev) => {
+        const matchingTest = testsList.find(t =>
           (ev.test_id && t.id === ev.test_id) ||
           (t.candidate_id === ev.candidate_id && t.test_date === ev.evaluation_date)
         );
 
         if (matchingTest) {
-          // S'assurer de la liaison bidirectionnelle
           if (!matchingTest.candidate_id) matchingTest.candidate_id = ev.candidate_id;
           matchingTest.status = 'completed';
-        } else {
-          // Créer virtuellement la session de test liée à cette évaluation pour qu'elle apparaisse dans le calendrier
-          const cand = candidates.find(c => c.id === ev.candidate_id);
-          const autoTestId = ev.test_id || `test-eval-${ev.id}`;
-          testsList.push({
-            id: autoTestId,
-            candidate_id: ev.candidate_id,
-            test_name: ev.test_name || `Session d'Évaluation #${evals.length - idx} (${cand ? `${cand.first_name} ${cand.last_name}` : 'Candidat'})`,
-            test_date: ev.evaluation_date || new Date().toISOString().split('T')[0],
-            start_time: '10:00',
-            end_time: '12:00',
-            location: 'Complexe Sportif FUS - Académie',
-            training_ground: 'Terrain Synthétique 1',
-            target_team: cand ? `Académie FUS ${cand.age_category || 'U19'}` : 'Académie FUS',
-            age_category: cand?.age_category || 'U19',
-            assigned_coaches: ['Staff Technique Académie FUS'],
-            assigned_scouts: ev.evaluator_name ? [ev.evaluator_name] : ['Cellule Recrutement'],
-            test_type: 'comprehensive',
-            status: 'completed',
-            notes: ev.recommendation || `Évaluation enregistrée : score ${ev.overall_score}/10 (${ev.verdict})`,
-            created_at: ev.created_at || new Date().toISOString(),
-          });
         }
       });
     } catch (e) {
