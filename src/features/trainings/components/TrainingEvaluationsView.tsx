@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Award,
   Search,
@@ -18,6 +18,11 @@ import {
   Target
 } from 'lucide-react';
 import type { PlayerTrainingEvaluation, TrainingSession } from '../types/training';
+import { usePlayers } from '../../../hooks/usePlayers';
+import {
+  DynamicPerformanceEvaluator,
+  type DynamicEvaluationChangePayload,
+} from '../../../components/metrics/DynamicPerformanceEvaluator';
 
 interface TrainingEvaluationsViewProps {
   evaluations: PlayerTrainingEvaluation[];
@@ -38,19 +43,29 @@ export const TrainingEvaluationsView: React.FC<TrainingEvaluationsViewProps> = (
   const [isNewEvalModalOpen, setIsNewEvalModalOpen] = useState(false);
   const [selectedEvaluationForDetail, setSelectedEvaluationForDetail] = useState<PlayerTrainingEvaluation | null>(null);
 
+  // Club players for quick selection + position matching
+  const { players: clubPlayers = [] } = usePlayers();
+
   // New Eval Form State
-  const [formPlayerName, setFormPlayerName] = useState('Amine Zouhair');
-  const [formPlayerId, setFormPlayerId] = useState('p-1');
+  const [formPlayerName, setFormPlayerName] = useState(() => clubPlayers[0]?.full_name || 'Amine Zouhair');
+  const [formPlayerId, setFormPlayerId] = useState(() => clubPlayers[0]?.id || 'p-1');
+  const [formPlayerPosition, setFormPlayerPosition] = useState(() => clubPlayers[0]?.position || 'CM');
   const [formSessionId, setFormSessionId] = useState(sessions[0]?.id || '');
   const [formEvaluator, setFormEvaluator] = useState('Jamal Sellami');
   const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
-  const [formTech, setFormTech] = useState(8);
-  const [formTac, setFormTac] = useState(7.5);
-  const [formPhy, setFormPhy] = useState(8);
-  const [formMen, setFormMen] = useState(8.5);
+  const [dynamicEval, setDynamicEval] = useState<DynamicEvaluationChangePayload | null>(null);
   const [formNotes, setFormNotes] = useState('');
   const [formStrengths, setFormStrengths] = useState('Excellente orientation à la prise de balle, vision périphérique');
   const [formImprovements, setFormImprovements] = useState('Gagner en régularité sur les replis défensifs');
+
+  useEffect(() => {
+    if (clubPlayers.length > 0 && (formPlayerId === 'p-1' || !clubPlayers.some(p => p.id === formPlayerId))) {
+      const first = clubPlayers[0];
+      setFormPlayerId(first.id);
+      setFormPlayerName(first.full_name || `${first.first_name || ''} ${first.last_name || ''}`.trim());
+      setFormPlayerPosition(first.position || 'CM');
+    }
+  }, [clubPlayers, formPlayerId]);
 
   // Filter evaluations
   const filteredEvaluations = evaluations.filter(ev => {
@@ -84,25 +99,34 @@ export const TrainingEvaluationsView: React.FC<TrainingEvaluationsViewProps> = (
 
   const handleCreateEvaluation = async (e: React.FormEvent) => {
     e.preventDefault();
-    const globalScore = Number(((formTech + formTac + formPhy + formMen) / 4).toFixed(1));
+    const tech = dynamicEval?.technique ?? 7;
+    const tac = dynamicEval?.tactique ?? 7;
+    const phy = dynamicEval?.physique ?? 7;
+    const men = dynamicEval?.mental ?? 7;
+    const globalScore = dynamicEval?.global ?? Number(((tech + tac + phy + men) / 4).toFixed(1));
     const targetSession = sessions.find(s => s.id === formSessionId);
 
     await onSaveEvaluation({
       player_id: formPlayerId,
       player_name: formPlayerName,
+      position: dynamicEval?.positionCode || formPlayerPosition || 'CM',
       session_id: formSessionId,
-      session_name: targetSession?.name || 'Séance d\'entraînement',
+      session_name: targetSession?.name || "Séance d'entraînement",
       evaluation_date: formDate,
       evaluator_name: formEvaluator,
-      technical_score: formTech,
-      tactical_score: formTac,
-      physical_score: formPhy,
-      mental_score: formMen,
+      technical_score: tech,
+      tactical_score: tac,
+      physical_score: phy,
+      mental_score: men,
       global_score: globalScore,
+      metric_set_id: dynamicEval?.metricSetId || null,
+      metric_set_name: dynamicEval?.metricSetName || null,
+      position_code: dynamicEval?.positionCode || null,
+      criteria_scores: dynamicEval?.criteriaScores || null,
       notes: formNotes,
       strengths: formStrengths.split(',').map(s => s.trim()).filter(Boolean),
       improvements: formImprovements.split(',').map(s => s.trim()).filter(Boolean),
-      tags: ['Séance FUS', targetSession?.session_type || 'Tactique']
+      tags: ['Séance FUS', targetSession?.session_type || 'Tactique', dynamicEval?.metricSetName].filter(Boolean) as string[],
     });
 
     setIsNewEvalModalOpen(false);
@@ -289,8 +313,13 @@ export const TrainingEvaluationsView: React.FC<TrainingEvaluationsViewProps> = (
                     <div className="text-slate-800 dark:text-slate-200 font-semibold line-clamp-1">
                       {item.session_name || "Entraînement régulier"}
                     </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      Évaluateur : {item.evaluator_name}
+                    <div className="text-[11px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-1.5">
+                      <span>Évaluateur : {item.evaluator_name}</span>
+                      {(item.metric_set_name || item.position_code) && (
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
+                          {[item.metric_set_name, item.position_code].filter(Boolean).join(' • ')}
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -347,11 +376,11 @@ export const TrainingEvaluationsView: React.FC<TrainingEvaluationsViewProps> = (
       {/* NEW EVALUATION MODAL */}
       {isNewEvalModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
             <div className="p-6 bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white border-b border-emerald-800/40 relative flex items-center justify-between">
               <div>
                 <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block mb-0.5">
-                  Fiche de notation
+                  Fiche de notation Performance Joueur
                 </span>
                 <h3 className="text-xl font-black text-white">
                   Nouvelle Évaluation 4 Piliers
@@ -365,19 +394,44 @@ export const TrainingEvaluationsView: React.FC<TrainingEvaluationsViewProps> = (
               </button>
             </div>
 
-            <form onSubmit={handleCreateEvaluation} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <form onSubmit={handleCreateEvaluation} className="p-6 space-y-4 max-h-[82vh] overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Nom du joueur *
+                    Joueur du club *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={formPlayerName}
-                    onChange={e => setFormPlayerName(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
-                  />
+                  {clubPlayers.length > 0 ? (
+                    <select
+                      value={formPlayerId}
+                      onChange={e => {
+                        const sel = clubPlayers.find(pl => pl.id === e.target.value);
+                        if (sel) {
+                          setFormPlayerId(sel.id);
+                          setFormPlayerName(sel.full_name || `${sel.first_name || ''} ${sel.last_name || ''}`.trim());
+                          setFormPlayerPosition(sel.position || 'CM');
+                        }
+                      }}
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-semibold"
+                    >
+                      {!clubPlayers.some(pl => pl.id === formPlayerId) && (
+                        <option value={formPlayerId}>{formPlayerName}</option>
+                      )}
+                      {clubPlayers.map(pl => (
+                        <option key={pl.id} value={pl.id}>
+                          {pl.full_name || `${pl.first_name || ''} ${pl.last_name || ''}`.trim()}{' '}
+                          {pl.position ? `(${pl.position})` : ''} {pl.category ? `• ${pl.category}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      required
+                      value={formPlayerName}
+                      onChange={e => setFormPlayerName(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                    />
+                  )}
                 </div>
 
                 <div>
@@ -412,7 +466,7 @@ export const TrainingEvaluationsView: React.FC<TrainingEvaluationsViewProps> = (
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Date de l'évaluation *
+                    Date de l&apos;évaluation *
                   </label>
                   <input
                     type="date"
@@ -424,85 +478,12 @@ export const TrainingEvaluationsView: React.FC<TrainingEvaluationsViewProps> = (
                 </div>
               </div>
 
-              {/* 4 Pillars Sliders */}
-              <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                <h4 className="text-xs font-black uppercase text-slate-700 dark:text-slate-300 tracking-wider">
-                  Notes des 4 Piliers (1 à 10)
-                </h4>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <div className="flex justify-between font-bold text-emerald-600 mb-1">
-                      <span>⚽ 1. Technique</span>
-                      <span>{formTech} / 10</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      step="0.5"
-                      value={formTech}
-                      onChange={e => setFormTech(parseFloat(e.target.value))}
-                      className="w-full accent-emerald-500"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between font-bold text-blue-600 mb-1">
-                      <span>🧠 2. Tactique</span>
-                      <span>{formTac} / 10</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      step="0.5"
-                      value={formTac}
-                      onChange={e => setFormTac(parseFloat(e.target.value))}
-                      className="w-full accent-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between font-bold text-amber-600 mb-1">
-                      <span>⚡ 3. Physique</span>
-                      <span>{formPhy} / 10</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      step="0.5"
-                      value={formPhy}
-                      onChange={e => setFormPhy(parseFloat(e.target.value))}
-                      className="w-full accent-amber-500"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between font-bold text-purple-600 mb-1">
-                      <span>🔥 4. Mental</span>
-                      <span>{formMen} / 10</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      step="0.5"
-                      value={formMen}
-                      onChange={e => setFormMen(parseFloat(e.target.value))}
-                      className="w-full accent-purple-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500">Moyenne globale automatique :</span>
-                  <span className="text-base font-black text-emerald-600 dark:text-emerald-400">
-                    {((formTech + formTac + formPhy + formMen) / 4).toFixed(1)} / 10
-                  </span>
-                </div>
-              </div>
+              {/* Grille Dynamique Lots Performance Joueur (Hors-Scout) */}
+              <DynamicPerformanceEvaluator
+                rubric="training"
+                playerPosition={formPlayerPosition}
+                onChange={setDynamicEval}
+              />
 
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
@@ -658,6 +639,38 @@ export const TrainingEvaluationsView: React.FC<TrainingEvaluationsViewProps> = (
                   </ul>
                 </div>
               </div>
+
+              {selectedEvaluationForDetail.criteria_scores &&
+                Object.keys(selectedEvaluationForDetail.criteria_scores).length > 0 && (
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-200">
+                      <span>Détail par critère du lot</span>
+                      {(selectedEvaluationForDetail.metric_set_name || selectedEvaluationForDetail.position_code) && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                          {[selectedEvaluationForDetail.metric_set_name, selectedEvaluationForDetail.position_code]
+                            .filter(Boolean)
+                            .join(' • ')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
+                      {Object.entries(selectedEvaluationForDetail.criteria_scores).map(([k, val]) => {
+                        const label = k.includes(':') ? k.split(':').slice(1).join(':') : k;
+                        return (
+                          <div
+                            key={k}
+                            className="flex items-center justify-between text-[11px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                          >
+                            <span className="text-slate-700 dark:text-slate-200 truncate mr-2">{label}</span>
+                            <span className="font-black text-emerald-600 dark:text-emerald-400 shrink-0">
+                              {Number(val).toFixed(1)}/10
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
               {selectedEvaluationForDetail.notes && (
                 <div>

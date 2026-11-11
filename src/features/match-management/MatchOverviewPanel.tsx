@@ -46,6 +46,8 @@ import { matchService } from '../../services/matchService';
 import { MatchDriveVideoModal } from './components/MatchDriveVideoModal';
 import { MatchDriveVideoCard } from './components/MatchDriveVideoCard';
 import { supabase } from '../../lib/supabase';
+import { frmfDataService, type FRMFDataset } from '../../services/frmfDataService';
+import { computeFrmfFaceToFaceSummary } from '../../utils/championshipTimelineHelper';
 import type { Match } from '../../types';
 
 interface MatchOverviewPanelProps {
@@ -130,6 +132,35 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [currentVideoUrl, setCurrentVideoUrl] = useState<string | null>((match as any)?.video_url || null);
+  const [frmfDataset, setFrmfDataset] = useState<FRMFDataset>(() => frmfDataService.getDataset());
+
+  useEffect(() => {
+    let mounted = true;
+    const syncFrmf = () => {
+      frmfDataService.loadFromDatabase().then((res) => {
+        if (mounted && res?.dataset) {
+          setFrmfDataset(res.dataset);
+        }
+      });
+    };
+    syncFrmf();
+
+    const channel = supabase
+      .channel(`match-overview-frmf-${match?.id || 'global'}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'frmf_matches' },
+        () => {
+          if (mounted) syncFrmf();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [match?.id]);
 
   useEffect(() => {
     setCurrentVideoUrl((match as any)?.video_url || null);
@@ -256,7 +287,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   }
   const DEFAULT_LAYOUT: LayoutState = {
     col1: ['scoreboard', 'video', 'timeline'],
-    col2: ['stats', 'officials', 'operator', 'upcoming'],
+    col2: ['stats', 'officials', 'operator', 'h2h'],
     col3: ['compositions'],
   };
 
@@ -265,10 +296,18 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
       const saved = localStorage.getItem('fus_match_overview_blocks_layout_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
-        const allBlocks = ['scoreboard', 'video', 'timeline', 'stats', 'officials', 'operator', 'upcoming', 'compositions'];
-        const present = [...(parsed.col1 || []), ...(parsed.col2 || []), ...(parsed.col3 || [])];
+        // Migrer l'ancien bloc 'upcoming' supprimé vers 'h2h' sans perdre la disposition personnalisée
+        const migrateCol = (arr: any) =>
+          Array.isArray(arr) ? arr.map((b) => (b === 'upcoming' ? 'h2h' : b)) : [];
+        const migrated: LayoutState = {
+          col1: migrateCol(parsed.col1),
+          col2: migrateCol(parsed.col2),
+          col3: migrateCol(parsed.col3),
+        };
+        const allBlocks = ['scoreboard', 'video', 'timeline', 'stats', 'officials', 'operator', 'h2h', 'compositions'];
+        const present = [...migrated.col1, ...migrated.col2, ...migrated.col3];
         if (allBlocks.every(b => present.includes(b))) {
-          return parsed;
+          return migrated;
         }
       }
     } catch (_) {}
@@ -630,11 +669,24 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     });
   }, [events, totalDuration]);
 
-  // Real Upcoming Matches List from DB
-  const upcomingMatches = useMemo(() => {
-    const list = (allMatches || []).filter(m => m.id !== match.id);
-    return list.slice(0, 4);
-  }, [allMatches, match.id]);
+  // Face-à-Face FRMF basé sur Classement & Résultats (masqué s'il n'y a aucune donnée)
+  const frmfFaceToFace = useMemo(() => {
+    if (!match) return null;
+    const allClubsMerged = [
+      ...(mainClub ? [mainClub] : []),
+      ...(opponentClubs || []),
+    ];
+    return computeFrmfFaceToFaceSummary({
+      frmfDataset,
+      category: match.category,
+      teamAName: mainClubName,
+      teamBName: opponentName,
+      availableGroups: match.category ? frmfDataService.getGroups(match.category) : undefined,
+      allClubs: allClubsMerged,
+      mainClub,
+      excludeMatchId: match.id,
+    });
+  }, [frmfDataset, match, mainClubName, opponentName, mainClub, opponentClubs]);
 
   // Assigned Referees & Match Officials (including Commissaire de match)
   const assignedOfficials = useMemo(() => {
@@ -1314,77 +1366,131 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
             )}
           </div>
         );
-      case 'upcoming':
+      case 'h2h': {
+        if (!frmfFaceToFace || !frmfFaceToFace.hasData) {
+          return null;
+        }
+        const stA = frmfFaceToFace.standingA;
+        const stB = frmfFaceToFace.standingB;
+
+        const renderMiniLogo = (logoUrl: string | null, label: string, highlight = false) => (
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center overflow-hidden p-0.5 shrink-0 border ${
+            highlight ? 'bg-white border-emerald-400/60' : 'bg-white border-slate-700'
+          }`}>
+            {logoUrl ? (
+              <img src={logoUrl} alt={label} className="w-full h-full object-contain rounded-full" />
+            ) : (
+              <span className="text-[8px] font-black text-slate-900">{label.slice(0, 3)}</span>
+            )}
+          </div>
+        );
+
+        const renderFormDots = (form: Array<'W' | 'D' | 'L'>) => (
+          <div className="flex items-center gap-1">
+            {form.slice(-5).map((r, idx) => (
+              <span
+                key={idx}
+                className={`w-2 h-2 rounded-full ${
+                  r === 'W' ? 'bg-emerald-400' : r === 'D' ? 'bg-amber-400' : 'bg-rose-500'
+                }`}
+                title={r === 'W' ? 'Victoire' : r === 'D' ? 'Nul' : 'Défaite'}
+              />
+            ))}
+          </div>
+        );
+
         return (
-          <div className="bg-[#121e28] border border-slate-800 rounded-2xl p-4 shadow-xl text-white space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                  Matchs à venir
+          <div className="bg-[#121e28] border border-slate-800 rounded-2xl p-4 shadow-xl text-white space-y-3.5">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800 gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Swords className="w-4 h-4 text-emerald-400 shrink-0" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white truncate">
+                  Face-à-Face FRMF
                 </h3>
               </div>
-              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
-                {upcomingMatches.length} Matchs
-              </span>
+              {frmfFaceToFace.activeGroup && (
+                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-500/30 shrink-0">
+                  {frmfFaceToFace.activeGroup}
+                </span>
+              )}
             </div>
 
-            {/* Upcoming List */}
-            {upcomingMatches.length === 0 ? (
-              <div className="py-6 text-center text-slate-500 text-[10px] font-medium">
-                Aucun autre match programmé pour le moment.
-              </div>
-            ) : (
+            {/* Bilan Confrontations Directes FRMF (uniquement si H2H existe) */}
+            {frmfFaceToFace.hasH2H && (
               <div className="space-y-2.5">
-                {upcomingMatches.map((m: Match) => {
-                  const opp = opponentClubs.find(c => c.id === m.opponent_id);
-                  const oppNm = (getOpponentName && m.opponent_id ? getOpponentName(m.opponent_id) : '') || opp?.name || 'Adversaire';
-                  const dateText = m.match_date || 'À venir';
-                  const timeText = m.match_time ? m.match_time.slice(0, 5) : '18:00';
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-[#182635] border border-emerald-500/25 rounded-xl py-2 px-2 text-center">
+                    <p className="text-base font-black text-emerald-400 leading-none">{frmfFaceToFace.wins}</p>
+                    <p className="text-[8.5px] font-bold uppercase text-slate-400 mt-1 truncate">{frmfFaceToFace.teamAKey}</p>
+                  </div>
+                  <div className="bg-[#182635] border border-slate-700/70 rounded-xl py-2 px-2 text-center">
+                    <p className="text-base font-black text-slate-200 leading-none">{frmfFaceToFace.draws}</p>
+                    <p className="text-[8.5px] font-bold uppercase text-slate-400 mt-1">Nuls</p>
+                  </div>
+                  <div className="bg-[#182635] border border-rose-500/25 rounded-xl py-2 px-2 text-center">
+                    <p className="text-base font-black text-rose-400 leading-none">{frmfFaceToFace.losses}</p>
+                    <p className="text-[8.5px] font-bold uppercase text-slate-400 mt-1 truncate">{frmfFaceToFace.teamBKey}</p>
+                  </div>
+                </div>
 
-                  return (
+                <div className="space-y-1.5">
+                  {frmfFaceToFace.h2hMatches.slice(0, 5).map((m) => (
                     <div
                       key={m.id}
-                      onClick={() => onSelectMatch?.(m)}
-                      className="bg-[#182635] hover:bg-[#1f3144] border border-slate-700/60 hover:border-emerald-500/50 rounded-xl p-3 transition-all cursor-pointer group shadow-sm flex flex-col justify-between"
+                      className="bg-[#182635] border border-slate-700/60 rounded-xl px-2.5 py-2 flex items-center justify-between gap-2 text-[11px]"
                     >
-                      {(() => {
-                        const otherLeague = leagues.find(l => l.id === m.league_id);
-                        const otherIsFriendly = !m.league_id || otherLeague?.name?.toLowerCase().includes('amical') || m.category?.toLowerCase().includes('amical') || m.notes?.toLowerCase().includes('amical');
-                        return (
-                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold mb-2">
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-emerald-400" /> {timeText} · {dateText}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${m.status === 'live' ? 'bg-red-500 text-white animate-pulse' : otherIsFriendly ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-300'}`}>
-                              {m.status === 'live' ? 'LIVE' : otherIsFriendly ? '🤝 Amical' : (otherLeague?.name || m.category || 'PRO')}
-                            </span>
-                          </div>
-                        );
-                      })()}
-
-                      <div className="flex items-center justify-between gap-2 py-1">
-                        <span className="text-[11px] font-black text-white group-hover:text-emerald-300 transition-colors truncate">
-                          {m.is_home ? mainClubName : oppNm}
-                        </span>
-                        <span className="text-[9px] font-bold text-slate-500 px-1.5 py-0.5 bg-slate-900 rounded">
-                          VS
-                        </span>
-                        <span className="text-[11px] font-black text-slate-300 group-hover:text-white transition-colors truncate text-right">
-                          {m.is_home ? oppNm : mainClubName}
-                        </span>
+                      <span className="text-[9px] font-black text-emerald-400 shrink-0">J{m.matchDay}</span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1 justify-end">
+                        <span className="font-bold text-slate-200 truncate">{m.homeKey}</span>
+                        {renderMiniLogo(m.homeLogo, m.homeKey)}
                       </div>
-
-                      <p className="text-[8px] text-slate-500 truncate mt-1 flex items-center gap-1">
-                        <MapPin className="w-2.5 h-2.5" /> {m.stadium || stadiumName}
-                      </p>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-700 font-black text-white tabular-nums shrink-0">
+                        {m.scoreHome} - {m.scoreAway}
+                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {renderMiniLogo(m.awayLogo, m.awayKey)}
+                        <span className="font-bold text-slate-200 truncate">{m.awayKey}</span>
+                      </div>
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Comparatif Classement FRMF (uniquement si les deux clubs sont classés) */}
+            {stA && stB && (
+              <div className="bg-[#182635] border border-slate-700/60 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-wider text-slate-400">
+                  <span>Classement &amp; Forme FRMF</span>
+                  <span>{stA.played} / {stB.played} MJ</span>
+                </div>
+
+                {[stA, stB].map((st, idx) => (
+                  <div
+                    key={st.teamKey}
+                    className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg ${
+                      idx === 0 ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-900/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[10px] font-black text-amber-400 w-5 shrink-0">{st.position}e</span>
+                      {renderMiniLogo(st.clubLogo, st.teamKey, idx === 0)}
+                      <span className="text-[11px] font-black text-white truncate">{st.teamKey}</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      {st.form.length > 0 && renderFormDots(st.form)}
+                      <span className="text-[10px] font-bold text-slate-400">
+                        {st.goalDifference > 0 ? `+${st.goalDifference}` : st.goalDifference}
+                      </span>
+                      <span className="text-[11px] font-black text-emerald-400">{st.points} pts</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         );
+      }
       case 'compositions':
         return (
           <div className="rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-[#28963c] text-white flex flex-col">
@@ -1854,6 +1960,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
 
   // ── Render Reorderable Draggable Block Wrapper ──
   const renderDraggableBlock = (blockId: string, colId: ColumnId, index: number) => {
+    const content = renderBlockContent(blockId);
+    if (!content) return null;
+
     const isThisDragged = draggedBlock === blockId;
     const isTargetSlot = dropTarget && dropTarget.colId === colId && dropTarget.index === index && !isThisDragged;
 
@@ -1886,7 +1995,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
           <span>Glisser</span>
         </div>
 
-        {renderBlockContent(blockId)}
+        {content}
       </div>
     );
   };
@@ -1929,10 +2038,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
+    <div
       className="space-y-4 max-w-[1750px] mx-auto pb-10 font-sans select-none"
     >
       {/* ════ TOP DARK CONTEXT BAR (Real DB metadata) ════ */}
@@ -2058,7 +2164,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
           if (match) (match as any).video_url = newUrl;
         }}
       />
-    </motion.div>
+    </div>
   );
 };
 

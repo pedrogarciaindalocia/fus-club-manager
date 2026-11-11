@@ -13,6 +13,7 @@ import { Trophy, Footprints, Activity, Compass, Brain } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import type { CandidateEvaluation } from '../types/recruitment';
 import { getScoutPositionConfig, type ScoutPillarKey } from '../constants/scoutCriteriaByPosition';
+import { getMetricPositionFrenchName } from '../../../utils/metricSetsHelpers';
 
 export type RadarTabMode = 'summary' | 'tech' | 'tact' | 'phys' | 'ment';
 
@@ -242,7 +243,7 @@ export const PlayerRadarChart: React.FC<PlayerRadarChartProps> = ({
       {/* Titre & Info de l'axe actif */}
       <div className="w-full flex items-center justify-between px-2 text-[11px] text-slate-500 font-medium">
         <span className="flex items-center gap-1.5 font-bold text-slate-700">
-          Radar {currentTabInfo?.label} — {chartData.length} critères mesurés ({posConfig?.code || 'Profil'})
+          Radar {currentTabInfo?.label} — {chartData.length} critères mesurés ({getMetricPositionFrenchName(posConfig) || 'Profil'})
         </span>
         <span className="px-2 py-0.5 rounded-md bg-slate-100 font-bold text-slate-600 text-[10px]">
           Échelle 0 – 10

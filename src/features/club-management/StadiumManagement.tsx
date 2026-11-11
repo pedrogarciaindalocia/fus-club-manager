@@ -10,11 +10,10 @@ import {
   LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight,
   ImageIcon
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { storageService } from '../../services/storageService';
 import { useClubData } from '../../hooks/useClubData';
 import type { Stadium } from '../../types';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
 
 type FormState = {
@@ -145,25 +144,14 @@ const StadiumManagement: React.FC = () => {
   const isValid = formData.name.trim() && formData.city.trim();
 
   if (isLoading) {
-    return (
-      <div className="space-y-8 animate-in fade-in duration-700">
-        <Skeleton className="h-24 w-full rounded-2xl" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[1,2,3].map(i => <Skeleton key={i} className="h-64 rounded-[2rem]" />)}
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement des stades…" />;
   }
 
   return (
     <div className="space-y-8 pb-20 overflow-visible">
-      <AnimatePresence mode="wait">
         {!showForm ? (
-          <motion.div
+          <div
             key="list"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
             className="space-y-8"
           >
             {/* ── Header ── */}
@@ -229,16 +217,8 @@ const StadiumManagement: React.FC = () => {
             {/* Content Area */}
             {displayMode === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <AnimatePresence mode="popLayout">
                   {paginatedStadiums.map(stadium => (
-                    <motion.div
-                      key={stadium.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      transition={{ duration: 0.25 }}
-                    >
+                    <div key={stadium.id}>
                       <Card className="group relative overflow-hidden border-secondary hover:border-primary/20 hover:shadow-2xl hover:shadow-primary/5 transition-all duration-500 bg-white rounded-[2rem]">
                         <div className="h-52 bg-secondary relative overflow-hidden">
                           <img 
@@ -270,27 +250,22 @@ const StadiumManagement: React.FC = () => {
                           </div>
                         </CardContent>
 
-                        <AnimatePresence>
                           {confirmDelete === stadium.id && (
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center gap-5 p-8 z-10">
+                            <div className="absolute inset-0 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center gap-5 p-8 z-10">
                               <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center"><Trash2 className="w-6 h-6 text-red-500" /></div>
                               <div className="text-center"><p className="text-sm font-black uppercase italic tracking-tight">Supprimer ?</p></div>
                               <div className="flex gap-3 w-full">
                                 <Button variant="ghost" onClick={() => setConfirmDelete(null)} className="flex-1 h-12 rounded-xl font-bold uppercase tracking-widest text-[10px]">Non</Button>
                                 <Button variant="destructive" onClick={() => handleDelete(stadium.id)} className="flex-1 h-12 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-red-200">Oui</Button>
                               </div>
-                            </motion.div>
+                            </div>
                           )}
-                        </AnimatePresence>
                       </Card>
-                    </motion.div>
+                    </div>
                   ))}
-                </AnimatePresence>
-                <motion.button
+                <button
                   onClick={openAdd}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="border-2 border-dashed border-secondary hover:border-primary/50 rounded-[2rem] p-8 flex flex-col items-center justify-center gap-4 text-muted-foreground hover:text-primary transition-all duration-300 min-h-[350px] group bg-secondary/5"
+                  className="border-2 border-dashed border-secondary hover:border-primary/50 rounded-[2rem] p-8 flex flex-col items-center justify-center gap-4 text-muted-foreground hover:text-primary transition-all duration-300 min-h-[350px] group bg-secondary/5 hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <div className="w-14 h-14 rounded-2xl bg-secondary group-hover:bg-primary/10 flex items-center justify-center transition-all">
                     <Plus className="w-7 h-7 group-hover:scale-110 transition-transform" />
@@ -298,7 +273,7 @@ const StadiumManagement: React.FC = () => {
                   <div className="text-center">
                     <p className="font-black text-sm uppercase tracking-tight">Ajouter un stade</p>
                   </div>
-                </motion.button>
+                </button>
               </div>
             ) : (
               <div className="bg-white border rounded-[2rem] overflow-hidden shadow-sm">
@@ -353,13 +328,10 @@ const StadiumManagement: React.FC = () => {
                  </div>
               </div>
             )}
-          </motion.div>
+          </div>
         ) : (
-          <motion.div
+          <div
             key="form"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
             className="max-w-4xl mx-auto"
           >
             {/* Form Header */}
@@ -518,9 +490,8 @@ const StadiumManagement: React.FC = () => {
                  </div>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
       {/* Sélecteur de Médias Centralisé */}
       <MediaPickerModal

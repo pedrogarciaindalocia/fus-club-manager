@@ -34,7 +34,7 @@ export const TrainingsHeader: React.FC<TrainingsHeaderProps> = ({
   const nextSession = upcomingSessions[0];
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="space-y-6">
       {/* Premium Hero Banner */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl text-white shadow-xl relative overflow-hidden border border-emerald-800/40">
         <div className="absolute right-0 top-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>

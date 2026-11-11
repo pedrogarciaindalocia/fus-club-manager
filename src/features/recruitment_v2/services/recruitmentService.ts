@@ -223,6 +223,8 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
   const contract_type = candidate.contract_type;
   const administrative_status = candidate.administrative_status;
   const admin_notes = candidate.admin_notes;
+  const surclassement = candidate.surclassement;
+  const surclassement_category = candidate.surclassement_category;
 
   const hasExtraMeta = activeMission ||
     (missionHistory && missionHistory.length > 0) ||
@@ -230,7 +232,9 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
     (administrative_documents && administrative_documents.length > 0) ||
     contract_type ||
     administrative_status ||
-    admin_notes;
+    admin_notes ||
+    surclassement ||
+    surclassement_category;
 
   if (hasExtraMeta) {
     const metaBlock = `\n[MISSIONS_METADATA]:` + JSON.stringify({
@@ -241,6 +245,8 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
       contract_type: contract_type || null,
       administrative_status: administrative_status || null,
       admin_notes: admin_notes || null,
+      surclassement: surclassement || null,
+      surclassement_category: surclassement_category || null,
     });
     payload.notes = baseNotes + metaBlock;
   } else if (candidate.notes !== undefined) {
@@ -398,7 +404,11 @@ function toSupabaseEvaluationPayload(evaluation: Record<string, any>): Record<st
   if (evaluation.evaluator_id) metaObj.evaluator_id = evaluation.evaluator_id;
   if (evaluation.evaluator_name) metaObj.evaluator_name = evaluation.evaluator_name;
   if (evaluation.evaluator_role) metaObj.evaluator_role = evaluation.evaluator_role;
-  if (evaluation.potential_rating != null) metaObj.potential_rating = evaluation.potential_rating;
+  if (evaluation.potential_rating !== undefined) {
+    metaObj.potential_rating = (evaluation.potential_rating != null && !isNaN(Number(evaluation.potential_rating)) && Number(evaluation.potential_rating) >= 0)
+      ? Number(evaluation.potential_rating)
+      : 0;
+  }
   if (evaluation.created_at) metaObj.created_at = evaluation.created_at;
 
   const baseNotes = cleanGeneralNotes(evaluation.general_notes || '');
@@ -1228,6 +1238,8 @@ export const recruitmentService = {
             contract_type: loc?.contract_type || (d as any).contract_type || parsedMeta.contract_type,
             administrative_status: loc?.administrative_status || (d as any).administrative_status || parsedMeta.administrative_status,
             admin_notes: loc?.admin_notes || (d as any).admin_notes || parsedMeta.admin_notes,
+            surclassement: (d as any).surclassement || loc?.surclassement || parsedMeta.surclassement,
+            surclassement_category: (d as any).surclassement_category || loc?.surclassement_category || parsedMeta.surclassement_category,
             assigned_scout_id: assignedId || (d as any).assigned_scout_id,
             assigned_scout_name: assignedName || (d as any).assigned_scout_name,
             recruiter_id: (d as any).recruiter_id || assignedId,
@@ -1238,9 +1250,43 @@ export const recruitmentService = {
             discovering_scout_name: (d as any).discovering_scout_name || loc?.discovering_scout_name,
           };
         });
-        setLocal(KEY_CANDIDATES, merged);
+
+        // Règle Métier : Tout joueur n'ayant aucun rapport d'évaluation voit son potentiel remis à 0
+        const candidatesWithPositivePotential = merged.filter(c => Number(c.potential_rating || 0) > 0);
+        let finalMerged = merged;
+        if (candidatesWithPositivePotential.length > 0) {
+          try {
+            const { data: evalRefs, error: evalRefsError } = await supabase
+              .from('candidate_evaluations')
+              .select('candidate_id');
+
+            if (!evalRefsError && Array.isArray(evalRefs)) {
+              const candIdsWithReports = new Set(evalRefs.map((row: any) => row.candidate_id).filter(Boolean));
+              const idsToReset = candidatesWithPositivePotential
+                .filter(c => !candIdsWithReports.has(c.id))
+                .map(c => c.id);
+
+              if (idsToReset.length > 0) {
+                const resetSet = new Set(idsToReset);
+                finalMerged = merged.map(c => resetSet.has(c.id) ? { ...c, potential_rating: 0 } : c);
+
+                const validUuidsToReset = idsToReset.filter(isValidUuid);
+                if (validUuidsToReset.length > 0) {
+                  await supabase
+                    .from('trial_candidates')
+                    .update({ potential_rating: 0, updated_at: new Date().toISOString() })
+                    .in('id', validUuidsToReset);
+                }
+              }
+            }
+          } catch (syncErr) {
+            console.warn('[RecruitmentService] Synchro potentiel à 0 ignorée:', syncErr);
+          }
+        }
+
+        setLocal(KEY_CANDIDATES, finalMerged);
         setLocal(KEY_CLEARED, false);
-        return merged;
+        return finalMerged;
       }
 
       console.warn('[RecruitmentService] Supabase indisponible pour getCandidates, bascule sur cache local:', error?.message);
@@ -1252,7 +1298,10 @@ export const recruitmentService = {
     const isCleared = getLocal<boolean>(KEY_CLEARED, false);
     if (isCleared) return [];
     const local = getLocal<TrialCandidate[] | null>(KEY_CANDIDATES, null);
-    return local ?? [];
+    if (!local) return [];
+    const localEvals = getLocal<CandidateEvaluation[]>(KEY_EVALS, []);
+    const localEvalIds = new Set(localEvals.map(e => e.candidate_id).filter(Boolean));
+    return local.map(c => (!localEvalIds.has(c.id) && Number(c.potential_rating || 0) > 0) ? { ...c, potential_rating: 0 } : c);
   },
 
   async createCandidate(candidate: Omit<TrialCandidate, 'id' | 'created_at' | 'updated_at'>): Promise<TrialCandidate> {
@@ -1261,6 +1310,7 @@ export const recruitmentService = {
 
     const newCand: TrialCandidate = {
       ...candidate,
+      potential_rating: candidate.potential_rating ?? 0,
       id: newId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -1519,16 +1569,16 @@ export const recruitmentService = {
             test_name: s.session_name || 'Session Détection',
             test_date: s.session_date,
             start_time: s.session_time ? s.session_time.slice(0, 5) : '10:00',
-            end_time: '12:00',
+            end_time: parsedNotesData.end_time || '12:00',
             location: s.location || 'Complexe Sportif FUS',
-            training_ground: 'Terrain Synthétique 1',
-            target_team: 'Académie FUS',
-            test_type: 'comprehensive',
-            category_age: s.category_age || 'U19',
+            training_ground: parsedNotesData.training_ground || 'Terrain Synthétique 1',
+            target_team: parsedNotesData.target_team || 'Académie FUS',
+            test_type: parsedNotesData.test_type || (parsedNotesData.match_id ? 'trial_match' : 'comprehensive'),
             age_category: s.category_age || 'U19',
-            max_participants: 25,
             status: (s.status as any) || 'scheduled',
-            notes: parsedNotesData.description || s.notes || undefined,
+            notes: parsedNotesData.description !== undefined
+              ? (parsedNotesData.description || undefined)
+              : (s.notes && !s.notes.trim().startsWith('{') ? s.notes : undefined),
             match_id: parsedNotesData.match_id || undefined,
             match_name: parsedNotesData.match_name || undefined,
             created_at: s.created_at,
@@ -1536,6 +1586,9 @@ export const recruitmentService = {
         });
 
         setLocal(KEY_TESTS, testsList);
+      } else if (!error && data && data.length === 0 && local !== null) {
+        testsList = [];
+        setLocal(KEY_TESTS, []);
       }
     } catch (err) {
       console.warn('[RecruitmentService] Exception réseau getTests, bascule sur local:', err);
@@ -1593,123 +1646,161 @@ export const recruitmentService = {
   },
 
   async createTest(test: Omit<PlayerTest, 'id' | 'created_at' | 'updated_at'>): Promise<PlayerTest> {
-    const targetCandidateIds: string[] = test.candidate_ids && test.candidate_ids.length > 0
-      ? test.candidate_ids
-      : test.candidate_id ? [test.candidate_id] : [];
+    const [created] = await this.createTestsBatch([test]);
+    return created;
+  },
 
-    const primaryCandidateId = targetCandidateIds[0] || test.candidate_id;
-    const newId = ensureUuid();
+  async createTestsBatch(testsToCreate: Omit<PlayerTest, 'id' | 'created_at' | 'updated_at'>[]): Promise<PlayerTest[]> {
+    if (!testsToCreate || testsToCreate.length === 0) return [];
 
-    const formattedTime = test.start_time 
-      ? (test.start_time.length === 5 ? `${test.start_time}:00` : test.start_time)
-      : '10:00:00';
+    const nowIso = new Date().toISOString();
+    const createdTests: PlayerTest[] = [];
+    const supabaseRows: any[] = [];
+    const allCandidateIds = new Set<string>();
 
-    const validStatus = ['scheduled', 'in_progress', 'completed', 'cancelled'].includes(test.status || '')
-      ? test.status!
-      : 'scheduled';
+    for (const test of testsToCreate) {
+      const targetCandidateIds: string[] = test.candidate_ids && test.candidate_ids.length > 0
+        ? Array.from(new Set(test.candidate_ids))
+        : test.candidate_id ? [test.candidate_id] : [];
 
-    const notesPayload = JSON.stringify({
-      description: test.notes || '',
-      candidate_ids: targetCandidateIds,
-      match_id: test.match_id || null,
-      match_name: test.match_name || null,
-    });
+      targetCandidateIds.forEach(id => allCandidateIds.add(id));
+      const primaryCandidateId = targetCandidateIds[0] || test.candidate_id;
+      const newId = ensureUuid();
 
-    const newTest: PlayerTest = {
-      ...test,
-      id: newId,
-      status: validStatus as any,
-      candidate_id: primaryCandidateId,
-      candidate_ids: targetCandidateIds,
-      created_at: new Date().toISOString()
-    };
+      const formattedTime = test.start_time
+        ? (test.start_time.length === 5 ? `${test.start_time}:00` : test.start_time)
+        : '10:00:00';
 
-    // 1. Insertion dans Supabase public.trial_sessions
-    try {
-      const { error } = await supabase.from('trial_sessions').insert([{
+      const validStatus = ['scheduled', 'in_progress', 'completed', 'cancelled'].includes(test.status || '')
+        ? test.status!
+        : 'scheduled';
+
+      const notesPayload = JSON.stringify({
+        description: test.notes || '',
+        candidate_ids: targetCandidateIds,
+        match_id: test.match_id || null,
+        match_name: test.match_name || null,
+        end_time: test.end_time || '12:00',
+        training_ground: test.training_ground || 'Terrain Synthétique 1',
+        target_team: test.target_team || `Académie FUS ${test.age_category || 'U19'}`,
+        test_type: test.test_type || (test.match_id ? 'trial_match' : 'comprehensive'),
+      });
+
+      const newTest: PlayerTest = {
+        ...test,
+        id: newId,
+        status: validStatus as any,
+        candidate_id: primaryCandidateId,
+        candidate_ids: targetCandidateIds,
+        created_at: nowIso,
+      };
+      createdTests.push(newTest);
+
+      supabaseRows.push({
         id: newId,
         session_name: test.test_name || 'Session Détection FUS',
-        session_date: test.test_date || new Date().toISOString().split('T')[0],
+        session_date: test.test_date || nowIso.split('T')[0],
         session_time: formattedTime,
         location: test.location || 'Complexe Sportif FUS - Terrain 1',
         lead_scout_name: 'Staff Technique & Détection',
-        category_age: test.age_category || test.category_age || 'U19',
+        category_age: test.age_category || (test as any).category_age || 'U19',
         status: validStatus,
         notes: notesPayload,
-      }]);
+      });
+    }
 
+    // 1. Insertion groupée dans Supabase public.trial_sessions
+    try {
+      const { error } = await supabase.from('trial_sessions').insert(supabaseRows);
       if (error) {
-        console.warn('[RecruitmentService] Erreur Supabase createTest trial_sessions:', error.message);
+        console.warn('[RecruitmentService] Erreur Supabase createTestsBatch trial_sessions:', error.message);
       } else {
         AuditLogger.logCreate(
-          'RECRUITMENT',
+          'PLAYERS',
           'TRIAL_SESSION',
-          newId,
-          test,
-          `Planification session détection : ${test.test_name || 'Séance Détection'} (${test.test_date})`
+          createdTests.map(t => t.id).join(','),
+          createdTests,
+          `Planification groupée de ${createdTests.length} session(s) détection`
         );
       }
     } catch (err) {
-      console.warn('[RecruitmentService] Exception Supabase createTest trial_sessions:', err);
+      console.warn('[RecruitmentService] Exception Supabase createTestsBatch trial_sessions:', err);
     }
 
-    // 2. Persistance locale
+    // 2. Persistance locale cohérente (1 entrée par session)
     const list = getLocal<PlayerTest[]>(KEY_TESTS, initialMockTests);
-    const newTestsForList: PlayerTest[] = [];
-
-    if (targetCandidateIds.length > 0) {
-      for (const cId of targetCandidateIds) {
-        newTestsForList.push({
-          ...test,
-          id: cId === primaryCandidateId ? newId : `${newId}-${cId.slice(0, 6)}`,
-          candidate_id: cId,
-          candidate_ids: targetCandidateIds,
-          created_at: new Date().toISOString()
-        });
-      }
-    } else {
-      newTestsForList.push(newTest);
-    }
-
-    const updated = [...newTestsForList, ...list];
-    setLocal(KEY_TESTS, updated);
+    setLocal(KEY_TESTS, [...createdTests, ...list]);
 
     // 3. Mettre à jour TOUS les candidats convoqués dans le Pipeline Kanban & Supabase
-    if (targetCandidateIds.length > 0) {
-      const validUuids = targetCandidateIds.filter(isValidUuid);
-      if (validUuids.length > 0) {
+    const uniqueCandidateIds = Array.from(allCandidateIds);
+    if (uniqueCandidateIds.length > 0) {
+      const hasAnyMatch = createdTests.some(t => Boolean(t.match_id));
+      const cachedCandidates = getLocal<TrialCandidate[]>(KEY_CANDIDATES, []);
+      const evalIds: string[] = [];
+      const schedIds: string[] = [];
+
+      uniqueCandidateIds.forEach(cId => {
+        const cand = cachedCandidates.find(c => c.id === cId);
+        const isClubTest = Boolean(hasAnyMatch || (cand && ['shortlisted', 'shortlist'].includes(cand.pipeline_stage)));
+        if (isClubTest) evalIds.push(cId);
+        else schedIds.push(cId);
+      });
+
+      const updateStageInDb = async (ids: string[], stage: 'under_evaluation' | 'test_scheduled') => {
+        const validUuids = ids.filter(isValidUuid);
+        if (validUuids.length === 0) return;
         try {
           await supabase
             .from('trial_candidates')
             .update({
               status: 'in_trial',
-              pipeline_stage: 'test_scheduled',
-              updated_at: new Date().toISOString(),
+              pipeline_stage: stage,
+              updated_at: nowIso,
             })
             .in('id', validUuids);
         } catch (candErr) {
-          console.warn('[RecruitmentService] Erreur mise à jour statut candidats dans Supabase:', candErr);
+          console.warn(`[RecruitmentService] Erreur mise à jour statut (${stage}) candidats dans Supabase:`, candErr);
         }
+      };
+
+      await Promise.all([
+        updateStageInDb(evalIds, 'under_evaluation'),
+        updateStageInDb(schedIds, 'test_scheduled'),
+      ]);
+
+      const evalSet = new Set(evalIds);
+      if (cachedCandidates.length > 0) {
+        setLocal(
+          KEY_CANDIDATES,
+          cachedCandidates.map(c =>
+            allCandidateIds.has(c.id)
+              ? {
+                  ...c,
+                  status: 'in_trial',
+                  pipeline_stage: evalSet.has(c.id) ? 'under_evaluation' : 'test_scheduled',
+                  updated_at: nowIso,
+                }
+              : c
+          )
+        );
       }
 
-      for (const cId of targetCandidateIds) {
-        await this.updateCandidate(cId, {
-          pipeline_stage: 'test_scheduled',
-          status: 'in_trial',
-        });
-
+      const datesSummary = Array.from(new Set(createdTests.map(t => t.test_date))).sort().join(', ');
+      for (const cId of uniqueCandidateIds) {
         await this.addTimelineEvent({
           candidate_id: cId,
           event_type: 'test_scheduled',
-          event_title: `Test Scout Planifié : ${test.test_name}`,
-          event_description: `Session prévue le ${test.test_date} à ${test.location}. Le joueur est convoqué en statut « En test ».`,
+          event_title: createdTests.length > 1
+            ? `Tests Scouts Planifiés (${createdTests.length} jours) : ${createdTests[0].test_name}`
+            : `Test Scout Planifié : ${createdTests[0].test_name}`,
+          event_description: `Session(s) prévue(s) le(s) ${datesSummary} à ${createdTests[0].location}. Le joueur est convoqué en statut « En test ».`,
           performed_by: 'Staff Technique & Détection',
-          event_date: test.test_date,
+          event_date: createdTests[0].test_date,
         });
       }
     }
 
-    return newTest;
+    return createdTests;
   },
 
   async updateTest(id: string, updates: Partial<PlayerTest>): Promise<PlayerTest> {
@@ -1737,11 +1828,25 @@ export const recruitmentService = {
       if (updates.start_time) {
         dbUpdates.session_time = updates.start_time.length === 5 ? `${updates.start_time}:00` : updates.start_time;
       }
-      if (updates.notes || updates.candidate_ids) {
+      if (
+        updates.notes !== undefined ||
+        updates.candidate_ids !== undefined ||
+        updates.match_id !== undefined ||
+        updates.match_name !== undefined ||
+        updates.end_time !== undefined ||
+        updates.training_ground !== undefined ||
+        updates.target_team !== undefined ||
+        updates.test_type !== undefined
+      ) {
         dbUpdates.notes = JSON.stringify({
-          description: updates.notes || existing.notes || '',
-          candidate_ids: updates.candidate_ids || existing.candidate_ids || [],
-          match_id: updates.match_id || existing.match_id || null,
+          description: updates.notes !== undefined ? updates.notes : (existing.notes || ''),
+          candidate_ids: updates.candidate_ids ?? existing.candidate_ids ?? [],
+          match_id: updates.match_id !== undefined ? (updates.match_id || null) : (existing.match_id || null),
+          match_name: updates.match_name !== undefined ? (updates.match_name || null) : (existing.match_name || null),
+          end_time: updates.end_time ?? existing.end_time ?? '12:00',
+          training_ground: updates.training_ground ?? existing.training_ground ?? 'Terrain Synthétique 1',
+          target_team: updates.target_team ?? existing.target_team ?? 'Académie FUS',
+          test_type: updates.test_type ?? existing.test_type ?? 'comprehensive',
         });
       }
       dbUpdates.updated_at = new Date().toISOString();
@@ -1762,20 +1867,53 @@ export const recruitmentService = {
   },
 
   async deleteTest(id: string): Promise<void> {
-    const list = getLocal<PlayerTest[]>(KEY_TESTS, initialMockTests);
-    setLocal(KEY_TESTS, list.filter(t => t.id !== id));
+    await this.deleteTests([id]);
+  },
 
-    try {
-      if (isValidUuid(id)) {
-        const { error } = await supabase.from('trial_sessions').delete().eq('id', id);
+  async deleteTests(ids: string[]): Promise<void> {
+    if (!ids || ids.length === 0) return;
+
+    const cleanIds = Array.from(new Set(ids.filter(Boolean)));
+    const idSet = new Set(cleanIds);
+    const list = getLocal<PlayerTest[]>(KEY_TESTS, initialMockTests);
+    setLocal(
+      KEY_TESTS,
+      list.filter(t => {
+        if (idSet.has(t.id)) return false;
+        // Supprimer aussi d'éventuelles entrées locales héritées de type "<uuid>-<suffix>"
+        return !cleanIds.some(baseId => isValidUuid(baseId) && t.id.startsWith(`${baseId}-`));
+      })
+    );
+
+    const validUuids = Array.from(
+      new Set(
+        cleanIds
+          .map(id => {
+            if (isValidUuid(id)) return id;
+            const uuidPrefix = id.match(/^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-/i);
+            return uuidPrefix ? uuidPrefix[1] : null;
+          })
+          .filter((v): v is string => Boolean(v))
+      )
+    );
+
+    if (validUuids.length > 0) {
+      try {
+        const { error } = await supabase.from('trial_sessions').delete().in('id', validUuids);
         if (error) {
-          console.warn(`[RecruitmentService] Erreur Supabase deleteTest (${id}):`, error.message);
+          console.warn(`[RecruitmentService] Erreur Supabase deleteTests:`, error.message);
         } else {
-          AuditLogger.logDelete('RECRUITMENT', 'TRIAL_SESSION', id, null, `Suppression séance test ${id}`);
+          AuditLogger.logDelete(
+            'PLAYERS',
+            'TRIAL_SESSION',
+            validUuids.join(','),
+            null,
+            `Suppression multiple de ${validUuids.length} session(s) de test`
+          );
         }
+      } catch (err) {
+        console.warn(`[RecruitmentService] Exception réseau deleteTests:`, err);
       }
-    } catch (err) {
-      console.warn(`[RecruitmentService] Exception réseau deleteTest (${id}):`, err);
     }
   },
 
@@ -1852,26 +1990,26 @@ export const recruitmentService = {
           const finalTechScore = meta.technical_score !== undefined
             ? Math.round(Number(meta.technical_score) * 10) / 10
             : (d.technical_score !== null && d.technical_score !== undefined
-              ? normScore(d.technical_score, 7.0)
-              : (techPillarAvg ?? 7.0));
+              ? normScore(d.technical_score, 0)
+              : (techPillarAvg ?? 0));
 
           const finalPhysScore = meta.physical_score !== undefined
             ? Math.round(Number(meta.physical_score) * 10) / 10
             : (d.physical_score !== null && d.physical_score !== undefined
-              ? normScore(d.physical_score, 7.0)
-              : (physPillarAvg ?? 7.0));
+              ? normScore(d.physical_score, 0)
+              : (physPillarAvg ?? 0));
 
           const finalTactScore = meta.tactical_score !== undefined
             ? Math.round(Number(meta.tactical_score) * 10) / 10
             : (d.tactical_score !== null && d.tactical_score !== undefined
-              ? normScore(d.tactical_score, 7.0)
-              : (tactPillarAvg ?? 7.0));
+              ? normScore(d.tactical_score, 0)
+              : (tactPillarAvg ?? 0));
 
           const finalMentScore = meta.mental_score !== undefined
             ? Math.round(Number(meta.mental_score) * 10) / 10
             : (d.mental_score !== null && d.mental_score !== undefined
-              ? normScore(d.mental_score, 7.0)
-              : (mentPillarAvg ?? 7.0));
+              ? normScore(d.mental_score, 0)
+              : (mentPillarAvg ?? 0));
 
           const computedOverall = Math.round((
             finalTechScore * 0.30 +
@@ -1886,46 +2024,46 @@ export const recruitmentService = {
               ? normScore(d.overall_score, computedOverall)
               : computedOverall);
 
-          // Construction dynamique des critères individuels
+          // Construction dynamique des critères individuels (0 pour toute métrique non modifiée)
           const rawCriteriaScores = d.criteria_scores || meta.criteria_scores || {};
           const fallbackCriteriaScores: Record<string, number> = {
-            "Contrôle & première touche": normScore(d.tech_first_touch, finalTechScore),
-            "Première touche": normScore(d.tech_first_touch, finalTechScore),
-            "Passe & relance": normScore(d.tech_passing, finalTechScore),
-            "Passe": normScore(d.tech_passing, finalTechScore),
-            "Frappe & tirs": normScore(d.tech_shooting, finalTechScore),
-            "Frappe & finition": normScore(d.tech_shooting, finalTechScore),
-            "Finition": normScore(d.tech_shooting, finalTechScore),
-            "Dribbles & 1v1": normScore(d.tech_dribbling, finalTechScore),
-            "Dribbles": normScore(d.tech_dribbling, finalTechScore),
-            "Jeu de tête & duels": normScore(d.tech_heading, finalTechScore),
-            "Jeu de tête": normScore(d.tech_heading, finalTechScore),
+            "Contrôle & première touche": normScore(d.tech_first_touch, 0),
+            "Première touche": normScore(d.tech_first_touch, 0),
+            "Passe & relance": normScore(d.tech_passing, 0),
+            "Passe": normScore(d.tech_passing, 0),
+            "Frappe & tirs": normScore(d.tech_shooting, 0),
+            "Frappe & finition": normScore(d.tech_shooting, 0),
+            "Finition": normScore(d.tech_shooting, 0),
+            "Dribbles & 1v1": normScore(d.tech_dribbling, 0),
+            "Dribbles": normScore(d.tech_dribbling, 0),
+            "Jeu de tête & duels": normScore(d.tech_heading, 0),
+            "Jeu de tête": normScore(d.tech_heading, 0),
 
-            "Vitesse & accélération": normScore(d.phys_speed, finalPhysScore),
-            "Vitesse": normScore(d.phys_speed, finalPhysScore),
-            "Endurance & intensité": normScore(d.phys_endurance, finalPhysScore),
-            "Endurance": normScore(d.phys_endurance, finalPhysScore),
-            "Puissance & duels": normScore(d.phys_strength, finalPhysScore),
-            "Puissance": normScore(d.phys_strength, finalPhysScore),
-            "Agilité & coordination": normScore(d.phys_agility, finalPhysScore),
-            "Agilité": normScore(d.phys_agility, finalPhysScore),
-            "Explosivité & détente": normScore(d.phys_jump, finalPhysScore),
+            "Vitesse & accélération": normScore(d.phys_speed, 0),
+            "Vitesse": normScore(d.phys_speed, 0),
+            "Endurance & intensité": normScore(d.phys_endurance, 0),
+            "Endurance": normScore(d.phys_endurance, 0),
+            "Puissance & duels": normScore(d.phys_strength, 0),
+            "Puissance": normScore(d.phys_strength, 0),
+            "Agilité & coordination": normScore(d.phys_agility, 0),
+            "Agilité": normScore(d.phys_agility, 0),
+            "Explosivité & détente": normScore(d.phys_jump, 0),
 
-            "Positionnement & couverture": normScore(d.tact_positioning, finalTactScore),
-            "Positionnement": normScore(d.tact_positioning, finalTactScore),
-            "Vision & intelligence de jeu": normScore(d.tact_vision, finalTactScore),
-            "Vision": normScore(d.tact_vision, finalTactScore),
-            "Anticipation & lecture": normScore(d.tact_anticipation, finalTactScore),
-            "Anticipation": normScore(d.tact_anticipation, finalTactScore),
-            "Transitions & pressing": normScore(d.tact_transition, finalTactScore),
-            "Transitions": normScore(d.tact_transition, finalTactScore),
+            "Positionnement & couverture": normScore(d.tact_positioning, 0),
+            "Positionnement": normScore(d.tact_positioning, 0),
+            "Vision & intelligence de jeu": normScore(d.tact_vision, 0),
+            "Vision": normScore(d.tact_vision, 0),
+            "Anticipation & lecture": normScore(d.tact_anticipation, 0),
+            "Anticipation": normScore(d.tact_anticipation, 0),
+            "Transitions & pressing": normScore(d.tact_transition, 0),
+            "Transitions": normScore(d.tact_transition, 0),
 
-            "Détermination & résilience": normScore(d.ment_determination, finalMentScore),
-            "Détermination": normScore(d.ment_determination, finalMentScore),
-            "Concentration & constance": normScore(d.ment_focus, finalMentScore),
-            "Concentration": normScore(d.ment_focus, finalMentScore),
-            "Communication & leadership": normScore(d.ment_leadership, finalMentScore),
-            "Leadership": normScore(d.ment_leadership, finalMentScore),
+            "Détermination & résilience": normScore(d.ment_determination, 0),
+            "Détermination": normScore(d.ment_determination, 0),
+            "Concentration & constance": normScore(d.ment_focus, 0),
+            "Concentration": normScore(d.ment_focus, 0),
+            "Communication & leadership": normScore(d.ment_leadership, 0),
+            "Leadership": normScore(d.ment_leadership, 0),
           };
 
           const hasSavedScores = Object.keys(rawCriteriaScores).length > 0;
@@ -1956,40 +2094,45 @@ export const recruitmentService = {
             verdict: mapVerdictFromSupabase(d.verdict),
             test_id: d.session_id,
             created_at: d.created_at || meta.created_at || undefined,
-            potential_rating: (meta.potential_rating != null ? Number(meta.potential_rating) : (d as any).potential_rating != null ? Number((d as any).potential_rating) : undefined),
+            potential_rating: (() => {
+              const rawP = meta.potential_rating !== undefined ? meta.potential_rating : (d as any).potential_rating;
+              if (rawP === null || rawP === undefined || isNaN(Number(rawP))) return undefined;
+              const numP = Number(rawP);
+              return numP >= 0 ? numP : undefined;
+            })(),
 
-            // Sous-critères normalisés sur l'échelle 1-10
-            tech_ball_control: normScore(d.tech_first_touch, finalTechScore),
-            tech_first_touch: normScore(d.tech_first_touch, finalTechScore),
-            tech_passing_short: normScore(d.tech_passing, finalTechScore),
-            tech_passing_long: normScore(d.tech_passing, finalTechScore),
-            tech_dribbling: normScore(d.tech_dribbling, finalTechScore),
-            tech_crossing: normScore(d.tech_passing, finalTechScore),
-            tech_finishing: normScore(d.tech_shooting, finalTechScore),
-            tech_heading: normScore(d.tech_heading, finalTechScore),
-            tech_1v1_attacking: normScore(d.tech_dribbling, finalTechScore),
-            tech_1v1_defending: normScore(d.tact_positioning, finalTactScore),
-            tech_weak_foot: finalTechScore,
+            // Sous-critères normalisés (0 si non évalué)
+            tech_ball_control: normScore(d.tech_first_touch, 0),
+            tech_first_touch: normScore(d.tech_first_touch, 0),
+            tech_passing_short: normScore(d.tech_passing, 0),
+            tech_passing_long: normScore(d.tech_passing, 0),
+            tech_dribbling: normScore(d.tech_dribbling, 0),
+            tech_crossing: normScore(d.tech_passing, 0),
+            tech_finishing: normScore(d.tech_shooting, 0),
+            tech_heading: normScore(d.tech_heading, 0),
+            tech_1v1_attacking: normScore(d.tech_dribbling, 0),
+            tech_1v1_defending: normScore(d.tact_positioning, 0),
+            tech_weak_foot: 0,
 
-            phys_acceleration: normScore(d.phys_speed, finalPhysScore),
-            phys_sprint_speed: normScore(d.phys_speed, finalPhysScore),
-            phys_agility: normScore(d.phys_agility, finalPhysScore),
-            phys_balance: normScore(d.phys_jump, finalPhysScore),
-            phys_strength: normScore(d.phys_strength, finalPhysScore),
-            phys_endurance: normScore(d.phys_endurance, finalPhysScore),
-            phys_explosiveness: normScore(d.phys_jump, finalPhysScore),
+            phys_acceleration: normScore(d.phys_speed, 0),
+            phys_sprint_speed: normScore(d.phys_speed, 0),
+            phys_agility: normScore(d.phys_agility, 0),
+            phys_balance: normScore(d.phys_jump, 0),
+            phys_strength: normScore(d.phys_strength, 0),
+            phys_endurance: normScore(d.phys_endurance, 0),
+            phys_explosiveness: normScore(d.phys_jump, 0),
 
-            tact_positioning: normScore(d.tact_positioning, finalTactScore),
-            tact_awareness: normScore(d.tact_vision, finalTactScore),
-            tact_decision_making: normScore(d.tact_game_iq, finalTactScore),
-            tact_anticipation: normScore(d.tact_anticipation, finalTactScore),
-            tact_space_awareness: normScore(d.tact_transition, finalTactScore),
+            tact_positioning: normScore(d.tact_positioning, 0),
+            tact_awareness: normScore(d.tact_vision, 0),
+            tact_decision_making: normScore(d.tact_game_iq, 0),
+            tact_anticipation: normScore(d.tact_anticipation, 0),
+            tact_space_awareness: normScore(d.tact_transition, 0),
 
-            ment_determination: normScore(d.ment_determination, finalMentScore),
-            ment_work_rate: normScore(d.ment_determination, finalMentScore),
-            ment_composure: normScore(d.ment_composure, finalMentScore),
-            ment_coachability: normScore(d.ment_teamwork, finalMentScore),
-            ment_leadership: normScore(d.ment_leadership, finalMentScore),
+            ment_determination: normScore(d.ment_determination, 0),
+            ment_work_rate: normScore(d.ment_determination, 0),
+            ment_composure: normScore(d.ment_composure, 0),
+            ment_coachability: normScore(d.ment_teamwork, 0),
+            ment_leadership: normScore(d.ment_leadership, 0),
           };
         });
 
@@ -2133,9 +2276,88 @@ export const recruitmentService = {
     return newEval;
   },
 
+  /** Réinitialise le potentiel (et le surclassement) à 0 pour les candidats qui n'ont plus aucun rapport */
+  async resetCandidatesWithoutReports(candidateIds: string[], remainingLocalEvals?: CandidateEvaluation[]): Promise<void> {
+    const uniqueCandidateIds = Array.from(new Set(candidateIds.filter(Boolean)));
+    if (uniqueCandidateIds.length === 0) return;
+
+    const localEvals = remainingLocalEvals ?? getLocal<CandidateEvaluation[]>(KEY_EVALS, []);
+    const localWithReports = new Set(localEvals.map(e => e.candidate_id).filter(Boolean));
+    let dbWithReports: Set<string> | null = null;
+
+    try {
+      const validCandUuids = uniqueCandidateIds.filter(isValidUuid);
+      if (validCandUuids.length > 0) {
+        const { data, error } = await supabase
+          .from('candidate_evaluations')
+          .select('candidate_id')
+          .in('candidate_id', validCandUuids);
+        if (!error && Array.isArray(data)) {
+          dbWithReports = new Set(data.map((row: any) => row.candidate_id).filter(Boolean));
+        }
+      }
+    } catch (err) {
+      console.warn('[RecruitmentService] Vérification rapports restants échouée:', err);
+    }
+
+    const idsToReset = uniqueCandidateIds.filter(id => {
+      if (dbWithReports) return !dbWithReports.has(id);
+      return !localWithReports.has(id);
+    });
+
+    if (idsToReset.length === 0) return;
+
+    const resetSet = new Set(idsToReset);
+    const cachedCandidates = getLocal<TrialCandidate[]>(KEY_CANDIDATES, []);
+    if (cachedCandidates.length > 0) {
+      setLocal(
+        KEY_CANDIDATES,
+        cachedCandidates.map(c =>
+          resetSet.has(c.id)
+            ? {
+                ...c,
+                potential_rating: 0,
+                performance_rating: 0,
+                is_upgraded_category: false,
+                upgraded_categories_count: 0,
+                surclassement: '0C',
+                surclassement_category: undefined,
+              }
+            : c
+        )
+      );
+    }
+
+    const validUuids = idsToReset.filter(isValidUuid);
+    if (validUuids.length > 0) {
+      try {
+        await supabase
+          .from('trial_candidates')
+          .update({
+            potential_rating: 0,
+            performance_rating: 0,
+            is_upgraded_category: false,
+            upgraded_categories_count: 0,
+            updated_at: new Date().toISOString(),
+          })
+          .in('id', validUuids);
+      } catch (err) {
+        console.warn('[RecruitmentService] Erreur réinitialisation potentiel à 0 sur trial_candidates:', err);
+      }
+    }
+  },
+
   async deleteEvaluation(id: string): Promise<void> {
+    let targetCandidateId: string | undefined;
     try {
       if (isValidUuid(id)) {
+        const { data: existingRow } = await supabase
+          .from('candidate_evaluations')
+          .select('candidate_id')
+          .eq('id', id)
+          .maybeSingle();
+        targetCandidateId = existingRow?.candidate_id;
+
         const { error } = await supabase
           .from('candidate_evaluations')
           .delete()
@@ -2155,6 +2377,11 @@ export const recruitmentService = {
     const updated = list.filter(e => e.id !== id);
     setLocal(KEY_EVALS, updated);
 
+    const affectedCandidateId = targetCandidateId || target?.candidate_id;
+    if (affectedCandidateId) {
+      await this.resetCandidatesWithoutReports([affectedCandidateId], updated);
+    }
+
     if (target?.test_id) {
       const remainingForTest = updated.some(e => e.test_id === target.test_id);
       if (!remainingForTest) {
@@ -2169,9 +2396,18 @@ export const recruitmentService = {
 
   async deleteEvaluations(ids: string[]): Promise<void> {
     if (!ids || ids.length === 0) return;
+    const affectedCandidateIds = new Set<string>();
     try {
       const validUuids = ids.filter(id => isValidUuid(id));
       if (validUuids.length > 0) {
+        const { data: existingRows } = await supabase
+          .from('candidate_evaluations')
+          .select('candidate_id')
+          .in('id', validUuids);
+        existingRows?.forEach((row: any) => {
+          if (row?.candidate_id) affectedCandidateIds.add(row.candidate_id);
+        });
+
         const { error } = await supabase
           .from('candidate_evaluations')
           .delete()
@@ -2188,8 +2424,15 @@ export const recruitmentService = {
 
     const list = getLocal<CandidateEvaluation[]>(KEY_EVALS, initialMockEvaluations);
     const idSet = new Set(ids);
+    list.forEach(e => {
+      if (idSet.has(e.id) && e.candidate_id) affectedCandidateIds.add(e.candidate_id);
+    });
     const updated = list.filter(e => !idSet.has(e.id));
     setLocal(KEY_EVALS, updated);
+
+    if (affectedCandidateIds.size > 0) {
+      await this.resetCandidatesWithoutReports(Array.from(affectedCandidateIds), updated);
+    }
   },
 
   // 5. OBSERVATIONS (Synchronisées avec recruitment_timeline)

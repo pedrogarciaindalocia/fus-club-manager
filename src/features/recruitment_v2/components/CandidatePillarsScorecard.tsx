@@ -51,9 +51,9 @@ export const getPillarCriterionScore = (
   criteriaScores: Record<string, number> | undefined,
   critName: string,
   pillarKeyStr: ScoutPillarKey,
-  fallbackScore: number
+  _fallbackScore: number = 0
 ): number => {
-  if (!criteriaScores) return Number(fallbackScore);
+  if (!criteriaScores || Object.keys(criteriaScores).length === 0) return 0;
   const pillarPrefixKey = `${pillarKeyStr}-${critName}`;
   if (criteriaScores[pillarPrefixKey] !== undefined) return Number(criteriaScores[pillarPrefixKey]);
   if (criteriaScores[critName] !== undefined) return Number(criteriaScores[critName]);
@@ -69,7 +69,7 @@ export const getPillarCriterionScore = (
     if (keyTitle && keyTitle.trim().toLowerCase() === parsedTitle.trim().toLowerCase()) return Number(val);
   }
 
-  return Number(fallbackScore);
+  return 0;
 };
 
 // SVG Radar Chart Component ultra-léger et interactif
@@ -420,7 +420,7 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
         latestEval?.criteria_scores,
         crit,
         currentPillarMeta.scoutKey!,
-        currentPillarMeta.score ?? 5.0
+        0
       );
       return {
         raw: crit,
@@ -437,10 +437,10 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
     if (activeTab === 'summary' || activeTab === 'pot') {
       // Vue Synthèse 4 Piliers
       return [
-        { label: 'Technique', fullLabel: 'Pilier Technique', value: techScore ?? 5.0 },
-        { label: 'Tactique', fullLabel: 'Pilier Tactique', value: tactScore ?? 5.0 },
-        { label: 'Physique', fullLabel: 'Pilier Physique', value: physScore ?? 5.0 },
-        { label: 'Mental', fullLabel: 'Pilier Mental', value: mentScore ?? 5.0 },
+        { label: 'Technique', fullLabel: 'Pilier Technique', value: techScore ?? 0 },
+        { label: 'Tactique', fullLabel: 'Pilier Tactique', value: tactScore ?? 0 },
+        { label: 'Physique', fullLabel: 'Pilier Physique', value: physScore ?? 0 },
+        { label: 'Mental', fullLabel: 'Pilier Mental', value: mentScore ?? 0 },
       ];
     }
 
@@ -499,7 +499,7 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
                     ? cn(p.badgeBg, "scale-105 shadow-2xs font-extrabold") 
                     : "hover:bg-slate-100 hover:scale-105"
                 )}
-                title={`Survoler pour afficher le radar & critères détaillés : ${p.label} (${p.score != null ? `${p.score.toFixed(1)}/10` : 'En attente'})`}
+                title={`Survoler pour afficher le radar & critères détaillés : ${p.label} (${p.score != null ? `${p.score.toFixed(1)}/10` : isPot ? '0.0/10' : 'En attente'})`}
               >
                 <span className={cn(
                   "text-[8px] font-black uppercase transition-colors",
@@ -510,12 +510,14 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
                 <span className={cn(
                   "text-xs font-black transition-colors",
                   isPot 
-                    ? (p.score != null ? "text-emerald-700" : "text-slate-300")
+                    ? (p.score != null && p.score > 0 ? "text-emerald-700" : "text-slate-600")
                     : isPillarHovered
                       ? p.textColor
                       : (p.score != null ? "text-slate-900" : "text-slate-300")
                 )}>
-                  {p.score != null ? p.score.toFixed(1) : '-'}
+                  {isPot
+                    ? (p.score != null ? p.score.toFixed(1) : '0.0')
+                    : (p.score != null ? p.score.toFixed(1) : '-')}
                 </span>
               </div>
             </React.Fragment>
@@ -708,7 +710,7 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
               {activeTab === 'summary' && (
                 <div className="space-y-2">
                   {pillarsConfig.filter(p => p.id !== 'pot').map((pillar) => {
-                    const val = pillar.score ?? 5.0;
+                    const val = pillar.score ?? 0;
                     const percent = Math.min(100, Math.max(0, val * 10));
 
                     return (

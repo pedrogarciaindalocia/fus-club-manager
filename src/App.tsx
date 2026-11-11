@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster, toast } from 'sonner';
-import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
 import './index.css';
 
@@ -49,6 +48,8 @@ import AddPlayerPage from './features/recruitment_v2/AddPlayerPage';
 import AddReportPage from './features/recruitment_v2/AddReportPage';
 import TrainingsPage from './features/trainings/TrainingsPage';
 import OfficialShortlistPage from './features/match-management/OfficialShortlistPage';
+import ChampionshipPerformancesPage from './features/match-management/ChampionshipPerformancesPage';
+import ClassementResultatsPage from './features/match-management/ClassementResultatsPage';
 import PluginsPage from './features/plugins/PluginsPage';
 import PluginDisabledView from './features/plugins/PluginDisabledView';
 import { PluginsProvider, usePlugins } from './context/PluginsContext';
@@ -65,6 +66,10 @@ const pageTitles: Record<string, string> = {
   '/tickets': 'Support & Tickets Fus-App',
   '/media': 'Espace de Gestion Média',
   '/matches': 'Calendrier des Matchs',
+  '/classement-resultats': 'Classement & Résultats FRMF',
+  '/classements-resultats': 'Classement & Résultats FRMF',
+  '/championship-performances': 'Championnat & Performances',
+  '/championnat-performances': 'Championnat & Performances',
   '/matches/new': 'Planifier un Match (Stepper)',
   '/matchday': 'Match Day',
   '/official-shortlist': 'Shortlist Officielle — Placement Tactique',
@@ -120,7 +125,8 @@ const AppContent: React.FC = () => {
     (location.pathname === '/media' && hasSubModuleAccess('media', 'read')) ||
     ((location.pathname === '/players' || location.pathname === '/club') && hasSubModuleAccess('players', 'read')) ||
     (location.pathname === '/teams' && hasSubModuleAccess('teams', 'read')) ||
-    ((location.pathname === '/matches' || location.pathname.startsWith('/matches/') || location.pathname === '/matchday') && hasSubModuleAccess('matches', 'read')) ||
+    ((location.pathname === '/matches' || location.pathname.startsWith('/matches/') || location.pathname === '/matchday' || location.pathname === '/classement-resultats') && hasSubModuleAccess('matches', 'read')) ||
+    (location.pathname === '/championship-performances' && hasSubModuleAccess('championship_performances', 'read')) ||
     (location.pathname.startsWith('/trainings') && hasModuleAccess('trainings', 'read')) ||
     (location.pathname === '/official-shortlist' && hasSubModuleAccess('official_shortlist', 'read')) ||
     (location.pathname === '/arbitres' && hasSubModuleAccess('arbitres', 'read')) ||
@@ -148,7 +154,10 @@ const AppContent: React.FC = () => {
   // 3. Protection granulaire des sous-rubriques métier (Read guard)
   if (!isSuperAdmin) {
     // Compétition & Matchs
-    if ((location.pathname === '/matches' || location.pathname.startsWith('/matches/') || location.pathname === '/matchday') && !hasSubModuleAccess('matches', 'read')) {
+    if ((location.pathname === '/matches' || location.pathname.startsWith('/matches/') || location.pathname === '/matchday' || location.pathname === '/classement-resultats' || location.pathname === '/classements-resultats') && !hasSubModuleAccess('matches', 'read')) {
+      return <Navigate to="/" replace />;
+    }
+    if (location.pathname === '/championship-performances' && !hasSubModuleAccess('championship_performances', 'read')) {
       return <Navigate to="/" replace />;
     }
     if (location.pathname === '/official-shortlist' && !hasSubModuleAccess('official_shortlist', 'read')) {
@@ -212,110 +221,104 @@ const AppContent: React.FC = () => {
 
       <main className={cn("pt-20 transition-all duration-300 md:pl-20 w-full min-w-0 overflow-x-hidden", sidebarCollapsed ? "lg:pl-20" : "lg:pl-72")}>
         <div className="p-3 sm:p-5 md:p-8 xl:p-10 max-w-[1750px] mx-auto w-full min-w-0">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Routes location={location}>
-                <Route path="/"          element={<DashboardPage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/matches"   element={<MatchManagementPage />} />
-                <Route path="/matches/new" element={
-                  <ProtectedRoute requiredPermission="create_match">
-                    <ScheduleMatchPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/matches/edit/:id" element={
-                  <ProtectedRoute requiredPermission="manage_matches">
-                    <ScheduleMatchPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/matches/:id/prepare" element={
-                  <ProtectedRoute requiredPermission="manage_matches">
-                    <ScheduleMatchPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/matchday"  element={
-                  <ProtectedRoute requiredPermission="track_live_match">
-                    <MatchDayPage />
-                  </ProtectedRoute>
-                } />
-                <Route path="/players"   element={<PlayerManagement />} />
-                <Route path="/club"      element={<Navigate to="/players" replace />} />
-                <Route path="/teams"     element={
-                  <ProtectedRoute requiredPermission="manage_teams">
-                    <TeamManagement />
-                  </ProtectedRoute>
-                } />
-                <Route path="/staff"     element={
-                  <ProtectedRoute requiredPermission="manage_roles">
-                    <StaffManagement />
-                  </ProtectedRoute>
-                } />
-                <Route path="/arbitres"           element={<ArbitresPage />} />
-                <Route path="/official-shortlist" element={<OfficialShortlistPage />} />
-                <Route path="/trainings"          element={<TrainingsPage />} />
-                <Route path="/trainings/*"   element={<TrainingsPage />} />
-                <Route path="/recruitment"   element={
-                  isPluginActive('recruitment_v1') 
-                    ? <RecruitmentPage /> 
-                    : <PluginDisabledView pluginId="recruitment_v1" pluginName="Recrutement & Détection v1" />
-                } />
-                <Route path="/recruitment/*" element={
-                  isPluginActive('recruitment_v1') 
-                    ? <RecruitmentPage /> 
-                    : <PluginDisabledView pluginId="recruitment_v1" pluginName="Recrutement & Détection v1" />
-                } />
-                <Route path="/recruitment-v2" element={
-                  isPluginActive('recruitment_v2')
-                    ? <RecruitmentV2Page />
-                    : <PluginDisabledView pluginId="recruitment_v2" pluginName="Recrutement & Détection V2" />
-                } />
-                <Route path="/recruitment-v2/add-player" element={
-                  isPluginActive('recruitment_v2')
-                    ? <AddPlayerPage />
-                    : <PluginDisabledView pluginId="recruitment_v2" pluginName="Recrutement & Détection V2" />
-                } />
-                <Route path="/recruitment-v2/add-report" element={
-                  isPluginActive('recruitment_v2')
-                    ? <AddReportPage />
-                    : <PluginDisabledView pluginId="recruitment_v2" pluginName="Recrutement & Détection V2" />
-                } />
-                <Route path="/recruitment-v2/*" element={
-                  isPluginActive('recruitment_v2')
-                    ? <RecruitmentV2Page />
-                    : <PluginDisabledView pluginId="recruitment_v2" pluginName="Recrutement & Détection V2" />
-                } />
-                <Route path="/plugins" element={<PluginsPage />} />
-                <Route path="/leagues"       element={<LeagueManagement />} />
-                <Route path="/opponents"     element={<OpponentClubs />} />
-                <Route path="/stadiums"      element={<StadiumManagement />} />
-                <Route path="/settings"  element={
-                  <ProtectedRoute requiredPermission="manage_roles">
-                    <ClubSettings />
-                  </ProtectedRoute>
-                } />
-                <Route path="/blog"      element={<BlogManagement />} />
-                <Route path="/store"     element={<StoreManagement />} />
-                <Route path="/users"     element={
-                  <ProtectedRoute requiredPermission="manage_users">
-                    <UserManagement />
-                  </ProtectedRoute>
-                } />
-                <Route path="/logs"      element={<AuditLogsPage />} />
-                <Route path="/tickets"   element={<TicketsPage />} />
-                <Route path="/profile"   element={<ProfilePage />} />
-                <Route path="/media"     element={<MediaManagementPage />} />
+          <Routes location={location}>
+            <Route path="/"          element={<DashboardPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/matches"   element={<MatchManagementPage />} />
+            <Route path="/matches/new" element={
+              <ProtectedRoute requiredPermission="create_match">
+                <ScheduleMatchPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/matches/edit/:id" element={
+              <ProtectedRoute requiredPermission="manage_matches">
+                <ScheduleMatchPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/matches/:id/prepare" element={
+              <ProtectedRoute requiredPermission="manage_matches">
+                <ScheduleMatchPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/matchday"  element={
+              <ProtectedRoute requiredPermission="track_live_match">
+                <MatchDayPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/players"   element={<PlayerManagement />} />
+            <Route path="/club"      element={<Navigate to="/players" replace />} />
+            <Route path="/teams"     element={
+              <ProtectedRoute requiredPermission="manage_teams">
+                <TeamManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/staff"     element={
+              <ProtectedRoute requiredPermission="manage_roles">
+                <StaffManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/arbitres"           element={<ArbitresPage />} />
+            <Route path="/official-shortlist" element={<OfficialShortlistPage />} />
+            <Route path="/championship-performances" element={<ChampionshipPerformancesPage />} />
+            <Route path="/championnat-performances" element={<Navigate to="/championship-performances" replace />} />
+            <Route path="/classement-resultats" element={<ClassementResultatsPage />} />
+            <Route path="/classements-resultats" element={<Navigate to="/classement-resultats" replace />} />
+            <Route path="/trainings"          element={<TrainingsPage />} />
+            <Route path="/trainings/*"   element={<TrainingsPage />} />
+            <Route path="/recruitment"   element={
+              isPluginActive('recruitment_v1') 
+                ? <RecruitmentPage /> 
+                : <PluginDisabledView pluginId="recruitment_v1" pluginName="Recrutement & Détection v1" />
+            } />
+            <Route path="/recruitment/*" element={
+              isPluginActive('recruitment_v1') 
+                ? <RecruitmentPage /> 
+                : <PluginDisabledView pluginId="recruitment_v1" pluginName="Recrutement & Détection v1" />
+            } />
+            <Route path="/recruitment-v2" element={
+              isPluginActive('recruitment_v2')
+                ? <RecruitmentV2Page />
+                : <PluginDisabledView pluginId="recruitment_v2" pluginName="Recrutement & Détection V2" />
+            } />
+            <Route path="/recruitment-v2/add-player" element={
+              isPluginActive('recruitment_v2')
+                ? <AddPlayerPage />
+                : <PluginDisabledView pluginId="recruitment_v2" pluginName="Recrutement & Détection V2" />
+            } />
+            <Route path="/recruitment-v2/add-report" element={
+              isPluginActive('recruitment_v2')
+                ? <AddReportPage />
+                : <PluginDisabledView pluginId="recruitment_v2" pluginName="Recrutement & Détection V2" />
+            } />
+            <Route path="/recruitment-v2/*" element={
+              isPluginActive('recruitment_v2')
+                ? <RecruitmentV2Page />
+                : <PluginDisabledView pluginId="recruitment_v2" pluginName="Recrutement & Détection V2" />
+            } />
+            <Route path="/plugins" element={<PluginsPage />} />
+            <Route path="/leagues"       element={<LeagueManagement />} />
+            <Route path="/opponents"     element={<OpponentClubs />} />
+            <Route path="/stadiums"      element={<StadiumManagement />} />
+            <Route path="/settings"  element={
+              <ProtectedRoute requiredPermission="manage_roles">
+                <ClubSettings />
+              </ProtectedRoute>
+            } />
+            <Route path="/blog"      element={<BlogManagement />} />
+            <Route path="/store"     element={<StoreManagement />} />
+            <Route path="/users"     element={
+              <ProtectedRoute requiredPermission="manage_users">
+                <UserManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/logs"      element={<AuditLogsPage />} />
+            <Route path="/tickets"   element={<TicketsPage />} />
+            <Route path="/profile"   element={<ProfilePage />} />
+            <Route path="/media"     element={<MediaManagementPage />} />
 
-                {/* 404 */}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </motion.div>
-          </AnimatePresence>
+            {/* 404 */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </div>
       </main>
 

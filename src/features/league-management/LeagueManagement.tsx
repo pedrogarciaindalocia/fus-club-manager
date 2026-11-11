@@ -26,10 +26,9 @@ import {
   Eye,
   ImageIcon
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import type { League, AgeCategory } from '../../types';
 import { PLAYER_CATEGORIES } from '../../constants';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import LeagueOverviewPanel from './LeagueOverviewPanel';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
 
@@ -134,25 +133,14 @@ const LeagueManagement: React.FC = () => {
   }, [searchQuery, pageSize]);
 
   if (isLoading) {
-    return (
-      <div className="space-y-8 animate-in fade-in duration-700">
-        <Skeleton className="h-40 w-full rounded-[2.5rem]" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[1,2,3].map(i => <Skeleton key={i} className="h-32 rounded-[2rem]" />)}
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement des compétitions…" />;
   }
 
   return (
     <div className="space-y-8 pb-20">
-      <AnimatePresence mode="wait">
         {!showForm ? (
-          <motion.div 
+          <div 
             key="list" 
-            initial={{ opacity: 0, scale: 0.98 }} 
-            animate={{ opacity: 1, scale: 1 }} 
-            exit={{ opacity: 0, scale: 0.98 }}
             className="space-y-8"
           >
             {/* Premium Header */}
@@ -214,9 +202,8 @@ const LeagueManagement: React.FC = () => {
               <LeagueOverviewPanel league={selectedLeague} onBack={() => setSelectedLeague(null)} />
             ) : displayMode === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <AnimatePresence mode="popLayout">
                   {paginatedLeagues.map(league => (
-                    <motion.div key={league.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.3 }}>
+                    <div key={league.id}>
                       <Card className="group border shadow-xl hover:shadow-primary/5 transition-all duration-700 bg-white rounded-[3.5rem] overflow-hidden">
                         <CardContent className="p-10">
                           <div className="flex flex-col md:flex-row items-center gap-10">
@@ -253,9 +240,8 @@ const LeagueManagement: React.FC = () => {
                           </div>
                         </CardContent>
                       </Card>
-                    </motion.div>
+                    </div>
                   ))}
-                </AnimatePresence>
               </div>
             ) : (
               <div className="bg-white border rounded-[2rem] sm:rounded-[3rem] overflow-hidden shadow-sm">
@@ -331,13 +317,10 @@ const LeagueManagement: React.FC = () => {
                  </div>
               </div>
             )}
-          </motion.div>
+          </div>
         ) : (
-          <motion.div 
+          <div 
             key="form"
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -50 }}
             className="max-w-4xl mx-auto"
           >
             <div className="flex items-center gap-8 mb-12">
@@ -469,9 +452,8 @@ const LeagueManagement: React.FC = () => {
                  </div>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
       {/* Sélecteur de Médias Centralisé */}
       <MediaPickerModal

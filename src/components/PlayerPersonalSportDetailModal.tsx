@@ -330,6 +330,11 @@ export const PlayerPersonalSportDetailModal: React.FC<PlayerPersonalSportDetailM
                 <h3 className="text-lg sm:text-2xl font-black tracking-tight text-white uppercase truncate">
                   {player.full_name}
                 </h3>
+                {player.category_number && (
+                  <Badge variant="outline" className="border-amber-400/50 bg-amber-400/10 text-amber-300 text-[10px] font-black uppercase px-2 py-0.5">
+                    N° Catégorie : #{player.category_number}
+                  </Badge>
+                )}
                 <Badge className={`border text-[10px] sm:text-[11px] font-black uppercase px-2 sm:px-2.5 py-0.5 shadow-xs ${getPositionDetails(player.position).badgeBg}`}>
                   {getPositionDetails(player.position).code} — {getPositionDetails(player.position).label}
                 </Badge>
@@ -584,6 +589,11 @@ export const PlayerPersonalSportDetailModal: React.FC<PlayerPersonalSportDetailM
                       </span>
                       <span>{getPositionDetails(player.position).label}</span>
                     </span>
+                    {player.secondary_position && (
+                      <span className="text-[11px] text-muted-foreground block mt-1">
+                        Sec: <strong className="text-foreground">{player.secondary_position}</strong>
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-muted-foreground block">Pied Fort</span>

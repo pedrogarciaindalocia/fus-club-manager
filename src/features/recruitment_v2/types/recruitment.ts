@@ -83,11 +83,192 @@ export type SessionStatus = 'scheduled' | 'confirmed' | 'in_progress' | 'complet
 
 export type RecommendationPriority = 'low' | 'medium' | 'high' | 'very_high';
 
-import { PLAYER_CATEGORIES } from '../../../constants';
+import { PLAYER_CATEGORIES, normalizeAgeCategory } from '../../../constants';
 
 export const RECRUITMENT_AGE_CATEGORIES = PLAYER_CATEGORIES;
 
+/** Ordre chronologique croissant des catégories FUS (pour calcul du surclassement) */
+const ORDERED_AGE_CATEGORIES = [
+  'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16',
+  'U17', 'U18', 'U19', 'U20', 'U21', 'U22', 'U23', 'SENIOR',
+] as const;
+
 export type RecruitmentAgeCategory = typeof RECRUITMENT_AGE_CATEGORIES[number];
+
+/** Extrait le nombre de catégories de surclassement (1..4) à partir du libellé '+1C' ou du compteur numérique */
+export function parseSurclassementCount(
+  rawSurclass?: string | null,
+  upgradedCount?: number | null
+): number {
+  if (upgradedCount != null && !isNaN(Number(upgradedCount)) && Number(upgradedCount) > 0) {
+    return Number(upgradedCount);
+  }
+  if (rawSurclass && typeof rawSurclass === 'string') {
+    const trimmed = rawSurclass.trim().toLowerCase();
+    if (trimmed && trimmed !== '0c' && trimmed !== 'non' && trimmed !== 'non surclassé' && trimmed.includes('+')) {
+      const parsed = parseInt(trimmed.replace(/\D/g, ''), 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Calcule la catégorie cible d'un joueur surclassé à partir de sa catégorie principale
+ * et du nombre de catégories de surclassement (+1C -> +1 cran, etc.).
+ * Exemple : base 'U15', +1 -> 'U16'.
+ */
+export function getSurclassementTargetCategory(
+  baseCategory?: string | null,
+  upgradedCount?: number | null
+): string | null {
+  if (!baseCategory || !upgradedCount || upgradedCount <= 0) return null;
+  const normalizedBase = normalizeAgeCategory(baseCategory);
+  const idx = ORDERED_AGE_CATEGORIES.indexOf(normalizedBase as any);
+  if (idx === -1 || idx >= ORDERED_AGE_CATEGORIES.length - 1) return null;
+  const targetIdx = Math.min(ORDERED_AGE_CATEGORIES.length - 1, idx + upgradedCount);
+  if (targetIdx <= idx) return null;
+  return ORDERED_AGE_CATEGORIES[targetIdx];
+}
+
+export interface ResolvedSurclassementInfo {
+  isUpgraded: boolean;
+  count: number;
+  baseCategory: string;
+  targetCategory: string | null;
+  codeLabel: string;
+  shortBadgeText: string;
+}
+
+/**
+ * Résout de manière uniforme le statut de surclassement et la catégorie cible exacte
+ * (utilisé sur les rapports, les fiches candidats et le tableau Database).
+ */
+export function resolveSurclassementInfo(params: {
+  baseCategory?: string | null;
+  birthDate?: string | null;
+  isUpgraded?: boolean | null;
+  rawSurclass?: string | null;
+  upgradedCount?: number | null;
+  storedTargetCategory?: string | null;
+  hasReports?: boolean;
+}): ResolvedSurclassementInfo {
+  const effectiveBase = params.birthDate
+    ? getAgeCategoryFromBirthDate(params.birthDate, params.baseCategory || 'U19')
+    : normalizeAgeCategory(params.baseCategory || 'U19');
+
+  // Règle métier : si le joueur n'a aucun rapport (0 rapport), il n'y a pas de surclassement
+  if (params.hasReports === false || (params.isUpgraded === false && !params.rawSurclass && !params.upgradedCount)) {
+    return {
+      isUpgraded: false,
+      count: 0,
+      baseCategory: effectiveBase,
+      targetCategory: null,
+      codeLabel: '0C',
+      shortBadgeText: '0C (Non surclassé)',
+    };
+  }
+
+  const parsedCount = parseSurclassementCount(params.rawSurclass, params.upgradedCount);
+  const hasRawSignal = Boolean(
+    params.rawSurclass &&
+    !['0c', 'non', 'non surclassé', '0', ''].includes(String(params.rawSurclass).trim().toLowerCase())
+  );
+  const targetFromStored = params.storedTargetCategory ? normalizeAgeCategory(params.storedTargetCategory) : null;
+  const hasStoredDiffTarget = Boolean(targetFromStored && targetFromStored !== normalizeAgeCategory(effectiveBase));
+
+  const explicitlyNormal = params.isUpgraded === false && parsedCount === 0 && !hasRawSignal;
+  const isUpgraded = explicitlyNormal
+    ? false
+    : Boolean(params.isUpgraded || parsedCount > 0 || hasRawSignal || hasStoredDiffTarget);
+  const finalCount = isUpgraded ? (parsedCount > 0 ? parsedCount : 1) : 0;
+  const computedTarget = isUpgraded
+    ? (targetFromStored || getSurclassementTargetCategory(effectiveBase, finalCount))
+    : null;
+
+  const codeLabel = isUpgraded ? `+${finalCount}C` : '0C';
+  const shortBadgeText = isUpgraded
+    ? (computedTarget ? `en ${computedTarget} (${codeLabel})` : codeLabel)
+    : '0C (Non surclassé)';
+
+  return {
+    isUpgraded,
+    count: finalCount,
+    baseCategory: effectiveBase,
+    targetCategory: computedTarget,
+    codeLabel,
+    shortBadgeText,
+  };
+}
+
+/**
+ * Résout le surclassement d'un joueur ou d'un rapport spécifique :
+ * - Si totalReportsCount === 0 (aucun rapport), garantit "aucun surclassement".
+ * - Si le rapport contient ses propres champs surclassement dans report_data, les utilise exclusivement.
+ */
+export function resolveReportOrCandidateSurclassement(params: {
+  candidate: {
+    age_category?: string | null;
+    birth_date?: string | null;
+    is_upgraded_category?: boolean | null;
+    surclassement?: string | null;
+    upgraded_categories_count?: number | null;
+    surclassement_category?: string | null;
+  };
+  evaluation?: {
+    report_data?: {
+      age_category?: string | null;
+      is_upgraded_category?: boolean | null;
+      surclassement?: string | null;
+      upgraded_categories_count?: number | null;
+      surclassement_category?: string | null;
+    };
+  } | null;
+  totalReportsCount?: number;
+}): ResolvedSurclassementInfo {
+  const { candidate, evaluation, totalReportsCount } = params;
+  const baseCat = evaluation?.report_data?.age_category || candidate.age_category;
+
+  if (totalReportsCount === 0) {
+    return resolveSurclassementInfo({
+      baseCategory: baseCat,
+      birthDate: candidate.birth_date,
+      hasReports: false,
+    });
+  }
+
+  const rd = evaluation?.report_data;
+  const reportHasOwnSurclass = Boolean(
+    rd && (
+      rd.is_upgraded_category !== undefined ||
+      rd.upgraded_categories_count !== undefined ||
+      (rd as any).surclassement !== undefined ||
+      rd.surclassement_category !== undefined
+    )
+  );
+
+  if (rd && reportHasOwnSurclass) {
+    return resolveSurclassementInfo({
+      baseCategory: baseCat,
+      birthDate: candidate.birth_date,
+      isUpgraded: rd.is_upgraded_category,
+      rawSurclass: (rd as any).surclassement,
+      upgradedCount: rd.upgraded_categories_count,
+      storedTargetCategory: rd.surclassement_category,
+      hasReports: true,
+    });
+  }
+
+  return resolveSurclassementInfo({
+    baseCategory: baseCat,
+    birthDate: candidate.birth_date,
+    isUpgraded: candidate.is_upgraded_category,
+    rawSurclass: candidate.surclassement,
+    upgradedCount: candidate.upgraded_categories_count,
+    storedTargetCategory: candidate.surclassement_category,
+    hasReports: totalReportsCount === undefined ? Boolean(evaluation) : totalReportsCount > 0,
+  });
+}
 
 /**
  * Calcul exact de l'âge d'un candidat à partir de sa date de naissance
@@ -342,11 +523,12 @@ export interface TrialCandidate {
 
   // Rapport du Joueur / Fiche Sportive
   surclassement?: string; // '0C', '+1C', '+2C', '+3C', '+4C'
+  surclassement_category?: string; // Catégorie cible atteinte en surclassement (ex: 'U16' pour un U15 +1C)
   is_upgraded_category?: boolean; // Surclassé (oui ou non)
   upgraded_categories_count?: number; // 1, 2, 3, 4
   is_first_time_seen?: boolean; // Est-ce qu'on voit pour la première fois ? (oui ou non)
-  potential_rating?: number; // Potentiel (1 à 10)
-  performance_rating?: number; // Performance (1 à 10)
+  potential_rating?: number | null; // Potentiel (0 à 10, 0 par défaut si non évalué)
+  performance_rating?: number; // Performance (0 à 10, 0 par défaut si non évalué)
   is_starter?: boolean; // Titulaire ou non (oui ou non)
   scout_state_decision?: 'invitation_test' | 'recruit_now' | 'to_follow'; // État (invitation test, à recruter immédiatement, à suivre)
   is_recruit_now_validated?: boolean; // Validé pour recrutement immédiat par la direction
@@ -371,7 +553,7 @@ export interface TrialCandidate {
   discovery_location?: string;
   discovery_match?: string;
   recommendation_priority?: RecommendationPriority;
-  initial_scout_score?: number;
+  initial_scout_score?: number | null;
   scout_recommendation_notes?: string;
 
   // Recruteur Référent
@@ -518,9 +700,10 @@ export interface CandidateEvaluation {
   pos_specific_3_label?: string;
   pos_specific_3_score?: number;
 
-  // Grille dynamique spécialisée par poste (Nom du critère -> Note 1-10)
+  // Grille dynamique spécialisée par poste (Nom du critère -> Note 0-10)
   criteria_scores?: Record<string, number>;
   position_code?: string;
+  potential_rating?: number | null;
 
   // Overall Score Pondéré
   overall_score: number;
@@ -540,12 +723,15 @@ export interface CandidateEvaluation {
     scout_state_decision?: string;
     is_upgraded_category?: boolean;
     upgraded_categories_count?: number;
+    surclassement?: string;
+    surclassement_category?: string;
     primary_position?: string;
     secondary_position?: string;
     preferred_foot?: string;
     height_cm?: number;
     weight_kg?: number;
     age_category?: string;
+    performance_rating?: number;
     current_club?: string;
     // Observation status & match details
     observation_status?: 'seen' | 'already_seen';

@@ -5,7 +5,7 @@ import { usePermissions } from '../../context/PermissionsContext';
 import ScheduleMatchWizard from './ScheduleMatchWizard';
 import { Trophy, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Button } from '../../components/ui/button';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { toast } from 'sonner';
 
 /**
@@ -67,12 +67,7 @@ export const ScheduleMatchPage: React.FC = () => {
   };
 
   if (id && isLoading && !existingMatch) {
-    return (
-      <div className="max-w-7xl mx-auto space-y-6 pb-20">
-        <Skeleton className="h-44 rounded-3xl w-full" />
-        <Skeleton className="h-[480px] rounded-3xl w-full" />
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement du match…" />;
   }
 
   return (

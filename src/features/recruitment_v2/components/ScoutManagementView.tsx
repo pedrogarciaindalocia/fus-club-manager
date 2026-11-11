@@ -134,24 +134,23 @@ export const ScoutManagementView: React.FC<ScoutManagementViewProps> = ({
     });
   }, [scouts]);
 
+  // Helper de normalisation résiliente (accents, espaces, variations Dehbi/Dahbi)
+  const normalizeScoutString = (str?: string | null): string => {
+    if (!str) return '';
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\bdehbi\b/g, 'dahbi')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
   const isCandidateForScout = (c: TrialCandidate, targetScout?: Scout | null) => {
     if (!targetScout) return false;
     const sId = targetScout.id;
     const sName = (targetScout.full_name || '').toLowerCase().trim();
     const sEmail = (targetScout.email || '').toLowerCase().trim();
-
-    // Helper de normalisation résiliente (accents, espaces, variations Dehbi/Dahbi)
-    const normalizeScoutString = (str?: string | null): string => {
-      if (!str) return '';
-      return str
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/\bdehbi\b/g, 'dahbi')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
-
     const normSName = normalizeScoutString(sName);
 
     // 1. Concordance directe sur les identifiants UUID
@@ -335,8 +334,7 @@ export const ScoutManagementView: React.FC<ScoutManagementViewProps> = ({
     }
   };
 
-  // État d'attribution Shortlist & Assignation joueur
-  const [updatingCandidateId, setUpdatingCandidateId] = useState<string | null>(null);
+  // État d'assignation joueur
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assignSearchQuery, setAssignSearchQuery] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
@@ -469,39 +467,69 @@ export const ScoutManagementView: React.FC<ScoutManagementViewProps> = ({
   // Scout KPI calculations & Filtered Candidates
   const scoutCandidates = candidates.filter(c => isCandidateForScout(c, activeScout));
   const scoutEvals = evaluations.filter(e => scoutCandidates.some(c => c.id === e.candidate_id));
-  const avgScore = scoutEvals.length > 0
-    ? Math.round((scoutEvals.reduce((acc, curr) => acc + (curr.overall_score || 0), 0) / scoutEvals.length) * 10) / 10
-    : 0;
 
-  // Détermine si un candidat est shortlisté : par défaut, tous les talents prospectés actifs sont shortlistés
-  const isCandidateShortlisted = (c: TrialCandidate) => {
-    if (c.pipeline_stage === 'rejected' || c.pipeline_stage === 'archived') return false;
-    return true;
-  };
+  // Agrégation des missions assignées au scout sélectionné et identité des donneurs d'ordre
+  const scoutAssignedMissionsInfo = useMemo(() => {
+    if (!activeScout) return { totalCount: 0, assigners: [] as { name: string; count: number }[] };
+    const sId = activeScout.id;
+    const normSName = normalizeScoutString(activeScout.full_name);
 
-  // Bascule du statut shortlist (ajoute ou retire le joueur de la shortlist et du terrain)
-  const handleToggleShortlist = async (c: TrialCandidate) => {
-    if (!onUpdateCandidate) return;
-    const currentlyShortlisted = isCandidateShortlisted(c);
-    const newStage = currentlyShortlisted ? 'prospect' : 'shortlisted';
+    const isTargetedToActiveScout = (toId?: string | null, toName?: string | null) =>
+      Boolean(
+        (toId && toId === sId) ||
+        (toName && normSName && normalizeScoutString(toName) === normSName)
+      );
 
-    setUpdatingCandidateId(c.id);
-    try {
-      await onUpdateCandidate(c.id, { pipeline_stage: newStage });
-      if (newStage === 'shortlisted') {
-        toast.success(`${c.first_name} ${c.last_name} ajouté à la Shortlist`, {
-          description: "Le profil s'affiche dès maintenant sur le terrain tactique (Shadow list)."
-        });
-      } else {
-        toast.info(`${c.first_name} ${c.last_name} retiré de la Shortlist`);
+    const resolveAssignerName = (byId?: string | null, byName?: string | null): string => {
+      if (byName && byName.trim()) return byName.trim();
+      if (byId) {
+        const matched = scouts.find(s => s.id === byId);
+        if (matched?.full_name) return matched.full_name.trim();
       }
-    } catch (err: any) {
-      console.error('Erreur mise à jour shortlist joueur:', err);
-      toast.error("Impossible de modifier la shortlist du joueur");
-    } finally {
-      setUpdatingCandidateId(null);
-    }
-  };
+      return 'Direction Scouting';
+    };
+
+    let totalCount = 0;
+    const assignersMap = new Map<string, number>();
+
+    const recordMission = (assignerName: string) => {
+      totalCount += 1;
+      assignersMap.set(assignerName, (assignersMap.get(assignerName) || 0) + 1);
+    };
+
+    candidates.forEach((c) => {
+      const seenMissionIds = new Set<string>();
+      let matchedAnyMissionObj = false;
+
+      if (c.active_mission && isTargetedToActiveScout(c.active_mission.assigned_to_id, c.active_mission.assigned_to_name)) {
+        matchedAnyMissionObj = true;
+        if (c.active_mission.id) seenMissionIds.add(c.active_mission.id);
+        recordMission(resolveAssignerName(c.active_mission.assigned_by_id, c.active_mission.assigned_by_name));
+      }
+
+      if (Array.isArray(c.mission_history)) {
+        c.mission_history.forEach((m) => {
+          if (m.id && seenMissionIds.has(m.id)) return;
+          if (isTargetedToActiveScout(m.assigned_to_id, m.assigned_to_name)) {
+            matchedAnyMissionObj = true;
+            if (m.id) seenMissionIds.add(m.id);
+            recordMission(resolveAssignerName(m.assigned_by_id, m.assigned_by_name));
+          }
+        });
+      }
+
+      // Repli si le joueur porte uniquement les champs d'assignation directe sans objet mission
+      if (!matchedAnyMissionObj && isTargetedToActiveScout(c.assigned_scout_id, c.assigned_scout_name)) {
+        recordMission(resolveAssignerName((c as any).assigned_by_scout_id, (c as any).assigned_by_scout_name));
+      }
+    });
+
+    const assigners = Array.from(assignersMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'fr'));
+
+    return { totalCount, assigners };
+  }, [candidates, activeScout, scouts]);
 
   // Assigner un joueur existant au scout actif
   const handleAssignCandidateToScout = async (candidateId: string) => {
@@ -1490,7 +1518,7 @@ Cellule Détection & Scouting — FUS Rabat`;
                 </div>
 
                 {/* KPIs Performance & Statut du Scout */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className={cn(
                     "p-3.5 rounded-2xl border text-center flex flex-col justify-center shadow-2xs",
                     activeScout.status === 'active' ? "bg-emerald-50/50 border-emerald-100" : "bg-slate-50 border-slate-200"
@@ -1520,16 +1548,25 @@ Cellule Détection & Scouting — FUS Rabat`;
                     </span>
                   </div>
 
-                  <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center flex flex-col justify-center">
-                    <span className="text-[10px] uppercase font-bold text-emerald-800 block">Retenus / Shortlist</span>
-                    <span className="text-2xl font-black text-emerald-700 mt-0.5">
-                      {scoutCandidates.filter(c => isCandidateShortlisted(c)).length}
+                  <div
+                    className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100 text-center flex flex-col justify-center"
+                    title={
+                      scoutAssignedMissionsInfo.totalCount > 0
+                        ? `Missions assignées par : ${scoutAssignedMissionsInfo.assigners.map(a => `${a.name} (${a.count})`).join(', ')}`
+                        : 'Aucune mission assignée'
+                    }
+                  >
+                    <span className="text-[10px] uppercase font-bold text-indigo-800 block">Missions Assignées</span>
+                    <span className="text-2xl font-black text-indigo-700 mt-0.5">
+                      {scoutAssignedMissionsInfo.totalCount}
                     </span>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-red-50/60 border border-red-100 text-center flex flex-col justify-center">
-                    <span className="text-[10px] uppercase font-bold text-red-900 block">Note Moyenne Talents</span>
-                    <span className="text-2xl font-black text-primary mt-0.5">{avgScore > 0 ? `${avgScore}/10` : '-'}</span>
+                    <span className="text-[10px] font-semibold text-indigo-900/80 mt-0.5 line-clamp-2 leading-tight">
+                      {scoutAssignedMissionsInfo.totalCount > 0
+                        ? `Par : ${scoutAssignedMissionsInfo.assigners
+                            .map(a => (scoutAssignedMissionsInfo.assigners.length > 1 ? `${a.name} (${a.count})` : a.name))
+                            .join(', ')}`
+                        : 'Aucune mission'}
+                    </span>
                   </div>
                 </div>
 
@@ -1743,14 +1780,14 @@ Cellule Détection & Scouting — FUS Rabat`;
                             const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
                             const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
 
-                            // 2. Dernier potentiel du joueur (issu du dernier rapport, sinon note de profil)
-                            const potentialScore: number | null = (latestEval?.potential_rating != null && !isNaN(Number(latestEval.potential_rating)))
-                              ? Math.round(Number(latestEval.potential_rating) * 10) / 10
-                              : (c.potential_rating != null && !isNaN(Number(c.potential_rating)))
-                                ? Math.round(Number(c.potential_rating) * 10) / 10
-                                : (c.initial_scout_score != null && !isNaN(Number(c.initial_scout_score)))
-                                  ? Math.round(Number(c.initial_scout_score) * 10) / 10
-                                  : null;
+                            // 2. Dernier potentiel du joueur : 0.0 strict si le joueur n'a aucun rapport
+                            const potentialScore: number | null = (candEvalsList.length === 0 || !latestEval)
+                              ? 0
+                              : (latestEval.potential_rating != null && !isNaN(Number(latestEval.potential_rating)))
+                                ? Math.round(Number(latestEval.potential_rating) * 10) / 10
+                                : (c.potential_rating != null && !isNaN(Number(c.potential_rating)))
+                                  ? Math.round(Number(c.potential_rating) * 10) / 10
+                                  : 0;
 
                             return (
                               <div

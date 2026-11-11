@@ -7,13 +7,23 @@ import {
   FileSpreadsheet, Search, CheckCircle2, Flame, Eye, Trophy, RotateCcw, Info, Calendar
 } from 'lucide-react';
 import type { TrialCandidate, CandidateStatus, FootType, RecommendationPriority, Scout, CandidateEvaluation, AdministrativeDocument, PlayerRecruitmentStatus } from '../types/recruitment';
-import { RECRUITMENT_AGE_CATEGORIES, REFERENCE_PLAYER_STYLES, RECRUITMENT_CATEGORY_GROUPS, PLAYER_RECRUITMENT_STATUS_OPTIONS, groupCategoriesByPole, getAgeCategoryFromBirthDate, getPoleFromCategory } from '../types/recruitment';
+import {
+  RECRUITMENT_AGE_CATEGORIES,
+  REFERENCE_PLAYER_STYLES,
+  RECRUITMENT_CATEGORY_GROUPS,
+  PLAYER_RECRUITMENT_STATUS_OPTIONS,
+  groupCategoriesByPole,
+  getAgeCategoryFromBirthDate,
+  getPoleFromCategory,
+  getSurclassementTargetCategory
+} from '../types/recruitment';
 import { AdministrativeDossierForm } from './AdministrativeDossierForm';
 import { cn } from '../../../lib/utils';
 import { usePlayers } from '../../../hooks/usePlayers';
 import { NATIONALITIES, normalizeAgeCategory } from '../../../constants';
 import { UNIFIED_POSITION_OPTIONS, formatUnifiedPosition } from '../../../constants/positions';
 import { useMetrics } from '../../../hooks/useMetrics';
+import { getMetricCategoryFrenchLabel, getMetricPositionFrenchName } from '../../../utils/metricSetsHelpers';
 import { GEOGRAPHY_DATA, getContinentForCountry, getCountryForNationality, getCountryFlag, getCountryNationality } from '../../../constants/geography';
 import { PlayerGeographyFields } from '../../../components/PlayerGeographyFields';
 import { usePermissions } from '../../../context/PermissionsContext';
@@ -345,10 +355,10 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [reportTitle, setReportTitle] = useState<string>('');
   const [matchObserved, setMatchObserved] = useState<string>('');
   const [isUpgradedCategory, setIsUpgradedCategory] = useState<boolean>(false);
-  const [upgradedCategoriesCount, setUpgradedCategoriesCount] = useState<number>(1);
+  const [upgradedCategoriesCount, setUpgradedCategoriesCount] = useState<number>(0);
   const [isFirstTimeSeen, setIsFirstTimeSeen] = useState<boolean>(true);
-  const [potentialRating, setPotentialRating] = useState<number>(8.0);
-  const [performanceRating, setPerformanceRating] = useState<number>(7.5);
+  const [potentialRating, setPotentialRating] = useState<number>(0);
+  const [performanceRating, setPerformanceRating] = useState<number>(0);
   const [isStarter, setIsStarter] = useState<boolean>(true);
   const [isFullMatch, setIsFullMatch] = useState<boolean>(true);
   const [subOutHalf, setSubOutHalf] = useState<'1st' | '2nd'>('2nd');
@@ -437,7 +447,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
   const [discoveryMatch, setDiscoveryMatch] = useState('');
   const [priority, setPriority] = useState<RecommendationPriority>('high');
-  const [initialScore, setInitialScore] = useState<number>(8.0);
+  const [initialScore, setInitialScore] = useState<number | null>(null);
   const [scoutNotes, setScoutNotes] = useState('');
   const [preferredLocations, setPreferredLocations] = useState<string[]>([]);
   // LocationPicker state pour zones préférées
@@ -483,15 +493,34 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
   const handleBirthDateChange = (dateVal: string) => {
     setBirthDate(dateVal);
-    if (dateVal) {
-      // Règle Métier US-DASH-120 : Catégorie d'âge réelle calculée systématiquement via la date de naissance
-      const computedCat = getAgeCategoryFromBirthDate(dateVal);
-      setAgeCategory(computedCat);
+    if (dateVal && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+      const year = parseInt(dateVal.slice(0, 4), 10);
+      const currentYear = new Date().getFullYear();
+      if (year >= 1950 && year <= currentYear) {
+        // Règle Métier US-DASH-120 : Catégorie d'âge principale proposée automatiquement depuis la date de naissance
+        const computedCat = getAgeCategoryFromBirthDate(dateVal);
+        setAgeCategory(computedCat);
+      }
     }
   };
 
   const age = calculateAge(birthDate);
   const isMinor = age !== null && age < 18;
+  const effectivePrincipalCategory = useMemo(() => {
+    if (birthDate && /^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+      const year = parseInt(birthDate.slice(0, 4), 10);
+      if (year >= 1950 && year <= new Date().getFullYear()) {
+        return getAgeCategoryFromBirthDate(birthDate, ageCategory);
+      }
+    }
+    return normalizeAgeCategory(ageCategory || 'U19');
+  }, [birthDate, ageCategory]);
+
+  const surclassementTargetCategory = useMemo(() => {
+    return isUpgradedCategory && upgradedCategoriesCount > 0
+      ? getSurclassementTargetCategory(effectivePrincipalCategory, upgradedCategoriesCount)
+      : null;
+  }, [isUpgradedCategory, effectivePrincipalCategory, upgradedCategoriesCount]);
 
   useEffect(() => {
     if (candidate) {
@@ -556,26 +585,42 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setNationalSelections(candidate.national_selections || '');
       setInjuryHistory(candidate.injury_history || '');
 
-      // Rapport du Joueur
-      const hasUpgraded = Boolean(candidate.is_upgraded_category || (candidate.surclassement && candidate.surclassement !== '0C' && candidate.surclassement !== 'Non'));
-      setIsUpgradedCategory(hasUpgraded);
-      if (candidate.upgraded_categories_count) {
-        setUpgradedCategoriesCount(candidate.upgraded_categories_count);
-      } else if (candidate.surclassement && candidate.surclassement.startsWith('+')) {
-        const count = parseInt(candidate.surclassement.replace(/\D/g, ''), 10);
-        setUpgradedCategoriesCount(!isNaN(count) && count >= 1 && count <= 4 ? count : 1);
+      // Rapport du Joueur :
+      // - En création d'un nouveau rapport (mode 'report_only' sans evaluation) ou si le joueur a 0 rapport :
+      //   repartir par défaut à 0 (aucun surclassement)
+      const hasPriorReports = ((candidate.evaluations?.length ?? 0) + (candidate.observations?.length ?? 0)) > 0;
+      if ((mode === 'report_only' && !evaluation) || (!hasPriorReports && !evaluation)) {
+        setIsUpgradedCategory(false);
+        setUpgradedCategoriesCount(0);
       } else {
-        setUpgradedCategoriesCount(1);
+        const hasUpgraded = Boolean(candidate.is_upgraded_category || (candidate.surclassement && candidate.surclassement !== '0C' && candidate.surclassement !== 'Non'));
+        setIsUpgradedCategory(hasUpgraded);
+        if (!hasUpgraded) {
+          setUpgradedCategoriesCount(0);
+        } else if (candidate.upgraded_categories_count && candidate.upgraded_categories_count > 0) {
+          setUpgradedCategoriesCount(candidate.upgraded_categories_count);
+        } else if (candidate.surclassement && candidate.surclassement.startsWith('+')) {
+          const count = parseInt(candidate.surclassement.replace(/\D/g, ''), 10);
+          setUpgradedCategoriesCount(!isNaN(count) && count >= 1 && count <= 4 ? count : 1);
+        } else {
+          setUpgradedCategoriesCount(1);
+        }
       }
 
       // Règle automatique Vu vs Déjà vu :
       // Si le joueur a déjà au moins 1 rapport d'observation enregistré, automatiquement "Déjà vu"
-      const hasPriorReports = ((candidate.evaluations?.length ?? 0) + (candidate.observations?.length ?? 0)) > 0;
       setIsFirstTimeSeen(!hasPriorReports);
 
       setMatchObserved(candidate.discovery_match || '');
-      setPotentialRating(candidate.potential_rating ?? 8.0);
-      setPerformanceRating(candidate.performance_rating ?? 7.5);
+      setPotentialRating(
+        (hasPriorReports || mode === 'report_only' || evaluation) &&
+        candidate.potential_rating != null &&
+        !isNaN(Number(candidate.potential_rating)) &&
+        Number(candidate.potential_rating) >= 0
+          ? Number(candidate.potential_rating)
+          : 0
+      );
+      setPerformanceRating(candidate.performance_rating ?? 0);
       setIsStarter(candidate.is_starter ?? true);
       setIsFullMatch(true);
       setSubOutHalf('2nd');
@@ -632,7 +677,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setDiscoveryDate(candidate.discovery_date || candidate.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]);
       setDiscoveryMatch(candidate.discovery_match || '');
       setPriority(candidate.recommendation_priority || 'high');
-      setInitialScore(candidate.initial_scout_score || 8.0);
+      setInitialScore(candidate.initial_scout_score ?? null);
       setScoutNotes(candidate.scout_recommendation_notes || '');
       setStatus(candidate.status || 'registered');
       // Zones préférées
@@ -645,8 +690,17 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       const evalToLoad = evaluation || (mode !== 'report_only' && candidate.evaluations && candidate.evaluations.length > 0 ? candidate.evaluations[0] : null);
       if (evalToLoad) {
         if (evalToLoad.report_title) setReportTitle(evalToLoad.report_title);
-        if (evalToLoad.potential_rating != null) setPotentialRating(evalToLoad.potential_rating);
-        if (evalToLoad.performance_rating != null) setPerformanceRating(evalToLoad.performance_rating);
+        if (evalToLoad.potential_rating != null && !isNaN(Number(evalToLoad.potential_rating)) && Number(evalToLoad.potential_rating) >= 0) {
+          setPotentialRating(Number(evalToLoad.potential_rating));
+        } else {
+          setPotentialRating(0);
+        }
+        const evalPerf = (evalToLoad as any).performance_rating ?? evalToLoad.report_data?.performance_rating;
+        if (evalPerf != null && !isNaN(Number(evalPerf))) {
+          setPerformanceRating(Number(evalPerf));
+        } else {
+          setPerformanceRating(candidate.performance_rating ?? 0);
+        }
 
         const targetPos = evalToLoad.position_evaluated || evalToLoad.report_data?.primary_position || candidate.primary_position;
         const targetConfig = getPositionByCode(targetPos);
@@ -682,8 +736,13 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
           if (rd.information_source) setInformationSource(rd.information_source as any);
           if (rd.information_source_person) setInformationSourcePerson(rd.information_source_person);
           if (rd.current_club) setCurrentClub(rd.current_club);
-          if (rd.is_upgraded_category !== undefined) setIsUpgradedCategory(rd.is_upgraded_category);
-          if (rd.upgraded_categories_count !== undefined) setUpgradedCategoriesCount(rd.upgraded_categories_count);
+          if (rd.is_upgraded_category === false || (rd as any).surclassement === '0C' || rd.upgraded_categories_count === 0) {
+            setIsUpgradedCategory(false);
+            setUpgradedCategoriesCount(0);
+          } else {
+            if (rd.is_upgraded_category !== undefined) setIsUpgradedCategory(rd.is_upgraded_category);
+            if (rd.upgraded_categories_count !== undefined) setUpgradedCategoriesCount(rd.upgraded_categories_count);
+          }
           if (rd.goals !== undefined) setGoals(rd.goals);
           if (rd.assists !== undefined) setAssists(rd.assists);
           if (rd.minutes_played !== undefined) setMinutesPlayed(rd.minutes_played);
@@ -697,11 +756,6 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
         (['technique', 'tactique', 'physique', 'mental'] as ScoutPillarKey[]).forEach(p => {
           const list = activeCfg?.criteria?.[p] || [];
-          const pillarFallback =
-            p === 'technique' ? (evalToLoad.technical_score ?? 7.0) :
-            p === 'tactique' ? (evalToLoad.tactical_score ?? 7.0) :
-            p === 'physique' ? (evalToLoad.physical_score ?? 7.0) :
-            (evalToLoad.mental_score ?? 7.0);
 
           list.forEach(c => {
             const lbl = typeof c === 'string' ? c : (c as any)?.label;
@@ -727,7 +781,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
               }
             }
 
-            loadedScores[fullKey] = (val !== undefined && !isNaN(val)) ? val : pillarFallback;
+            loadedScores[fullKey] = (val !== undefined && !isNaN(val)) ? val : 0;
             loadedEnabled[fullKey] = true;
           });
         });
@@ -735,6 +789,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         setCriterionScores(loadedScores);
         setCriterionEnabled(loadedEnabled);
       } else if (mode === 'report_only') {
+        setPotentialRating(0);
+        setPerformanceRating(0);
         setTechReport('');
         setTactReport('');
         setPhysReport('');
@@ -759,10 +815,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       // Rapport du Joueur reset
       setMatchObserved('');
       setIsUpgradedCategory(false);
-      setUpgradedCategoriesCount(1);
+      setUpgradedCategoriesCount(0);
       setIsFirstTimeSeen(true);
-      setPotentialRating(8.0);
-      setPerformanceRating(7.5);
+      setPotentialRating(0);
+      setInitialScore(null);
+      setPerformanceRating(0);
       setIsStarter(true);
       setIsFullMatch(true);
       setSubOutHalf('2nd');
@@ -787,6 +844,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setDiscoveryDate(new Date().toISOString().split('T')[0]);
       setSelectedDbPlayerId('');
       setPlayerSourceMode('manual');
+      setCriterionScores({});
+      setCriterionEnabled({});
 
       if (initialScoutId) {
         setDiscoveringScoutId(initialScoutId);
@@ -823,10 +882,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     if (p.photo_url) setPhotoUrl(p.photo_url);
     if (p.birth_date) {
       setBirthDate(p.birth_date);
-      const computedAge = calculateAge(p.birth_date);
-      if (computedAge !== null) {
-        setAgeCategory(getSuggestedAgeCategory(computedAge));
-      }
+      setAgeCategory(getAgeCategoryFromBirthDate(p.birth_date));
     }
     if (p.nationality) {
       setNationality(p.nationality);
@@ -949,7 +1005,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     }
 
     const key = `${inlineAddingPillar}-${trimmed}`;
-    setCriterionScores((prev) => ({ ...prev, [key]: 5.0 }));
+    setCriterionScores((prev) => ({ ...prev, [key]: 0 }));
     setCriterionEnabled((prev) => ({ ...prev, [key]: true }));
     setInlineAddingPillar(null);
     setInlineNewCriterionName('');
@@ -1069,15 +1125,16 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const renderCriterionSlider = (pillar: ScoutPillarKey, label: string) => {
     const key = `${pillar}-${label}`;
     const isEnabled = criterionEnabled[key] ?? true;
-    const value = criterionScores[key] ?? 5.0;
+    const value = criterionScores[key] ?? 0;
     const isEditing = editingCriterion?.pillar === pillar && editingCriterion?.oldName === label;
     const { title, detail } = parseCriterion(label);
     const isTooltipOpen = activeCriterionTooltip === key;
 
-    let scoreBadgeColor = 'bg-slate-100 text-slate-700';
+    let scoreBadgeColor = 'bg-slate-100 text-slate-400';
     if (value >= 9) scoreBadgeColor = 'bg-red-50 text-primary font-black';
     else if (value >= 7.5) scoreBadgeColor = 'bg-emerald-50 text-emerald-700 font-bold';
     else if (value >= 6) scoreBadgeColor = 'bg-blue-50 text-blue-700';
+    else if (value > 0) scoreBadgeColor = 'bg-slate-100 text-slate-700';
 
     return (
       <div
@@ -1179,7 +1236,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
               <div className="flex items-center gap-1 shrink-0">
                 {isEnabled ? (
                   <span className={cn("px-2 py-0.5 rounded-lg text-xs font-black", scoreBadgeColor)}>
-                    {value.toFixed(1)} <span className="text-[10px] opacity-70 font-normal">/10</span>
+                    {value === 0 ? '0' : value.toFixed(1)} <span className="text-[10px] opacity-70 font-normal">/10</span>
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded-lg text-[10px] bg-slate-200 text-slate-500 font-bold shrink-0">
@@ -1217,7 +1274,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         </div>
         <input
           type="range"
-          min="1"
+          min="0"
           max="10"
           step="0.5"
           disabled={!isEnabled}
@@ -1238,10 +1295,10 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       const lbl = typeof c === 'string' ? c : (c as any)?.label;
       return criterionEnabled[`${pillar}-${lbl}`] !== false;
     });
-    if (active.length === 0) return 7.0;
+    if (active.length === 0) return 0;
     const sum = active.reduce((acc, c) => {
       const lbl = typeof c === 'string' ? c : (c as any)?.label;
-      return acc + (criterionScores[`${pillar}-${lbl}`] || 5.0);
+      return acc + (criterionScores[`${pillar}-${lbl}`] ?? 0);
     }, 0);
     return Math.round((sum / active.length) * 10) / 10;
   };
@@ -1270,7 +1327,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b">
           <div>
             <h4 className="text-base font-black text-slate-800 flex items-center gap-2">
-              <span>{letter}. Critères {title} — {positionConfig.name} ({positionConfig.code})</span>
+              <span>{letter}. Critères {title} — {getMetricPositionFrenchName(positionConfig)}</span>
             </h4>
             <p className="text-xs text-slate-500 font-medium">{subtitle}</p>
           </div>
@@ -1390,6 +1447,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       )
     );
 
+    const isEffectiveReportUpgraded = mode !== 'player_only' && isUpgradedCategory && upgradedCategoriesCount > 0 && Boolean(surclassementTargetCategory);
+    const reportUpgradedCount = isEffectiveReportUpgraded ? upgradedCategoriesCount : 0;
+    const reportSurclassCode = isEffectiveReportUpgraded ? `+${reportUpgradedCount}C` : '0C';
+    const reportSurclassCategory = isEffectiveReportUpgraded ? (surclassementTargetCategory || undefined) : undefined;
+
     const evaluationPayload = hasEvalData ? {
       candidate_id: '',
       evaluator_id: discoveringScoutId || undefined,
@@ -1397,7 +1459,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       evaluator_role: selectedScout?.role_title || 'Scout',
       evaluation_date: new Date().toISOString().split('T')[0],
       created_at: evaluation?.created_at || new Date().toISOString(),
-      potential_rating: Number(potentialRating) || (candidate?.potential_rating != null ? Number(candidate.potential_rating) : undefined),
+      potential_rating: Number(potentialRating || 0),
       scout_state_decision: scoutStateDecision,
       report_title: reportTitle.trim() || (scoutStateDecision === 'recruit_now' ? 'Signalement : À recruter immédiatement' : undefined),
       position_evaluated: positionConfig.code || primaryPosition,
@@ -1406,8 +1468,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         observation_status: isFirstTimeSeen ? 'seen' : 'already_seen',
         is_first_time_seen: isFirstTimeSeen,
         match_observed: matchObserved.trim() || undefined,
-        is_upgraded_category: isUpgradedCategory,
-        upgraded_categories_count: isUpgradedCategory ? upgradedCategoriesCount : 0,
+        is_upgraded_category: isEffectiveReportUpgraded,
+        upgraded_categories_count: reportUpgradedCount,
+        surclassement: reportSurclassCode,
+        surclassement_category: reportSurclassCategory,
+        performance_rating: Number(performanceRating || 0),
         primary_position: primaryPosition || candidate?.primary_position,
         secondary_position: secondaryPosition || undefined,
         preferred_foot: preferredFoot,
@@ -1450,11 +1515,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         (positionConfig.criteria[pillar] || []).forEach(c => {
           const lbl = typeof c === 'string' ? c : (c as any)?.label;
           if (lbl) {
-            const scoreVal = criterionScores[`${pillar}-${lbl}`] ?? (
-              pillar === 'technique' ? techScore :
-              pillar === 'tactique' ? tactScore :
-              pillar === 'physique' ? physScore : mentScore
-            );
+            const scoreVal = criterionScores[`${pillar}-${lbl}`] ?? 0;
             acc[`${pillar}-${lbl}`] = scoreVal;
             acc[lbl] = scoreVal;
           }
@@ -1495,14 +1556,28 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         preferred_foot: preferredFoot,
         height_cm: heightCm ? Number(heightCm) : undefined,
         weight_kg: weightKg ? Number(weightKg) : undefined,
-        // Règle Métier US-DASH-120 : Catégorie d'âge réelle indexée obligatoirement selon la date de naissance
-        age_category: birthDate ? getAgeCategoryFromBirthDate(birthDate, ageCategory) : ageCategory,
-        surclassement: isUpgradedCategory ? `+${upgradedCategoriesCount}C` : '0C',
-        is_upgraded_category: isUpgradedCategory,
-        upgraded_categories_count: isUpgradedCategory ? upgradedCategoriesCount : 0,
+        // Règle Métier US-DASH-120 : Catégorie d'âge réelle proposée depuis la date de naissance
+        // Règle Surclassement : si le joueur a 0 rapport, aucun surclassement n'est enregistré
+        age_category: ageCategory || effectivePrincipalCategory,
+        surclassement: mode === 'player_only'
+          ? (candidate && existingReportsCount > 0 ? (candidate.surclassement || '0C') : '0C')
+          : reportSurclassCode,
+        surclassement_category: mode === 'player_only'
+          ? (candidate && existingReportsCount > 0 ? candidate.surclassement_category : undefined)
+          : reportSurclassCategory,
+        is_upgraded_category: mode === 'player_only'
+          ? (candidate && existingReportsCount > 0 ? Boolean(candidate.is_upgraded_category) : false)
+          : isEffectiveReportUpgraded,
+        upgraded_categories_count: mode === 'player_only'
+          ? (candidate && existingReportsCount > 0 ? (candidate.upgraded_categories_count ?? 0) : 0)
+          : reportUpgradedCount,
         is_first_time_seen: isFirstTimeSeen,
-        potential_rating: Number(potentialRating),
-        performance_rating: Number(performanceRating),
+        potential_rating: mode === 'player_only'
+          ? (candidate && existingReportsCount > 0 ? Number(potentialRating || 0) : 0)
+          : Number(potentialRating || 0),
+        performance_rating: mode === 'player_only'
+          ? (candidate && existingReportsCount > 0 ? Number(performanceRating || 0) : 0)
+          : Number(performanceRating || 0),
         is_starter: isStarter,
         team_formation: teamFormation.trim() || undefined,
         scout_state_decision: scoutStateDecision,
@@ -1527,7 +1602,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         discovery_location: discoveryLocation || undefined,
         discovery_match: discoveryMatch || undefined,
         recommendation_priority: priority,
-        initial_scout_score: Number(initialScore),
+        initial_scout_score: initialScore != null && initialScore > 0 ? Number(initialScore) : null,
         scout_recommendation_notes: scoutNotes || undefined,
 
         video_type: mode === 'player_only' ? (candidate?.video_type || 'none') : videoType,
@@ -1895,6 +1970,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                         onChange={(e) => handleBirthDateChange(e.target.value)}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                       />
+                      {birthDate && age !== null && (
+                        <p className="mt-1 text-[11px] font-semibold text-indigo-700">
+                          Âge calculé : {age} ans • Catégorie principale proposée : <span className="font-black">{getAgeCategoryFromBirthDate(birthDate)}</span>
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1">
@@ -2153,7 +2233,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                         <option value="" disabled>Sélectionner le poste principal</option>
                         {(positions.length > 0 ? positions : UNIFIED_POSITION_OPTIONS.map(pos => ({ id: pos.code, code: pos.code, name: pos.label }))).map(p => (
                           <option key={p.id || p.code} value={p.code}>
-                            {p.name} ({p.code})
+                            {getMetricPositionFrenchName(p)}
                           </option>
                         ))}
                       </select>
@@ -2688,14 +2768,18 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
                 {/* 2. SURCLASSEMENT DU JOUEUR (Catégorie principale éliminée de ce bloc) */}
                 <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-4">
-                  <div className="flex items-center justify-between border-b pb-2.5">
+                  <div className="flex items-center justify-between border-b pb-2.5 gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-indigo-600" />
                       <span className="text-xs font-bold text-slate-900">Surclassement du Joueur</span>
                     </div>
-                    {isUpgradedCategory && (
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        +{upgradedCategoriesCount} Catégorie{upgradedCategoriesCount > 1 ? 's' : ''}
+                    {isUpgradedCategory && surclassementTargetCategory ? (
+                      <span className="text-[10px] font-black px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Surclassé en {surclassementTargetCategory} (+{upgradedCategoriesCount}C)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                        0 — Pas de surclassement ({effectivePrincipalCategory})
                       </span>
                     )}
                   </div>
@@ -2707,24 +2791,35 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        onClick={() => setIsUpgradedCategory(false)}
+                        onClick={() => {
+                          setIsUpgradedCategory(false);
+                          setUpgradedCategoriesCount(0);
+                        }}
                         className={cn(
                           "py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer",
-                          !isUpgradedCategory
+                          !isUpgradedCategory || upgradedCategoriesCount === 0
                             ? "bg-slate-900 text-white border-slate-900 shadow-xs"
                             : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                         )}
                       >
-                        Non (Normal)
+                        Non (0 — Pas de surclassement)
                       </button>
                       <button
                         type="button"
-                        onClick={() => setIsUpgradedCategory(true)}
+                        disabled={!getSurclassementTargetCategory(effectivePrincipalCategory, 1)}
+                        onClick={() => {
+                          setIsUpgradedCategory(true);
+                          if (upgradedCategoriesCount <= 0) {
+                            setUpgradedCategoriesCount(1);
+                          }
+                        }}
                         className={cn(
-                          "py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5",
-                          isUpgradedCategory
-                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                          "py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5",
+                          !getSurclassementTargetCategory(effectivePrincipalCategory, 1)
+                            ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                            : isUpgradedCategory && upgradedCategoriesCount > 0
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs cursor-pointer"
+                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 cursor-pointer"
                         )}
                       >
                         <Zap className="w-3.5 h-3.5" />
@@ -2733,37 +2828,96 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Si surclassé : choix de 1, 2, 3 ou 4 catégories */}
-                  {isUpgradedCategory && (
-                    <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 space-y-2">
-                      <label className="block text-[11px] font-bold text-emerald-950">
-                        Par combien de catégories de surclassement : 1 – 2 – 3 – 4 ?
-                      </label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {[1, 2, 3, 4].map((num) => {
-                          const isCountSelected = upgradedCategoriesCount === num;
-                          return (
-                            <button
-                              key={num}
-                              type="button"
-                              onClick={() => setUpgradedCategoriesCount(num)}
-                              className={cn(
-                                "py-2 rounded-xl text-xs font-black transition-all border cursor-pointer flex flex-col items-center justify-center",
-                                isCountSelected
-                                  ? "bg-emerald-600 text-white border-emerald-700 shadow-xs scale-[1.02]"
-                                  : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-100/60"
-                              )}
-                            >
-                              <span>+{num}</span>
-                              <span className="text-[9px] font-medium opacity-80">
-                                {num === 1 ? '1 catégorie' : `${num} catégories`}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                  {/* Détermination directe du niveau & de la catégorie de surclassement (0 = pas de surclassement) */}
+                  <div className={cn(
+                    "p-3.5 rounded-xl border space-y-2.5",
+                    isUpgradedCategory && surclassementTargetCategory
+                      ? "bg-emerald-50/70 border-emerald-200/80"
+                      : "bg-slate-50/70 border-slate-200/80"
+                  )}>
+                    <label className="block text-[11px] font-bold text-slate-900">
+                      Déterminer dans quel surclassement le joueur a évolué lors de ce rapport :
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {/* Option 0 : Aucun surclassement */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsUpgradedCategory(false);
+                          setUpgradedCategoriesCount(0);
+                        }}
+                        className={cn(
+                          "py-2 px-2 rounded-xl text-xs font-black transition-all border cursor-pointer flex flex-col items-center justify-center",
+                          !isUpgradedCategory || upgradedCategoriesCount === 0
+                            ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                            : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                        )}
+                      >
+                        <span>0 ({effectivePrincipalCategory})</span>
+                        <span className="text-[9px] font-medium opacity-80">
+                          Pas de surclassement
+                        </span>
+                      </button>
+
+                      {[1, 2, 3, 4].map((num) => {
+                        const previewCat = getSurclassementTargetCategory(effectivePrincipalCategory, num);
+                        const isCountSelected = isUpgradedCategory && upgradedCategoriesCount === num && Boolean(previewCat);
+                        const isDisabled = !previewCat;
+                        return (
+                          <button
+                            key={num}
+                            type="button"
+                            disabled={isDisabled}
+                            onClick={() => {
+                              if (isDisabled) return;
+                              setIsUpgradedCategory(true);
+                              setUpgradedCategoriesCount(num);
+                            }}
+                            className={cn(
+                              "py-2 px-2 rounded-xl text-xs font-black transition-all border flex flex-col items-center justify-center",
+                              isDisabled
+                                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60"
+                                : isCountSelected
+                                ? "bg-emerald-600 text-white border-emerald-700 shadow-xs scale-[1.02] cursor-pointer"
+                                : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-100/60 cursor-pointer"
+                            )}
+                          >
+                            <span>{previewCat ? `+${num} → ${previewCat}` : `+${num} (—)`}</span>
+                            <span className="text-[9px] font-medium opacity-80">
+                              {previewCat ? `Surclassé en ${previewCat}` : 'Max atteint'}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
+
+                    <div className={cn(
+                      "px-3 py-2 rounded-lg border text-[11px] font-semibold flex items-center justify-between gap-2",
+                      isUpgradedCategory && surclassementTargetCategory
+                        ? "bg-white border-emerald-200 text-emerald-950"
+                        : "bg-white border-slate-200 text-slate-700"
+                    )}>
+                      {isUpgradedCategory && surclassementTargetCategory ? (
+                        <>
+                          <span>
+                            Surclassement déterminé : rapport effectué en catégorie <strong className="font-black text-emerald-700">{surclassementTargetCategory}</strong> (catégorie principale : {effectivePrincipalCategory})
+                          </span>
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 shrink-0">
+                            +{upgradedCategoriesCount}C
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span>
+                            Pas de surclassement (0) : le joueur évolue dans sa catégorie principale <strong className="font-black text-slate-900">{effectivePrincipalCategory}</strong>.
+                          </span>
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
+                            0C
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* 3. POSTES, PIED FORT & CLUBS (Masqué en mode création / modification de rapport) */}
@@ -2788,7 +2942,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                           <option value="" disabled>Sélectionner le poste principal</option>
                           {positions.map(p => (
                             <option key={p.id || p.code} value={p.code}>
-                              {p.name} ({p.code})
+                              {getMetricPositionFrenchName(p)}
                             </option>
                           ))}
                         </select>
@@ -3283,13 +3437,17 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-800">Potentiel du Joueur</span>
-                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-black text-xs border border-amber-200">
-                          {potentialRating.toFixed(1)} / 10
+                        <span className={`px-2 py-0.5 rounded-md font-black text-xs border ${
+                          potentialRating > 0
+                            ? 'bg-amber-100 text-amber-900 border-amber-200'
+                            : 'bg-slate-100 text-slate-400 border-slate-200'
+                        }`}>
+                          {potentialRating === 0 ? '0 / 10' : `${potentialRating.toFixed(1)} / 10`}
                         </span>
                       </div>
                       <input
                         type="range"
-                        min="1"
+                        min="0"
                         max="10"
                         step="0.5"
                         value={potentialRating}
@@ -3297,7 +3455,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                         className="w-full accent-amber-500 cursor-pointer"
                       />
                       <div className="flex justify-between text-[10px] text-muted-foreground">
-                        <span>1 (Faible)</span>
+                        <span>0 (Non évalué)</span>
                         <span>5 (Moyen)</span>
                         <span>8 (Élevé)</span>
                         <span className="font-bold text-amber-700">10 (Élite)</span>
@@ -3308,13 +3466,17 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-800">Niveau de Performance Observé</span>
-                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 font-black text-xs border border-emerald-200">
-                          {performanceRating.toFixed(1)} / 10
+                        <span className={`px-2 py-0.5 rounded-md font-black text-xs border ${
+                          performanceRating > 0
+                            ? 'bg-emerald-100 text-emerald-900 border-emerald-200'
+                            : 'bg-slate-100 text-slate-400 border-slate-200'
+                        }`}>
+                          {performanceRating === 0 ? '0 / 10' : `${performanceRating.toFixed(1)} / 10`}
                         </span>
                       </div>
                       <input
                         type="range"
-                        min="1"
+                        min="0"
                         max="10"
                         step="0.5"
                         value={performanceRating}
@@ -3322,7 +3484,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                         className="w-full accent-emerald-600 cursor-pointer"
                       />
                       <div className="flex justify-between text-[10px] text-muted-foreground">
-                        <span>1 (Insuffisant)</span>
+                        <span>0 (Non évalué)</span>
                         <span>5 (Correct)</span>
                     </div>
                   </div>
@@ -3388,7 +3550,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     >
                       {positions.map(p => (
                         <option key={p.id || p.code} value={p.code}>
-                          {p.name} ({p.code})
+                          {getMetricPositionFrenchName(p)}
                         </option>
                       ))}
                     </select>
@@ -3408,9 +3570,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     <div className="flex items-center gap-2.5">
                       <div>
                         <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                          <span>Métriques configurées pour le poste {positionConfig.name} ({positionConfig.code})</span>
+                          <span>Métriques configurées pour le poste {getMetricPositionFrenchName(positionConfig)}</span>
                           <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
-                            {positionConfig.category || 'Poste'}
+                            {positionConfig.category ? getMetricCategoryFrenchLabel(positionConfig.category) : 'Poste'}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500">Critères dynamiques configurés selon le profil recherché au FUS</p>
@@ -3476,7 +3638,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                                 (positionConfig.criteria[pillar] || []).forEach(c => {
                                   const lbl = typeof c === 'string' ? c : (c as any)?.label;
                                   if (lbl) {
-                                    acc[lbl] = criterionScores[`${pillar}-${lbl}`] ?? 5.0;
+                                    acc[lbl] = criterionScores[`${pillar}-${lbl}`] ?? 0;
                                   }
                                 });
                                 return acc;

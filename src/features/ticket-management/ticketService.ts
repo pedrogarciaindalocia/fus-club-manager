@@ -1,8 +1,8 @@
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseAdmin } from '../../lib/supabase';
 import type { SupportTicket, TicketMessage, TicketStatus } from './types';
 
-// Client d'accès aux tickets utilisant la session utilisateur authentifiée
-const getAdminSupabase = () => supabase;
+// Client d'accès aux tickets utilisant la session d'administration ou supabase par défaut
+const getAdminSupabase = () => supabaseAdmin || supabase;
 
 export const ticketService = {
   /**

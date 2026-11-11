@@ -11,7 +11,7 @@ import { Card, CardContent } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { useOpponentPlayers } from '../../hooks/useOpponentPlayers';
 import PlayerMatchEvaluationModal from './components/PlayerMatchEvaluationModal';
 import PlayerActionHubModal from './components/PlayerActionHubModal';
@@ -171,6 +171,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
   }, [currentMatch, currentLeague]);
 
   const [ratingModalPlayer, setRatingModalPlayer] = useState<any | null>(null);
+  const [ratingModalInitialMode, setRatingModalInitialMode] = useState<'estimated' | 'detailed'>('detailed');
   const [modalRating, setModalRating] = useState<number>(7);
   const [modalComment, setModalComment] = useState<string>('');
   const [savingRating, setSavingRating] = useState(false);
@@ -656,12 +657,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
   }, [events, currentMatch, players]);
 
   if (loading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-32 rounded-[2rem]" />
-        <Skeleton className="h-64 rounded-[2rem]" />
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement des statistiques du match…" />;
   }
 
   return (
@@ -778,7 +774,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
       </div>
 
       {viewMode === 'video' && (
-         <div className="mt-8 space-y-10 animate-in slide-in-from-bottom-4 duration-500">
+         <div className="mt-8 space-y-10">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
                <div className="lg:col-span-8 flex flex-col gap-6">
                   {getVideoEmbedSrc(currentMatch.video_url || '') ? (
@@ -879,7 +875,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
       )}
 
       {viewMode === 'lineup' && (
-         <div className="space-y-10 animate-in fade-in duration-700">
+         <div className="space-y-10">
             {/* TACTICAL PITCH VIEW */}
             <Card className="rounded-[4rem] border-none shadow-2xl bg-white overflow-hidden p-1">
                <div className="bg-slate-900 rounded-[3.8rem] p-8 md:p-12 relative">
@@ -1487,7 +1483,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
        )}
 
        {viewMode === 'standard' && (
-        <div className="space-y-8 animate-in fade-in duration-500">
+        <div className="space-y-8">
       <h3 className="text-xl font-black uppercase italic tracking-tight mb-4 flex items-center gap-3 mt-10">
          <Activity className="w-6 h-6 text-primary" />
          Indicateurs Tactiques Avancés
@@ -1665,12 +1661,9 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
               Performance des Joueurs
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {playerStats.map((stat, idx) => (
-                <motion.div
+              {playerStats.map((stat) => (
+                <div
                   key={stat.player.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.1 }}
                   className="p-4 rounded-2xl bg-secondary/30 hover:bg-secondary/50 transition-colors"
                 >
                   <div className="flex items-center gap-3 mb-3">
@@ -1751,7 +1744,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                       </div>
                     );
                   })()}
-                </motion.div>
+                </div>
               ))}
             </div>
           </CardContent>
@@ -1767,12 +1760,9 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
               Timeline du Match
             </h3>
             <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-              {timelineEvents.map((event, idx) => (
-                <motion.div
+              {timelineEvents.map((event) => (
+                <div
                   key={event.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.05 }}
                   className="flex items-center gap-4 p-3 rounded-xl bg-secondary/20 hover:bg-secondary/40 transition-colors"
                 >
                   <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center shrink-0">
@@ -1793,7 +1783,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                       />
                     </div>
                   )}
-                </motion.div>
+                </div>
               ))}
             </div>
           </CardContent>
@@ -1812,7 +1802,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
       )}
 
       {viewMode === 'expert' && (
-        <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+        <div className="space-y-12">
            {/* EXPERT HEADER */}
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <Card className="rounded-[3rem] bg-emerald-50 border-none p-8 flex flex-col justify-between h-64">
@@ -2067,7 +2057,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
       )}
 
       {viewMode === 'edit' && (
-        <div className="space-y-12 animate-in slide-in-from-bottom-8 duration-700">
+        <div className="space-y-12">
            {/* TACTICAL TIMELINE (Dual Track) */}
            <div className="bg-white rounded-[4rem] border-2 border-slate-100 p-12 space-y-10 shadow-sm relative overflow-hidden">
               <div className="flex items-center justify-between pb-8 border-b border-slate-50">
@@ -2558,7 +2548,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
          </div>
        )}
 
-           {/* Modal d'Évaluation Match à Double Niveau (Estimée vs Approfondie) */}
+           {/* Modal d'Évaluation Match à Double Niveau (Note rapide vs Grille Dynamique 4 Piliers) */}
            {ratingModalPlayer && (
              <PlayerMatchEvaluationModal
                player={ratingModalPlayer}
@@ -2571,25 +2561,55 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                }}
                initialRating={modalRating}
                initialComment={modalComment}
+               initialMode={ratingModalInitialMode}
+               initialPillarScores={
+                 currentMatch?.match_players?.find((mp: any) => mp.player_id === ratingModalPlayer.id)?.pillar_scores || null
+               }
                onClose={() => setRatingModalPlayer(null)}
                onSave={async (evalData) => {
                  setModalRating(evalData.rating);
                  setModalComment(evalData.comment);
                  if (!currentMatch?.id || !ratingModalPlayer?.id) return;
-                 await matchService.savePlayerRating(currentMatch.id, ratingModalPlayer.id, evalData.rating, evalData.comment.trim() || null);
+                 const perfMeta = evalData.pillarScores
+                   ? {
+                       metricSetId: evalData.metricSetId,
+                       metricSetName: evalData.metricSetName,
+                       positionCode: evalData.positionCode,
+                       pillarScores: evalData.pillarScores,
+                       criteriaScores: evalData.criteriaScores,
+                     }
+                   : null;
+                 await matchService.savePlayerRating(
+                   currentMatch.id,
+                   ratingModalPlayer.id,
+                   evalData.rating,
+                   evalData.comment.trim() || null,
+                   perfMeta
+                 );
                  if (!currentMatch.match_players) {
                    currentMatch.match_players = [];
                  }
                  const target = currentMatch.match_players.find((mp: any) => mp.player_id === ratingModalPlayer.id);
+                 const nextPillarJson = perfMeta
+                   ? {
+                       ...perfMeta.pillarScores,
+                       metric_set_id: perfMeta.metricSetId || null,
+                       metric_set_name: perfMeta.metricSetName || null,
+                       position_code: perfMeta.positionCode || null,
+                       criteria_scores: perfMeta.criteriaScores || {},
+                     }
+                   : undefined;
                  if (target) {
                    target.rating = evalData.rating;
                    target.rating_comment = evalData.comment.trim() || null;
+                   if (nextPillarJson) target.pillar_scores = nextPillarJson;
                  } else {
                    currentMatch.match_players.push({
                      match_id: currentMatch.id,
                      player_id: ratingModalPlayer.id,
                      rating: evalData.rating,
                      rating_comment: evalData.comment.trim() || null,
+                     ...(nextPillarJson ? { pillar_scores: nextPillarJson } : {}),
                      is_starting: false
                    });
                  }
@@ -2613,6 +2633,7 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                onDeleteEvent={handleDeleteEventFromHub}
                onSaveRating={handleSaveRatingFromHub}
                onOpenDeepEvaluation={(p) => {
+                 setRatingModalInitialMode('detailed');
                  setRatingModalPlayer(p);
                  const mpRecord = currentMatch.match_players?.find((mp: any) => mp.player_id === p.id);
                  setModalRating(mpRecord?.rating != null ? Number(mpRecord.rating) : 7);

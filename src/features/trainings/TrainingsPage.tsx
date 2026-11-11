@@ -20,6 +20,7 @@ import { SessionDetailModal } from './components/SessionDetailModal';
 import { SessionFormModal } from './components/SessionFormModal';
 import { ExerciseFormModal } from './components/ExerciseFormModal';
 import type { TrainingSession, TrainingExercise } from './types/training';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 
 export const TrainingsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -178,7 +179,10 @@ export const TrainingsPage: React.FC = () => {
       </div>
 
       {/* Main Tab Views */}
-      <div className="animate-in fade-in duration-150">
+      {isLoading && sessions.length === 0 && exercises.length === 0 && loads.length === 0 ? (
+        <FusLogoLoader fullPage size="lg" label="Chargement des entraînements…" />
+      ) : (
+      <div>
         {currentTab === 'calendar' && (
           <TrainingCalendarView
             sessions={sessions}
@@ -228,6 +232,7 @@ export const TrainingsPage: React.FC = () => {
           />
         )}
       </div>
+      )}
 
       {/* MODALS */}
       {selectedSessionForDetail && (

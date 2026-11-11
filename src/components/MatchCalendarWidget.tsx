@@ -4,7 +4,6 @@ import { useClubData } from '../hooks/useClubData';
 import { useCompetitions } from '../hooks/useCompetitions';
 import { Badge } from './ui/badge';
 import { ChevronLeft, ChevronRight, MapPin, Clock, Radio } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import type { Match } from '../types';
 
 const MatchCalendarWidget: React.FC = () => {
@@ -152,14 +151,9 @@ const MatchCalendarWidget: React.FC = () => {
 
       {/* Match Card */}
       <div className="px-4 pb-5">
-        <AnimatePresence mode="wait">
           {displayedMatch ? (
-            <motion.div
+            <div
               key={displayedMatch.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.25 }}
               className="bg-slate-50 rounded-2xl p-5 border border-slate-100"
             >
               {/* Top bar */}
@@ -289,22 +283,18 @@ const MatchCalendarWidget: React.FC = () => {
                   ))}
                 </div>
               )}
-            </motion.div>
+            </div>
           ) : (
-            <motion.div
+            <div
               key="empty"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
               className="bg-slate-50 rounded-2xl p-10 border border-dashed border-slate-200 flex flex-col items-center justify-center gap-3"
             >
               <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-300">
                 <Clock className="w-6 h-6" />
               </div>
               <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Aucun match ce jour</p>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
       </div>
     </div>
   );

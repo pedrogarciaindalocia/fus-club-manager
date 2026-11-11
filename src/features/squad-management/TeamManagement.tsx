@@ -3,6 +3,7 @@ import { useTeams } from '../../hooks/useTeams';
 import { useStaff } from '../../hooks/useStaff';
 import { usePlayers } from '../../hooks/usePlayers';
 import { useClubData } from '../../hooks/useClubData';
+import { resolvePreferredViewMode } from '../../utils/viewModePreference';
 import { useMatches } from '../../hooks/useMatches';
 import { usePermissions } from '../../context/PermissionsContext';
 import { Card, CardContent } from '../../components/ui/card';
@@ -42,12 +43,11 @@ import {
   CheckSquare,
   Square
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import type { Team } from '../../services/teamService';
 import type { Player, Match } from '../../types';
 import { useSurclassements } from '../../hooks/useSurclassements';
 import { isLowerCategory } from '../../services/surclassementService';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { supabase } from '../../lib/supabase';
 import { PLAYER_CATEGORIES, normalizeAgeCategory } from '../../constants';
 import { toast } from 'sonner';
@@ -121,13 +121,17 @@ const TeamManagement: React.FC = () => {
   const [matchEvents, setMatchEvents] = useState<any[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   
-  // Settings sync
-  const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(mainClub?.preferred_view_mode || 'list');
+  // Settings sync (mode Grille par défaut)
+  const preferredViewMode = resolvePreferredViewMode(mainClub, 'grid');
+  const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(preferredViewMode);
   const [pageSize, setPageSize] = useState(mainClub?.pagination_limit || 10);
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    if (mainClub?.preferred_view_mode) setDisplayMode(mainClub.preferred_view_mode);
+    setDisplayMode(preferredViewMode);
+  }, [preferredViewMode]);
+
+  useEffect(() => {
     if (mainClub?.pagination_limit) setPageSize(mainClub.pagination_limit);
   }, [mainClub]);
 
@@ -482,25 +486,14 @@ const TeamManagement: React.FC = () => {
   };
 
   if (teamsLoading || clubLoading) {
-    return (
-      <div className="space-y-8 animate-in fade-in duration-700">
-        <div className="h-40 w-full rounded-[2.5rem] bg-secondary/20 animate-pulse" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[1,2,3,4].map(i => <Skeleton key={i} className="h-64 rounded-[2.5rem]" />)}
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement des unités d'équipe…" />;
   }
 
   return (
     <div className="space-y-8 pb-20 overflow-visible">
-      <AnimatePresence mode="wait">
         {viewState === 'LIST' ? (
-          <motion.div
+          <div
             key="list"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
             className="space-y-8"
           >
             {/* Header Banner */}
@@ -576,11 +569,10 @@ const TeamManagement: React.FC = () => {
             {/* Grid View Mode */}
             {displayMode === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                <AnimatePresence mode="popLayout">
                   {paginatedTeams.map((team) => {
                     const { stats: tStats } = getTeamMatchHistoryAndStats(team);
                     return (
-                      <motion.div key={team.id} layout initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.2 }}>
+                      <div key={team.id}>
                          <Card className="group relative border border-border shadow-sm hover:shadow-2xl transition-all duration-500 rounded-[2.5rem] overflow-hidden bg-card">
                             <div className="aspect-[4/3] bg-secondary/30 relative overflow-hidden flex items-center justify-center">
                                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-secondary group-hover:from-primary/10 transition-colors" />
@@ -657,10 +649,9 @@ const TeamManagement: React.FC = () => {
                                </div>
                             </CardContent>
                          </Card>
-                      </motion.div>
+                      </div>
                     );
                   })}
-                </AnimatePresence>
               </div>
             ) : (
               /* List View Mode */
@@ -769,14 +760,11 @@ const TeamManagement: React.FC = () => {
                  <p className="text-muted-foreground font-medium italic uppercase tracking-widest text-xs">Aucune équipe trouvée dans cette catégorie.</p>
               </div>
             )}
-          </motion.div>
+          </div>
         ) : viewState === 'FORM' ? (
           /* FORM VIEW (Create/Edit Team) */
-          <motion.div
+          <div
             key="form"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
             className="max-w-3xl mx-auto"
           >
              <div className="flex items-center gap-6 mb-10">
@@ -864,14 +852,11 @@ const TeamManagement: React.FC = () => {
                    </div>
                 </form>
              </Card>
-          </motion.div>
+          </div>
         ) : viewState === 'STATS' && statsTeam ? (
           /* AUTOMATIC STATS & MATCH HISTORY VIEW FOR A TEAM */
-          <motion.div
+          <div
             key="stats"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
             className="max-w-6xl mx-auto space-y-8"
           >
              {(() => {
@@ -1298,14 +1283,11 @@ const TeamManagement: React.FC = () => {
                   </>
                 );
              })()}
-          </motion.div>
+          </div>
         ) : (
           /* ROSTER VIEW (Team Roster & Player Assignment) */
-          <motion.div
+          <div
             key="roster"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
             className="max-w-5xl mx-auto"
           >
              {rosterTeam && (
@@ -1374,7 +1356,7 @@ const TeamManagement: React.FC = () => {
                                     const displayJersey = surclassedJerseyMap[player.id] ?? player.jersey_number;
                                     const isEditingJersey = editingJerseyId === player.id;
                                     return (
-                                       <motion.div key={player.id} layout className={`flex items-center gap-3.5 p-3 rounded-2xl border transition-all ${isAssignMode ? 'bg-red-50/20 border-red-100 dark:bg-red-950/20 dark:border-red-900/30' : isSurclasse ? 'bg-amber-50/30 border-amber-200 dark:bg-amber-950/20' : 'bg-secondary/20 border-border'} group`}>
+                                       <div key={player.id} className={`flex items-center gap-3.5 p-3 rounded-2xl border transition-all ${isAssignMode ? 'bg-red-50/20 border-red-100 dark:bg-red-950/20 dark:border-red-900/30' : isSurclasse ? 'bg-amber-50/30 border-amber-200 dark:bg-amber-950/20' : 'bg-secondary/20 border-border'} group`}>
                                           <div className="w-11 h-11 bg-card rounded-xl overflow-hidden flex items-center justify-center relative shrink-0 border border-border shadow-xs">
                                              <img src={(player.photo_url && player.photo_url !== 'null') ? player.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(player.full_name)}&background=random&color=fff&size=200`} alt={player.full_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                                           </div>
@@ -1462,7 +1444,7 @@ const TeamManagement: React.FC = () => {
                                              <X className="w-4 h-4" />
                                           </Button>
                                        )}
-                                    </motion.div>
+                                    </div>
                                     );
                                  })
                               ) : (
@@ -1477,7 +1459,7 @@ const TeamManagement: React.FC = () => {
 
                      {isAssignMode && (
                         <div className="lg:col-span-5">
-                           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+                           <div>
                               <Card className="border-border shadow-2xl rounded-[3rem] bg-card overflow-hidden p-8 md:p-10">
                                  <div className="flex items-center justify-between gap-3 mb-4">
                                     <h4 className="text-xs font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 flex items-center gap-3">
@@ -1503,12 +1485,8 @@ const TeamManagement: React.FC = () => {
                                  </div>
 
                                  {/* BARRE D'ACTIONS GROUPÉES / BATCH */}
-                                 <AnimatePresence>
                                     {selectedAvailableIds.length > 0 && (
-                                       <motion.div
-                                          initial={{ opacity: 0, y: -10 }}
-                                          animate={{ opacity: 1, y: 0 }}
-                                          exit={{ opacity: 0, y: -10 }}
+                                       <div
                                           className="mb-6 p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3"
                                        >
                                           <div className="flex items-center gap-2">
@@ -1535,9 +1513,8 @@ const TeamManagement: React.FC = () => {
                                                 Annuler
                                              </button>
                                           </div>
-                                       </motion.div>
+                                       </div>
                                     )}
-                                 </AnimatePresence>
 
                                  <div className="space-y-3.5 max-h-[600px] overflow-y-auto no-scrollbar pr-1">
                                     {availablePlayers.length > 0 ? (
@@ -1596,15 +1573,14 @@ const TeamManagement: React.FC = () => {
                                     )}
                                  </div>
                                </Card>
-                            </motion.div>
+                            </div>
                         </div>
                      )}
                   </div>
                </div>
              )}
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
     </div>
   );
 };

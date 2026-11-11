@@ -68,11 +68,7 @@ export const ArbitreCard: React.FC<ArbitreCardProps> = ({
 
   if (viewMode === 'list') {
     return (
-      <motion.div
-        layout
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95 }}
+      <div
         onClick={() => onSelect && onSelect(arbitre)}
         className="bg-card border border-border rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-primary/30 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 cursor-pointer group"
       >
@@ -159,18 +155,13 @@ export const ArbitreCard: React.FC<ArbitreCardProps> = ({
             </button>
           </div>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   return (
     <motion.div
-      layout
-      initial={{ opacity: 0, y: 15 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
       whileHover={{ y: -3 }}
-      transition={{ duration: 0.2 }}
       onClick={() => onSelect && onSelect(arbitre)}
       className="cursor-pointer"
     >

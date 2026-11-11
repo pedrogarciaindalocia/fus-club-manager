@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Input } from '../../components/ui/input';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertCircle,
@@ -500,22 +500,7 @@ CREATE TABLE IF NOT EXISTS public.table_name (id bigint GENERATED ALWAYS AS IDEN
 
   // ── Loading State ───────────────────────────────────────
   if (isLoading) {
-    return (
-      <div className="space-y-8 pb-10">
-        <div className="flex justify-between items-center">
-          <div className="space-y-2">
-            <Skeleton className="h-10 w-56" />
-            <Skeleton className="h-4 w-72" />
-          </div>
-          <Skeleton className="h-12 w-52 rounded-2xl" />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-36 rounded-[2rem]" />)}
-        </div>
-        <Skeleton className="h-80 rounded-[2.5rem]" />
-        <Skeleton className="h-64 rounded-[2.5rem]" />
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement des sauvegardes…" />;
   }
 
   const handleLaunchBackup = async () => {
@@ -655,14 +640,9 @@ CREATE TABLE IF NOT EXISTS public.table_name (id bigint GENERATED ALWAYS AS IDEN
         </div>
 
         {/* ── Tab Content ───────────────────────────────── */}
-        <AnimatePresence mode="wait">
           {activeTab === 'restore' ? (
-            <motion.div
+            <div
               key="restore-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
               className="space-y-8"
             >
               {isBootstrapRequired && (
@@ -837,14 +817,10 @@ CREATE TABLE IF NOT EXISTS public.table_name (id bigint GENERATED ALWAYS AS IDEN
                   )}
                 </AnimatePresence>
               </div>
-            </motion.div>
+            </div>
           ) : activeTab === 'backup' ? (
-            <motion.div
+            <div
               key="backup-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
               className="space-y-8"
             >
               {/* ── Stat Cards ────────────────────────────── */}
@@ -1200,15 +1176,11 @@ CREATE TABLE IF NOT EXISTS public.table_name (id bigint GENERATED ALWAYS AS IDEN
                   )}
                 </CardContent>
               </Card>
-            </motion.div>
+            </div>
           ) : (
             /* ── SETTINGS TAB ─────────────────────────────── */
-            <motion.div
+            <div
               key="settings-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
               className="space-y-8"
             >
               {/* Info Banner */}
@@ -1327,9 +1299,8 @@ CREATE TABLE IF NOT EXISTS public.table_name (id bigint GENERATED ALWAYS AS IDEN
                   type="onedrive"
                 />
               </motion.div>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
       </div>
 
       {/* ── Confirmation Modal ─────────────────────────── */}

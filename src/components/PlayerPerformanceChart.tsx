@@ -10,7 +10,6 @@ import {
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
-import { motion, AnimatePresence } from 'framer-motion';
 import { usePlayers } from '../hooks/usePlayers';
 import { useMatches } from '../hooks/useMatches';
 import { useAdvancedDashboardStats } from '../hooks/useAdvancedDashboardStats';
@@ -253,11 +252,7 @@ const PlayerPerformanceChart: React.FC = () => {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5, delay: 0.4 }}
-    >
+    <div>
       <Card className="h-full border shadow-sm hover:shadow-md transition-shadow">
         <CardHeader className="flex-row items-center justify-between pb-4">
           <div className="space-y-1">
@@ -267,17 +262,9 @@ const PlayerPerformanceChart: React.FC = () => {
                 {current?.category || '—'}
               </Badge>
             </div>
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={current?.player.id}
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -5 }}
-                className="text-xs text-muted-foreground"
-              >
-                {current ? `${current.player.full_name} - Top Performer` : 'Chargement...'}
-              </motion.p>
-            </AnimatePresence>
+            <p className="text-xs text-muted-foreground">
+              {current ? `${current.player.full_name} - Top Performer` : 'Chargement...'}
+            </p>
           </div>
           <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-widest bg-secondary/30">
             {currentIndex + 1}/{total}
@@ -286,15 +273,7 @@ const PlayerPerformanceChart: React.FC = () => {
 
         <CardContent className="pb-6">
           <div className="h-[320px] w-full relative flex items-center justify-center">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={current?.player.id}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.3 }}
-                className="w-full h-full"
-              >
+            <div className="w-full h-full">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={50}>
                   <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
                     <PolarGrid stroke="hsl(var(--muted))" />
@@ -328,19 +307,11 @@ const PlayerPerformanceChart: React.FC = () => {
                     />
                   </RadarChart>
                 </ResponsiveContainer>
-              </motion.div>
-            </AnimatePresence>
+              </div>
           </div>
 
           {/* Stats brutes */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={current?.player.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="mt-4 grid grid-cols-4 gap-2"
-            >
+          <div className="mt-4 grid grid-cols-4 gap-2">
               <div className="p-2 rounded-lg bg-secondary/30 border border-secondary/50 text-center">
                 <p className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground">Buts</p>
                 <p className="text-lg font-black text-primary">{current?.rawStats.goals || 0}</p>
@@ -361,8 +332,7 @@ const PlayerPerformanceChart: React.FC = () => {
                   J{current?.rawStats.yellowCards || 0} R{current?.rawStats.redCards || 0}
                 </p>
               </div>
-            </motion.div>
-          </AnimatePresence>
+            </div>
 
           {/* Indicateurs de rotation */}
           {total > 1 && (
@@ -389,7 +359,7 @@ const PlayerPerformanceChart: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 };
 

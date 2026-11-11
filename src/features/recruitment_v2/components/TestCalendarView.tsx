@@ -1,40 +1,46 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
   Plus,
   Search,
-  Filter,
   Clock,
   MapPin,
   Users,
-  Shield,
   Trash2,
   Edit2,
-  CheckCircle2,
   AlertCircle,
   LayoutGrid,
   List,
-  Sparkles,
   GripVertical,
   Award,
   Lock,
   Swords,
+  Check,
+  CheckSquare,
+  Square,
+  X,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PlayerTest, TrialCandidate, SessionStatus, CandidateEvaluation } from '../types/recruitment';
 import { RECRUITMENT_AGE_CATEGORIES, groupCategoriesByPole } from '../types/recruitment';
 import { cn } from '../../../lib/utils';
+import { TrialSessionPlannerForm } from './TrialSessionPlannerForm';
 
 interface TestCalendarViewProps {
   tests: PlayerTest[];
   candidates?: TrialCandidate[];
   evaluations?: CandidateEvaluation[];
+  scouts?: any[];
   isLoading?: boolean;
   onOpenNewTest: (defaultDate?: string) => void;
+  onSaveBatchTests?: (tests: Omit<PlayerTest, 'id' | 'created_at' | 'updated_at'>[]) => Promise<any>;
+  onUpdateTest?: (id: string, updates: Partial<PlayerTest>) => Promise<any>;
   onEditTest: (test: PlayerTest) => void;
   onDeleteTest: (id: string) => Promise<void>;
+  onDeleteTests?: (ids: string[]) => Promise<void>;
   onMoveTest: (testId: string, newDate: string) => Promise<void>;
   onOpenEvaluationForTest?: (candidate: TrialCandidate, test: PlayerTest) => void;
 }
@@ -49,52 +55,116 @@ const TEST_TYPE_LABELS: Record<string, { label: string; color: string; badge: st
 
 const STATUS_CONFIG: Record<SessionStatus, { label: string; badge: string }> = {
   scheduled: { label: 'Planifié', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+  confirmed: { label: 'Confirmé', badge: 'bg-sky-50 text-sky-700 border-sky-200' },
   in_progress: { label: 'En Cours', badge: 'bg-purple-50 text-purple-700 border-purple-200' },
   completed: { label: 'Réalisé', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   cancelled: { label: 'Annulé', badge: 'bg-rose-50 text-rose-700 border-rose-200' },
-  postponed: { label: 'Reporté', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
 };
 
 const DAYS_HEADER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+function getDateRangeStrings(startStr: string, endStr: string): string[] {
+  const [a, b] = startStr <= endStr ? [startStr, endStr] : [endStr, startStr];
+  const result: string[] = [];
+  const cur = new Date(`${a}T12:00:00`);
+  const end = new Date(`${b}T12:00:00`);
+  let guard = 0;
+  while (cur <= end && guard < 90) {
+    result.push(cur.toLocaleDateString('en-CA'));
+    cur.setDate(cur.getDate() + 1);
+    guard++;
+  }
+  return result;
+}
 
 export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
   tests,
   candidates = [],
   evaluations = [],
-  isLoading = false,
+  scouts = [],
   onOpenNewTest,
+  onSaveBatchTests,
+  onUpdateTest,
   onEditTest,
   onDeleteTest,
+  onDeleteTests,
   onMoveTest,
   onOpenEvaluationForTest,
 }) => {
-  // Current view mode
+  // Mode d'affichage
   const [viewMode, setViewMode] = useState<'calendar' | 'cards'>('calendar');
 
-  // Calendar month state
+  // Navigation mois & sélection multi-jours
   const [currentDate, setCurrentDate] = useState(() => new Date());
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [lastClickedDate, setLastClickedDate] = useState<string | null>(null);
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
 
-  // Filters state
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setIsShiftPressed(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setIsShiftPressed(false);
+    };
+    const handleBlur = () => setIsShiftPressed(false);
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
+
+  const shiftPreviewSet = useMemo(() => {
+    if (!isShiftPressed || !lastClickedDate || !hoveredDate) return new Set<string>();
+    return new Set(getDateRangeStrings(lastClickedDate, hoveredDate));
+  }, [isShiftPressed, lastClickedDate, hoveredDate]);
+
+  // Panneau droit (formulaire d'invitation / édition / sessions des jours sélectionnés)
+  const [rightPanelTab, setRightPanelTab] = useState<'plan' | 'sessions'>('plan');
+  const [panelEditingTest, setPanelEditingTest] = useState<PlayerTest | null>(null);
+
+  // Sélection multiple pour suppression groupée
+  const [isBulkSelectMode, setIsBulkSelectMode] = useState(false);
+  const [selectedTestIds, setSelectedTestIds] = useState<string[]>([]);
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  // Filtres
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
-  // Drag & Drop hover state
+  // Drag & Drop
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
   const [draggedTestId, setDraggedTestId] = useState<string | null>(null);
 
-  // Filtered tests
+  const getTestCandidates = (test: PlayerTest): TrialCandidate[] => {
+    const ids = new Set<string>([
+      ...(test.candidate_ids || []),
+      ...(test.candidate_id ? [test.candidate_id] : []),
+    ]);
+    return candidates.filter(c => ids.has(c.id));
+  };
+
+  // Sessions filtrées
   const filteredTests = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
     return tests.filter(test => {
-      const candidate = candidates.find(c => c.id === test.candidate_id);
-      const candName = candidate ? `${candidate.first_name} ${candidate.last_name}` : '';
-      
-      const matchesSearch =
-        test.test_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        candName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (test.location && test.location.toLowerCase().includes(searchQuery.toLowerCase()));
+      const testCands = getTestCandidates(test);
+      const candNames = testCands.map(c => `${c.first_name} ${c.last_name}`.toLowerCase()).join(' ');
+
+      const matchesSearch = !q ||
+        test.test_name.toLowerCase().includes(q) ||
+        candNames.includes(q) ||
+        (test.location && test.location.toLowerCase().includes(q)) ||
+        (test.match_name && test.match_name.toLowerCase().includes(q));
 
       const matchesCat = categoryFilter === 'ALL' || test.age_category === categoryFilter;
       const matchesType = typeFilter === 'ALL' || test.test_type === typeFilter;
@@ -104,23 +174,17 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
     });
   }, [tests, candidates, searchQuery, categoryFilter, typeFilter, statusFilter]);
 
-  // Calendar grid calculation
+  // Grille du calendrier mensuel
   const calendarDays = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
-
     const firstDayOfMonth = new Date(year, month, 1);
     const lastDayOfMonth = new Date(year, month + 1, 0);
-
-    // Days in month
     const daysInMonth = lastDayOfMonth.getDate();
-
-    // Start day (0=Sun, 1=Mon, ..., 6=Sat). We want Monday as index 0.
     const startDayIndex = (firstDayOfMonth.getDay() + 6) % 7;
 
     const days: { date: Date; isCurrentMonth: boolean; formattedDate: string }[] = [];
 
-    // Previous month padding
     const prevMonthLastDay = new Date(year, month, 0).getDate();
     for (let i = startDayIndex - 1; i >= 0; i--) {
       const d = new Date(year, month - 1, prevMonthLastDay - i);
@@ -131,7 +195,6 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
       });
     }
 
-    // Current month days
     for (let i = 1; i <= daysInMonth; i++) {
       const d = new Date(year, month, i);
       days.push({
@@ -141,7 +204,6 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
       });
     }
 
-    // Next month padding to complete 35 or 42 grid cells
     const remaining = (7 - (days.length % 7)) % 7;
     for (let i = 1; i <= remaining; i++) {
       const d = new Date(year, month + 1, i);
@@ -155,7 +217,18 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
     return days;
   }, [currentDate]);
 
-  // Month navigation handlers
+  const todayStr = new Date().toLocaleDateString('en-CA');
+
+  // Sessions appartenant aux jours sélectionnés
+  const selectedDaysTests = useMemo(() => {
+    if (selectedDates.length === 0) return [];
+    const set = new Set(selectedDates);
+    return filteredTests.filter(t => set.has(t.test_date));
+  }, [filteredTests, selectedDates]);
+
+  const isSplitPanelOpen = viewMode === 'calendar' && (selectedDates.length > 0 || panelEditingTest !== null);
+
+  // Navigation mois
   const handlePrevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
   };
@@ -165,7 +238,84 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
   const handleToday = () => {
     const now = new Date();
     setCurrentDate(new Date(now.getFullYear(), now.getMonth(), 1));
-    setSelectedDate(now.toLocaleDateString('en-CA'));
+    const tStr = now.toLocaleDateString('en-CA');
+    setSelectedDates(prev => (prev.includes(tStr) ? prev : [...prev, tStr].sort()));
+    setLastClickedDate(tStr);
+    setPanelEditingTest(null);
+    setRightPanelTab('plan');
+  };
+
+  // Clic sur une case jour (sélection multi-jours + Shift+clic pour plage jour début -> jour fin)
+  const handleDayClick = (e: React.MouseEvent, formattedDate: string) => {
+    setPanelEditingTest(null);
+    setRightPanelTab('plan');
+
+    if (e.shiftKey && lastClickedDate) {
+      const range = getDateRangeStrings(lastClickedDate, formattedDate);
+      setSelectedDates(prev => Array.from(new Set([...prev, ...range])).sort());
+      setLastClickedDate(formattedDate);
+      return;
+    }
+
+    setSelectedDates(prev => {
+      const exists = prev.includes(formattedDate);
+      const next = exists
+        ? prev.filter(d => d !== formattedDate)
+        : [...prev, formattedDate].sort();
+      setLastClickedDate(exists ? (next[next.length - 1] ?? null) : formattedDate);
+      return next;
+    });
+  };
+
+  // Sélection multiple des sessions
+  const toggleSelectTest = (id: string) => {
+    setSelectedTestIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const visibleTestIds = useMemo(() => filteredTests.map(t => t.id), [filteredTests]);
+  const isAllVisibleSelected = visibleTestIds.length > 0 && visibleTestIds.every(id => selectedTestIds.includes(id));
+
+  const handleToggleSelectAllVisible = () => {
+    if (isAllVisibleSelected) {
+      const visibleSet = new Set(visibleTestIds);
+      setSelectedTestIds(prev => prev.filter(id => !visibleSet.has(id)));
+    } else {
+      setSelectedTestIds(prev => Array.from(new Set([...prev, ...visibleTestIds])));
+    }
+  };
+
+  const handleSelectTestsInSelectedDates = () => {
+    const ids = selectedDaysTests.map(t => t.id);
+    if (ids.length === 0) return;
+    setSelectedTestIds(prev => Array.from(new Set([...prev, ...ids])));
+    setIsBulkSelectMode(true);
+    toast.info(`${ids.length} session(s) des jours sélectionnés cochée(s)`);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedTestIds.length === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      if (onDeleteTests) {
+        await onDeleteTests(selectedTestIds);
+      } else {
+        for (const id of selectedTestIds) {
+          await onDeleteTest(id);
+        }
+      }
+      setSelectedTestIds([]);
+      setIsBulkDeleteConfirmOpen(false);
+      setIsBulkSelectMode(false);
+      if (panelEditingTest && selectedTestIds.includes(panelEditingTest.id)) {
+        setPanelEditingTest(null);
+      }
+    } catch (err: any) {
+      toast.error(`Erreur lors de la suppression : ${err?.message || 'Erreur inconnue'}`);
+    } finally {
+      setIsBulkDeleting(false);
+    }
   };
 
   // Drag & Drop handlers
@@ -174,27 +324,19 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
     e.dataTransfer.effectAllowed = 'move';
     setDraggedTestId(testId);
   };
-
   const handleDragEnd = () => {
     setDraggedTestId(null);
     setDragOverDate(null);
   };
-
   const handleDragOver = (e: React.DragEvent, targetDate: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    if (dragOverDate !== targetDate) {
-      setDragOverDate(targetDate);
-    }
+    if (dragOverDate !== targetDate) setDragOverDate(targetDate);
   };
-
   const handleDragLeave = (e: React.DragEvent, targetDate: string) => {
     e.preventDefault();
-    if (dragOverDate === targetDate) {
-      setDragOverDate(null);
-    }
+    if (dragOverDate === targetDate) setDragOverDate(null);
   };
-
   const handleDrop = async (e: React.DragEvent, targetDate: string) => {
     e.preventDefault();
     setDragOverDate(null);
@@ -206,9 +348,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
 
     try {
       await onMoveTest(testId, targetDate);
-      toast.success(`Session replanifiée au ${targetDate}`, {
-        icon: '📅',
-      });
+      toast.success(`Session replanifiée au ${targetDate}`, { icon: '📅' });
     } catch (err: any) {
       toast.error(`Erreur lors du déplacement : ${err.message}`);
     } finally {
@@ -216,26 +356,38 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
     }
   };
 
-  // Month title formatted
   const monthTitle = currentDate.toLocaleDateString('fr-FR', {
     month: 'long',
     year: 'numeric',
   });
 
-  const todayStr = new Date().toLocaleDateString('en-CA');
+  const openPlannerFromHeader = () => {
+    if (viewMode === 'calendar' && onSaveBatchTests) {
+      setPanelEditingTest(null);
+      setRightPanelTab('plan');
+      if (selectedDates.length === 0) {
+        setSelectedDates([todayStr]);
+        setLastClickedDate(todayStr);
+      }
+    } else {
+      onOpenNewTest(selectedDates[0] || undefined);
+    }
+  };
 
-  // Selected date sessions
-  const selectedDayTests = useMemo(() => {
-    if (!selectedDate) return [];
-    return filteredTests.filter(t => t.test_date === selectedDate);
-  }, [filteredTests, selectedDate]);
+  const handleOpenEditSession = (test: PlayerTest) => {
+    if (viewMode === 'calendar' && onUpdateTest) {
+      setPanelEditingTest(test);
+      setRightPanelTab('plan');
+    } else {
+      onEditTest(test);
+    }
+  };
 
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
       {/* ── Top Controls & Filter Bar ──────────────────────────────────────── */}
       <div className="bg-white rounded-3xl p-5 border shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* Header Title & Counter */}
           <div>
             <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider">
               <CalendarIcon className="w-4 h-4" />
@@ -245,19 +397,43 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
               Sessions de Test & Convocations
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {filteredTests.length} session(s) programmée(s) • Déplacez les sessions par glisser-déposer sur le calendrier.
+              {filteredTests.length} session(s) programmée(s) • Cliquez sur plusieurs jours pour ouvrir le formulaire d'invitation à droite.
             </p>
           </div>
 
-          {/* Action Buttons: Add Session & View Mode */}
           <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Mode sélection multiple pour suppression groupée */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsBulkSelectMode(prev => {
+                  const next = !prev;
+                  if (!next) setSelectedTestIds([]);
+                  return next;
+                });
+              }}
+              className={cn(
+                "px-3.5 py-2 rounded-2xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer",
+                isBulkSelectMode || selectedTestIds.length > 0
+                  ? "bg-rose-50 text-rose-700 border-rose-200 shadow-2xs"
+                  : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+              )}
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span>
+                {isBulkSelectMode || selectedTestIds.length > 0
+                  ? `Sélection (${selectedTestIds.length})`
+                  : 'Sélection multiple'}
+              </span>
+            </button>
+
             {/* View Mode Toggle */}
             <div className="flex bg-slate-100 p-1 rounded-2xl border">
               <button
                 type="button"
                 onClick={() => setViewMode('calendar')}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all",
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
                   viewMode === 'calendar'
                     ? "bg-white text-primary shadow-xs"
                     : "text-slate-600 hover:text-foreground"
@@ -270,7 +446,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                 type="button"
                 onClick={() => setViewMode('cards')}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all",
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
                   viewMode === 'cards'
                     ? "bg-white text-primary shadow-xs"
                     : "text-slate-600 hover:text-foreground"
@@ -283,8 +459,9 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
 
             {/* Planifier une session */}
             <button
-              onClick={() => onOpenNewTest(selectedDate || undefined)}
-              className="px-4 py-2 rounded-2xl bg-primary text-white text-xs font-bold shadow-md shadow-primary/20 hover:bg-primary/95 transition-all flex items-center gap-2"
+              type="button"
+              onClick={openPlannerFromHeader}
+              className="px-4 py-2 rounded-2xl bg-primary text-white text-xs font-bold shadow-md shadow-primary/20 hover:bg-primary/95 transition-all flex items-center gap-2 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Planifier une Session</span>
@@ -294,7 +471,6 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
 
         {/* Filters Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-2 border-t text-xs">
-          {/* Search */}
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -306,7 +482,6 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
             />
           </div>
 
-          {/* Catégorie */}
           <div>
             <select
               value={categoryFilter}
@@ -345,7 +520,6 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
             </select>
           </div>
 
-          {/* Type de test */}
           <div>
             <select
               value={typeFilter}
@@ -361,7 +535,6 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
             </select>
           </div>
 
-          {/* Statut */}
           <div>
             <select
               value={statusFilter}
@@ -370,324 +543,508 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
             >
               <option value="ALL">Tous les Statuts</option>
               <option value="scheduled">Planifié</option>
+              <option value="confirmed">Confirmé</option>
               <option value="in_progress">En Cours</option>
               <option value="completed">Réalisé</option>
-              <option value="postponed">Reporté</option>
               <option value="cancelled">Annulé</option>
             </select>
           </div>
         </div>
-      </div>
 
-      {/* ── CALENDAR VIEW ──────────────────────────────────────────────────── */}
-      {viewMode === 'calendar' && (
-        <div className="bg-white rounded-3xl p-4 sm:p-6 border shadow-sm space-y-4">
-          {/* Month Navigation Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b">
-            <div className="flex items-center gap-2">
+        {/* Barre d'actions groupées (Suppression multiple des plannings) */}
+        {(isBulkSelectMode || selectedTestIds.length > 0 || (viewMode === 'cards' && filteredTests.length > 0)) && (
+          <div className="pt-3 border-t flex flex-wrap items-center justify-between gap-2.5 text-xs">
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 type="button"
-                onClick={handlePrevMonth}
-                className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-700 transition-colors"
-                title="Mois précédent"
+                onClick={handleToggleSelectAllVisible}
+                className="inline-flex items-center gap-1.5 font-bold text-slate-700 hover:text-primary cursor-pointer"
               >
-                <ChevronLeft className="w-4 h-4" />
+                {isAllVisibleSelected ? (
+                  <CheckSquare className="w-4 h-4 text-primary" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>
+                  {isAllVisibleSelected
+                    ? `Tout désélectionner (${visibleTestIds.length})`
+                    : `Tout sélectionner (${visibleTestIds.length})`}
+                </span>
               </button>
-              <h3 className="text-base sm:text-lg font-black text-foreground capitalize min-w-[180px] text-center">
-                {monthTitle}
-              </h3>
-              <button
-                type="button"
-                onClick={handleNextMonth}
-                className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-700 transition-colors"
-                title="Mois suivant"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleToday}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                Aujourd'hui
-              </button>
-              {selectedDate && (
+              {selectedDates.length > 0 && selectedDaysTests.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setSelectedDate(null)}
-                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-600"
+                  onClick={handleSelectTestsInSelectedDates}
+                  className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 font-bold text-[11px] hover:bg-amber-100 cursor-pointer"
                 >
-                  Tout afficher
+                  Cocher les {selectedDaysTests.length} session(s) des jours sélectionnés
                 </button>
               )}
+
+              {selectedTestIds.length > 0 && (
+                <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-black text-[11px]">
+                  {selectedTestIds.length} planning{selectedTestIds.length > 1 ? 's' : ''} sélectionné{selectedTestIds.length > 1 ? 's' : ''}
+                </span>
+              )}
             </div>
-          </div>
 
-          {/* Days of week header */}
-          <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-400">
-            {DAYS_HEADER.map(day => (
-              <div key={day} className="py-1">{day}</div>
-            ))}
-          </div>
-
-          {/* Calendar Grid 7 columns */}
-          <div className="grid grid-cols-7 gap-1 sm:gap-2">
-            {calendarDays.map(({ date, isCurrentMonth, formattedDate }, idx) => {
-              const dayTests = filteredTests.filter(t => t.test_date === formattedDate);
-              const isToday = formattedDate === todayStr;
-              const isSelected = selectedDate === formattedDate;
-              const isDropTarget = dragOverDate === formattedDate;
-              const hasTests = dayTests.length > 0;
-
-              return (
-                <div
-                  key={idx}
-                  onDragOver={(e) => handleDragOver(e, formattedDate)}
-                  onDragLeave={(e) => handleDragLeave(e, formattedDate)}
-                  onDrop={(e) => handleDrop(e, formattedDate)}
-                  onClick={() => {
-                    setSelectedDate(isSelected ? null : formattedDate);
-                  }}
-                  className={cn(
-                    "relative min-h-[90px] sm:min-h-[110px] p-1.5 sm:p-2 rounded-2xl border transition-all flex flex-col group cursor-pointer",
-                    !isCurrentMonth && "opacity-35 bg-slate-50/40 border-transparent",
-                    isDropTarget && "border-emerald-500 bg-emerald-50/90 ring-4 ring-emerald-400/30 scale-[1.02] shadow-lg z-10",
-                    !isDropTarget && isSelected && "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-md",
-                    !isDropTarget && !isSelected && isToday && "border-primary/50 bg-blue-50/30 shadow-2xs",
-                    !isDropTarget && !isSelected && !isToday && hasTests && "border-slate-200 bg-white hover:border-primary/40 hover:shadow-sm",
-                    !isDropTarget && !isSelected && !isToday && !hasTests && "border-slate-100 bg-slate-50/30 hover:border-slate-200"
-                  )}
+            {selectedTestIds.length > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedTestIds([])}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 cursor-pointer"
                 >
-                  {/* Top Day Header: Day Number + Quick Add Button */}
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-1">
-                      <span className={cn(
-                        "text-[10px] sm:text-xs font-black",
-                        isToday
-                          ? "bg-primary text-white w-5 h-5 rounded-full flex items-center justify-center shadow-xs"
-                          : isSelected ? "text-primary" : "text-slate-700"
-                      )}>
-                        {date.getDate()}
-                      </span>
-                      {hasTests && (
-                        <span className="text-[8px] font-black text-slate-400 bg-slate-100 px-1 rounded-full hidden sm:inline">
-                          {dayTests.length}
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsBulkDeleteConfirmOpen(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Supprimer la sélection ({selectedTestIds.length})</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── CALENDAR VIEW (SPLIT LAYOUT LORSQUE DES JOURS SONT SÉLECTIONNÉS) ─ */}
+      {viewMode === 'calendar' && (
+        <div className={cn("grid grid-cols-1 gap-5 items-start", isSplitPanelOpen && "lg:grid-cols-12")}>
+          {/* COLONNE GAUCHE : CALENDRIER MENSUEL */}
+          <div className={cn("bg-white rounded-3xl p-4 sm:p-6 border shadow-sm space-y-4", isSplitPanelOpen ? "lg:col-span-7" : "w-full")}>
+            {/* Month Navigation Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrevMonth}
+                  className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                  title="Mois précédent"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <h3 className="text-base sm:text-lg font-black text-foreground capitalize min-w-[170px] text-center">
+                  {monthTitle}
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleNextMonth}
+                  className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                  title="Mois suivant"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleToday}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  Aujourd'hui
+                </button>
+                {selectedDates.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDates([]);
+                      setLastClickedDate(null);
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 text-xs font-bold text-slate-600 hover:text-rose-600 cursor-pointer"
+                  >
+                    Effacer ({selectedDates.length}j)
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 flex items-center justify-between gap-2 flex-wrap">
+              <span>
+                {selectedDates.length === 0
+                  ? <>💡 Cliquez sur le jour de début, maintenez <strong>Shift</strong> et cliquez sur le jour de fin pour sélectionner toute une plage.</>
+                  : <>📅 <strong>{selectedDates.length} jour(s) sélectionné(s)</strong> (du {selectedDates[0]} au {selectedDates[selectedDates.length - 1]}) — maintenez <strong>Shift + clic</strong> sur un autre jour pour étendre la plage.</>}
+              </span>
+            </div>
+
+            {/* Days of week header */}
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-400">
+              {DAYS_HEADER.map(day => (
+                <div key={day} className="py-1">{day}</div>
+              ))}
+            </div>
+
+            {/* Calendar Grid 7 columns */}
+            <div className="grid grid-cols-7 gap-1 sm:gap-2">
+              {calendarDays.map(({ date, isCurrentMonth, formattedDate }, idx) => {
+                const dayTests = filteredTests.filter(t => t.test_date === formattedDate);
+                const isToday = formattedDate === todayStr;
+                const isSelected = selectedDates.includes(formattedDate);
+                const isShiftPreview = !isSelected && shiftPreviewSet.has(formattedDate);
+                const isDropTarget = dragOverDate === formattedDate;
+                const hasTests = dayTests.length > 0;
+
+                return (
+                  <div
+                    key={idx}
+                    onMouseEnter={() => setHoveredDate(formattedDate)}
+                    onMouseLeave={() => setHoveredDate(prev => (prev === formattedDate ? null : prev))}
+                    onDragOver={(e) => handleDragOver(e, formattedDate)}
+                    onDragLeave={(e) => handleDragLeave(e, formattedDate)}
+                    onDrop={(e) => handleDrop(e, formattedDate)}
+                    onClick={(e) => handleDayClick(e, formattedDate)}
+                    className={cn(
+                      "relative min-h-[90px] sm:min-h-[108px] p-1.5 sm:p-2 rounded-2xl border transition-all flex flex-col group cursor-pointer select-none",
+                      !isCurrentMonth && "opacity-35 bg-slate-50/40 border-transparent",
+                      isDropTarget && "border-emerald-500 bg-emerald-50/90 ring-4 ring-emerald-400/30 scale-[1.02] shadow-lg z-10",
+                      !isDropTarget && isSelected && "border-primary bg-primary/5 ring-2 ring-primary/25 shadow-md",
+                      !isDropTarget && isShiftPreview && "border-dashed border-primary bg-primary/10 ring-1 ring-primary/30",
+                      !isDropTarget && !isSelected && !isShiftPreview && isToday && "border-primary/50 bg-blue-50/30 shadow-2xs",
+                      !isDropTarget && !isSelected && !isShiftPreview && !isToday && hasTests && "border-slate-200 bg-white hover:border-primary/40 hover:shadow-sm",
+                      !isDropTarget && !isSelected && !isShiftPreview && !isToday && !hasTests && "border-slate-100 bg-slate-50/30 hover:border-slate-200"
+                    )}
+                  >
+                    {/* Top Day Header */}
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1">
+                        <span className={cn(
+                          "text-[10px] sm:text-xs font-black",
+                          isToday
+                            ? "bg-primary text-white w-5 h-5 rounded-full flex items-center justify-center shadow-xs"
+                            : isSelected ? "text-primary" : "text-slate-700"
+                        )}>
+                          {date.getDate()}
+                        </span>
+                        {hasTests && (
+                          <span className="text-[8px] font-black text-slate-500 bg-slate-100 px-1 rounded-full hidden sm:inline">
+                            {dayTests.length}
+                          </span>
+                        )}
+                      </div>
+
+                      {isSelected ? (
+                        <span className="w-4 h-4 rounded-md bg-primary text-white flex items-center justify-center shadow-2xs">
+                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        </span>
+                      ) : (
+                        <span className="opacity-0 group-hover:opacity-100 w-4 h-4 rounded-md bg-primary/10 text-primary flex items-center justify-center transition-opacity">
+                          <Plus className="w-2.5 h-2.5" />
                         </span>
                       )}
                     </div>
 
-                    {/* Quick Add Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenNewTest(formattedDate);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-white flex items-center justify-center transition-all"
-                      title={`Planifier un test le ${formattedDate}`}
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
-                  </div>
+                    {/* Sessions Chips inside Day */}
+                    <div className="flex-1 space-y-1 overflow-hidden">
+                      {dayTests.slice(0, 3).map((test) => {
+                        const testCands = getTestCandidates(test);
+                        const primaryCand = testCands[0];
+                        const typeConfig = TEST_TYPE_LABELS[test.test_type] || TEST_TYPE_LABELS.comprehensive;
+                        const isTestChecked = selectedTestIds.includes(test.id);
 
-                  {/* Sessions Chips inside Day */}
-                  <div className="flex-1 space-y-1 overflow-hidden">
-                    {dayTests.slice(0, 3).map((test) => {
-                      const candidate = candidates.find(c => c.id === test.candidate_id);
-                      const typeConfig = TEST_TYPE_LABELS[test.test_type] || TEST_TYPE_LABELS.comprehensive;
+                        const chipLabel = testCands.length > 1 && primaryCand
+                          ? `${primaryCand.first_name} +${testCands.length - 1}`
+                          : primaryCand
+                            ? `${primaryCand.first_name} ${primaryCand.last_name[0]}.`
+                            : test.test_name;
 
-                      return (
-                        <div
-                          key={test.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, test.id)}
-                          onDragEnd={handleDragEnd}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEditTest(test);
-                          }}
-                          className={cn(
-                            "p-1 rounded-xl text-[9px] font-bold border transition-all cursor-grab active:cursor-grabbing flex items-center gap-1 shadow-2xs group/chip hover:scale-[1.02]",
-                            typeConfig.badge,
-                            draggedTestId === test.id && "opacity-40"
-                          )}
-                          title={`${test.test_name} (${test.start_time || 'Horaire TBD'}) - Glisser pour changer de jour`}
-                        >
-                          <GripVertical className="w-2.5 h-2.5 opacity-40 shrink-0 hidden sm:block" />
-                          <div className={cn("w-1.5 h-1.5 rounded-full shrink-0", typeConfig.color)} />
-                          <span className="truncate flex-1">
-                            {candidate ? `${candidate.first_name} ${candidate.last_name[0]}.` : test.test_name}
-                          </span>
-                          <span className="text-[8px] opacity-70 shrink-0 hidden md:inline">
-                            {test.start_time || test.age_category}
-                          </span>
+                        return (
+                          <div
+                            key={test.id}
+                            draggable={!isBulkSelectMode}
+                            onDragStart={(e) => handleDragStart(e, test.id)}
+                            onDragEnd={handleDragEnd}
+                            onClick={(e) => {
+                              if (e.shiftKey) return;
+                              e.stopPropagation();
+                              if (isBulkSelectMode) {
+                                toggleSelectTest(test.id);
+                              } else {
+                                handleOpenEditSession(test);
+                              }
+                            }}
+                            className={cn(
+                              "p-1 rounded-xl text-[9px] font-bold border transition-all flex items-center gap-1 shadow-2xs hover:scale-[1.02]",
+                              isBulkSelectMode ? "cursor-pointer" : "cursor-grab active:cursor-grabbing",
+                              isTestChecked ? "bg-rose-600 text-white border-rose-600" : typeConfig.badge,
+                              draggedTestId === test.id && "opacity-40"
+                            )}
+                            title={`${test.test_name} (${test.start_time || 'Horaire TBD'})`}
+                          >
+                            {isBulkSelectMode ? (
+                              <span
+                                className={cn(
+                                  "w-3 h-3 rounded border flex items-center justify-center shrink-0",
+                                  isTestChecked ? "bg-white text-rose-600 border-white" : "bg-white border-slate-400"
+                                )}
+                              >
+                                {isTestChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                              </span>
+                            ) : (
+                              <GripVertical className="w-2.5 h-2.5 opacity-40 shrink-0 hidden sm:block" />
+                            )}
+                            <div className={cn("w-1.5 h-1.5 rounded-full shrink-0", isTestChecked ? "bg-white" : typeConfig.color)} />
+                            <span className="truncate flex-1">{chipLabel}</span>
+                          </div>
+                        );
+                      })}
+
+                      {dayTests.length > 3 && (
+                        <div className="text-[8px] font-black text-slate-400 text-center pt-0.5">
+                          +{dayTests.length - 3} de plus...
                         </div>
-                      );
-                    })}
-
-                    {dayTests.length > 3 && (
-                      <div className="text-[8px] font-black text-slate-400 text-center pt-0.5">
-                        +{dayTests.length - 3} de plus...
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
 
-          {/* ── Selected Day Slide / Detail Panel ───────────────────────────── */}
-          {selectedDate && (
-            <div className="pt-4 border-t space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-primary" />
-                  <h4 className="text-sm font-black text-foreground">
-                    Sessions du {new Date(selectedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          {/* COLONNE DROITE : FORMULAIRE D'INVITATION MULTI-JOURS & SESSIONS DES JOURS COCHÉS */}
+          {isSplitPanelOpen && (
+            <div className="lg:col-span-5 lg:sticky lg:top-4 bg-white rounded-3xl border shadow-lg overflow-hidden animate-in fade-in slide-in-from-right-3 duration-200">
+              {/* En-tête Panneau Droit */}
+              <div className="p-4 border-b bg-slate-50/90 flex items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-black text-slate-900">
+                    {panelEditingTest
+                      ? `Modifier : ${panelEditingTest.test_name}`
+                      : `Inviter & Planifier (${selectedDates.length} jour${selectedDates.length > 1 ? 's' : ''})`}
                   </h4>
-                  <span className="text-xs font-bold text-slate-400">({selectedDayTests.length})</span>
+                  <p className="text-[11px] text-slate-500">
+                    {panelEditingTest
+                      ? `Session du ${panelEditingTest.test_date}`
+                      : 'Sélectionnez les joueurs à convoquer sur ces journées'}
+                  </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => onOpenNewTest(selectedDate)}
-                  className="px-3 py-1.5 rounded-xl bg-primary/10 text-primary text-xs font-bold hover:bg-primary hover:text-white transition-all flex items-center gap-1.5"
+                  onClick={() => {
+                    setSelectedDates([]);
+                    setLastClickedDate(null);
+                    setPanelEditingTest(null);
+                  }}
+                  className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 cursor-pointer"
+                  title="Fermer le panneau"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Ajouter une Session ce jour</span>
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {selectedDayTests.length === 0 ? (
-                <div className="p-6 rounded-2xl bg-slate-50 border text-center text-xs text-slate-500">
-                  Aucune session de test prévue pour cette date. Cliquez sur "Ajouter une Session" pour en programmer une.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {selectedDayTests.map((test) => {
-                    const candidate = candidates.find(c => c.id === test.candidate_id);
-                    const typeConfig = TEST_TYPE_LABELS[test.test_type] || TEST_TYPE_LABELS.comprehensive;
-                    const statusConfig = STATUS_CONFIG[test.status] || STATUS_CONFIG.scheduled;
-                    const linkedEval = evaluations.find(e => e.test_id === test.id || (test.candidate_id && e.candidate_id === test.candidate_id && e.evaluation_date === test.test_date));
-
-                    return (
-                      <div
-                        key={test.id}
-                        className="bg-slate-50/60 hover:bg-white p-4 rounded-2xl border hover:border-primary/40 hover:shadow-md transition-all space-y-2.5"
-                      >
-                        <div className="flex justify-between items-start gap-2">
-                          <div>
-                            <span className={cn("text-[9px] font-black uppercase px-2 py-0.5 rounded-md border", typeConfig.badge)}>
-                              {typeConfig.label} • {test.age_category}
-                            </span>
-                            <h5 className="font-black text-sm text-foreground mt-1 tracking-tight">
-                              {test.test_name}
-                            </h5>
-                          </div>
-                          <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0", statusConfig.badge)}>
-                            {statusConfig.label}
-                          </span>
-                        </div>
-
-                        {candidate && (
-                          <div className="flex items-center gap-2 p-2 rounded-xl bg-white border text-xs">
-                            <Users className="w-3.5 h-3.5 text-primary shrink-0" />
-                            <span className="font-bold text-slate-800">
-                              {candidate.first_name} {candidate.last_name}
-                            </span>
-                            <span className="text-slate-400 text-[10px]">
-                              ({candidate.primary_position} • {candidate.current_club || 'Sans club'})
-                            </span>
-                          </div>
-                        )}
-
-                        {test.match_name && (
-                          <div className="flex items-center gap-2 p-2 rounded-xl bg-indigo-50/80 border border-indigo-200/70 text-xs text-indigo-900 font-semibold">
-                            <Swords className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                            <span className="truncate">Match support : <strong>{test.match_name}</strong></span>
-                          </div>
-                        )}
-
-                        <div className="text-[11px] text-slate-600 space-y-1">
-                          <p className="flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{test.start_time || '09:30'} - {test.end_time || '12:00'}</span>
-                          </p>
-                          <p className="flex items-center gap-1.5">
-                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="truncate">{test.location} • {test.training_ground}</span>
-                          </p>
-                        </div>
-
-                        {/* Statut Évaluation liée */}
-                        {linkedEval ? (
-                          <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs flex items-center justify-between">
-                            <span className="font-bold text-emerald-800 flex items-center gap-1">
-                              <Award className="w-3.5 h-3.5 text-emerald-600" />
-                              Note : {linkedEval.overall_score}/10
-                            </span>
-                            <span className="text-[10px] font-semibold text-emerald-700 uppercase bg-emerald-100/80 px-2 py-0.5 rounded-md">
-                              {linkedEval.verdict}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="p-1.5 rounded-xl bg-slate-100/70 border border-slate-200/60 text-[11px] text-slate-500 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span>Aucune évaluation saisie pour ce test</span>
-                          </div>
-                        )}
-
-                        <div className="pt-2 border-t flex items-center justify-between gap-1.5">
-                          {candidate && onOpenEvaluationForTest && (
-                            test.test_date > todayStr ? (
-                              <div
-                                className="px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-400 border border-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-not-allowed"
-                                title={`Évaluation impossible avant la date du test (${test.test_date})`}
-                              >
-                                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Verrouillé ({test.test_date})</span>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => onOpenEvaluationForTest(candidate, test)}
-                                className="px-2.5 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
-                              >
-                                <Award className="w-3.5 h-3.5" />
-                                <span>{linkedEval ? 'Modifier Évaluation' : 'Évaluer'}</span>
-                              </button>
-                            )
-                          )}
-                          <div className="flex items-center gap-1.5 ml-auto">
-                            <button
-                              type="button"
-                              onClick={() => onEditTest(test)}
-                              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-primary transition-colors"
-                              title="Modifier"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (window.confirm(`Supprimer la session "${test.test_name}" ?`)) {
-                                  await onDeleteTest(test.id);
-                                }
-                              }}
-                              className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors"
-                              title="Supprimer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+              {/* Onglets Panneau Droit (si pas en édition directe) */}
+              {!panelEditingTest && (
+                <div className="px-4 pt-3 flex items-center gap-2 border-b bg-white pb-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setRightPanelTab('plan')}
+                    className={cn(
+                      "flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                      rightPanelTab === 'plan'
+                        ? "bg-primary text-white shadow-xs"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200/70"
+                    )}
+                  >
+                    + Formulaire d'invitation
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRightPanelTab('sessions')}
+                    className={cn(
+                      "flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                      rightPanelTab === 'sessions'
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200/70"
+                    )}
+                  >
+                    <span>Sessions prévues</span>
+                    <span className={cn(
+                      "px-1.5 py-0.2 rounded-full text-[10px] font-black",
+                      rightPanelTab === 'sessions' ? "bg-white/20 text-white" : "bg-white text-slate-700"
+                    )}>
+                      {selectedDaysTests.length}
+                    </span>
+                  </button>
                 </div>
               )}
+
+              {/* Contenu Panneau Droit */}
+              <div className="p-4 max-h-[78vh] overflow-y-auto custom-scrollbar">
+                {(panelEditingTest || rightPanelTab === 'plan') ? (
+                  <TrialSessionPlannerForm
+                    variant="panel"
+                    selectedDates={selectedDates}
+                    onSelectedDatesChange={setSelectedDates}
+                    initialTest={panelEditingTest}
+                    candidates={candidates}
+                    scouts={scouts}
+                    onSaveBatch={async (testsPayload) => {
+                      if (onSaveBatchTests) {
+                        await onSaveBatchTests(testsPayload);
+                      }
+                    }}
+                    onUpdate={onUpdateTest}
+                    onSuccess={() => {
+                      if (panelEditingTest) {
+                        setPanelEditingTest(null);
+                      } else {
+                        setRightPanelTab('sessions');
+                      }
+                    }}
+                    onCancel={panelEditingTest ? () => setPanelEditingTest(null) : undefined}
+                  />
+                ) : (
+                  <div className="space-y-3">
+                    {selectedDaysTests.length === 0 ? (
+                      <div className="p-6 rounded-2xl bg-slate-50 border text-center space-y-2 text-xs text-slate-500">
+                        <p>Aucune session programmée sur les jours cochés.</p>
+                        <button
+                          type="button"
+                          onClick={() => setRightPanelTab('plan')}
+                          className="px-3.5 py-1.5 rounded-xl bg-primary text-white font-bold text-xs cursor-pointer"
+                        >
+                          + Planifier sur ces {selectedDates.length} jour(s)
+                        </button>
+                      </div>
+                    ) : (
+                      selectedDaysTests.map((test) => {
+                        const testCands = getTestCandidates(test);
+                        const primaryCand = testCands[0];
+                        const typeConfig = TEST_TYPE_LABELS[test.test_type] || TEST_TYPE_LABELS.comprehensive;
+                        const statusConfig = STATUS_CONFIG[test.status] || STATUS_CONFIG.scheduled;
+                        const linkedEval = primaryCand
+                          ? evaluations.find(e => e.test_id === test.id || (e.candidate_id === primaryCand.id && e.evaluation_date === test.test_date))
+                          : undefined;
+                        const isChecked = selectedTestIds.includes(test.id);
+
+                        return (
+                          <div
+                            key={test.id}
+                            className={cn(
+                              "p-3.5 rounded-2xl border transition-all space-y-2",
+                              isChecked ? "bg-rose-50/50 border-rose-300" : "bg-slate-50/70 border-slate-200 hover:bg-white"
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleSelectTest(test.id)}
+                                  className="mt-1 w-4 h-4 rounded border-slate-300 text-rose-600 cursor-pointer"
+                                />
+                                <div className="min-w-0">
+                                  <span className={cn("text-[9px] font-black uppercase px-2 py-0.5 rounded-md border", typeConfig.badge)}>
+                                    {typeConfig.label} • {test.age_category}
+                                  </span>
+                                  <h5 className="font-black text-xs text-foreground mt-1">
+                                    {test.test_name}
+                                  </h5>
+                                </div>
+                              </div>
+                              <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0", statusConfig.badge)}>
+                                {statusConfig.label}
+                              </span>
+                            </div>
+
+                            {testCands.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {testCands.map(c => {
+                                  const canEvalThis = Boolean(onOpenEvaluationForTest && test.test_date <= todayStr);
+                                  return (
+                                    <button
+                                      key={c.id}
+                                      type="button"
+                                      disabled={!canEvalThis}
+                                      onClick={() => canEvalThis && onOpenEvaluationForTest?.(c, test)}
+                                      title={canEvalThis ? `Évaluer ${c.first_name} ${c.last_name}` : undefined}
+                                      className={cn(
+                                        "text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white border text-slate-700",
+                                        canEvalThis && "hover:border-primary hover:text-primary cursor-pointer transition-colors"
+                                      )}
+                                    >
+                                      {c.first_name} {c.last_name} ({c.primary_position})
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {test.match_name && (
+                              <div className="flex items-center gap-1.5 p-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-900 font-semibold">
+                                <Swords className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                <span className="truncate">{test.match_name}</span>
+                              </div>
+                            )}
+
+                            <div className="text-[11px] text-slate-600 flex flex-wrap items-center gap-3">
+                              <span className="flex items-center gap-1">
+                                <CalendarIcon className="w-3 h-3 text-slate-400" />
+                                {test.test_date}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                {test.start_time || '09:30'} - {test.end_time || '12:00'}
+                              </span>
+                              <span className="flex items-center gap-1 truncate">
+                                <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                                {test.location}
+                              </span>
+                            </div>
+
+                            <div className="pt-2 border-t flex items-center justify-between gap-1.5">
+                              {primaryCand && onOpenEvaluationForTest ? (
+                                test.test_date > todayStr ? (
+                                  <div className="px-2 py-1 rounded-lg bg-slate-100 text-slate-400 border text-[10px] font-semibold flex items-center gap-1">
+                                    <Lock className="w-3 h-3" />
+                                    <span>Verrouillé ({test.test_date})</span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenEvaluationForTest(primaryCand, test)}
+                                    className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-white text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Award className="w-3 h-3" />
+                                    <span>{linkedEval ? 'Modifier Éval' : 'Évaluer'}</span>
+                                  </button>
+                                )
+                              ) : <div />}
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditSession(test)}
+                                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-primary cursor-pointer"
+                                  title="Modifier"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (window.confirm(`Supprimer la session "${test.test_name}" ?`)) {
+                                      await onDeleteTest(test.id);
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -704,20 +1061,36 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
             </div>
           ) : (
             filteredTests.map((test) => {
-              const candidate = candidates.find(c => c.id === test.candidate_id);
+              const testCands = getTestCandidates(test);
+              const primaryCand = testCands[0];
               const typeConfig = TEST_TYPE_LABELS[test.test_type] || TEST_TYPE_LABELS.comprehensive;
               const statusConfig = STATUS_CONFIG[test.status] || STATUS_CONFIG.scheduled;
+              const isSelected = selectedTestIds.includes(test.id);
 
               return (
                 <div
                   key={test.id}
-                  className="bg-white rounded-3xl p-5 border shadow-sm hover:shadow-md hover:border-primary/30 transition-all space-y-3 flex flex-col justify-between"
+                  className={cn(
+                    "bg-white rounded-3xl p-5 border shadow-sm transition-all space-y-3 flex flex-col justify-between",
+                    isSelected
+                      ? "border-rose-400 ring-2 ring-rose-500/20 bg-rose-50/20"
+                      : "hover:shadow-md hover:border-primary/30"
+                  )}
                 >
                   <div className="space-y-2.5">
                     <div className="flex justify-between items-start gap-2">
-                      <span className={cn("text-[9px] font-black uppercase px-2.5 py-1 rounded-lg border", typeConfig.badge)}>
-                        {typeConfig.label} • {test.age_category}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectTest(test.id)}
+                          className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/30 cursor-pointer"
+                          aria-label={`Sélectionner ${test.test_name}`}
+                        />
+                        <span className={cn("text-[9px] font-black uppercase px-2.5 py-1 rounded-lg border", typeConfig.badge)}>
+                          {typeConfig.label} • {test.age_category}
+                        </span>
+                      </div>
                       <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border", statusConfig.badge)}>
                         {statusConfig.label}
                       </span>
@@ -727,16 +1100,31 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                       {test.test_name}
                     </h4>
 
-                    {candidate && (
-                      <div className="flex items-center gap-2 p-2.5 rounded-2xl bg-slate-50 border text-xs">
-                        <Users className="w-4 h-4 text-primary shrink-0" />
-                        <div>
-                          <p className="font-bold text-slate-800">
-                            {candidate.first_name} {candidate.last_name}
-                          </p>
-                          <p className="text-[10px] text-slate-400">
-                            {candidate.primary_position} • {candidate.current_club || 'Sans club'}
-                          </p>
+                    {testCands.length > 0 && (
+                      <div className="p-2.5 rounded-2xl bg-slate-50 border space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-slate-500">
+                          <Users className="w-3.5 h-3.5 text-primary shrink-0" />
+                          <span>{testCands.length} joueur{testCands.length > 1 ? 's' : ''} convoqué{testCands.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {testCands.map(c => {
+                            const canEvalThis = Boolean(onOpenEvaluationForTest);
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                disabled={!canEvalThis}
+                                onClick={() => canEvalThis && onOpenEvaluationForTest?.(c, test)}
+                                title={canEvalThis ? `Évaluer ${c.first_name} ${c.last_name}` : undefined}
+                                className={cn(
+                                  "text-[11px] font-bold text-slate-800 bg-white px-2 py-0.5 rounded-lg border",
+                                  canEvalThis && "hover:border-primary hover:text-primary cursor-pointer transition-colors"
+                                )}
+                              >
+                                {c.first_name} {c.last_name} <span className="text-slate-400 font-medium">({c.primary_position})</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -752,7 +1140,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                       <p className="flex items-center gap-2">
                         <CalendarIcon className="w-3.5 h-3.5 text-primary shrink-0" />
                         <span className="font-semibold">
-                          {new Date(test.test_date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                          {new Date(`${test.test_date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                         </span>
                         <span className="text-slate-400">({test.start_time || '09:30'} - {test.end_time || '12:00'})</span>
                       </p>
@@ -768,9 +1156,10 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                       </p>
                     )}
 
-                    {/* Statut Évaluation liée */}
                     {(() => {
-                      const linkedEval = evaluations.find(e => e.test_id === test.id || (test.candidate_id && e.candidate_id === test.candidate_id && e.evaluation_date === test.test_date));
+                      const linkedEval = primaryCand
+                        ? evaluations.find(e => e.test_id === test.id || (e.candidate_id === primaryCand.id && e.evaluation_date === test.test_date))
+                        : undefined;
                       if (linkedEval) {
                         return (
                           <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs flex items-center justify-between">
@@ -794,13 +1183,13 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                   </div>
 
                   <div className="pt-3 border-t flex justify-between items-center gap-2">
-                    {candidate && onOpenEvaluationForTest ? (
+                    {primaryCand && onOpenEvaluationForTest ? (
                       (() => {
-                        const linkedEval = evaluations.find(e => e.test_id === test.id || (test.candidate_id && e.candidate_id === test.candidate_id && e.evaluation_date === test.test_date));
+                        const linkedEval = evaluations.find(e => e.test_id === test.id || (e.candidate_id === primaryCand.id && e.evaluation_date === test.test_date));
                         return (
                           <button
                             type="button"
-                            onClick={() => onOpenEvaluationForTest(candidate, test)}
+                            onClick={() => onOpenEvaluationForTest(primaryCand, test)}
                             className="px-3 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
                           >
                             <Award className="w-3.5 h-3.5" />
@@ -813,7 +1202,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                       <button
                         type="button"
                         onClick={() => onEditTest(test)}
-                        className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-primary transition-colors flex items-center gap-1.5"
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-primary transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                         <span>Modifier</span>
@@ -825,7 +1214,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                             await onDeleteTest(test.id);
                           }
                         }}
-                        className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors"
+                        className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors cursor-pointer"
                         title="Supprimer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -836,6 +1225,46 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
               );
             })
           )}
+        </div>
+      )}
+
+      {/* ── MODALE CONFIRMATION SUPPRESSION MULTIPLE ──────────────────────── */}
+      {isBulkDeleteConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl border w-full max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">
+                  Supprimer {selectedTestIds.length} planning{selectedTestIds.length > 1 ? 's' : ''} ?
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Cette action supprimera définitivement les sessions sélectionnées du planning des détections.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteConfirmOpen(false)}
+                disabled={isBulkDeleting}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBulkDelete}
+                disabled={isBulkDeleting}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isBulkDeleting ? 'Suppression...' : `Confirmer (${selectedTestIds.length})`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

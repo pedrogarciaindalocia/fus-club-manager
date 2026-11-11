@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { usePlayers } from '../../hooks/usePlayers';
 import { PLAYER_CATEGORIES, normalizeAgeCategory } from '../../constants';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 
 // ── Charte couleur par catégorie ─────────────────────────────────────────────
 const CATEGORY_META: Record<string, {
@@ -72,11 +73,7 @@ export default function ClubRosterPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-32">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement de l'effectif…" />;
   }
 
   return (
@@ -142,16 +139,13 @@ export default function ClubRosterPage() {
       {/* ── Grid View ── */}
       {viewMode === 'grid' && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-          {PLAYER_CATEGORIES.map((cat, i) => {
+          {PLAYER_CATEGORIES.map((cat) => {
             const stat = categoryStats.find(c => c.name === cat)!;
             const m = stat.meta;
             const isEmpty = stat.count === 0;
             return (
               <motion.div
                 key={cat}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.04 }}
                 whileHover={!isEmpty ? { scale: 1.04, y: -3 } : {}}
                 whileTap={!isEmpty ? { scale: 0.97 } : {}}
                 onClick={() => !isEmpty && handleCategoryClick(cat)}
@@ -230,16 +224,13 @@ export default function ClubRosterPage() {
               </tr>
             </thead>
             <tbody>
-              {PLAYER_CATEGORIES.map((cat, i) => {
+              {PLAYER_CATEGORIES.map((cat) => {
                 const stat = categoryStats.find(c => c.name === cat)!;
                 const m = stat.meta;
                 const isEmpty = stat.count === 0;
                 return (
-                  <motion.tr
+                  <tr
                     key={cat}
-                    initial={{ opacity: 0, x: -12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.035 }}
                     className={`border-b border-border last:border-0 transition-colors ${
                       isEmpty ? 'opacity-40' : 'hover:bg-secondary/30 cursor-pointer'
                     }`}
@@ -289,7 +280,7 @@ export default function ClubRosterPage() {
                         <span className="text-[11px] text-muted-foreground font-bold">Vide</span>
                       )}
                     </td>
-                  </motion.tr>
+                  </tr>
                 );
               })}
             </tbody>

@@ -203,31 +203,91 @@ export const trainingService = {
 
   // 4. EVALUATIONS
   async getEvaluations(): Promise<PlayerTrainingEvaluation[]> {
+    const normalizeRow = (row: any): PlayerTrainingEvaluation => ({
+      ...row,
+      technical_score: Number(row.technical_score ?? row.tech_score ?? row.global_score ?? 7),
+      tactical_score: Number(row.tactical_score ?? row.tact_score ?? row.global_score ?? 7),
+      physical_score: Number(row.physical_score ?? row.phys_score ?? row.global_score ?? 7),
+      mental_score: Number(row.mental_score ?? row.ment_score ?? row.global_score ?? 7),
+      global_score: Number(row.global_score ?? 7),
+      notes: row.notes ?? row.coach_comment ?? '',
+      tags: Array.isArray(row.tags) ? row.tags : [],
+    });
+
     try {
       const { data, error } = await supabase
         .from('player_training_evaluations')
         .select('*')
         .order('evaluation_date', { ascending: false });
       if (!error && data && data.length > 0) {
-        return data;
+        return data.map(normalizeRow);
       }
     } catch {
       // Local fallback
     }
-    return getLocal<PlayerTrainingEvaluation[]>(KEY_EVALUATIONS, initialMockEvaluations);
+    return getLocal<PlayerTrainingEvaluation[]>(KEY_EVALUATIONS, initialMockEvaluations).map(
+      normalizeRow
+    );
   },
 
   async saveEvaluation(evaluation: Omit<PlayerTrainingEvaluation, 'id'>): Promise<PlayerTrainingEvaluation> {
     const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `eval-${Date.now()}`;
     const newEval: PlayerTrainingEvaluation = {
       ...evaluation,
-      id: newId
+      id: newId,
     };
+
+    const isUuid = (v?: string | null) =>
+      !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
+    const baseDbPayload: Record<string, any> = {
+      id: newEval.id,
+      player_id: newEval.player_id,
+      player_name: newEval.player_name,
+      session_id: isUuid(newEval.session_id) ? newEval.session_id : null,
+      session_name: newEval.session_name || null,
+      evaluation_date: newEval.evaluation_date,
+      evaluator_name: newEval.evaluator_name,
+      technical_score: newEval.technical_score,
+      tactical_score: newEval.tactical_score,
+      physical_score: newEval.physical_score,
+      mental_score: newEval.mental_score,
+      global_score: newEval.global_score,
+      strengths: newEval.strengths || [],
+      improvements: newEval.improvements || [],
+      notes: newEval.notes || '',
+      tags: newEval.tags || [],
+    };
+
+    const extendedDbPayload: Record<string, any> = {
+      ...baseDbPayload,
+      ...(isUuid(newEval.metric_set_id) ? { metric_set_id: newEval.metric_set_id } : {}),
+      ...(newEval.metric_set_name ? { metric_set_name: newEval.metric_set_name } : {}),
+      ...(newEval.position_code ? { position_code: newEval.position_code } : {}),
+      ...(newEval.criteria_scores ? { criteria_scores: newEval.criteria_scores } : {}),
+    };
+
     try {
-      await supabase.from('player_training_evaluations').insert([newEval]);
+      const { error } = await supabase
+        .from('player_training_evaluations')
+        .insert([extendedDbPayload]);
+      if (error) {
+        const msg = String(error.message || '').toLowerCase();
+        if (
+          error.code === '42703' ||
+          error.code === 'PGRST204' ||
+          msg.includes('metric_set') ||
+          msg.includes('criteria_scores') ||
+          msg.includes('position_code') ||
+          msg.includes('schema cache')
+        ) {
+          await supabase.from('player_training_evaluations').insert([baseDbPayload]);
+        }
+      }
     } catch {
       // Local fallback
     }
+
     const current = getLocal<PlayerTrainingEvaluation[]>(KEY_EVALUATIONS, initialMockEvaluations);
     const updated = [newEval, ...current];
     setLocal(KEY_EVALUATIONS, updated);

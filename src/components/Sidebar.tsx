@@ -40,7 +40,7 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
 
   // Branche Analyse Vidéo & Data
   if (isAnalyst) {
-    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/arbitres' || path === '/leagues' || path === '/stadiums') return true;
+    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/championship-performances' || path === '/arbitres' || path === '/leagues' || path === '/stadiums' || path.startsWith('/classement-resultats')) return true;
     if (path.startsWith('/players') || path === '/club' || path.startsWith('/teams') || path.startsWith('/opponents') || path.startsWith('/staff')) return true;
     if (path.startsWith('/media')) return true;
     if (path === '/' || path === '/dashboard') return true;
@@ -56,7 +56,7 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
       return true;
     }
     if (path === '/players' || path === '/club') return true;
-    if (path === '/official-shortlist') return true;
+    if (path === '/official-shortlist' || path === '/championship-performances' || path === '/classement-resultats') return true;
     if (path === '/matches') return true;
     if (path === '/opponents') return true;
     if (path === '/media') return true;
@@ -67,7 +67,7 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
   if (isCoach) {
     if (path.startsWith('/trainings')) return true;
     if (path.startsWith('/matches') || path === '/matchday') return true;
-    if (path === '/official-shortlist') return true;
+    if (path === '/official-shortlist' || path === '/championship-performances' || path === '/classement-resultats') return true;
     if (path === '/players' || path === '/teams' || path === '/opponents') return true;
     if (path === '/arbitres' || path === '/leagues' || path === '/stadiums') return true;
     if (path === '/media') return true;
@@ -77,7 +77,7 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
 
   // Rôle Admin Métier / Direction standard (hors analyste, scout, coach)
   if (normRole === 'admin' || normRole === 'direction' || normRole === 'manager') {
-    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/arbitres' || path === '/leagues' || path === '/stadiums') return true;
+    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/championship-performances' || path === '/arbitres' || path === '/leagues' || path === '/stadiums' || path.startsWith('/classement-resultats')) return true;
     if (path.startsWith('/players') || path === '/club' || path.startsWith('/teams') || path.startsWith('/opponents') || path.startsWith('/staff')) return true;
     if (path.startsWith('/trainings')) return true;
     if (path.startsWith('/recruitment-v2')) return true;
@@ -88,7 +88,7 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
 
   // Staff standard
   if (isStaff) {
-    if (path === '/' || path === '/dashboard' || path === '/matches' || path === '/media') return true;
+    if (path === '/' || path === '/dashboard' || path === '/matches' || path === '/classement-resultats' || path === '/media') return true;
     return false;
   }
 
@@ -195,11 +195,15 @@ const Sidebar: React.FC<SidebarProps> = ({
       title: 'Compétition & Matchs',
       icon: Trophy,
       items: [
-        { path: '/matches',            label: 'Calendrier',            icon: Calendar, subId: 'matches' },
-        { path: '/official-shortlist', label: 'Shortlist Officielle',  icon: Trophy, subId: 'official_shortlist' },
-        { path: '/arbitres',           label: 'Arbitres',              icon: UserCheck, subId: 'arbitres' },
-        { path: '/leagues',            label: 'Compétitions',          icon: Trophy, subId: 'leagues' },
-        { path: '/stadiums',           label: 'Stades',                icon: Building2, subId: 'stadiums' },
+        { path: '/matches',                                      label: 'Calendrier',                  icon: Calendar,  subId: 'matches' },
+        { path: '/classement-resultats',                         label: 'Classement & Résultats',      icon: Award,     subId: 'matches' },
+        { path: '/players',                                      label: 'Joueurs',                     icon: Users,     subId: 'players' },
+        { path: '/championship-performances',                    label: 'Championnat & Performances',  icon: Activity,  subId: 'championship_performances' },
+        { path: '/championship-performances?tab=attack_defense', label: 'Adversaires vs Attaque',     icon: Swords,    subId: 'championship_performances' },
+        { path: '/official-shortlist',                           label: 'Shortlist Officielle',        icon: Trophy,    subId: 'official_shortlist' },
+        { path: '/arbitres',                                     label: 'Arbitres',                    icon: UserCheck, subId: 'arbitres' },
+        { path: '/leagues',                                      label: 'Compétitions',                icon: Trophy,    subId: 'leagues' },
+        { path: '/stadiums',                                     label: 'Stades',                      icon: Building2, subId: 'stadiums' },
       ],
     },
     {

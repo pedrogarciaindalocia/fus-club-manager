@@ -225,6 +225,25 @@ export function useRecruitment(candidateIdForTimeline?: string) {
     },
   });
 
+  const createTestsBatchMutation = useMutation({
+    mutationFn: (testsList: Omit<PlayerTest, 'id' | 'created_at' | 'updated_at'>[]) =>
+      recruitmentService.createTestsBatch(testsList),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.tests });
+      queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.candidates });
+      queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.evaluations });
+      queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.timeline() });
+      toast.success(
+        created.length > 1
+          ? `${created.length} sessions de test planifiées avec succès !`
+          : 'Session de test planifiée (Dossier déplacé dans "Test Planifié")'
+      );
+    },
+    onError: (err: any) => {
+      toast.error(`Erreur lors de la planification : ${err?.message || 'Erreur inconnue'}`);
+    },
+  });
+
   const updateTestMutation = useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: Partial<PlayerTest> }) =>
       recruitmentService.updateTest(id, updates),
@@ -251,6 +270,24 @@ export function useRecruitment(candidateIdForTimeline?: string) {
     },
     onError: (err: any) => {
       toast.error(`Erreur: ${err.message}`);
+    },
+  });
+
+  const deleteTestsMutation = useMutation({
+    mutationFn: (ids: string[]) => recruitmentService.deleteTests(ids),
+    onSuccess: (_, ids) => {
+      queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.tests });
+      queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.candidates });
+      queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.evaluations });
+      queryClient.invalidateQueries({ queryKey: RECRUITMENT_KEYS.timeline() });
+      toast.success(
+        ids.length > 1
+          ? `${ids.length} plannings de test supprimés avec succès`
+          : 'Session de test supprimée'
+      );
+    },
+    onError: (err: any) => {
+      toast.error(`Erreur lors de la suppression multiple : ${err?.message || 'Erreur inconnue'}`);
     },
   });
 
@@ -371,6 +408,7 @@ export function useRecruitment(candidateIdForTimeline?: string) {
     archiveCandidates: archiveCandidatesMutation.mutateAsync,
 
     createTest: createTestMutation.mutateAsync,
+    createTestsBatch: createTestsBatchMutation.mutateAsync,
     updateTest: (
       arg1: string | { id: string; updates: Partial<PlayerTest> },
       arg2?: Partial<PlayerTest>
@@ -381,6 +419,7 @@ export function useRecruitment(candidateIdForTimeline?: string) {
       return updateTestMutation.mutateAsync(arg1);
     },
     deleteTest: deleteTestMutation.mutateAsync,
+    deleteTests: deleteTestsMutation.mutateAsync,
     saveEvaluation: (evalData: Omit<CandidateEvaluation, 'id' | 'created_at'>, options?: { isReevaluation?: boolean; updateId?: string; promoteToShortlist?: boolean }) =>
       saveEvaluationMutation.mutateAsync({ evalData, options }),
     deleteEvaluation: (id: string) => deleteEvaluationMutation.mutateAsync(id),

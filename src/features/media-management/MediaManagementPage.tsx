@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabase';
 import { mediaService, validateFileSecurity } from '../../services/mediaService';
 import type { MediaFolder, MediaFile } from '../../services/mediaService';
 import { Button } from '../../components/ui/button';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { toast } from 'sonner';
 import { usePermissions } from '../../context/PermissionsContext';
 
@@ -1105,10 +1106,7 @@ export const MediaManagementPage: React.FC = () => {
 
       {/* Contenu : Dossiers & Médias */}
       {loading ? (
-        <div className="py-24 flex flex-col items-center justify-center gap-4 text-white/50">
-          <Loader2 className="w-10 h-10 animate-spin text-primary" />
-          <span className="text-xs uppercase tracking-widest font-black">Chargement des éléments...</span>
-        </div>
+        <FusLogoLoader fullPage size="lg" label="Chargement des éléments..." />
       ) : (
         <div className="space-y-8">
           {/* Section 1 : Dossiers (Masquée en mode recherche globale) */}

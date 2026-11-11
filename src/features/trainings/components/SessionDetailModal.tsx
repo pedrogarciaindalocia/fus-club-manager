@@ -29,6 +29,10 @@ import type {
   IntensityLevel,
   SessionStatus
 } from '../types/training';
+import {
+  DynamicPerformanceEvaluator,
+  type DynamicEvaluationChangePayload,
+} from '../../../components/metrics/DynamicPerformanceEvaluator';
 
 interface SessionDetailModalProps {
   session: TrainingSession;
@@ -82,12 +86,9 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
   const [reportIntensity, setReportIntensity] = useState<number>(session.intensity_rpe_avg || 7);
   const [reportStatus, setReportStatus] = useState<SessionStatus>(session.status);
 
-  // Quick evaluation state
+  // Quick evaluation state (alimenté dynamiquement par les lots Performance Joueur)
   const [evalPlayer, setEvalPlayer] = useState<string>(currentAttendances[0]?.player_name || '');
-  const [evalTech, setEvalTech] = useState<number>(8);
-  const [evalTac, setEvalTac] = useState<number>(7);
-  const [evalPhy, setEvalPhy] = useState<number>(8);
-  const [evalMen, setEvalMen] = useState<number>(8);
+  const [dynamicEval, setDynamicEval] = useState<DynamicEvaluationChangePayload | null>(null);
   const [evalNotes, setEvalNotes] = useState<string>('');
 
   const sessionExercises = (session.exercises || [])
@@ -150,24 +151,33 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
 
   const handleAddEvaluation = async (e: React.FormEvent) => {
     e.preventDefault();
-    const globalScore = Number(((evalTech + evalTac + evalPhy + evalMen) / 4).toFixed(1));
+    const tech = dynamicEval?.technique ?? 7;
+    const tac = dynamicEval?.tactique ?? 7;
+    const phy = dynamicEval?.physique ?? 7;
+    const men = dynamicEval?.mental ?? 7;
+    const globalScore = dynamicEval?.global ?? Number(((tech + tac + phy + men) / 4).toFixed(1));
     const targetPlayer = currentAttendances.find(a => a.player_name === evalPlayer);
     await onSaveEvaluation({
       player_id: targetPlayer?.player_id || `p-${Date.now()}`,
       player_name: evalPlayer,
+      position: dynamicEval?.positionCode || targetPlayer?.position || 'CM',
       session_id: session.id,
       session_name: session.name,
       evaluation_date: session.session_date,
       evaluator_name: session.coach_name,
-      technical_score: evalTech,
-      tactical_score: evalTac,
-      physical_score: evalPhy,
-      mental_score: evalMen,
+      technical_score: tech,
+      tactical_score: tac,
+      physical_score: phy,
+      mental_score: men,
       global_score: globalScore,
+      metric_set_id: dynamicEval?.metricSetId || null,
+      metric_set_name: dynamicEval?.metricSetName || null,
+      position_code: dynamicEval?.positionCode || null,
+      criteria_scores: dynamicEval?.criteriaScores || null,
       notes: evalNotes,
       strengths: ['Bon engagement', 'Bonne lecture de jeu'],
       improvements: ['Prise de décision sous pression'],
-      tags: ['Entraînement', session.session_type]
+      tags: ['Entraînement', session.session_type, dynamicEval?.metricSetName].filter(Boolean) as string[],
     });
     setEvalNotes('');
   };
@@ -562,78 +572,32 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
             <div className="space-y-6">
               <div className="bg-slate-50 dark:bg-slate-800/40 p-5 rounded-2xl border border-slate-200 dark:border-slate-700">
                 <h4 className="text-sm font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-wider mb-3">
-                  Évaluation Express d'un Joueur (4 Piliers /10)
+                  Évaluation Performance Joueur (Lots Dynamiques Hors-Scout)
                 </h4>
                 <form onSubmit={handleAddEvaluation} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
-                        Sélectionner le joueur
-                      </label>
-                      <select
-                        value={evalPlayer}
-                        onChange={e => setEvalPlayer(e.target.value)}
-                        className="w-full px-3 py-2 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-semibold text-slate-800 dark:text-white"
-                      >
-                        {currentAttendances.map(p => (
-                          <option key={p.player_id} value={p.player_name}>
-                            {p.player_name} ({p.position})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-2">
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Tech /10</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="10"
-                          step="0.5"
-                          value={evalTech}
-                          onChange={e => setEvalTech(parseFloat(e.target.value))}
-                          className="w-full px-2 py-1.5 text-center text-sm font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Tac /10</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="10"
-                          step="0.5"
-                          value={evalTac}
-                          onChange={e => setEvalTac(parseFloat(e.target.value))}
-                          className="w-full px-2 py-1.5 text-center text-sm font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Phy /10</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="10"
-                          step="0.5"
-                          value={evalPhy}
-                          onChange={e => setEvalPhy(parseFloat(e.target.value))}
-                          className="w-full px-2 py-1.5 text-center text-sm font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Men /10</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="10"
-                          step="0.5"
-                          value={evalMen}
-                          onChange={e => setEvalMen(parseFloat(e.target.value))}
-                          className="w-full px-2 py-1.5 text-center text-sm font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-                        />
-                      </div>
-                    </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                      Sélectionner le joueur convoqué
+                    </label>
+                    <select
+                      value={evalPlayer}
+                      onChange={e => setEvalPlayer(e.target.value)}
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-semibold text-slate-800 dark:text-white"
+                    >
+                      {currentAttendances.map(p => (
+                        <option key={p.player_id} value={p.player_name}>
+                          {p.player_name} ({p.position})
+                        </option>
+                      ))}
+                    </select>
                   </div>
+
+                  <DynamicPerformanceEvaluator
+                    rubric="training"
+                    compact
+                    playerPosition={currentAttendances.find(a => a.player_name === evalPlayer)?.position}
+                    onChange={setDynamicEval}
+                  />
 
                   <div>
                     <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
@@ -650,7 +614,7 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
 
                   <div className="flex items-center justify-between pt-2">
                     <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                      Moyenne calculée : {((evalTech + evalTac + evalPhy + evalMen) / 4).toFixed(1)} / 10
+                      Moyenne calculée : {(dynamicEval?.global ?? 7).toFixed(1)} / 10
                     </span>
                     <button
                       type="submit"
@@ -676,18 +640,23 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
                       .map(ev => (
                         <div
                           key={ev.id}
-                          className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between"
+                          className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3"
                         >
-                          <div>
-                            <div className="font-bold text-slate-900 dark:text-white text-sm">
-                              {ev.player_name}
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 dark:text-white text-sm flex flex-wrap items-center gap-1.5">
+                              <span>{ev.player_name}</span>
+                              {(ev.metric_set_name || ev.position_code) && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold">
+                                  {[ev.metric_set_name, ev.position_code].filter(Boolean).join(' • ')}
+                                </span>
+                              )}
                             </div>
                             <div className="text-[11px] text-slate-400 mt-0.5">
                               T:{ev.technical_score} • Tac:{ev.tactical_score} • P:{ev.physical_score} • M:{ev.mental_score}
                             </div>
                             {ev.notes && <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{ev.notes}</p>}
                           </div>
-                          <div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-black text-base flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
+                          <div className="w-11 h-11 shrink-0 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-black text-base flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
                             {ev.global_score}
                           </div>
                         </div>

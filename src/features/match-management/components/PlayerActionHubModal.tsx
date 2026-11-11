@@ -26,6 +26,12 @@ import { Badge } from '../../../components/ui/badge';
 import { Input } from '../../../components/ui/input';
 import { toast } from 'sonner';
 import type { MatchEvent } from '../../../types';
+import { useMetricSets } from '../../../hooks/useMetricSets';
+import {
+  parseMatchEvaluationComment,
+  resolveMetricSetForRubric,
+  resolveMetricSetPositionForPlayer,
+} from '../../../utils/metricSetsHelpers';
 
 export interface PlayerActionTarget {
   id: string;
@@ -149,9 +155,26 @@ export const PlayerActionHubModal: React.FC<PlayerActionHubModalProps> = ({
   // Editing existing event
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
+  // Lots dynamiques Performance Joueur (isolés des scouts)
+  const { metricSets, getPositionsForSet, isScoutUser } = useMetricSets();
+  const activePerformanceSet = useMemo(
+    () => (isScoutUser ? null : resolveMetricSetForRubric(metricSets, 'match')),
+    [isScoutUser, metricSets]
+  );
+  const activePerformancePos = useMemo(() => {
+    if (!activePerformanceSet) return null;
+    const list = getPositionsForSet(activePerformanceSet.id);
+    return resolveMetricSetPositionForPlayer(list, player.position);
+  }, [activePerformanceSet, getPositionsForSet, player.position]);
+
+  const parsedPlayerEval = useMemo(
+    () => parseMatchEvaluationComment(player.rating_comment),
+    [player.rating_comment]
+  );
+
   // Rating State
   const [ratingValue, setRatingValue] = useState<number>(player.rating != null ? Number(player.rating) : 7.0);
-  const [ratingComment, setRatingComment] = useState<string>(player.rating_comment || '');
+  const [ratingComment, setRatingComment] = useState<string>(parsedPlayerEval.textComment || '');
   const [isSavingRating, setIsSavingRating] = useState(false);
 
   // Player's existing events in this match
@@ -958,7 +981,7 @@ export const PlayerActionHubModal: React.FC<PlayerActionHubModalProps> = ({
               {/* Comment */}
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block px-1">
-                  Commentaire & Recommandation Scouting
+                  Commentaire &amp; Analyse Performance Match
                 </label>
                 <textarea
                   rows={3}
@@ -969,15 +992,34 @@ export const PlayerActionHubModal: React.FC<PlayerActionHubModalProps> = ({
                 />
               </div>
 
-              {/* Deep Evaluation Trigger */}
-              {onOpenDeepEvaluation && (
+              {/* Aperçu 4 Piliers existants si déjà enregistrés */}
+              {parsedPlayerEval.pillars && (
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { label: 'Tech', val: parsedPlayerEval.pillars.technique, cls: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
+                    { label: 'Tact', val: parsedPlayerEval.pillars.tactique, cls: 'text-indigo-400 border-indigo-500/30 bg-indigo-500/10' },
+                    { label: 'Phys', val: parsedPlayerEval.pillars.physique, cls: 'text-rose-400 border-rose-500/30 bg-rose-500/10' },
+                    { label: 'Ment', val: parsedPlayerEval.pillars.mental, cls: 'text-amber-400 border-amber-500/30 bg-amber-500/10' },
+                  ].map(p => (
+                    <div key={p.label} className={`p-2 rounded-xl border text-center ${p.cls}`}>
+                      <div className="text-[9px] font-black uppercase">{p.label}</div>
+                      <div className="text-sm font-black tabular-nums">{p.val.toFixed(1)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Deep Evaluation Trigger (masqué pour profils Scouts) */}
+              {onOpenDeepEvaluation && !isScoutUser && (
                 <div className="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-between gap-4">
                   <div>
                     <h5 className="text-xs font-black uppercase text-indigo-300">
-                      Grille d'Évaluation Approfondie (4 Piliers)
+                      Grille Dynamique 4 Piliers — {activePerformanceSet?.name || 'Performance Joueur'}
                     </h5>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      Technique (11 critères), Tactique (7), Physique (7), Mental (6).
+                      {activePerformancePos
+                        ? `${activePerformancePos.name} (${activePerformancePos.code}) : Technique (${activePerformancePos.criteria.technique.length}), Tactique (${activePerformancePos.criteria.tactique.length}), Physique (${activePerformancePos.criteria.physique.length}), Mental (${activePerformancePos.criteria.mental.length}).`
+                        : 'Notation détaillée sur les 4 piliers du lot Performance Joueur (hors-scouts).'}
                     </p>
                   </div>
                   <Button

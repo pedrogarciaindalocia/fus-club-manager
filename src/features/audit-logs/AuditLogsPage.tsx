@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { 
   Search, 
   Filter, 
@@ -40,6 +39,7 @@ import { UserAuditDetailModal } from './components/UserAuditDetailModal';
 import type { UserSummaryItem, UserLatestAction } from './components/UserAuditDetailModal';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { OFFICIAL_JOB_TITLES } from '../../constants/roles';
 import { 
   PresenceTracker, 
@@ -1093,10 +1093,7 @@ export const AuditLogsPage: React.FC = () => {
 
       {/* Main Content Area */}
       {loading ? (
-        <div className="py-24 text-center space-y-3">
-          <RefreshCw className="w-9 h-9 text-primary animate-spin mx-auto" />
-          <p className="text-muted-foreground text-sm font-semibold tracking-wide">Chargement des données de supervision en direct...</p>
-        </div>
+        <FusLogoLoader fullPage size="lg" label="Chargement des données de supervision en direct..." />
       ) : filteredUsers.length === 0 ? (
         <div className="p-16 text-center bg-card border border-border rounded-3xl space-y-3">
           <Users className="w-12 h-12 text-muted-foreground/40 mx-auto" />
@@ -1875,10 +1872,7 @@ const UserCard: React.FC<UserCardProps> = ({
   const hasValidDate = user.lastActivity && !isNaN(new Date(user.lastActivity).getTime());
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
+    <div
       className="bg-card border border-border/80 hover:border-primary/40 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden h-full"
     >
       {/* Top Banner Accent */}
@@ -1998,7 +1992,7 @@ const UserCard: React.FC<UserCardProps> = ({
           <Eye className="w-3.5 h-3.5" /> Voir Détails
         </Button>
       </div>
-    </motion.div>
+    </div>
   );
 };
 

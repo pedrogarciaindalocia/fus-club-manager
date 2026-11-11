@@ -8,7 +8,14 @@ import type {
   Scout,
   AdministrativeDocument
 } from '../types/recruitment';
-import { getAgeCategoryFromBirthDate, getPoleFromCategory } from '../types/recruitment';
+import { getAgeCategoryFromBirthDate, getPoleFromCategory, resolveReportOrCandidateSurclassement } from '../types/recruitment';
+
+const resolvePotentialValue = (evalPot?: number | null, candPot?: number | null): number => {
+  const raw = evalPot != null && !isNaN(Number(evalPot))
+    ? Number(evalPot)
+    : (candPot != null && !isNaN(Number(candPot)) ? Number(candPot) : 0);
+  return Math.round(raw * 10) / 10;
+};
 import { ScoutAvatar } from './ScoutAvatar';
 import PlayerRadarChart, { type RadarTabMode } from './PlayerRadarChart';
 import { QualityPillarsBlock } from './QualityPillarsBlock';
@@ -24,7 +31,8 @@ import {
 } from 'chart.js';
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, ChartTooltip, ChartLegend);
-import { getScoutPositionConfig, type ScoutPillarKey } from '../constants/scoutCriteriaByPosition';
+import { getScoutPositionConfig, getFrenchPositionLabel, type ScoutPillarKey } from '../constants/scoutCriteriaByPosition';
+import { getMetricPositionFrenchName } from '../../../utils/metricSetsHelpers';
 import { getCountryFlag } from '../../../constants/geography';
 import { useMetrics } from '../../../hooks/useMetrics';
 import {
@@ -469,7 +477,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
     ? ((latestEval as any).scout_state_decision || latestEval.report_data?.scout_state_decision || (latestEval.verdict === 'sign' ? 'recruit_now' : latestEval.verdict === 'trial' ? 'invitation_test' : latestEval.verdict === 'follow' ? 'to_follow' : null))
     : (candidate.scout_state_decision || null);
   const candidateObs = observations.filter(o => o.candidate_id === candidate.id);
-  const candidateTests = tests.filter(t => t.candidate_id === candidate.id);
+  const candidateTests = tests.filter(t => t.candidate_id === candidate.id || t.candidate_ids?.includes(candidate.id));
   const candidateTimeline = timeline.filter(t => t.candidate_id === candidate.id);
 
   // Initialiser le rapport sélectionné par défaut sur le plus récent
@@ -484,9 +492,13 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   const isPage = variant === 'page';
 
   const candidateAge = calculateAge(candidate.birth_date);
-  const candidateSurclass = (candidate as any).surclassement || (candidate as any).is_upgraded_category || (candidate as any).upgraded_category;
-  const isCandidateUpgraded = !!candidateSurclass && candidateSurclass !== 'non' && candidateSurclass !== false && candidateSurclass !== 'false';
-  const candidateSurclassLabel = typeof candidateSurclass === 'string' && candidateSurclass !== 'true' && candidateSurclass !== 'oui' ? candidateSurclass : null;
+  const candidateSurclassInfo = resolveReportOrCandidateSurclassement({
+    candidate,
+    evaluation: allRawCandidateEvals[0] || null,
+    totalReportsCount: allRawCandidateEvals.length,
+  });
+  const isCandidateUpgraded = candidateSurclassInfo.isUpgraded;
+  const candidateSurclassLabel = candidateSurclassInfo.isUpgraded ? candidateSurclassInfo.shortBadgeText : null;
 
   const cardContent = (
     <div className={cn(
@@ -548,9 +560,8 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                 {candidate.first_name} {candidate.last_name}
               </h2>
               {isCandidateUpgraded && (
-                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-extrabold flex items-center gap-1 shadow-2xs">
-                  <TrendingUp className="w-3 h-3 text-emerald-400" />
-                  Surclassé {candidateSurclassLabel ? `(${candidateSurclassLabel})` : ''}
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-extrabold shadow-2xs">
+                  Surclassé {candidateSurclassLabel || ''}
                 </span>
               )}
               <span className="px-2 py-0.5 rounded-md bg-primary/20 text-red-200 border border-primary/40 text-[10px] font-black uppercase tracking-wider">
@@ -563,18 +574,15 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                 </span>
               )}
               {latestDecision === 'recruit_now' || latestDecision === 'recruit_standby' ? (
-                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                  <Flame className="w-3 h-3 text-emerald-400" />
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-bold shadow-2xs">
                   Recrutement Immédiat
                 </span>
               ) : latestDecision === 'invitation_test' ? (
-                <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-200 border border-blue-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                  <Calendar className="w-3 h-3 text-blue-300" />
+                <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-200 border border-blue-400/30 text-[10px] font-bold shadow-2xs">
                   Convocation Test
                 </span>
               ) : latestDecision === 'to_follow' ? (
-                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-200 border border-amber-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                  <Eye className="w-3 h-3 text-amber-300" />
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-200 border border-amber-400/30 text-[10px] font-bold shadow-2xs">
                   À suivre
                 </span>
               ) : null}
@@ -809,11 +817,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                 const tactScore = getScoreVal(discoveringEval.tactical_score ?? (discoveringEval as any).tact_score ?? (discoveringEval as any).tactical_rating);
                 const physScore = getScoreVal(discoveringEval.physical_score ?? (discoveringEval as any).phys_score ?? (discoveringEval as any).physical_rating);
                 const mentScore = getScoreVal(discoveringEval.mental_score ?? (discoveringEval as any).ment_score ?? (discoveringEval as any).mental_rating);
-                const potentialScore = (discoveringEval.potential_rating != null && !isNaN(Number(discoveringEval.potential_rating)))
-                  ? Math.round(Number(discoveringEval.potential_rating) * 10) / 10
-                  : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
-                    ? Math.round(Number(candidate.potential_rating) * 10) / 10
-                    : null;
+                const potentialScore = resolvePotentialValue(discoveringEval.potential_rating, candidate.potential_rating);
 
                 const roleTitle = discoveringScoutInfo?.role || discoveringEval.evaluator_role || 'Scout Détecteur';
                 const scoutName = discoveringScoutInfo?.name || discoveringEval.evaluator_name || 'Scout Détecteur';
@@ -905,10 +909,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                         </span>
                       </div>
                       <div className="h-4 w-px bg-amber-200 shrink-0" />
-                      <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-amber-100/80 border border-amber-300 rounded-lg" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                      <div className="flex-1 px-1.5 py-0.5 flex flex-col items-center bg-amber-100/80 border border-amber-300 rounded-lg" title={`Potentiel : ${potentialScore.toFixed(1)}/10`}>
                         <span className="text-[9px] font-black uppercase text-amber-900">POT</span>
-                        <span className={cn("text-xs font-black", potentialScore != null ? "text-amber-950" : "text-slate-300")}>
-                          {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                        <span className={cn("text-xs font-black", potentialScore > 0 ? "text-amber-950" : "text-slate-600")}>
+                          {potentialScore.toFixed(1)}
                         </span>
                       </div>
                     </div>
@@ -988,11 +992,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                     const tactScore = getScoreVal(ev.tactical_score ?? (ev as any).tact_score ?? (ev as any).tactical_rating);
                     const physScore = getScoreVal(ev.physical_score ?? (ev as any).phys_score ?? (ev as any).physical_rating);
                     const mentScore = getScoreVal(ev.mental_score ?? (ev as any).ment_score ?? (ev as any).mental_rating);
-                    const potentialScore = (ev.potential_rating != null && !isNaN(Number(ev.potential_rating)))
-                      ? Math.round(Number(ev.potential_rating) * 10) / 10
-                      : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
-                        ? Math.round(Number(candidate.potential_rating) * 10) / 10
-                        : null;
+                    const potentialScore = resolvePotentialValue(ev.potential_rating, candidate.potential_rating);
 
                     const reportScout = scouts.find(s => s.id === ev.evaluator_id || s.full_name?.toLowerCase().trim() === (ev.evaluator_name || '').toLowerCase().trim());
                     const roleTitle = reportScout?.role_title || ev.evaluator_role || 'Scout Intervenant';
@@ -1087,10 +1087,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                             </span>
                           </div>
                           <div className="h-4 w-px bg-slate-200 shrink-0" />
-                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-indigo-50 border border-indigo-200 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <div className="flex-1 px-1.5 py-0.5 flex flex-col items-center bg-indigo-50 border border-indigo-200 rounded-md" title={`Potentiel : ${potentialScore.toFixed(1)}/10`}>
                             <span className="text-[8px] font-black uppercase text-indigo-700">POT</span>
-                            <span className={cn("text-xs font-black", potentialScore != null ? "text-indigo-950" : "text-slate-300")}>
-                              {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                            <span className={cn("text-xs font-black", potentialScore > 0 ? "text-indigo-950" : "text-slate-600")}>
+                              {potentialScore.toFixed(1)}
                             </span>
                           </div>
                         </div>
@@ -1197,11 +1197,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   const tactScore = getScoreVal(discoveringEval.tactical_score ?? (discoveringEval as any).tact_score ?? (discoveringEval as any).tactical_rating);
                   const physScore = getScoreVal(discoveringEval.physical_score ?? (discoveringEval as any).phys_score ?? (discoveringEval as any).physical_rating);
                   const mentScore = getScoreVal(discoveringEval.mental_score ?? (discoveringEval as any).ment_score ?? (discoveringEval as any).mental_rating);
-                  const potentialScore = (discoveringEval.potential_rating != null && !isNaN(Number(discoveringEval.potential_rating)))
-                    ? Math.round(Number(discoveringEval.potential_rating) * 10) / 10
-                    : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
-                      ? Math.round(Number(candidate.potential_rating) * 10) / 10
-                      : null;
+                  const potentialScore = resolvePotentialValue(discoveringEval.potential_rating, candidate.potential_rating);
 
                   return (
                     <div
@@ -1290,10 +1286,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                           </span>
                         </div>
                         <div className="h-4 w-px bg-amber-200 shrink-0" />
-                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-amber-100/60 border border-amber-300 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <div className="flex-1 px-1.5 py-0.5 flex flex-col items-center bg-amber-100/60 border border-amber-300 rounded-md" title={`Potentiel : ${potentialScore.toFixed(1)}/10`}>
                           <span className="text-[9px] font-black uppercase text-amber-800">POT</span>
-                          <span className={cn("text-xs font-black", potentialScore != null ? "text-amber-950" : "text-slate-300")}>
-                            {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                          <span className={cn("text-xs font-black", potentialScore > 0 ? "text-amber-950" : "text-slate-600")}>
+                            {potentialScore.toFixed(1)}
                           </span>
                         </div>
                       </div>
@@ -1509,11 +1505,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                     const tactScore = getScoreVal(ev.tactical_score ?? (ev as any).tact_score ?? (ev as any).tactical_rating);
                     const physScore = getScoreVal(ev.physical_score ?? (ev as any).phys_score ?? (ev as any).physical_rating);
                     const mentScore = getScoreVal(ev.mental_score ?? (ev as any).ment_score ?? (ev as any).mental_rating);
-                    const potentialScore = (ev.potential_rating != null && !isNaN(Number(ev.potential_rating)))
-                      ? Math.round(Number(ev.potential_rating) * 10) / 10
-                      : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
-                        ? Math.round(Number(candidate.potential_rating) * 10) / 10
-                        : null;
+                    const potentialScore = resolvePotentialValue(ev.potential_rating, candidate.potential_rating);
 
                     const reportScout = scouts.find(s => s.id === ev.evaluator_id || s.full_name?.toLowerCase().trim() === (ev.evaluator_name || '').toLowerCase().trim());
                     const roleTitle = reportScout?.role_title || ev.evaluator_role || 'Scout Manager';
@@ -1602,10 +1594,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                             </span>
                           </div>
                           <div className="h-4 w-px bg-slate-200 shrink-0" />
-                          <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-indigo-50 border border-indigo-200 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                          <div className="flex-1 px-1.5 py-0.5 flex flex-col items-center bg-indigo-50 border border-indigo-200 rounded-md" title={`Potentiel : ${potentialScore.toFixed(1)}/10`}>
                             <span className="text-[8px] font-black uppercase text-indigo-700">POT</span>
-                            <span className={cn("text-xs font-black", potentialScore != null ? "text-indigo-950" : "text-slate-300")}>
-                              {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                            <span className={cn("text-xs font-black", potentialScore > 0 ? "text-indigo-950" : "text-slate-600")}>
+                              {potentialScore.toFixed(1)}
                             </span>
                           </div>
                         </div>
@@ -1658,11 +1650,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   const tactScore = getScoreVal(ev.tactical_score ?? (ev as any).tact_score ?? (ev as any).tactical_rating);
                   const physScore = getScoreVal(ev.physical_score ?? (ev as any).phys_score ?? (ev as any).physical_rating);
                   const mentScore = getScoreVal(ev.mental_score ?? (ev as any).ment_score ?? (ev as any).mental_rating);
-                  const potentialScore = (ev.potential_rating != null && !isNaN(Number(ev.potential_rating)))
-                    ? Math.round(Number(ev.potential_rating) * 10) / 10
-                    : (candidate.potential_rating != null && !isNaN(Number(candidate.potential_rating)))
-                      ? Math.round(Number(candidate.potential_rating) * 10) / 10
-                      : null;
+                  const potentialScore = resolvePotentialValue(ev.potential_rating, candidate.potential_rating);
 
                   const reportScout = scouts.find(s => s.id === ev.evaluator_id || s.full_name?.toLowerCase().trim() === (ev.evaluator_name || '').toLowerCase().trim());
                   const roleTitle = reportScout?.role_title || ev.evaluator_role || 'Scout';
@@ -1752,10 +1740,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                           </span>
                         </div>
                         <div className="h-4 w-px bg-slate-200 shrink-0" />
-                        <div className="flex-1 px-1.5 py-0.5 rounded flex flex-col items-center bg-emerald-50 border border-emerald-200/80 rounded-md" title={`Potentiel : ${potentialScore != null ? `${potentialScore.toFixed(1)}/10` : 'Non renseigné'}`}>
+                        <div className="flex-1 px-1.5 py-0.5 flex flex-col items-center bg-emerald-50 border border-emerald-200/80 rounded-md" title={`Potentiel : ${potentialScore.toFixed(1)}/10`}>
                           <span className="text-[8px] font-black uppercase text-emerald-700">POT</span>
-                          <span className={cn("text-xs font-black", potentialScore != null ? "text-emerald-950" : "text-slate-300")}>
-                            {potentialScore != null ? potentialScore.toFixed(1) : '-'}
+                          <span className={cn("text-xs font-black", potentialScore > 0 ? "text-emerald-950" : "text-slate-600")}>
+                            {potentialScore.toFixed(1)}
                           </span>
                         </div>
                       </div>
@@ -2387,11 +2375,8 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                     <div>
                       <span className="text-muted-foreground block text-[11px]">Catégorie Officielle</span>
                       {(() => {
-                        const effectiveCat = candidate.birth_date
-                          ? getAgeCategoryFromBirthDate(candidate.birth_date, candidate.age_category || 'U19')
-                          : (candidate.age_category || 'U19');
+                        const effectiveCat = candidateSurclassInfo.baseCategory;
                         const pole = getPoleFromCategory(effectiveCat);
-                        const isUpgraded = candidate.is_upgraded_category || (candidate.age_category && candidate.age_category !== effectiveCat);
                         return (
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-bold text-primary">{effectiveCat}</span>
@@ -2400,9 +2385,9 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                 {pole.shortLabel}
                               </span>
                             )}
-                            {isUpgraded && (
+                            {candidateSurclassInfo.isUpgraded && (
                               <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
-                                ⬆️ {candidate.surclassement && candidate.surclassement !== '0C' ? candidate.surclassement : (candidate.age_category ? `en ${candidate.age_category}` : 'Surclassé')}
+                                Surclassé {candidateSurclassInfo.shortBadgeText}
                               </span>
                             )}
                           </div>
@@ -2748,24 +2733,16 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                       const dispCategory = rData.age_category || candidate.age_category || 'U19';
                       const dispClub = rData.current_club || candidate.current_club;
                       const dispPreviousClubs = rData.previous_clubs || candidate.previous_clubs;
-                      const rawSurclass = (rData as any).surclassement || candidate.surclassement;
-                      const dispIsUpgraded = Boolean(
-                        rData.is_upgraded_category === true ||
-                        candidate.is_upgraded_category === true ||
-                        (rawSurclass && rawSurclass !== '0C' && rawSurclass !== 'Non' && rawSurclass !== 'non' && rawSurclass !== 'Non surclassé') ||
-                        (rData.upgraded_categories_count && rData.upgraded_categories_count > 0) ||
-                        (candidate.upgraded_categories_count && candidate.upgraded_categories_count > 0)
-                      );
-
-                      let count = rData.upgraded_categories_count || candidate.upgraded_categories_count;
-                      if (!count && rawSurclass && typeof rawSurclass === 'string' && rawSurclass.startsWith('+')) {
-                        const parsed = parseInt(rawSurclass.replace(/\D/g, ''), 10);
-                        if (!isNaN(parsed)) count = parsed;
-                      }
-                      const dispUpgradedCount = count || 1;
-                      const surclassementBadgeText = dispIsUpgraded 
-                        ? (rawSurclass && typeof rawSurclass === 'string' && rawSurclass.startsWith('+') ? rawSurclass : `+${dispUpgradedCount}C`)
-                        : '0C';
+                      const reportSurclassInfo = resolveReportOrCandidateSurclassement({
+                        candidate,
+                        evaluation: currentSelectedReport,
+                        totalReportsCount: 1,
+                      });
+                      const dispIsUpgraded = reportSurclassInfo.isUpgraded;
+                      const surclassementBadgeText = reportSurclassInfo.shortBadgeText;
+                      const reportExecutedCategory = reportSurclassInfo.isUpgraded && reportSurclassInfo.targetCategory
+                        ? reportSurclassInfo.targetCategory
+                        : reportSurclassInfo.baseCategory;
                       const dispStarter = rData.is_starter ?? candidate.is_starter ?? true;
                       const dispFormation = rData.team_formation || candidate.team_formation || '4-3-3';
                       const dispMinutes = rData.minutes_played ?? candidate.minutes_played ?? 0;
@@ -2801,9 +2778,9 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                         criteriaScores: Record<string, number> | undefined,
                         critName: string,
                         pillarKeyStr: ScoutPillarKey,
-                        fallbackScore: number
+                        _fallbackScore: number = 0
                       ): number => {
-                        if (!criteriaScores) return Number(fallbackScore);
+                        if (!criteriaScores || Object.keys(criteriaScores).length === 0) return 0;
                         const pillarPrefixKey = `${pillarKeyStr}-${critName}`;
                         if (criteriaScores[pillarPrefixKey] !== undefined) return Number(criteriaScores[pillarPrefixKey]);
                         if (criteriaScores[critName] !== undefined) return Number(criteriaScores[critName]);
@@ -2819,7 +2796,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                           if (keyTitle && keyTitle.trim().toLowerCase() === parsedTitle.trim().toLowerCase()) return Number(val);
                         }
 
-                        return Number(fallbackScore);
+                        return 0;
                       };
 
                       const pillarsConfig: Array<{
@@ -2956,9 +2933,8 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                       {currentSelectedReport.report_title ? currentSelectedReport.report_title : `Rapport d'observation #${reportNumber}`}
                                     </h5>
                                     {dispIsUpgraded && (
-                                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                                        <TrendingUp className="w-3 h-3 text-emerald-600" />
-                                        Surclassé ({surclassementBadgeText})
+                                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold shadow-2xs">
+                                        Surclassé {surclassementBadgeText}
                                       </span>
                                     )}
                                   </div>
@@ -3060,16 +3036,13 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-bold text-slate-700">Décision d'Observation :</span>
                                 <span className={cn(
-                                  "px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider inline-flex items-center gap-1.5 shadow-2xs border",
+                                  "px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider inline-flex items-center shadow-2xs border",
                                   (dispDecision === 'recruit_now' || dispDecision === 'recruit_standby')
                                     ? "bg-emerald-600 text-white border-emerald-700"
                                     : dispDecision === 'invitation_test'
                                     ? "bg-blue-600 text-white border-blue-700"
                                     : "bg-indigo-600 text-white border-indigo-700"
                                   )}>
-                                  {(dispDecision === 'recruit_now' || dispDecision === 'recruit_standby') && <Flame className="w-3.5 h-3.5" />}
-                                  {dispDecision === 'invitation_test' && <Zap className="w-3.5 h-3.5" />}
-                                  {(!dispDecision || dispDecision === 'to_follow') && <Eye className="w-3.5 h-3.5" />}
                                   <span>
                                     {(dispDecision === 'recruit_now' || dispDecision === 'recruit_standby') ? 'Recrutement Immédiat' :
                                      dispDecision === 'invitation_test' ? 'Invitation Test' : 'À suivre'}
@@ -3097,15 +3070,18 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                 </div>
 
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-xs font-bold text-slate-700">Surclassement :</span>
+                                  <span className="text-xs font-bold text-slate-700">Fiche de Surclassement :</span>
                                   <span className={cn(
-                                    "px-3 py-1 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 border shadow-2xs",
+                                    "px-3 py-1 rounded-xl text-xs font-bold inline-flex items-center border shadow-2xs",
                                     dispIsUpgraded
                                       ? "bg-emerald-50 text-emerald-800 border-emerald-300 font-black"
                                       : "bg-slate-100 text-slate-600 border-slate-200"
                                   )}>
-                                    <TrendingUp className={cn("w-3.5 h-3.5", dispIsUpgraded ? "text-emerald-600" : "text-slate-400")} />
-                                    <span>{dispIsUpgraded ? `Surclassé (${surclassementBadgeText})` : 'Non surclassé (0C)'}</span>
+                                    <span>
+                                      {dispIsUpgraded
+                                        ? `Rapport effectué en ${reportExecutedCategory} (${reportSurclassInfo.codeLabel} depuis ${reportSurclassInfo.baseCategory})`
+                                        : `Non surclassé (${reportSurclassInfo.baseCategory})`}
+                                    </span>
                                   </span>
                                 </div>
                               </div>
@@ -3136,12 +3112,12 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                               </div>
 
                               <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-center">
-                                <span className="text-muted-foreground block text-[10px] uppercase font-bold">Surclassement</span>
+                                <span className="text-muted-foreground block text-[10px] uppercase font-bold">Catégorie du Rapport</span>
                                 <span className={cn(
                                   "font-black text-xs mt-1 block truncate",
                                   dispIsUpgraded ? "text-emerald-700" : "text-slate-700"
-                                )}>
-                                  {dispIsUpgraded ? `Surclassé (${surclassementBadgeText})` : '0C (Non surclassé)'}
+                                )} title={dispIsUpgraded ? `Surclassé ${surclassementBadgeText} depuis ${reportSurclassInfo.baseCategory}` : 'Catégorie normale'}>
+                                  {dispIsUpgraded ? `${reportExecutedCategory} (${reportSurclassInfo.codeLabel})` : `${reportSurclassInfo.baseCategory} (0C)`}
                                 </span>
                               </div>
 
@@ -3237,7 +3213,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                     Évaluation des Qualités par Pilier
                                   </h5>
                                   <p className="text-[11px] text-muted-foreground">
-                                    Notes par pilier et critères spécifiques du poste ({posConfig?.code || dispPosition}) avec prise de note au-dessous de chaque pilier
+                                    Notes par pilier et critères spécifiques du poste ({getMetricPositionFrenchName(posConfig) || getFrenchPositionLabel(dispPosition)}) avec prise de note au-dessous de chaque pilier
                                   </p>
                                 </div>
                               </div>

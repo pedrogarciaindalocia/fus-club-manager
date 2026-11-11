@@ -259,8 +259,7 @@ export const ScoutCriteriaManagerModal: React.FC<ScoutCriteriaManagerModalProps>
                 )}
               >
                 <span>{pos.emoji}</span>
-                <span>{pos.code}</span>
-                <span className="hidden md:inline text-[11px] font-normal opacity-80">({pos.name})</span>
+                <span>{pos.name}</span>
               </button>
             );
           })}
@@ -273,7 +272,7 @@ export const ScoutCriteriaManagerModal: React.FC<ScoutCriteriaManagerModalProps>
               <span className="text-xl">{currentConfig.emoji}</span>
               <div>
                 <h4 className="text-sm font-black text-slate-900">
-                  {currentConfig.name} ({currentConfig.code})
+                  {currentConfig.name}
                 </h4>
                 <p className="text-[11px] text-slate-500">{currentConfig.description}</p>
               </div>
@@ -328,7 +327,7 @@ export const ScoutCriteriaManagerModal: React.FC<ScoutCriteriaManagerModalProps>
             <div className="flex-1 relative">
               <input
                 type="text"
-                placeholder={`Nouveau critère ${selectedPillar} pour ${currentConfig.code} (ex: "Jeu sous pression")...`}
+                placeholder={`Nouveau critère ${selectedPillar} pour ${currentConfig.name} (ex: "Jeu sous pression")...`}
                 value={newCriterionName}
                 onChange={(e) => setNewCriterionName(e.target.value)}
                 className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white text-slate-900"

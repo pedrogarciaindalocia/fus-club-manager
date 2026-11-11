@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
 import { usePermissions } from '../context/PermissionsContext';
+import { FusLogoLoader } from './ui/FusLogoLoader';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -18,16 +18,26 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 }) => {
   const { authState, can } = usePermissions();
   const location = useLocation();
+  const [forceReady, setForceReady] = React.useState(false);
+
+  // Sécurité anti-blocage : ne jamais bloquer l'écran plus de 2 secondes
+  React.useEffect(() => {
+    if (authState.loading) {
+      const timer = setTimeout(() => {
+        setForceReady(true);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [authState.loading]);
 
   // Chargement initial de la session
-  if (authState.loading) {
+  if (authState.loading && !forceReady) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-50">
-        <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
-          <Loader2 className="w-6 h-6 text-white animate-spin" />
-        </div>
-        <p className="text-sm text-muted-foreground font-medium">Vérification de la session…</p>
-      </div>
+      <FusLogoLoader
+        fullScreen
+        size="xl"
+        label="Vérification de la session…"
+      />
     );
   }
 

@@ -2,7 +2,6 @@ import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { MapPin, Clock } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { useMatches } from '../hooks/useMatches';
 import { useClubData } from '../hooks/useClubData';
 import { useCompetitions } from '../hooks/useCompetitions';
@@ -33,12 +32,9 @@ const UpcomingMatches: React.FC = () => {
               Aucun match planifié pour le moment.
             </div>
           )}
-          {upcomingMatches.map((match, index) => (
-            <motion.div
+          {upcomingMatches.map((match) => (
+            <div
               key={match.id}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
               className="group p-4 rounded-xl border border-secondary bg-white hover:border-primary/20 hover:shadow-sm transition-all"
             >
               <div className="flex justify-between items-start mb-3">
@@ -61,7 +57,7 @@ const UpcomingMatches: React.FC = () => {
                   <span className="truncate font-medium">{getStadiumName(match.stadium_id)}</span>
                 </div>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
       </CardContent>

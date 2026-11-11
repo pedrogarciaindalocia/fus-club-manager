@@ -361,26 +361,85 @@ export const matchService = {
     return data ?? [];
   },
 
-  async savePlayerRating(matchId: string, playerId: string, rating: number | null, ratingComment: string | null = null): Promise<void> {
-    const { data, error } = await supabase
-      .from('match_players')
-      .update({ rating, rating_comment: ratingComment })
-      .eq('match_id', matchId)
-      .eq('player_id', playerId)
-      .select();
-    if (error) throw error;
+  async savePlayerRating(
+    matchId: string,
+    playerId: string,
+    rating: number | null,
+    ratingComment: string | null = null,
+    performanceMeta?: {
+      metricSetId?: string | null;
+      metricSetName?: string | null;
+      positionCode?: string | null;
+      pillarScores?: { technique: number; tactique: number; physique: number; mental: number };
+      criteriaScores?: Record<string, number>;
+    } | null
+  ): Promise<void> {
+    const baseFields: Record<string, any> = {
+      rating,
+      rating_comment: ratingComment,
+    };
 
-    if (!data || data.length === 0) {
-      const { error: upsertErr } = await supabase
+    const isUuidSetId =
+      typeof performanceMeta?.metricSetId === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(performanceMeta.metricSetId);
+
+    const extendedFields: Record<string, any> = {
+      ...baseFields,
+      ...(isUuidSetId ? { metric_set_id: performanceMeta?.metricSetId } : {}),
+      ...(performanceMeta?.pillarScores || performanceMeta?.criteriaScores
+        ? {
+            pillar_scores: {
+              ...(performanceMeta.pillarScores || {}),
+              metric_set_id: performanceMeta.metricSetId || null,
+              metric_set_name: performanceMeta.metricSetName || null,
+              position_code: performanceMeta.positionCode || null,
+              criteria_scores: performanceMeta.criteriaScores || {},
+            },
+          }
+        : {}),
+    };
+
+    const persistWithFields = async (fields: Record<string, any>) => {
+      const { data, error } = await supabase
         .from('match_players')
-        .upsert({
-          match_id: matchId,
-          player_id: playerId,
-          rating,
-          rating_comment: ratingComment,
-          is_starting: false
-        }, { onConflict: 'match_id,player_id' });
-      if (upsertErr) throw upsertErr;
+        .update(fields)
+        .eq('match_id', matchId)
+        .eq('player_id', playerId)
+        .select();
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        const { error: upsertErr } = await supabase
+          .from('match_players')
+          .upsert(
+            {
+              match_id: matchId,
+              player_id: playerId,
+              ...fields,
+              is_starting: false,
+            },
+            { onConflict: 'match_id,player_id' }
+          );
+        if (upsertErr) throw upsertErr;
+      }
+    };
+
+    try {
+      await persistWithFields(extendedFields);
+    } catch (err: any) {
+      const msg = String(err?.message || '').toLowerCase();
+      const code = String(err?.code || '');
+      const missingExtendedCol =
+        code === '42703' ||
+        code === 'PGRST204' ||
+        msg.includes('metric_set_id') ||
+        msg.includes('pillar_scores') ||
+        msg.includes('schema cache');
+      if (missingExtendedCol && Object.keys(extendedFields).length > 2) {
+        await persistWithFields(baseFields);
+        return;
+      }
+      throw err;
     }
   },
 

@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Badge } from './ui/badge';
-import { motion } from 'framer-motion';
 import { usePlayers } from '../hooks/usePlayers';
 import { useMatches } from '../hooks/useMatches';
 import { useAdvancedDashboardStats } from '../hooks/useAdvancedDashboardStats';
@@ -241,11 +240,8 @@ export const TopScorers: React.FC<TopScorersProps> = ({ onSelectPlayer }) => {
                         : `https://ui-avatars.com/api/?name=${encodeURIComponent(scorer.full_name)}&background=e03d3d&color=fff&size=150`;
 
                       return (
-                        <motion.tr
+                        <TableRow
                           key={scorer.id}
-                          initial={{ opacity: 0, y: 5 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: index * 0.05 }}
                           onClick={() => handlePlayerClick(scorer)}
                           className="group border-b border-slate-100 dark:border-slate-800/60 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
                         >
@@ -305,7 +301,7 @@ export const TopScorers: React.FC<TopScorersProps> = ({ onSelectPlayer }) => {
                           <TableCell className="text-right py-3 pr-2">
                             <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                           </TableCell>
-                        </motion.tr>
+                        </TableRow>
                       );
                     })}
                   </TableBody>

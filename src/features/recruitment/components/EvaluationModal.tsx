@@ -121,9 +121,9 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
   const isMid = posUpper.includes('CDM') || posUpper.includes('CM') || posUpper.includes('CAM') || candidate.primary_position.toLowerCase().includes('milieu');
   const isWng = posUpper.includes('LW') || posUpper.includes('RW') || candidate.primary_position.toLowerCase().includes('ailier');
 
-  const [posTrait1Label, setPosTrait1Label] = useState(isGK ? 'Réflexes & Arrêts sur sa ligne' : isDef ? 'Duels Aériens & Tacles' : isMid ? 'Résistance au Pressing' : isWng ? 'Percussion 1v1 & Dribble' : 'Finition Clinique');
+  const [posTrait1Label, setPosTrait1Label] = useState(isGK ? 'Réflexes & Arrêts sur sa ligne' : isDef ? 'Duels Aériens & Tacles' : isMid ? 'Résistance au Pressing' : isWng ? 'Percussion 1 contre 1 & Dribble' : 'Finition Clinique');
   const [posTrait1Score, setPosTrait1Score] = useState(8.0);
-  const [posTrait2Label, setPosTrait2Label] = useState(isGK ? 'Sorties Aériennes & 1v1' : isDef ? 'Relance & Vision défensive' : isMid ? 'Passes Progressives & Rupture' : isWng ? 'Qualité de Centre' : 'Instinct de Buteur');
+  const [posTrait2Label, setPosTrait2Label] = useState(isGK ? 'Sorties Aériennes & 1 contre 1' : isDef ? 'Relance & Vision défensive' : isMid ? 'Passes Progressives & Rupture' : isWng ? 'Qualité de Centre' : 'Instinct de Buteur');
   const [posTrait2Score, setPosTrait2Score] = useState(7.5);
   const [posTrait3Label, setPosTrait3Label] = useState(isGK ? 'Jeu au pied & Relance' : isDef ? 'Couverture & Vitesse de repli' : isMid ? 'Contrôle du Tempo' : isWng ? 'Vitesse de Transition' : 'Jeu Dos au But');
   const [posTrait3Score, setPosTrait3Score] = useState(7.5);
@@ -805,7 +805,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
                 {/* Badge du Poste Spécifique Détecté */}
                 <span className="text-xs font-black px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5 shadow-xs">
                   <span>{positionConfig.emoji}</span>
-                  <span>{positionConfig.code} — {positionConfig.name}</span>
+                  <span>{positionConfig.name}</span>
                 </span>
 
                 {isSuperAdmin && (
@@ -816,7 +816,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
                     title="Gérer les critères d'évaluation de ce poste (Super Admin)"
                   >
                     <Sliders className="w-3 h-3 text-amber-600" />
-                    <span>Gérer critères ({positionConfig.code})</span>
+                    <span>Gérer critères ({positionConfig.name})</span>
                   </button>
                 )}
 

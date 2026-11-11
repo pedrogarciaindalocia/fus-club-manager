@@ -241,8 +241,7 @@ export const ScoutCriteriaManagerModal: React.FC<ScoutCriteriaManagerModalProps>
                 )}
               >
                 <span>{pos.emoji}</span>
-                <span>{pos.code}</span>
-                <span className="hidden md:inline text-[11px] font-normal opacity-80">({pos.name})</span>
+                <span>{pos.name}</span>
               </button>
             );
           })}
@@ -255,7 +254,7 @@ export const ScoutCriteriaManagerModal: React.FC<ScoutCriteriaManagerModalProps>
               <span className="text-xl">{currentConfig.emoji}</span>
               <div>
                 <h4 className="text-sm font-black text-slate-900">
-                  {currentConfig.name} ({currentConfig.code})
+                  {currentConfig.name}
                 </h4>
                 <p className="text-[11px] text-slate-500">{currentConfig.description}</p>
               </div>

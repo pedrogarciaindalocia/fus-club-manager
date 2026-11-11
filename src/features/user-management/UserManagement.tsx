@@ -9,16 +9,18 @@ const getAdminSupabase = () => supabaseAdmin;
 const DEFAULT_FUS_CLUB_ID = '45642829-a3d7-48de-afdd-3c45a1ced474';
 
 import { usePermissions } from '../../context/PermissionsContext';
+import { useClubData } from '../../hooks/useClubData';
+import { resolvePreferredViewMode } from '../../utils/viewModePreference';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { toast } from 'sonner';
-import { 
-  UserPlus, 
-  Search, 
-  Trash2, 
-  Edit2, 
+import {
+  UserPlus,
+  Search,
+  Trash2,
+  Edit2,
   Scissors,
   X,
   ShieldCheck,
@@ -66,8 +68,8 @@ import {
   MapPin,
   Radio
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import ImageCropperModal from '../../components/ImageCropperModal';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { AuditLogger } from '../../services/auditLogger';
 import { PLAYER_CATEGORIES } from '../../constants';
 import { getRoleConfig, OFFICIAL_JOB_TITLES, type OfficialJobTitle } from '../../constants/roles';
@@ -91,6 +93,8 @@ export interface OperableMatch {
   live_operator_name?: string | null;
   live_operator_status?: string | null;
   live_operator_acknowledged_at?: string | null;
+  homeFormation?: string | null;
+  awayFormation?: string | null;
 }
 
 interface SystemUser {
@@ -134,41 +138,41 @@ export interface PermissionDefinition {
 }
 
 export const MATCH_OPERATION_PERMISSIONS: PermissionDefinition[] = [
-  { 
-    key: 'live_tracking', 
-    label: 'Live Tracking', 
+  {
+    key: 'live_tracking',
+    label: 'Live Tracking',
     desc: 'Chronométrage et saisie des événements de match en direct (buts, cartons...)',
     target: 'mobile',
     category: 'match_management',
     badge: 'Live'
   },
-  { 
-    key: 'modify_match', 
-    label: 'Modification des matchs', 
+  {
+    key: 'modify_match',
+    label: 'Modification des matchs',
     desc: 'Mettre à jour le score, les titulaires, remplaçants et détails de match',
     target: 'mobile',
     category: 'match_management',
     badge: 'Feuille'
   },
-  { 
-    key: 'change_formation', 
-    label: 'Changement du système de jeu', 
+  {
+    key: 'change_formation',
+    label: 'Changement du système de jeu',
     desc: 'Ajuster le schéma tactique (4-3-3, 3-5-2...) en direct sur le terrain',
     target: 'mobile',
     category: 'match_management',
     badge: 'Tactique'
   },
-  { 
-    key: 'postpone_match', 
-    label: 'Reporter un match', 
+  {
+    key: 'postpone_match',
+    label: 'Reporter un match',
     desc: 'Déclarer un report ou une suspension de match',
     target: 'mobile',
     category: 'match_management',
     badge: 'Statut'
   },
-  { 
-    key: 'evaluate_players', 
-    label: 'Évaluation des joueurs', 
+  {
+    key: 'evaluate_players',
+    label: 'Évaluation des joueurs',
     desc: 'Notes individuelles et bilans techniques d\'après-match',
     target: 'mobile',
     category: 'match_management',
@@ -177,9 +181,9 @@ export const MATCH_OPERATION_PERMISSIONS: PermissionDefinition[] = [
 ];
 
 export const MATCH_GLOBAL_PLANNING_PERMISSIONS: PermissionDefinition[] = [
-  { 
-    key: 'schedule_match', 
-    label: 'Planification des matchs', 
+  {
+    key: 'schedule_match',
+    label: 'Planification des matchs',
     desc: 'Créer, fixer les dates et horaires des rencontres officielles et amicales (/matches/new)',
     target: 'mobile',
     category: 'match_management',
@@ -193,41 +197,41 @@ export const MATCH_MOBILE_PERMISSIONS: PermissionDefinition[] = [
 ];
 
 export const SCOUT_MOBILE_PERMISSIONS: PermissionDefinition[] = [
-  { 
-    key: 'scout_add_player', 
-    label: 'Création de fiche joueur', 
+  {
+    key: 'scout_add_player',
+    label: 'Création de fiche joueur',
     desc: 'Créer de nouveaux profils de joueurs prospects observés sur le terrain',
     target: 'mobile',
     category: 'scout_mobile',
     badge: 'Détection'
   },
-  { 
-    key: 'scout_match_report', 
-    label: 'Rapport d\'observation match', 
+  {
+    key: 'scout_match_report',
+    label: 'Rapport d\'observation match',
     desc: 'Rédiger et soumettre des bilans d\'observation en direct de rencontres',
     target: 'mobile',
     category: 'scout_mobile',
     badge: 'Rapport'
   },
-  { 
-    key: 'scout_evaluate_radar', 
-    label: 'Notation & Radar 4 Piliers', 
+  {
+    key: 'scout_evaluate_radar',
+    label: 'Notation & Radar 4 Piliers',
     desc: 'Évaluer les compétences (Technique, Tactique, Physique, Mental)',
     target: 'mobile',
     category: 'scout_mobile',
     badge: 'Radar'
   },
-  { 
-    key: 'scout_missions', 
-    label: 'Missions & Ordres de mission', 
+  {
+    key: 'scout_missions',
+    label: 'Missions & Ordres de mission',
     desc: 'Consulter les joueurs assignés par la direction et accuser réception',
     target: 'mobile',
     category: 'scout_mobile',
     badge: 'Mission'
   },
-  { 
-    key: 'scout_shortlist_view', 
-    label: 'Consultation de la Shortlist', 
+  {
+    key: 'scout_shortlist_view',
+    label: 'Consultation de la Shortlist',
     desc: 'Consulter le vivier des talents et le Onze Idéal de détection',
     target: 'mobile',
     category: 'scout_mobile',
@@ -271,6 +275,7 @@ export const DASHBOARD_HIERARCHY_MODULES: DashboardCategoryDef[] = [
     colorBadge: 'bg-amber-500/20 text-amber-700 dark:text-amber-300',
     subModules: [
       { id: 'matches', title: 'Calendrier des Matchs', badge: 'Calendrier', desc: 'Gestion et suivi des rencontres officielles et amicales (/matches)' },
+      { id: 'championship_performances', title: 'Championnat & Performances', badge: 'Analyse', desc: 'Classement officiel et analyse Attaque vs Défense (/championship-performances)' },
       { id: 'official_shortlist', title: 'Shortlist Officielle', badge: 'Tactique', desc: 'Placement tactique et composition officielle (/official-shortlist)' },
       { id: 'arbitres', title: 'Arbitres', badge: 'Arbitrage', desc: 'Désignation et suivi des corps arbitraux (/arbitres)' },
       { id: 'leagues', title: 'Compétitions & Ligues', badge: 'Tournois', desc: 'Paramétrage des championnats et coupes (/leagues)' },
@@ -350,11 +355,11 @@ export const CRUD_ACTIONS: {
   sublabel: string;
   badgeClass: string;
 }[] = [
-  { key: 'create', label: 'Create', sublabel: 'Créer', badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
-  { key: 'read',   label: 'Read',   sublabel: 'Consulter', badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-300' },
-  { key: 'update', label: 'Update', sublabel: 'Modifier', badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
-  { key: 'delete', label: 'Delete', sublabel: 'Supprimer', badgeClass: 'bg-rose-500/20 text-rose-700 dark:text-rose-300' }
-];
+    { key: 'create', label: 'Create', sublabel: 'Créer', badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
+    { key: 'read', label: 'Read', sublabel: 'Consulter', badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-300' },
+    { key: 'update', label: 'Update', sublabel: 'Modifier', badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
+    { key: 'delete', label: 'Delete', sublabel: 'Supprimer', badgeClass: 'bg-rose-500/20 text-rose-700 dark:text-rose-300' }
+  ];
 
 export const PLAYER_SPECIFIC_ACTIONS: {
   key: string;
@@ -363,10 +368,10 @@ export const PLAYER_SPECIFIC_ACTIONS: {
   icon: any;
   badgeClass: string;
 }[] = [
-  { key: 'stats', label: 'Statistiques', sublabel: 'Consulter & Analyser les Stats', icon: BarChart3, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
-  { key: 'surclasser', label: 'Surclasser', sublabel: 'Surclassement de Catégorie', icon: ArrowUpCircle, badgeClass: 'bg-orange-500/20 text-orange-700 dark:text-orange-300' },
-  { key: 'departure', label: 'Sortie / Transfert', sublabel: 'Transfert Club & Libération', icon: X, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
-];
+    { key: 'stats', label: 'Statistiques', sublabel: 'Consulter & Analyser les Stats', icon: BarChart3, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
+    { key: 'surclasser', label: 'Surclasser', sublabel: 'Surclassement de Catégorie', icon: ArrowUpCircle, badgeClass: 'bg-orange-500/20 text-orange-700 dark:text-orange-300' },
+    { key: 'departure', label: 'Sortie / Transfert', sublabel: 'Transfert Club & Libération', icon: X, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
+  ];
 
 export const CANDIDATE_SPECIFIC_ACTIONS: {
   key: string;
@@ -375,12 +380,12 @@ export const CANDIDATE_SPECIFIC_ACTIONS: {
   icon: any;
   badgeClass: string;
 }[] = [
-  { key: 'drive_link', label: 'Lien Vidéo Drive', sublabel: 'Ajouter / Modifier le lien Google Drive', icon: Video, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
-  { key: 'assign_mission', label: 'Assigner une mission', sublabel: 'Assignation de joueur et mission à un scout', icon: UserPlus, badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-300' },
-  { key: 'recruit_now', label: 'À recruter immédiatement', sublabel: 'Traitement de la procédure administrative', icon: Flame, badgeClass: 'bg-rose-500/20 text-rose-700 dark:text-rose-300' },
-  { key: 'manage_reports', label: 'Gestion de rapport', sublabel: 'Consulter, rédiger et gérer les rapports d\'évaluation', icon: ClipboardList, badgeClass: 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' },
-  { key: 'edit_player', label: 'Modifier un joueur', sublabel: 'Modifier les informations du joueur', icon: Edit2, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
-];
+    { key: 'drive_link', label: 'Lien Vidéo Drive', sublabel: 'Ajouter / Modifier le lien Google Drive', icon: Video, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
+    { key: 'assign_mission', label: 'Assigner une mission', sublabel: 'Assignation de joueur et mission à un scout', icon: UserPlus, badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-300' },
+    { key: 'recruit_now', label: 'À recruter immédiatement', sublabel: 'Traitement de la procédure administrative', icon: Flame, badgeClass: 'bg-rose-500/20 text-rose-700 dark:text-rose-300' },
+    { key: 'manage_reports', label: 'Gestion de rapport', sublabel: 'Consulter, rédiger et gérer les rapports d\'évaluation', icon: ClipboardList, badgeClass: 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' },
+    { key: 'edit_player', label: 'Modifier un joueur', sublabel: 'Modifier les informations du joueur', icon: Edit2, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
+  ];
 
 export const MATCH_SPECIFIC_ACTIONS: {
   key: string;
@@ -389,12 +394,13 @@ export const MATCH_SPECIFIC_ACTIONS: {
   icon: any;
   badgeClass: string;
 }[] = [
-  { key: 'plan_match', label: 'Planifier un match', sublabel: 'Planification, programmation et configuration du match (/matches/new)', icon: CalendarPlus, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
-];
+    { key: 'plan_match', label: 'Planifier un match', sublabel: 'Planification, programmation et configuration du match (/matches/new)', icon: CalendarPlus, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
+    { key: 'manage_standings', label: 'Gestion de classement', sublabel: 'Ajouter les clubs adverses et enregistrer leurs résultats pour le classement officiel', icon: Trophy, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
+  ];
 
 export const DASHBOARD_PERMISSIONS: PermissionDefinition[] = [
-  ...DASHBOARD_HIERARCHY_MODULES.flatMap(cat => 
-    cat.subModules.flatMap(sub => 
+  ...DASHBOARD_HIERARCHY_MODULES.flatMap(cat =>
+    cat.subModules.flatMap(sub =>
       CRUD_ACTIONS.map(action => ({
         key: `sub:${sub.id}:${action.key}`,
         label: `${cat.title} > ${sub.title} (${action.label})`,
@@ -429,9 +435,9 @@ export const DASHBOARD_PERMISSIONS: PermissionDefinition[] = [
     category: 'dashboard_core' as const,
     badge: action.label
   })),
-  { 
-    key: 'manage_recruitment', 
-    label: 'Détection & Recrutement V2 (Legacy)', 
+  {
+    key: 'manage_recruitment',
+    label: 'Détection & Recrutement V2 (Legacy)',
     desc: 'Pipeline de détection et fiches talents',
     target: 'dashboard',
     category: 'dashboard_core',
@@ -583,11 +589,10 @@ const UserPermissionsHoverBadge: React.FC<{ user: SystemUser }> = ({ user }) => 
                       {actions.map((act, i) => (
                         <span
                           key={i}
-                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
-                            act.isMobile
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${act.isMobile
                               ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30'
                               : 'bg-primary/10 text-primary border-primary/20'
-                          }`}
+                            }`}
                         >
                           {act.isMobile && <span className="mr-0.5">📱</span>}
                           {act.badge}
@@ -627,17 +632,15 @@ const UserStatusToggleSwitch: React.FC<{
     >
       {/* Piste de l'interrupteur coulissant (Track) */}
       <div
-        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-300 ease-in-out border shadow-inner ${
-          isActive
+        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-300 ease-in-out border shadow-inner ${isActive
             ? 'bg-emerald-500 border-emerald-600'
             : 'bg-rose-500 border-rose-600'
-        }`}
+          }`}
       >
         {/* Curseur mobile blanc (Bouton Coulissant Knob) */}
         <span
-          className={`pointer-events-none inline-flex items-center justify-center h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-300 ease-in-out my-auto ${
-            isActive ? 'translate-x-5 text-emerald-600 font-extrabold text-[10px]' : 'translate-x-0.5 text-rose-600 font-extrabold text-[10px]'
-          }`}
+          className={`pointer-events-none inline-flex items-center justify-center h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-300 ease-in-out my-auto ${isActive ? 'translate-x-5 text-emerald-600 font-extrabold text-[10px]' : 'translate-x-0.5 text-rose-600 font-extrabold text-[10px]'
+            }`}
         >
           {isActive ? '✓' : '✕'}
         </span>
@@ -645,11 +648,10 @@ const UserStatusToggleSwitch: React.FC<{
 
       {/* Libellé textuel du statut */}
       <span
-        className={`text-[11px] font-black uppercase tracking-wider ${
-          isActive
+        className={`text-[11px] font-black uppercase tracking-wider ${isActive
             ? 'text-emerald-600 dark:text-emerald-400'
             : 'text-rose-600 dark:text-rose-400 font-bold animate-pulse'
-        }`}
+          }`}
       >
         {isActive ? 'Accès Autorisé' : 'Black-listé'}
       </span>
@@ -662,6 +664,8 @@ const UserManagement: React.FC = () => {
   const initialTab = searchParams.get('tab') === 'blacklist' ? 'blacklist' : 'all';
 
   const { authState, can } = usePermissions();
+  const { mainClub } = useClubData();
+  const preferredViewMode = resolvePreferredViewMode(mainClub, 'grid');
   const currentUserRole = authState?.user?.system_role?.toLowerCase() || '';
   const isSuperAdmin = !authState.isImpersonating && (currentUserRole === 'super_admin');
   const isScoutAdmin = currentUserRole === 'scout_admin';
@@ -675,7 +679,11 @@ const UserManagement: React.FC = () => {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'active' | 'blacklist'>(initialTab as any);
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('all');
   const [selectedJobTitleFilter, setSelectedJobTitleFilter] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(preferredViewMode);
+
+  useEffect(() => {
+    setViewMode(preferredViewMode);
+  }, [preferredViewMode]);
   const [modalMode, setModalMode] = useState<'none' | 'create' | 'edit' | 'view' | 'credentials'>('none');
   const [modalStep, setModalStep] = useState<1 | 2>(1);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -693,7 +701,7 @@ const UserManagement: React.FC = () => {
   const [quickPhone, setQuickPhone] = useState('');
   const [quickShowPassword, setQuickShowPassword] = useState(true);
   const [isProvisioningQuick, setIsProvisioningQuick] = useState(false);
-  
+
   // États de provisioning d'identifiants & WhatsApp (Étape 2)
   const [createdCredentials, setCreatedCredentials] = useState<{
     userId?: string;
@@ -753,6 +761,7 @@ Direction Générale — FUS Rabat`;
   const [mobileAppSubTab, setMobileAppSubTab] = useState<'match' | 'scout'>('match');
   const [operableMatches, setOperableMatches] = useState<OperableMatch[]>([]);
   const [assignedMatchIds, setAssignedMatchIds] = useState<string[]>([]);
+  const [matchFilterScope, setMatchFilterScope] = useState<'all' | 'programmed' | 'covered'>('all');
   const [loadingMatches, setLoadingMatches] = useState(false);
 
   useEffect(() => {
@@ -815,7 +824,7 @@ Direction Générale — FUS Rabat`;
         const oppLogo = (oppClub?.logo_url && oppClub.logo_url !== 'null' && oppClub.logo_url.trim() !== '') ? oppClub.logo_url : null;
 
         const stadiumName = (m.stadium_id ? stadiumsMap.get(m.stadium_id) : null) || m.location || (m.is_home ? 'Complexe Sportif FUS' : 'Stade Extérieur');
-        
+
         const homeName = m.is_home ? mainClubName : oppName;
         const homeLogo = m.is_home ? mainClubLogo : oppLogo;
         const awayName = m.is_home ? oppName : mainClubName;
@@ -825,6 +834,9 @@ Direction Générale — FUS Rabat`;
         const resolvedOperatorName = m.live_operator_name || m.lineup?.live_operator?.name || null;
         const resolvedStatus = m.live_operator_status || m.lineup?.live_operator?.status || (m.live_operator_acknowledged_at || m.lineup?.live_operator?.acknowledged_at ? 'acknowledged' : 'pending_ack');
         const resolvedAcknowledgedAt = m.live_operator_acknowledged_at || m.lineup?.live_operator?.acknowledged_at || null;
+
+        const homeFormation = m.is_home ? (m.formation || null) : (m.opponent_formation || null);
+        const awayFormation = m.is_home ? (m.opponent_formation || null) : (m.formation || null);
 
         return {
           id: m.id,
@@ -842,6 +854,8 @@ Direction Générale — FUS Rabat`;
           live_operator_name: resolvedOperatorName,
           live_operator_status: resolvedStatus,
           live_operator_acknowledged_at: resolvedAcknowledgedAt,
+          homeFormation,
+          awayFormation,
         };
       });
 
@@ -904,12 +918,12 @@ Direction Générale — FUS Rabat`;
       const roleStr = (u.system_role || '').toLowerCase();
       const titleStr = (u.job_title || '').toLowerCase();
       if (selectedRoleFilter === 'scout') {
-        const isScout = roleStr.startsWith('scout_') || 
-                        titleStr.includes('scout') || 
-                        titleStr.includes('détection') || 
-                        titleStr.includes('detection') ||
-                        titleStr.includes('recrutement') ||
-                        titleStr.includes('observateur');
+        const isScout = roleStr.startsWith('scout_') ||
+          titleStr.includes('scout') ||
+          titleStr.includes('détection') ||
+          titleStr.includes('detection') ||
+          titleStr.includes('recrutement') ||
+          titleStr.includes('observateur');
         if (!isScout) return false;
       } else if (selectedRoleFilter === 'admin') {
         const isAdmin = roleStr === 'admin' || roleStr === 'super_admin' || roleStr === 'scout_admin';
@@ -922,14 +936,14 @@ Direction Générale — FUS Rabat`;
       // Pour un scout_admin strict sans accès global, filtrer uniquement par défaut
       const roleStr = (u.system_role || '').toLowerCase();
       const titleStr = (u.job_title || '').toLowerCase();
-      const isScout = roleStr.startsWith('scout_') || 
-                      titleStr.includes('scout') || 
-                      titleStr.includes('détection') || 
-                      titleStr.includes('detection') ||
-                      titleStr.includes('recrutement') ||
-                      titleStr.includes('observateur') ||
-                      roleStr === 'admin' ||
-                      roleStr === 'super_admin';
+      const isScout = roleStr.startsWith('scout_') ||
+        titleStr.includes('scout') ||
+        titleStr.includes('détection') ||
+        titleStr.includes('detection') ||
+        titleStr.includes('recrutement') ||
+        titleStr.includes('observateur') ||
+        roleStr === 'admin' ||
+        roleStr === 'super_admin';
       if (!isScout) return false;
     }
 
@@ -944,12 +958,12 @@ Direction Générale — FUS Rabat`;
     }
 
     const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = (u.full_name || '').toLowerCase().includes(searchLower) || 
-                          (u.email || '').toLowerCase().includes(searchLower) ||
-                          (u.job_title || '').toLowerCase().includes(searchLower);
-    const matchesCategory = selectedCategoryFilter === 'all' 
-                            || (selectedCategoryFilter === 'global' && (!u.categories || u.categories.length === 0))
-                            || (u.categories && u.categories.includes(selectedCategoryFilter));
+    const matchesSearch = (u.full_name || '').toLowerCase().includes(searchLower) ||
+      (u.email || '').toLowerCase().includes(searchLower) ||
+      (u.job_title || '').toLowerCase().includes(searchLower);
+    const matchesCategory = selectedCategoryFilter === 'all'
+      || (selectedCategoryFilter === 'global' && (!u.categories || u.categories.length === 0))
+      || (u.categories && u.categories.includes(selectedCategoryFilter));
     return matchesSearch && matchesCategory;
   });
 
@@ -1124,7 +1138,7 @@ Direction Générale — FUS Rabat`;
             try {
               const parsed = JSON.parse(localScouts);
               if (Array.isArray(parsed)) activeDbScouts = parsed;
-            } catch {}
+            } catch { }
           }
         }
         activeDbScouts = (activeDbScouts || []).filter((s: any) => s && s.status !== 'inactive');
@@ -1149,8 +1163,8 @@ Direction Générale — FUS Rabat`;
         const emailKey = typeof u.email === 'string' ? u.email.toLowerCase().trim() : '';
         const nameKey = typeof u.full_name === 'string' ? u.full_name.toLowerCase().trim() : '';
         const matchingScout = (emailKey ? scoutByEmail.get(emailKey) : null) ||
-                              (u.id ? scoutById.get(u.id) : null) ||
-                              (nameKey ? scoutByName.get(nameKey) : null);
+          (u.id ? scoutById.get(u.id) : null) ||
+          (nameKey ? scoutByName.get(nameKey) : null);
 
         if (matchingScout) {
           if (matchingScout.photo_url) {
@@ -1186,11 +1200,11 @@ Direction Générale — FUS Rabat`;
 
         if (!alreadyInList) {
           const roleTitleLower = (scout.role_title || '').toLowerCase();
-          const inferredRole = scout.system_role || 
+          const inferredRole = scout.system_role ||
             (roleTitleLower.includes('admin') ? 'scout_admin' :
-             roleTitleLower.includes('manager') ? 'scout_manager' :
-             roleTitleLower.includes('editor') ? 'scout_editor' :
-             roleTitleLower.includes('user') || roleTitleLower.includes('viewer') ? 'scout_user' : 'scout_editor');
+              roleTitleLower.includes('manager') ? 'scout_manager' :
+                roleTitleLower.includes('editor') ? 'scout_editor' :
+                  roleTitleLower.includes('user') || roleTitleLower.includes('viewer') ? 'scout_user' : 'scout_editor');
 
           mappedUsers.push({
             id: scout.id,
@@ -1372,10 +1386,10 @@ Direction Générale — FUS Rabat`;
       // 5. Catégories & permissions
       if (createdUserId) {
         if (formData.categories.length > 0) {
-          const catInserts = formData.categories.map(cat => ({ 
-            user_id: createdUserId!, 
+          const catInserts = formData.categories.map(cat => ({
+            user_id: createdUserId!,
             category: cat,
-            club_id: DEFAULT_FUS_CLUB_ID 
+            club_id: DEFAULT_FUS_CLUB_ID
           }));
           try {
             await adminClient.from('user_category_assignments').insert(catInserts);
@@ -1388,7 +1402,7 @@ Direction Générale — FUS Rabat`;
         const permsToInsert = Object.keys(formData.permissions_overrides)
           .filter(key => formData.permissions_overrides[key])
           .map(key => ({ user_id: createdUserId!, permission_id: key }));
-        
+
         // Si aucune permission n'est cochée, insérer un marqueur 'no_permissions' explicite
         if (permsToInsert.length === 0) {
           permsToInsert.push({ user_id: createdUserId!, permission_id: 'no_permissions' });
@@ -1487,9 +1501,9 @@ Direction Générale — FUS Rabat`;
         toast.error("Vous devez assigner au moins une catégorie pour un coach ou un entraîneur adjoint.");
         return;
       }
-      
+
       let currentUserId = selectedUserId;
-      
+
       setIsSubmitting(true);
       const localErrors: string[] = [];
       const adminClient = getAdminSupabase();
@@ -1499,7 +1513,7 @@ Direction Générale — FUS Rabat`;
         const fileExt = avatarFile.name.split('.').pop();
         const fileName = `${currentUserId}-${Math.random()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage.from('staff').upload(fileName, avatarFile);
-        
+
         if (!uploadError) {
           const { data: { publicUrl } } = supabase.storage.from('staff').getPublicUrl(fileName);
           finalAvatarUrl = publicUrl;
@@ -1531,7 +1545,7 @@ Direction Générale — FUS Rabat`;
             console.log('[UserManagement] User provisioned with NEW ID:', provRes.userId);
             // Delete the old profile if we are replacing an existing profile that lost its auth user
             if (currentUserId) {
-              await adminClient.from('user_profiles').delete().eq('id', currentUserId).catch(() => {});
+              await adminClient.from('user_profiles').delete().eq('id', currentUserId).catch(() => { });
             }
             // Update currentUserId so subsequent steps use the valid Auth user ID
             currentUserId = provRes.userId;
@@ -1588,7 +1602,7 @@ Direction Générale — FUS Rabat`;
       try {
         const { error: profileUpdErr } = await adminClient
           .from('user_profiles')
-          .upsert({ 
+          .upsert({
             id: currentUserId,
             full_name: formData.full_name,
             phone_number: formData.phone_number || null,
@@ -1666,7 +1680,7 @@ Direction Générale — FUS Rabat`;
                 localStorage.setItem('fusc_recruitment_scouts_v2', JSON.stringify(localScouts));
               }
             }
-          } catch {}
+          } catch { }
         } catch (e) {
           console.warn('Scout update sync exception:', e);
         }
@@ -1693,8 +1707,8 @@ Direction Générale — FUS Rabat`;
       try {
         await adminClient.from('user_category_assignments').delete().eq('user_id', currentUserId);
         if (formData.categories.length > 0) {
-          const catInserts = formData.categories.map(cat => ({ 
-            user_id: currentUserId, 
+          const catInserts = formData.categories.map(cat => ({
+            user_id: currentUserId,
             category: cat,
             club_id: DEFAULT_FUS_CLUB_ID
           }));
@@ -1724,7 +1738,7 @@ Direction Générale — FUS Rabat`;
       const permsToInsert = Object.keys(formData.permissions_overrides)
         .filter(key => formData.permissions_overrides[key])
         .map(key => ({ user_id: currentUserId, permission_id: key }));
-      
+
       // Si aucune permission n'est cochée, insérer un marqueur 'no_permissions' explicite
       if (permsToInsert.length === 0) {
         permsToInsert.push({ user_id: currentUserId, permission_id: 'no_permissions' });
@@ -1850,7 +1864,7 @@ Direction Générale — FUS Rabat`;
           const def = AVAILABLE_PERMISSIONS.find(p => p.key === k);
           return def ? def.label : k;
         });
-        
+
         const notifyMessage = grantedLabels.length > 0
           ? `Vous avez désormais accès à : ${grantedLabels.slice(0, 3).join(', ')}${grantedLabels.length > 3 ? '...' : ''}`
           : 'Vos habilitations d\'accès ont été mises à jour.';
@@ -1952,8 +1966,8 @@ Direction Générale — FUS Rabat`;
       const allScouts = await recruitmentService.getScouts();
 
       // Trouver si un profil scout correspond par ID, email ou nom
-      const matchedScout = allScouts.find(s => 
-        s.id === id || 
+      const matchedScout = allScouts.find(s =>
+        s.id === id ||
         (oldUser?.email && s.email && s.email.trim().toLowerCase() === oldUser.email.trim().toLowerCase()) ||
         (oldUser?.full_name && s.full_name && s.full_name.trim().toLowerCase() === oldUser.full_name.trim().toLowerCase())
       );
@@ -1962,7 +1976,7 @@ Direction Générale — FUS Rabat`;
         scoutIdsToRelease.push(matchedScout.id);
       }
 
-      const matchingCandidates = allCandidates.filter(c => 
+      const matchingCandidates = allCandidates.filter(c =>
         (c.assigned_scout_id && scoutIdsToRelease.includes(c.assigned_scout_id)) ||
         (c.active_mission?.assigned_to_id && scoutIdsToRelease.includes(c.active_mission.assigned_to_id)) ||
         (c.recruiter_id && scoutIdsToRelease.includes(c.recruiter_id)) ||
@@ -1990,7 +2004,7 @@ Direction Générale — FUS Rabat`;
       let releasedCount = 0;
       try {
         const releaseResult = await recruitmentService.releaseCandidatesByScout(
-          scoutIdsToRelease, 
+          scoutIdsToRelease,
           oldUser?.full_name || undefined
         );
         releasedCount = releaseResult.releasedCount;
@@ -2025,7 +2039,7 @@ Direction Générale — FUS Rabat`;
           .from('scouts')
           .delete()
           .or(`id.eq.${id}${oldUser?.email ? `,email.eq.${oldUser.email}` : ''}`);
-        
+
         await supabase
           .from('scouts')
           .update({ status: 'inactive' })
@@ -2081,6 +2095,7 @@ Direction Générale — FUS Rabat`;
     setQuickShowPassword(true);
     setSelectedUserId(user.id);
     setModalStep(1);
+    setMatchFilterScope('all');
     setCreatedCredentials(null);
     setShowTempPassword(false);
     setCopiedField(null);
@@ -2129,25 +2144,27 @@ Direction Générale — FUS Rabat`;
 
   const handleOpenCreateModal = () => {
     const generatedPwd = generateSecureTempPassword();
-    setFormData({ 
-      email: '', 
-      password: generatedPwd, 
-      full_name: '', 
-      phone_number: '', 
-      system_role: isScoutAdmin ? 'scout_editor' : 'admin', 
-      job_title: isScoutAdmin ? 'Scout' : '', 
-      avatar_url: null, 
+    setFormData({
+      email: '',
+      password: generatedPwd,
+      full_name: '',
+      phone_number: '',
+      system_role: isScoutAdmin ? 'scout_editor' : 'admin',
+      job_title: isScoutAdmin ? 'Scout' : '',
+      avatar_url: null,
       is_active: true,
-      categories: [], 
-      team_ids: [], 
-      permissions_overrides: {} 
+      categories: [],
+      team_ids: [],
+      permissions_overrides: {}
     });
     setAvatarFile(null);
     setAvatarPreview(null);
     setSelectedUserId(null);
     setAssignedMatchIds([]);
+    setMatchFilterScope('all');
     fetchOperableMatches();
     setModalStep(1);
+    setMatchFilterScope('all');
     setCreatedCredentials(null);
     setShowTempPassword(false);
     setCopiedField(null);
@@ -2167,7 +2184,7 @@ Direction Générale — FUS Rabat`;
       is_active: user.is_active !== false,
       categories: user.categories || [],
       team_ids: [],
-      permissions_overrides: user.permissions_overrides || {} 
+      permissions_overrides: user.permissions_overrides || {}
     });
     setAvatarFile(null);
     setAvatarPreview(null);
@@ -2183,6 +2200,7 @@ Direction Générale — FUS Rabat`;
       setAssignedMatchIds(userMatches);
     });
     setModalStep(1);
+    setMatchFilterScope('all');
     setCreatedCredentials(null);
     setShowTempPassword(false);
     setCopiedField(null);
@@ -2217,6 +2235,7 @@ Direction Générale — FUS Rabat`;
       setAssignedMatchIds(userMatches);
     });
     setModalStep(1);
+    setMatchFilterScope('all');
     setCreatedCredentials(null);
     setShowTempPassword(false);
     setCopiedField(null);
@@ -2262,7 +2281,7 @@ Direction Générale — FUS Rabat`;
   const toggleCategory = (cat: string) => {
     setFormData(prev => ({
       ...prev,
-      categories: prev.categories.includes(cat) 
+      categories: prev.categories.includes(cat)
         ? prev.categories.filter(c => c !== cat)
         : [...prev.categories, cat]
     }));
@@ -2376,13 +2395,13 @@ Direction Générale — FUS Rabat`;
     setFormData(prev => {
       const next = { ...prev.permissions_overrides };
       const baseActions: string[] = ['create', 'read', 'update', 'delete'];
-      const actions = subId === 'players' 
+      const actions = subId === 'players'
         ? [...baseActions, ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
         : subId === 'candidates'
-        ? [...baseActions, ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
-        : subId === 'matches'
-        ? [...baseActions, ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
-        : baseActions;
+          ? [...baseActions, ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
+          : subId === 'matches'
+            ? [...baseActions, ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
+            : baseActions;
       const activeCount = actions.filter(act => next[`sub:${subId}:${act}`]).length;
       const shouldEnable = activeCount < actions.length;
 
@@ -2423,16 +2442,16 @@ Direction Générale — FUS Rabat`;
   const toggleCategoryAll = (category: DashboardCategoryDef) => {
     setFormData(prev => {
       const next = { ...prev.permissions_overrides };
-      const getSubActions = (subId: string) => 
-        subId === 'players' 
+      const getSubActions = (subId: string) =>
+        subId === 'players'
           ? ['create', 'read', 'update', 'delete', ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
           : subId === 'candidates'
-          ? ['create', 'read', 'update', 'delete', ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
-          : subId === 'matches'
-          ? ['create', 'read', 'update', 'delete', ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
-          : ['create', 'read', 'update', 'delete'];
+            ? ['create', 'read', 'update', 'delete', ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
+            : subId === 'matches'
+              ? ['create', 'read', 'update', 'delete', ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
+              : ['create', 'read', 'update', 'delete'];
 
-      const allActive = category.subModules.every(sub => 
+      const allActive = category.subModules.every(sub =>
         getSubActions(sub.id).every(act => next[`sub:${sub.id}:${act}`])
       );
 
@@ -2494,11 +2513,11 @@ Direction Générale — FUS Rabat`;
   if (!hasUserManagementAccess) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
-         <Lock className="w-16 h-16 text-muted-foreground mb-4 opacity-40" />
-         <h2 className="text-xl font-bold text-muted-foreground">Accès Réservé aux Administrateurs</h2>
-         <p className="text-sm text-muted-foreground opacity-60">
-           Seuls le Super Administrateur, l'Administrateur du Club et le Scout Admin peuvent accéder à la gestion des utilisateurs.
-         </p>
+        <Lock className="w-16 h-16 text-muted-foreground mb-4 opacity-40" />
+        <h2 className="text-xl font-bold text-muted-foreground">Accès Réservé aux Administrateurs</h2>
+        <p className="text-sm text-muted-foreground opacity-60">
+          Seuls le Super Administrateur, l'Administrateur du Club et le Scout Admin peuvent accéder à la gestion des utilisateurs.
+        </p>
       </div>
     );
   }
@@ -2507,139 +2526,135 @@ Direction Générale — FUS Rabat`;
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-         <div>
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground uppercase italic flex items-center gap-2">
-              {isScoutAdmin ? 'Gestion des Utilisateurs Scouts' : 'Gestion des Utilisateurs'} <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
-            </h2>
-            <p className="text-muted-foreground text-xs sm:text-sm font-medium">
-               {isScoutAdmin
-                 ? 'Administration et affectation exclusive du personnel de la cellule de détection'
-                 : 'Création de comptes, attribution des intitulés de poste et périmètres d\'accès'}
-            </p>
-         </div>
-         <Button onClick={handleOpenCreateModal} className="gap-2 shadow-lg shadow-primary/20 bg-primary text-primary-foreground hover:bg-primary/90 font-bold text-xs uppercase tracking-wider rounded-xl h-11 px-5 w-full sm:w-auto shrink-0">
-           <UserPlus className="w-4 h-4" /> Nouvel Utilisateur
-         </Button>
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground uppercase italic flex items-center gap-2">
+            {isScoutAdmin ? 'Gestion des Utilisateurs Scouts' : 'Gestion des Utilisateurs'} <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
+          </h2>
+          <p className="text-muted-foreground text-xs sm:text-sm font-medium">
+            {isScoutAdmin
+              ? 'Administration et affectation exclusive du personnel de la cellule de détection'
+              : 'Création de comptes, attribution des intitulés de poste et périmètres d\'accès'}
+          </p>
+        </div>
+        <Button onClick={handleOpenCreateModal} className="gap-2 shadow-lg shadow-primary/20 bg-primary text-primary-foreground hover:bg-primary/90 font-bold text-xs uppercase tracking-wider rounded-xl h-11 px-5 w-full sm:w-auto shrink-0">
+          <UserPlus className="w-4 h-4" /> Nouvel Utilisateur
+        </Button>
       </div>
 
       {/* Filter and View Toggles */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-          <div className="flex items-center gap-4 w-full sm:w-auto flex-wrap">
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input 
-                placeholder="Rechercher par nom, email, fonction..." 
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-11 bg-card border-border rounded-xl font-medium"
-              />
-            </div>
-
-            <select 
-              value={selectedCategoryFilter}
-              onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-              className="h-11 px-4 rounded-xl border border-border bg-card text-xs font-bold text-foreground outline-none shrink-0 cursor-pointer"
-            >
-              <option value="all">Toutes catégories</option>
-              <option value="global">Accès Global</option>
-              {AGE_CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-
-            {/* Filtre Rôle */}
-            <select
-              value={selectedRoleFilter}
-              onChange={(e) => setSelectedRoleFilter(e.target.value)}
-              className="h-11 px-4 rounded-xl border border-border bg-card text-xs font-bold text-foreground outline-none shrink-0 cursor-pointer"
-            >
-              <option value="all">Tous les rôles</option>
-              <option value="admin">👑 Administrateurs</option>
-              <option value="scout">🎯 Cellule Scouting</option>
-              <option value="staff">⚽ Staff & Encadrement</option>
-            </select>
-
-            {/* Filtre Intitulé de Poste */}
-            <select
-              value={selectedJobTitleFilter}
-              onChange={(e) => setSelectedJobTitleFilter(e.target.value)}
-              className={`h-11 px-4 rounded-xl border text-xs font-bold outline-none shrink-0 cursor-pointer max-w-[240px] truncate transition-all ${
-                selectedJobTitleFilter !== 'all'
-                  ? 'border-primary bg-primary/10 text-primary font-black shadow-sm'
-                  : 'border-border bg-card text-foreground'
-              }`}
-              title="Filtrer par intitulé de poste affecté"
-            >
-              <option value="all">Tous les intitulés de poste ({users.length})</option>
-              {availableJobTitles.map(title => {
-                const count = jobTitleCounts.counts[title.toLowerCase()] || 0;
-                return (
-                  <option key={title} value={title}>
-                    💼 {title} ({count})
-                  </option>
-                );
-              })}
-              {jobTitleCounts.noneCount > 0 && (
-                <option value="none">
-                  ⚠️ Sans poste affecté ({jobTitleCounts.noneCount})
-                </option>
-              )}
-            </select>
-
-            {/* Filtre Statut / Black-list Pills */}
-            <div className="flex items-center p-1 bg-secondary/30 rounded-xl border border-border shrink-0">
-              <button
-                type="button"
-                onClick={() => setSelectedStatusFilter('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  selectedStatusFilter === 'all'
-                    ? 'bg-primary text-white shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Tous ({users.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedStatusFilter('active')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  selectedStatusFilter === 'active'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-muted-foreground hover:text-emerald-600'
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                Actifs ({users.filter(u => u.is_active !== false).length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedStatusFilter('blacklist')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
-                  selectedStatusFilter === 'blacklist'
-                    ? 'bg-rose-600 text-white shadow-sm'
-                    : 'text-rose-600 dark:text-rose-400 hover:bg-rose-500/10'
-                }`}
-              >
-                <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
-                Black-list ({users.filter(u => u.is_active === false).length})
-              </button>
-            </div>
-
-            <div className="hidden sm:flex bg-secondary/30 rounded-xl border border-border p-1 shrink-0">
-              <button 
-                onClick={() => setViewMode('list')}
-                className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                <List className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-            </div>
+        <div className="flex items-center gap-4 w-full sm:w-auto flex-wrap">
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Input
+              placeholder="Rechercher par nom, email, fonction..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 h-11 bg-card border-border rounded-xl font-medium"
+            />
           </div>
+
+          <select
+            value={selectedCategoryFilter}
+            onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+            className="h-11 px-4 rounded-xl border border-border bg-card text-xs font-bold text-foreground outline-none shrink-0 cursor-pointer"
+          >
+            <option value="all">Toutes catégories</option>
+            <option value="global">Accès Global</option>
+            {AGE_CATEGORIES.map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+
+          {/* Filtre Rôle */}
+          <select
+            value={selectedRoleFilter}
+            onChange={(e) => setSelectedRoleFilter(e.target.value)}
+            className="h-11 px-4 rounded-xl border border-border bg-card text-xs font-bold text-foreground outline-none shrink-0 cursor-pointer"
+          >
+            <option value="all">Tous les rôles</option>
+            <option value="admin">👑 Administrateurs</option>
+            <option value="scout">🎯 Cellule Scouting</option>
+            <option value="staff">⚽ Staff & Encadrement</option>
+          </select>
+
+          {/* Filtre Intitulé de Poste */}
+          <select
+            value={selectedJobTitleFilter}
+            onChange={(e) => setSelectedJobTitleFilter(e.target.value)}
+            className={`h-11 px-4 rounded-xl border text-xs font-bold outline-none shrink-0 cursor-pointer max-w-[240px] truncate transition-all ${selectedJobTitleFilter !== 'all'
+                ? 'border-primary bg-primary/10 text-primary font-black shadow-sm'
+                : 'border-border bg-card text-foreground'
+              }`}
+            title="Filtrer par intitulé de poste affecté"
+          >
+            <option value="all">Tous les intitulés de poste ({users.length})</option>
+            {availableJobTitles.map(title => {
+              const count = jobTitleCounts.counts[title.toLowerCase()] || 0;
+              return (
+                <option key={title} value={title}>
+                  💼 {title} ({count})
+                </option>
+              );
+            })}
+            {jobTitleCounts.noneCount > 0 && (
+              <option value="none">
+                ⚠️ Sans poste affecté ({jobTitleCounts.noneCount})
+              </option>
+            )}
+          </select>
+
+          {/* Filtre Statut / Black-list Pills */}
+          <div className="flex items-center p-1 bg-secondary/30 rounded-xl border border-border shrink-0">
+            <button
+              type="button"
+              onClick={() => setSelectedStatusFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${selectedStatusFilter === 'all'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+                }`}
+            >
+              Tous ({users.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedStatusFilter('active')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${selectedStatusFilter === 'active'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-muted-foreground hover:text-emerald-600'
+                }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              Actifs ({users.filter(u => u.is_active !== false).length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedStatusFilter('blacklist')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${selectedStatusFilter === 'blacklist'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'text-rose-600 dark:text-rose-400 hover:bg-rose-500/10'
+                }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+              Black-list ({users.filter(u => u.is_active === false).length})
+            </button>
+          </div>
+
+          <div className="hidden sm:flex bg-secondary/30 rounded-xl border border-border p-1 shrink-0">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Bandeau des filtres actifs */}
@@ -2715,2180 +2730,2240 @@ Direction Générale — FUS Rabat`;
       )}
 
       {/* Main Content: Users List or Grid */}
-      <AnimatePresence mode="wait">
         {modalMode === 'none' ? (
-          <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-             {/* Bandeau d'information spécifique Rubrique Black-list */}
-             {selectedStatusFilter === 'blacklist' && (
-               <div className="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
-                 <div className="flex items-center gap-3">
-                   <ShieldAlert className="w-6 h-6 text-rose-500 shrink-0 animate-pulse" />
-                   <div>
-                     <h4 className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                       Rubrique : Utilisateurs en Black-list (Accès Bloqués)
-                     </h4>
-                     <p className="text-xs font-medium opacity-90 mt-0.5">
-                       Les utilisateurs ci-dessous ont leur accès suspendu. Pour leur redonner accès avec <strong>toutes leurs permissions et rôles intacts</strong>, basculez simplement leur toggle sur <span className="font-bold underline text-emerald-600 dark:text-emerald-400">ACCÈS AUTORISÉ</span>.
-                     </p>
-                   </div>
-                 </div>
-                 <Badge variant="destructive" className="font-black text-xs px-3.5 py-1.5 shrink-0 self-start sm:self-center shadow-sm">
-                   {users.filter(u => u.is_active === false).length} compte(s) bloqué(s)
-                 </Badge>
-               </div>
-             )}
-
-             {loading ? (
-        <div className="flex justify-center items-center py-20">
-          <Loader2 className="w-8 h-8 text-primary animate-spin" />
-        </div>
-      ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredUsers.map(u => (
-            <div key={u.id} className="bg-card rounded-3xl p-6 shadow-sm border border-border flex flex-col items-center text-center relative group hover:shadow-md hover:border-primary/30 transition-all duration-300">
-              <UserAvatarItem user={u} size="lg" />
-              <h3 className="font-black text-foreground truncate w-full px-2">{u.full_name}</h3>
-              <p className="text-xs text-muted-foreground truncate w-full mb-2 px-2 font-medium">{u.email}</p>
-              
-              {/* Job Title Badge */}
-              {u.job_title && (
-                <div className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-primary/10 text-primary border border-primary/20 text-[10px] font-black uppercase mb-1">
-                   <Briefcase className="w-3 h-3 shrink-0" />
-                   <span className="truncate">{u.job_title}</span>
-                </div>
-              )}
-
-              {/* Matchs attribués indicator */}
-              {(() => {
-                const assignedCount = operableMatches.filter(
-                  m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(u.id).toLowerCase()
-                ).length;
-                if (assignedCount === 0) return null;
-                return (
-                  <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/25 text-[10px] font-bold mb-2 shadow-xs">
-                    <Radio className="w-3 h-3 text-red-500 animate-pulse" />
-                    <span>{assignedCount} match{assignedCount > 1 ? 's' : ''} attribué{assignedCount > 1 ? 's' : ''}</span>
+          <div key="list">
+            {/* Bandeau d'information spécifique Rubrique Black-list */}
+            {selectedStatusFilter === 'blacklist' && (
+              <div className="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <ShieldAlert className="w-6 h-6 text-rose-500 shrink-0 animate-pulse" />
+                  <div>
+                    <h4 className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
+                      Rubrique : Utilisateurs en Black-list (Accès Bloqués)
+                    </h4>
+                    <p className="text-xs font-medium opacity-90 mt-0.5">
+                      Les utilisateurs ci-dessous ont leur accès suspendu. Pour leur redonner accès avec <strong>toutes leurs permissions et rôles intacts</strong>, basculez simplement leur toggle sur <span className="font-bold underline text-emerald-600 dark:text-emerald-400">ACCÈS AUTORISÉ</span>.
+                    </p>
                   </div>
-                );
-              })()}
+                </div>
+                <Badge variant="destructive" className="font-black text-xs px-3.5 py-1.5 shrink-0 self-start sm:self-center shadow-sm">
+                  {users.filter(u => u.is_active === false).length} compte(s) bloqué(s)
+                </Badge>
+              </div>
+            )}
 
-              <div className="flex flex-wrap items-center justify-center gap-1.5 mb-3">
-                {(() => {
-                  const rCfg = getRoleConfig(u.system_role);
-                  return (
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold border ${rCfg.badgeClass}`}>
-                      <span>{rCfg.label}</span>
-                    </span>
-                  );
-                })()}
-                
-                {/* Toggle Switch d'accès & Black-list */}
-                <UserStatusToggleSwitch user={u} onToggle={handleToggleUserActive} />
-              </div>
-              
-              <div className="flex flex-wrap gap-1 justify-center mb-4 min-h-[24px]">
-                {u.categories && u.categories.length > 0 ? (
-                  u.categories.map(cat => (
-                    <Badge key={cat} variant="secondary" className="text-[9px] font-bold bg-secondary text-secondary-foreground">{cat}</Badge>
-                  ))
-                ) : (
-                  <span className="text-[9px] text-muted-foreground italic font-medium">Périmètre Global</span>
-                )}
-              </div>
+            {loading ? (
+              <FusLogoLoader fullPage size="lg" label="Chargement des utilisateurs…" />
+            ) : viewMode === 'grid' ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredUsers.map(u => (
+                  <div key={u.id} className="bg-card rounded-3xl p-6 shadow-sm border border-border flex flex-col items-center text-center relative group hover:shadow-md hover:border-primary/30 transition-all duration-300">
+                    <UserAvatarItem user={u} size="lg" />
+                    <h3 className="font-black text-foreground truncate w-full px-2">{u.full_name}</h3>
+                    <p className="text-xs text-muted-foreground truncate w-full mb-2 px-2 font-medium">{u.email}</p>
 
-              {/* Permissions (Grid) */}
-              <div className="flex justify-center mb-4 min-h-[28px]">
-                <UserPermissionsHoverBadge user={u} />
-              </div>
-
-              <div className="flex gap-1.5 w-full justify-center mt-auto pt-3 border-t border-border">
-                 <button onClick={() => openViewMode(u)} className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-xl transition-colors" title="Aperçu">
-                   <Eye className="w-4 h-4" />
-                 </button>
-                 <button onClick={() => openCredentialsQuickModal(u)} className="p-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 rounded-xl transition-colors" title="⚡ Générer & Transmettre les Accès (WhatsApp)">
-                   <KeyRound className="w-4 h-4" />
-                 </button>
-                 <button onClick={() => openEditMode(u)} className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors" title="Modifier">
-                   <Edit2 className="w-4 h-4" />
-                 </button>
-                 <button onClick={() => handleDeleteUser(u.id, u.full_name || u.email)} className="p-2 text-destructive hover:bg-destructive/10 rounded-xl transition-colors" title="Supprimer définitivement">
-                   <Trash2 className="w-4 h-4" />
-                 </button>
-              </div>
-            </div>
-          ))}
-          {filteredUsers.length === 0 && (
-            <div className="col-span-full py-12 text-center text-muted-foreground font-medium italic">
-              {selectedStatusFilter === 'blacklist' ? 'Aucun utilisateur dans la Black-list.' : 'Aucun utilisateur trouvé.'}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* List View */
-        <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-secondary/20 border-b border-border">
-                <tr>
-                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Utilisateur</th>
-                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Intitulé de Poste</th>
-                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Rôle Système</th>
-                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Accès & Black-list</th>
-                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Périmètre Catégories</th>
-                  <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Permissions Spécifiques</th>
-                  <th className="text-right py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-secondary/10 transition-colors group">
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-3">
-                        <UserAvatarItem user={u} size="sm" />
-                        <div>
-                          <p className="font-bold text-foreground text-sm">{u.full_name}</p>
-                          <p className="text-xs text-muted-foreground">{u.email}</p>
-                          {(() => {
-                            const assignedCount = operableMatches.filter(
-                              m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(u.id).toLowerCase()
-                            ).length;
-                            if (assignedCount === 0) return null;
-                            return (
-                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 border border-red-500/25 text-[9px] font-bold mt-1">
-                                <Radio className="w-2.5 h-2.5 text-red-500 animate-pulse" />
-                                <span>{assignedCount} match{assignedCount > 1 ? 's' : ''} attribué{assignedCount > 1 ? 's' : ''}</span>
-                              </div>
-                            );
-                          })()}
-                        </div>
+                    {/* Job Title Badge */}
+                    {u.job_title && (
+                      <div className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-primary/10 text-primary border border-primary/20 text-[10px] font-black uppercase mb-1">
+                        <Briefcase className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{u.job_title}</span>
                       </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      {u.job_title ? (
-                         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-primary/10 text-primary border border-primary/20 text-xs font-bold">
-                            <Briefcase className="w-3.5 h-3.5 shrink-0" />
-                            <span>{u.job_title}</span>
-                         </div>
-                      ) : (
-                         <span className="text-xs text-muted-foreground italic font-medium">— Non spécifié</span>
-                      )}
-                    </td>
-                    <td className="py-4 px-6">
+                    )}
+
+                    {/* Matchs attribués indicator */}
+                    {(() => {
+                      const assignedCount = operableMatches.filter(
+                        m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(u.id).toLowerCase()
+                      ).length;
+                      if (assignedCount === 0) return null;
+                      return (
+                        <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/25 text-[10px] font-bold mb-2 shadow-xs">
+                          <Radio className="w-3 h-3 text-red-500 animate-pulse" />
+                          <span>{assignedCount} match{assignedCount > 1 ? 's' : ''} attribué{assignedCount > 1 ? 's' : ''}</span>
+                        </div>
+                      );
+                    })()}
+
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 mb-3">
                       {(() => {
                         const rCfg = getRoleConfig(u.system_role);
                         return (
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${rCfg.badgeClass}`}>
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold border ${rCfg.badgeClass}`}>
                             <span>{rCfg.label}</span>
                           </span>
                         );
                       })()}
-                    </td>
-                    <td className="py-4 px-6">
+
+                      {/* Toggle Switch d'accès & Black-list */}
                       <UserStatusToggleSwitch user={u} onToggle={handleToggleUserActive} />
-                    </td>
-                    <td className="py-4 px-6">
-                       {u.categories && u.categories.length > 0 ? (
-                         <div className="flex flex-wrap gap-1">
-                           {u.categories.map(cat => (
-                             <Badge key={cat} variant="secondary" className="text-[9px] font-bold bg-secondary text-secondary-foreground">{cat}</Badge>
-                           ))}
-                         </div>
-                       ) : (
-                         <span className="text-xs text-muted-foreground italic font-medium">Accès Global</span>
-                       )}
-                    </td>
-                    <td className="py-4 px-6">
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 justify-center mb-4 min-h-[24px]">
+                      {u.categories && u.categories.length > 0 ? (
+                        u.categories.map(cat => (
+                          <Badge key={cat} variant="secondary" className="text-[9px] font-bold bg-secondary text-secondary-foreground">{cat}</Badge>
+                        ))
+                      ) : (
+                        <span className="text-[9px] text-muted-foreground italic font-medium">Périmètre Global</span>
+                      )}
+                    </div>
+
+                    {/* Permissions (Grid) */}
+                    <div className="flex justify-center mb-4 min-h-[28px]">
                       <UserPermissionsHoverBadge user={u} />
-                    </td>
-                    <td className="py-4 px-6 text-right">
-                      <div className="flex items-center justify-end gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => openViewMode(u)} className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors" title="Détails">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => openCredentialsQuickModal(u)} className="p-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 rounded-lg transition-colors" title="⚡ Générer & Transmettre les Accès (WhatsApp)">
-                          <KeyRound className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => openEditMode(u)} className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Modifier">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleDeleteUser(u.id, u.full_name || u.email)} className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors" title="Supprimer définitivement">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                    </div>
+
+                    <div className="flex gap-1.5 w-full justify-center mt-auto pt-3 border-t border-border">
+                      <button onClick={() => openViewMode(u)} className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-xl transition-colors" title="Aperçu">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => openCredentialsQuickModal(u)} className="p-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 rounded-xl transition-colors" title="⚡ Générer & Transmettre les Accès (WhatsApp)">
+                        <KeyRound className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => openEditMode(u)} className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-colors" title="Modifier">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDeleteUser(u.id, u.full_name || u.email)} className="p-2 text-destructive hover:bg-destructive/10 rounded-xl transition-colors" title="Supprimer définitivement">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 ))}
                 {filteredUsers.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="py-12 text-center text-muted-foreground font-medium italic">
-                      Aucun utilisateur trouvé.
-                    </td>
-                  </tr>
+                  <div className="col-span-full py-12 text-center text-muted-foreground font-medium italic">
+                    {selectedStatusFilter === 'blacklist' ? 'Aucun utilisateur dans la Black-list.' : 'Aucun utilisateur trouvé.'}
+                  </div>
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-          </motion.div>
-        ) : (
-          /* User Modal (Create / Edit / View) */
-          <motion.div key="form" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className={modalStep === 2 ? "max-w-2xl mx-auto" : "max-w-4xl mx-auto"}>
-             <Card className="border border-border shadow-2xl rounded-3xl overflow-hidden bg-card text-card-foreground">
-                {modalStep === 2 && createdCredentials ? (
-                  /* ── ÉTAPE 2 : IDENTIFIANTS GÉNÉRÉS & ENVOI WHATSAPP ── */
-                  <div className="animate-in fade-in zoom-in-98 duration-200">
-                    <div className="flex items-center justify-between p-6 border-b border-border bg-emerald-500/10">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/30">
-                          <KeyRound className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 inline-block mb-0.5">
-                            Étape 2 / 2 — Identifiants Prêts
-                          </span>
-                          <h3 className="text-base sm:text-lg font-black uppercase text-foreground">
-                            Accès Utilisateur Prêts à Transmettre
-                          </h3>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="icon" onClick={() => { setModalMode('none'); setModalStep(1); }} className="rounded-xl">
-                        <X className="w-5 h-5" />
-                      </Button>
-                    </div>
-
-                    <CardContent className="p-6 md:p-8 space-y-6 max-h-[75vh] overflow-y-auto">
-                      <div className="text-center space-y-2">
-                        <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 flex items-center justify-center mx-auto shadow-md">
-                          <CheckCircle2 className="w-8 h-8" />
-                        </div>
-                        <h4 className="text-lg font-black text-foreground">
-                          Compte configuré pour {createdCredentials.fullName}
-                        </h4>
-                        <p className="text-xs text-muted-foreground max-w-md mx-auto">
-                          Le profil est actif avec le rôle <strong>{createdCredentials.systemRole?.toUpperCase()}</strong> {createdCredentials.roleTitle ? `(${createdCredentials.roleTitle})` : ''}.
-                          Voici les identifiants de première connexion à transmettre au collaborateur.
-                        </p>
-                      </div>
-
-                      {/* Bloc Identifiants */}
-                      <div className="bg-secondary/40 border border-border rounded-2xl p-5 space-y-4">
-                        <div className="flex items-center gap-2 pb-2 border-b border-border text-xs font-bold text-foreground">
-                          <KeyRound className="w-4 h-4 text-primary" />
-                          <span>Identifiants de Connexion</span>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {/* Login */}
-                          <div className="p-3.5 bg-background rounded-xl border border-border space-y-1 shadow-xs">
-                            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
-                              Identifiant (Login / Email)
-                            </span>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-mono font-bold text-foreground truncate" title={createdCredentials.login}>
-                                {createdCredentials.login}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(createdCredentials.login);
-                                  setCopiedField('login');
-                                  toast.success("Login copié dans le presse-papier !");
-                                  setTimeout(() => setCopiedField(null), 2000);
-                                }}
-                                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
-                                title="Copier le login"
-                              >
-                                {copiedField === 'login' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Mot de passe temporaire */}
-                          <div className="p-3.5 bg-background rounded-xl border border-border space-y-1 shadow-xs">
-                            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
-                              Mot de passe temporaire
-                            </span>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-mono font-bold text-primary">
-                                {showTempPassword ? createdCredentials.tempPassword : '••••••••••••'}
-                              </span>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setShowTempPassword(!showTempPassword)}
-                                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
-                                  title={showTempPassword ? "Masquer" : "Afficher"}
-                                >
-                                  {showTempPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(createdCredentials.tempPassword);
-                                    setCopiedField('pwd');
-                                    toast.success("Mot de passe temporaire copié !");
-                                    setTimeout(() => setCopiedField(null), 2000);
-                                  }}
-                                  className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary transition-colors cursor-pointer"
-                                  title="Copier le mot de passe"
-                                >
-                                  {copiedField === 'pwd' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                                </button>
+              </div>
+            ) : (
+              /* List View */
+              <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-secondary/20 border-b border-border">
+                      <tr>
+                        <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Utilisateur</th>
+                        <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Intitulé de Poste</th>
+                        <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Rôle Système</th>
+                        <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Accès & Black-list</th>
+                        <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Périmètre Catégories</th>
+                        <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Permissions Spécifiques</th>
+                        <th className="text-right py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filteredUsers.map((u) => (
+                        <tr key={u.id} className="hover:bg-secondary/10 transition-colors group">
+                          <td className="py-4 px-6">
+                            <div className="flex items-center gap-3">
+                              <UserAvatarItem user={u} size="sm" />
+                              <div>
+                                <p className="font-bold text-foreground text-sm">{u.full_name}</p>
+                                <p className="text-xs text-muted-foreground">{u.email}</p>
+                                {(() => {
+                                  const assignedCount = operableMatches.filter(
+                                    m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(u.id).toLowerCase()
+                                  ).length;
+                                  if (assignedCount === 0) return null;
+                                  return (
+                                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 border border-red-500/25 text-[9px] font-bold mt-1">
+                                      <Radio className="w-2.5 h-2.5 text-red-500 animate-pulse" />
+                                      <span>{assignedCount} match{assignedCount > 1 ? 's' : ''} attribué{assignedCount > 1 ? 's' : ''}</span>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
-                          </div>
-                        </div>
-
-                        {/* Sécurité et forçage de changement */}
-                        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs">
-                          <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                          <div className="space-y-0.5">
-                            <p className="font-bold text-[11px]">Renouvellement obligatoire à la 1re connexion</p>
-                            <p className="text-[11px] opacity-90 leading-relaxed">
-                              Ce mot de passe temporaire est haché en base de données. Dès sa première connexion, le collaborateur sera <strong>automatiquement redirigé</strong> vers la page de création d'un nouveau mot de passe personnel avant tout accès au dashboard.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Bloc WhatsApp Officiel */}
-                      <div className="bg-[#25D366]/10 border border-[#25D366]/30 rounded-2xl p-5 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-9 h-9 rounded-xl bg-[#25D366] text-white flex items-center justify-center shadow-xs">
-                              <MessageCircle className="w-5 h-5 fill-current" />
+                          </td>
+                          <td className="py-4 px-6">
+                            {u.job_title ? (
+                              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-primary/10 text-primary border border-primary/20 text-xs font-bold">
+                                <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                                <span>{u.job_title}</span>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic font-medium">— Non spécifié</span>
+                            )}
+                          </td>
+                          <td className="py-4 px-6">
+                            {(() => {
+                              const rCfg = getRoleConfig(u.system_role);
+                              return (
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${rCfg.badgeClass}`}>
+                                  <span>{rCfg.label}</span>
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td className="py-4 px-6">
+                            <UserStatusToggleSwitch user={u} onToggle={handleToggleUserActive} />
+                          </td>
+                          <td className="py-4 px-6">
+                            {u.categories && u.categories.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {u.categories.map(cat => (
+                                  <Badge key={cat} variant="secondary" className="text-[9px] font-bold bg-secondary text-secondary-foreground">{cat}</Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic font-medium">Accès Global</span>
+                            )}
+                          </td>
+                          <td className="py-4 px-6">
+                            <UserPermissionsHoverBadge user={u} />
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            <div className="flex items-center justify-end gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => openViewMode(u)} className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors" title="Détails">
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => openCredentialsQuickModal(u)} className="p-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 rounded-lg transition-colors" title="⚡ Générer & Transmettre les Accès (WhatsApp)">
+                                <KeyRound className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => openEditMode(u)} className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Modifier">
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteUser(u.id, u.full_name || u.email)} className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors" title="Supprimer définitivement">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
-                            <div>
-                              <h4 className="text-sm font-black text-foreground">Envoi Direct via WhatsApp</h4>
-                              <p className="text-[11px] text-muted-foreground">Transmettez le lien de l'application, l'identifiant et le mot de passe en 1 clic.</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-[11px] font-bold text-foreground block">
-                            Numéro WhatsApp du destinataire :
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="tel"
-                              value={whatsAppPhoneNumber}
-                              onChange={(e) => setWhatsAppPhoneNumber(e.target.value)}
-                              placeholder="+212 600-000000"
-                              className="flex-1 px-3.5 py-2.5 rounded-xl border border-border text-xs font-mono font-bold bg-background focus:outline-none focus:ring-2 focus:ring-[#25D366]/40 text-foreground"
-                            />
-                            <a
-                              href={getWhatsAppUrl(whatsAppPhoneNumber || createdCredentials.phone || '', getWhatsAppUserMessage(createdCredentials.fullName, createdCredentials.login, createdCredentials.tempPassword, createdCredentials.roleTitle, createdCredentials.systemRole))}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-2 shrink-0 cursor-pointer"
-                            >
-                              <MessageCircle className="w-4 h-4 fill-current" />
-                              <span>Envoyer WhatsApp</span>
-                            </a>
-                          </div>
-                        </div>
-
-                        <div className="pt-2 border-t border-[#25D366]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <span className="text-[11px] text-muted-foreground">Message d'invitation pré-formaté prêt à être transmis.</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const msg = getWhatsAppUserMessage(createdCredentials.fullName, createdCredentials.login, createdCredentials.tempPassword, createdCredentials.roleTitle, createdCredentials.systemRole);
-                              navigator.clipboard.writeText(msg);
-                              setCopiedField('all');
-                              toast.success("Message d'invitation copié !");
-                              setTimeout(() => setCopiedField(null), 2000);
-                            }}
-                            className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1.5 cursor-pointer"
-                          >
-                            {copiedField === 'all' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>Copier tout le message</span>
-                          </button>
-                        </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredUsers.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-12 text-center text-muted-foreground font-medium italic">
+                            Aucun utilisateur trouvé.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* User Modal (Create / Edit / View) */
+          <div key="form" className={modalStep === 2 ? "max-w-2xl mx-auto" : "max-w-4xl mx-auto"}>
+            <Card className="border border-border shadow-2xl rounded-3xl overflow-hidden bg-card text-card-foreground">
+              {modalStep === 2 && createdCredentials ? (
+                /* ── ÉTAPE 2 : IDENTIFIANTS GÉNÉRÉS & ENVOI WHATSAPP ── */
+                <div className="animate-in fade-in zoom-in-98 duration-200">
+                  <div className="flex items-center justify-between p-6 border-b border-border bg-emerald-500/10">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/30">
+                        <KeyRound className="w-5 h-5" />
                       </div>
-
-                      {/* Bouton de clôture */}
-                      <div className="pt-4 border-t border-border flex justify-end">
-                        <Button
-                          type="button"
-                          onClick={() => {
-                            setModalMode('none');
-                            setModalStep(1);
-                            setCreatedCredentials(null);
-                          }}
-                          className="w-full sm:w-auto px-8 bg-primary text-primary-foreground font-bold text-xs rounded-xl shadow-lg shadow-primary/20"
-                        >
-                          Terminer & Fermer
-                        </Button>
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 inline-block mb-0.5">
+                          Étape 2 / 2 — Identifiants Prêts
+                        </span>
+                        <h3 className="text-base sm:text-lg font-black uppercase text-foreground">
+                          Accès Utilisateur Prêts à Transmettre
+                        </h3>
                       </div>
-                    </CardContent>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => { setModalMode('none'); setModalStep(1); }} className="rounded-xl">
+                      <X className="w-5 h-5" />
+                    </Button>
                   </div>
-                ) : modalMode === 'credentials' && quickCredentialsUser ? (
-                  /* ── MODAL MODE CREDENTIALS RAPIDE (Identifiants & Authentification) ── */
-                  <div className="animate-in fade-in zoom-in-98 duration-200">
-                    <div className="flex items-center justify-between p-6 border-b border-border bg-amber-500/10">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl border border-amber-500/30">
-                          <KeyRound className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 inline-block mb-0.5">
-                            Sécurité & Authentification FUS
-                          </span>
-                          <h3 className="text-base sm:text-lg font-black uppercase text-foreground">
-                            Générer & Transmettre les Accès
-                          </h3>
-                        </div>
+
+                  <CardContent className="p-6 md:p-8 space-y-6 max-h-[75vh] overflow-y-auto">
+                    <div className="text-center space-y-2">
+                      <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400 flex items-center justify-center mx-auto shadow-md">
+                        <CheckCircle2 className="w-8 h-8" />
                       </div>
-                      <Button variant="ghost" size="icon" onClick={() => setModalMode('none')} className="rounded-xl">
-                        <X className="w-5 h-5" />
-                      </Button>
+                      <h4 className="text-lg font-black text-foreground">
+                        Compte configuré pour {createdCredentials.fullName}
+                      </h4>
+                      <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                        Le profil est actif avec le rôle <strong>{createdCredentials.systemRole?.toUpperCase()}</strong> {createdCredentials.roleTitle ? `(${createdCredentials.roleTitle})` : ''}.
+                        Voici les identifiants de première connexion à transmettre au collaborateur.
+                      </p>
                     </div>
 
-                    <CardContent className="p-6 md:p-8 space-y-6 max-h-[75vh] overflow-y-auto">
-                      {/* Récapitulatif Collaborateur */}
-                      <div className="p-4 rounded-2xl bg-secondary/40 border border-border flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <UserAvatarItem user={quickCredentialsUser} size="sm" />
-                          <div>
-                            <h4 className="font-bold text-sm text-foreground">{quickCredentialsUser.full_name || quickCredentialsUser.email}</h4>
-                            <p className="text-xs text-muted-foreground font-mono">{quickCredentialsUser.email}</p>
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getRoleConfig(quickCredentialsUser.system_role).badgeClass}`}>
-                            {getRoleConfig(quickCredentialsUser.system_role).label}
-                          </span>
-                          {quickCredentialsUser.job_title && (
-                            <span className="text-[10px] font-semibold text-primary">
-                              {quickCredentialsUser.job_title}
-                            </span>
-                          )}
-                        </div>
+                    {/* Bloc Identifiants */}
+                    <div className="bg-secondary/40 border border-border rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center gap-2 pb-2 border-b border-border text-xs font-bold text-foreground">
+                        <KeyRound className="w-4 h-4 text-primary" />
+                        <span>Identifiants de Connexion</span>
                       </div>
 
-                      {/* Mot de passe temporaire à générer */}
-                      <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <KeyRound className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                            <label className="text-xs font-bold text-foreground">
-                              Nouveau mot de passe temporaire
-                            </label>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const generated = generateSecureTempPassword();
-                              setQuickTempPassword(generated);
-                              toast.success("Nouveau mot de passe généré !", { icon: '⚡' });
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                          >
-                            <Sparkles className="w-3 h-3" />
-                            <span>⚡ Régénérer</span>
-                          </button>
-                        </div>
-
-                        <div className="relative">
-                          <input
-                            type={quickShowPassword ? "text" : "password"}
-                            value={quickTempPassword}
-                            onChange={(e) => setQuickTempPassword(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-amber-300 dark:border-amber-800 text-xs font-mono font-bold bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 pr-20"
-                          />
-                          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setQuickShowPassword(!quickShowPassword)}
-                              className="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                              title={quickShowPassword ? "Masquer" : "Afficher"}
-                            >
-                              {quickShowPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                            </button>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Login */}
+                        <div className="p-3.5 bg-background rounded-xl border border-border space-y-1 shadow-xs">
+                          <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                            Identifiant (Login / Email)
+                          </span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-mono font-bold text-foreground truncate" title={createdCredentials.login}>
+                              {createdCredentials.login}
+                            </span>
                             <button
                               type="button"
                               onClick={() => {
-                                navigator.clipboard.writeText(quickTempPassword);
-                                toast.success("Mot de passe copié !");
+                                navigator.clipboard.writeText(createdCredentials.login);
+                                setCopiedField('login');
+                                toast.success("Login copié dans le presse-papier !");
+                                setTimeout(() => setCopiedField(null), 2000);
                               }}
-                              className="p-1 text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-                              title="Copier"
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
+                              title="Copier le login"
                             >
-                              <Copy className="w-3.5 h-3.5" />
+                              {copiedField === 'login' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                             </button>
                           </div>
                         </div>
+
+                        {/* Mot de passe temporaire */}
+                        <div className="p-3.5 bg-background rounded-xl border border-border space-y-1 shadow-xs">
+                          <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                            Mot de passe temporaire
+                          </span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-mono font-bold text-primary">
+                              {showTempPassword ? createdCredentials.tempPassword : '••••••••••••'}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setShowTempPassword(!showTempPassword)}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
+                                title={showTempPassword ? "Masquer" : "Afficher"}
+                              >
+                                {showTempPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(createdCredentials.tempPassword);
+                                  setCopiedField('pwd');
+                                  toast.success("Mot de passe temporaire copié !");
+                                  setTimeout(() => setCopiedField(null), 2000);
+                                }}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary transition-colors cursor-pointer"
+                                title="Copier le mot de passe"
+                              >
+                                {copiedField === 'pwd' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Numéro WhatsApp */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                          <Smartphone className="w-3.5 h-3.5 text-[#25D366]" /> Numéro WhatsApp du collaborateur
-                        </label>
-                        <Input
-                          type="tel"
-                          value={quickPhone}
-                          onChange={e => setQuickPhone(e.target.value)}
-                          placeholder="+212 600-000000"
-                          className="bg-secondary/30 border-transparent focus:bg-background h-11 rounded-xl font-medium font-mono"
-                        />
-                        <p className="text-[11px] text-muted-foreground">
-                          Numéro utilisé pour la redirection WhatsApp directe avec les identifiants préremplis.
-                        </p>
-                      </div>
-
-                      {/* Sécurité et hachage en base */}
-                      <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs">
+                      {/* Sécurité et forçage de changement */}
+                      <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs">
                         <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                         <div className="space-y-0.5">
-                          <p className="font-bold text-[11px]">Hachage sécurisé & Renouvellement obligatoire</p>
+                          <p className="font-bold text-[11px]">Renouvellement obligatoire à la 1re connexion</p>
                           <p className="text-[11px] opacity-90 leading-relaxed">
-                            Ce mot de passe temporaire est haché en base de données avec l'extension pgcrypto (bcrypt). Dès sa première connexion, le collaborateur sera <strong>automatiquement contraint</strong> de choisir son propre mot de passe personnel avant d'accéder au dashboard.
+                            Ce mot de passe temporaire est haché en base de données. Dès sa première connexion, le collaborateur sera <strong>automatiquement redirigé</strong> vers la page de création d'un nouveau mot de passe personnel avant tout accès au dashboard.
                           </p>
                         </div>
                       </div>
-
-                      {/* Actions */}
-                      <div className="pt-4 flex gap-3 border-t border-border">
-                        <Button type="button" variant="ghost" className="flex-1 rounded-xl font-bold text-xs" onClick={() => setModalMode('none')}>
-                          Annuler
-                        </Button>
-                        <Button
-                          type="button"
-                          onClick={handleApplyQuickCredentials}
-                          disabled={isProvisioningQuick || !quickTempPassword.trim()}
-                          className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 gap-2 cursor-pointer"
-                        >
-                          {isProvisioningQuick ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
-                          <span>Appliquer & Préparer Envoi WhatsApp</span>
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </div>
-                ) : (
-                  <>
-                    {/* ── HEADER MODAL ── */}
-                    <div className="flex items-center justify-between p-5 md:p-6 border-b border-border bg-secondary/30">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-primary/10 text-primary rounded-xl border border-primary/20">
-                          <ShieldCheck className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base sm:text-lg font-black uppercase text-foreground tracking-tight">
-                              {modalMode === 'create' ? 'Création de Compte Utilisateur' : modalMode === 'edit' ? 'Modification du Compte' : 'Fiche Utilisateur & Périmètres'}
-                            </h3>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                              modalMode === 'create' 
-                                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                                : modalMode === 'edit'
-                                  ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
-                                  : 'bg-secondary text-muted-foreground border border-border'
-                            }`}>
-                              {modalMode === 'create' ? 'Création' : modalMode === 'edit' ? 'Édition' : 'Lecture'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground font-medium mt-0.5">
-                            Définissez l'intitulé de poste, le rôle système et le périmètre d'habilitation d'accès
-                          </p>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="icon" onClick={() => setModalMode('none')} className="rounded-xl hover:bg-secondary">
-                        <X className="w-5 h-5" />
-                      </Button>
                     </div>
 
-                    <CardContent className="p-5 md:p-8 space-y-6 max-h-[78vh] overflow-y-auto">
-                      {(() => {
-                        const isScoutJobTitle = (formData.job_title || '').trim().toLowerCase() === 'scout';
-                        const activeMobileCount = APP_MOBILE_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length;
-                        const activeDashboardCount = DASHBOARD_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length;
-                        const totalActive = activeMobileCount + activeDashboardCount;
-                        const isGlobalAdminUser = formData.system_role === 'super_admin' || formData.system_role === 'admin';
+                    {/* Bloc WhatsApp Officiel */}
+                    <div className="bg-[#25D366]/10 border border-[#25D366]/30 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-[#25D366] text-white flex items-center justify-center shadow-xs">
+                            <MessageCircle className="w-5 h-5 fill-current" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-foreground">Envoi Direct via WhatsApp</h4>
+                            <p className="text-[11px] text-muted-foreground">Transmettez le lien de l'application, l'identifiant et le mot de passe en 1 clic.</p>
+                          </div>
+                        </div>
+                      </div>
 
-                        return (
-                          <div className="space-y-6">
-                            {/* ── SECTION 1 : INFORMATIONS PERSONNELLES & COORDONNÉES ── */}
-                            <div className="p-5 rounded-2xl bg-secondary/20 border border-border/80 space-y-4">
-                              <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-                                <div className="w-2 h-2 rounded-full bg-primary" />
-                                <span className="text-[11px] font-black uppercase tracking-wider text-foreground">
-                                  1. Profil, Identité & Coordonnées
-                                </span>
-                              </div>
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-bold text-foreground block">
+                          Numéro WhatsApp du destinataire :
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="tel"
+                            value={whatsAppPhoneNumber}
+                            onChange={(e) => setWhatsAppPhoneNumber(e.target.value)}
+                            placeholder="+212 600-000000"
+                            className="flex-1 px-3.5 py-2.5 rounded-xl border border-border text-xs font-mono font-bold bg-background focus:outline-none focus:ring-2 focus:ring-[#25D366]/40 text-foreground"
+                          />
+                          <a
+                            href={getWhatsAppUrl(whatsAppPhoneNumber || createdCredentials.phone || '', getWhatsAppUserMessage(createdCredentials.fullName, createdCredentials.login, createdCredentials.tempPassword, createdCredentials.roleTitle, createdCredentials.systemRole))}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+                          >
+                            <MessageCircle className="w-4 h-4 fill-current" />
+                            <span>Envoyer WhatsApp</span>
+                          </a>
+                        </div>
+                      </div>
 
-                              <div className="flex flex-col md:flex-row gap-5 items-start">
-                                {/* Photo de Profil Officielle */}
-                                <div className="flex flex-col items-center justify-center gap-2 shrink-0 self-center md:self-start">
-                                  <div className="w-24 h-24 rounded-2xl bg-secondary/60 overflow-hidden border-2 border-dashed border-primary/30 relative group flex items-center justify-center shadow-inner">
-                                    {avatarPreview || formData.avatar_url ? (
-                                      <img src={avatarPreview || formData.avatar_url || ''} className="w-full h-full object-cover" alt="Avatar" />
-                                    ) : (
-                                      <Camera className="w-8 h-8 text-muted-foreground opacity-50" />
-                                    )}
-                                    
-                                    {modalMode !== 'view' && (
-                                      <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs font-bold gap-1">
-                                        <Upload className="w-4 h-4" />
-                                        <span>Charger</span>
-                                        <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" onChange={handleAvatarChange} />
-                                      </label>
-                                    )}
-                                  </div>
+                      <div className="pt-2 border-t border-[#25D366]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <span className="text-[11px] text-muted-foreground">Message d'invitation pré-formaté prêt à être transmis.</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const msg = getWhatsAppUserMessage(createdCredentials.fullName, createdCredentials.login, createdCredentials.tempPassword, createdCredentials.roleTitle, createdCredentials.systemRole);
+                            navigator.clipboard.writeText(msg);
+                            setCopiedField('all');
+                            toast.success("Message d'invitation copié !");
+                            setTimeout(() => setCopiedField(null), 2000);
+                          }}
+                          className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {copiedField === 'all' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>Copier tout le message</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bouton de clôture */}
+                    <div className="pt-4 border-t border-border flex justify-end">
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          setModalMode('none');
+                          setModalStep(1);
+                          setCreatedCredentials(null);
+                        }}
+                        className="w-full sm:w-auto px-8 bg-primary text-primary-foreground font-bold text-xs rounded-xl shadow-lg shadow-primary/20"
+                      >
+                        Terminer & Fermer
+                      </Button>
+                    </div>
+                  </CardContent>
+                </div>
+              ) : modalMode === 'credentials' && quickCredentialsUser ? (
+                /* ── MODAL MODE CREDENTIALS RAPIDE (Identifiants & Authentification) ── */
+                <div className="animate-in fade-in zoom-in-98 duration-200">
+                  <div className="flex items-center justify-between p-6 border-b border-border bg-amber-500/10">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl border border-amber-500/30">
+                        <KeyRound className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 inline-block mb-0.5">
+                          Sécurité & Authentification FUS
+                        </span>
+                        <h3 className="text-base sm:text-lg font-black uppercase text-foreground">
+                          Générer & Transmettre les Accès
+                        </h3>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => setModalMode('none')} className="rounded-xl">
+                      <X className="w-5 h-5" />
+                    </Button>
+                  </div>
+
+                  <CardContent className="p-6 md:p-8 space-y-6 max-h-[75vh] overflow-y-auto">
+                    {/* Récapitulatif Collaborateur */}
+                    <div className="p-4 rounded-2xl bg-secondary/40 border border-border flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <UserAvatarItem user={quickCredentialsUser} size="sm" />
+                        <div>
+                          <h4 className="font-bold text-sm text-foreground">{quickCredentialsUser.full_name || quickCredentialsUser.email}</h4>
+                          <p className="text-xs text-muted-foreground font-mono">{quickCredentialsUser.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getRoleConfig(quickCredentialsUser.system_role).badgeClass}`}>
+                          {getRoleConfig(quickCredentialsUser.system_role).label}
+                        </span>
+                        {quickCredentialsUser.job_title && (
+                          <span className="text-[10px] font-semibold text-primary">
+                            {quickCredentialsUser.job_title}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Mot de passe temporaire à générer */}
+                    <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <KeyRound className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                          <label className="text-xs font-bold text-foreground">
+                            Nouveau mot de passe temporaire
+                          </label>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const generated = generateSecureTempPassword();
+                            setQuickTempPassword(generated);
+                            toast.success("Nouveau mot de passe généré !", { icon: '⚡' });
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          <span>⚡ Régénérer</span>
+                        </button>
+                      </div>
+
+                      <div className="relative">
+                        <input
+                          type={quickShowPassword ? "text" : "password"}
+                          value={quickTempPassword}
+                          onChange={(e) => setQuickTempPassword(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-amber-300 dark:border-amber-800 text-xs font-mono font-bold bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 pr-20"
+                        />
+                        <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setQuickShowPassword(!quickShowPassword)}
+                            className="p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                            title={quickShowPassword ? "Masquer" : "Afficher"}
+                          >
+                            {quickShowPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(quickTempPassword);
+                              toast.success("Mot de passe copié !");
+                            }}
+                            className="p-1 text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+                            title="Copier"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Numéro WhatsApp */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                        <Smartphone className="w-3.5 h-3.5 text-[#25D366]" /> Numéro WhatsApp du collaborateur
+                      </label>
+                      <Input
+                        type="tel"
+                        value={quickPhone}
+                        onChange={e => setQuickPhone(e.target.value)}
+                        placeholder="+212 600-000000"
+                        className="bg-secondary/30 border-transparent focus:bg-background h-11 rounded-xl font-medium font-mono"
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Numéro utilisé pour la redirection WhatsApp directe avec les identifiants préremplis.
+                      </p>
+                    </div>
+
+                    {/* Sécurité et hachage en base */}
+                    <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs">
+                      <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <p className="font-bold text-[11px]">Hachage sécurisé & Renouvellement obligatoire</p>
+                        <p className="text-[11px] opacity-90 leading-relaxed">
+                          Ce mot de passe temporaire est haché en base de données avec l'extension pgcrypto (bcrypt). Dès sa première connexion, le collaborateur sera <strong>automatiquement contraint</strong> de choisir son propre mot de passe personnel avant d'accéder au dashboard.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="pt-4 flex gap-3 border-t border-border">
+                      <Button type="button" variant="ghost" className="flex-1 rounded-xl font-bold text-xs" onClick={() => setModalMode('none')}>
+                        Annuler
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={handleApplyQuickCredentials}
+                        disabled={isProvisioningQuick || !quickTempPassword.trim()}
+                        className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 gap-2 cursor-pointer"
+                      >
+                        {isProvisioningQuick ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                        <span>Appliquer & Préparer Envoi WhatsApp</span>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </div>
+              ) : (
+                <>
+                  {/* ── HEADER MODAL ── */}
+                  <div className="flex items-center justify-between p-5 md:p-6 border-b border-border bg-secondary/30">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-primary/10 text-primary rounded-xl border border-primary/20">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base sm:text-lg font-black uppercase text-foreground tracking-tight">
+                            {modalMode === 'create' ? 'Création de Compte Utilisateur' : modalMode === 'edit' ? 'Modification du Compte' : 'Fiche Utilisateur & Périmètres'}
+                          </h3>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${modalMode === 'create'
+                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                              : modalMode === 'edit'
+                                ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+                                : 'bg-secondary text-muted-foreground border border-border'
+                            }`}>
+                            {modalMode === 'create' ? 'Création' : modalMode === 'edit' ? 'Édition' : 'Lecture'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground font-medium mt-0.5">
+                          Définissez l'intitulé de poste, le rôle système et le périmètre d'habilitation d'accès
+                        </p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => setModalMode('none')} className="rounded-xl hover:bg-secondary">
+                      <X className="w-5 h-5" />
+                    </Button>
+                  </div>
+
+                  <CardContent className="p-5 md:p-8 space-y-6 max-h-[78vh] overflow-y-auto">
+                    {(() => {
+                      const isScoutJobTitle = (formData.job_title || '').trim().toLowerCase() === 'scout';
+                      const activeMobileCount = APP_MOBILE_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length;
+                      const activeDashboardCount = DASHBOARD_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length;
+                      const totalActive = activeMobileCount + activeDashboardCount;
+                      const isGlobalAdminUser = formData.system_role === 'super_admin' || formData.system_role === 'admin';
+
+                      return (
+                        <div className="space-y-6">
+                          {/* ── SECTION 1 : INFORMATIONS PERSONNELLES & COORDONNÉES ── */}
+                          <div className="p-5 rounded-2xl bg-secondary/20 border border-border/80 space-y-4">
+                            <div className="flex items-center gap-2 pb-2 border-b border-border/60">
+                              <div className="w-2 h-2 rounded-full bg-primary" />
+                              <span className="text-[11px] font-black uppercase tracking-wider text-foreground">
+                                1. Profil, Identité & Coordonnées
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col md:flex-row gap-5 items-start">
+                              {/* Photo de Profil Officielle */}
+                              <div className="flex flex-col items-center justify-center gap-2 shrink-0 self-center md:self-start">
+                                <div className="w-24 h-24 rounded-2xl bg-secondary/60 overflow-hidden border-2 border-dashed border-primary/30 relative group flex items-center justify-center shadow-inner">
+                                  {avatarPreview || formData.avatar_url ? (
+                                    <img src={avatarPreview || formData.avatar_url || ''} className="w-full h-full object-cover" alt="Avatar" />
+                                  ) : (
+                                    <Camera className="w-8 h-8 text-muted-foreground opacity-50" />
+                                  )}
 
                                   {modalMode !== 'view' && (
-                                    <div className="flex items-center gap-1.5">
+                                    <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs font-bold gap-1">
+                                      <Upload className="w-4 h-4" />
+                                      <span>Charger</span>
+                                      <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" onChange={handleAvatarChange} />
+                                    </label>
+                                  )}
+                                </div>
+
+                                {modalMode !== 'view' && (
+                                  <div className="flex items-center gap-1.5">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => setMediaPickerOpen(true)}
+                                      className="h-7 px-2 text-[10px] font-bold rounded-lg gap-1 border-slate-200 hover:border-primary/40 bg-slate-50 hover:bg-primary/10"
+                                    >
+                                      <ImageIcon className="w-3 h-3 text-primary" />
+                                      Média
+                                    </Button>
+                                    {(avatarPreview || formData.avatar_url) && (
                                       <Button
                                         type="button"
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => setMediaPickerOpen(true)}
-                                        className="h-7 px-2 text-[10px] font-bold rounded-lg gap-1 border-slate-200 hover:border-primary/40 bg-slate-50 hover:bg-primary/10"
+                                        onClick={handleEditExistingAvatar}
+                                        className="h-7 px-2 text-[10px] font-bold rounded-lg gap-1 border-primary/30 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary"
+                                        title="Recadrer et zoomer l'avatar existant"
                                       >
-                                        <ImageIcon className="w-3 h-3 text-primary" />
-                                        Média
+                                        <Scissors className="w-3 h-3 text-primary" />
+                                        Recadrer
                                       </Button>
-                                      {(avatarPreview || formData.avatar_url) && (
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={handleEditExistingAvatar}
-                                          className="h-7 px-2 text-[10px] font-bold rounded-lg gap-1 border-primary/30 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary"
-                                          title="Recadrer et zoomer l'avatar existant"
-                                        >
-                                          <Scissors className="w-3 h-3 text-primary" />
-                                          Recadrer
-                                        </Button>
-                                      )}
-                                      {(avatarPreview || formData.avatar_url) && (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => {
-                                            setFormData(prev => ({ ...prev, avatar_url: '' }));
-                                            setAvatarPreview(null);
-                                            setAvatarFile(null);
-                                          }}
-                                          className="h-7 w-7 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
-                                          title="Supprimer la photo"
-                                        >
-                                          <Trash2 className="w-3 h-3" />
-                                        </Button>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider text-center">
-                                    Photo Officielle
-                                  </span>
-                                </div>
-
-                                {/* Form Fields: Grille 2 colonnes équilibrée */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 flex-1 w-full">
-                                  {/* Nom & Prénom */}
-                                  <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                      Nom & Prénom *
-                                    </label>
-                                    <Input 
-                                      disabled={modalMode === 'view'} 
-                                      value={formData.full_name} 
-                                      onChange={e => setFormData({...formData, full_name: e.target.value})} 
-                                      placeholder="Ex: Walid Regragui" 
-                                      className="bg-background/90 border-border/80 focus:bg-background h-10 rounded-xl font-medium text-xs" 
-                                    />
-                                  </div>
-
-                                  {/* Adresse Email */}
-                                  <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                        Adresse Email *
-                                      </label>
-                                      {modalMode === 'create' && formData.full_name?.trim() && (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            const generatedEmail = generateScoutLogin(formData.full_name);
-                                            setFormData({ ...formData, email: generatedEmail });
-                                            toast.success(`Email suggéré : ${generatedEmail}`, { icon: '⚡' });
-                                          }}
-                                          className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer"
-                                        >
-                                          <Sparkles className="w-3 h-3" /> Suggérer @fus.ma
-                                        </button>
-                                      )}
-                                    </div>
-                                    <Input 
-                                      disabled={modalMode === 'view'} 
-                                      type="email" 
-                                      value={formData.email} 
-                                      onChange={e => setFormData({...formData, email: e.target.value})} 
-                                      placeholder="coach@fus.ma" 
-                                      className="bg-background/90 border-border/80 focus:bg-background h-10 rounded-xl font-medium text-xs" 
-                                    />
-                                  </div>
-
-                                  {/* Numéro WhatsApp */}
-                                  <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                                      <MessageCircle className="w-3.5 h-3.5 text-emerald-500" /> Numéro WhatsApp
-                                    </label>
-                                    <Input 
-                                      disabled={modalMode === 'view'} 
-                                      type="tel" 
-                                      value={formData.phone_number} 
-                                      onChange={e => setFormData({...formData, phone_number: e.target.value})} 
-                                      placeholder="+212 600-000000" 
-                                      className="bg-background/90 border-border/80 focus:bg-background h-10 rounded-xl font-medium text-xs font-mono" 
-                                    />
-                                  </div>
-
-                                  {/* Intitulé de Poste / Fonction Officielle */}
-                                  <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                                        <Briefcase className="w-3.5 h-3.5 text-primary" /> Intitulé de Poste *
-                                      </label>
-                                      {isScoutJobTitle && (
-                                        <span className="text-[9px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950/80 px-2 py-0.2 rounded-full border border-purple-200 dark:border-purple-800">
-                                          🎯 Cellule Scouting
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="relative">
-                                      <select 
-                                        disabled={modalMode === 'view'}
-                                        value={formData.job_title || ''} 
-                                        onChange={e => {
-                                          const title = e.target.value;
-                                          const isNowScout = title.trim().toLowerCase() === 'scout';
-                                          let newRole = formData.system_role;
-                                          if (isNowScout && !formData.system_role?.startsWith('scout_') && formData.system_role !== 'super_admin' && formData.system_role !== 'admin') {
-                                            newRole = isScoutAdmin ? 'scout_editor' : 'scout_manager';
-                                          } else if (!isNowScout && formData.system_role?.startsWith('scout_')) {
-                                            newRole = 'manager';
-                                          }
-                                          setFormData({ ...formData, job_title: title, system_role: newRole });
+                                    )}
+                                    {(avatarPreview || formData.avatar_url) && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          setFormData(prev => ({ ...prev, avatar_url: '' }));
+                                          setAvatarPreview(null);
+                                          setAvatarFile(null);
                                         }}
-                                        className="w-full h-10 px-3 rounded-xl bg-background/90 border border-border/80 focus:bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none font-semibold text-xs text-foreground cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                                        className="h-7 w-7 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
+                                        title="Supprimer la photo"
                                       >
-                                        <option value="" disabled>Sélectionner un intitulé officiel...</option>
-                                        {OFFICIAL_JOB_TITLES.map(title => (
-                                          <option key={title} value={title}>
-                                            {title}
-                                          </option>
-                                        ))}
-                                        {formData.job_title && !OFFICIAL_JOB_TITLES.includes(formData.job_title as any) && (
-                                          <option value={formData.job_title}>
-                                            {formData.job_title} (Intitulé existant)
-                                          </option>
-                                        )}
-                                      </select>
-                                    </div>
-                                  </div>
-
-                                  {/* Statut du Compte */}
-                                  <div className="space-y-1.5 sm:col-span-2">
-                                    <div className="flex items-center justify-between">
-                                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                                        <Power className="w-3.5 h-3.5 text-primary" /> Statut du Compte Utilisateur
-                                      </label>
-                                      <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
-                                        formData.is_active !== false 
-                                          ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' 
-                                          : 'bg-rose-500/10 text-rose-600 border-rose-500/20'
-                                      }`}>
-                                        {formData.is_active !== false ? '● Compte Actif' : '○ Compte Désactivé'}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        disabled={modalMode === 'view'}
-                                        onClick={() => setFormData({ ...formData, is_active: true })}
-                                        className={`flex-1 h-10 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border transition-all ${
-                                          formData.is_active !== false
-                                            ? 'bg-emerald-500 text-white border-emerald-600 shadow-xs'
-                                            : 'bg-background/80 text-muted-foreground border-border hover:bg-secondary'
-                                        } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                      >
-                                        <span className="w-2 h-2 rounded-full bg-emerald-200 animate-pulse" />
-                                        Actif (Accès autorisé)
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={modalMode === 'view'}
-                                        onClick={() => setFormData({ ...formData, is_active: false })}
-                                        className={`flex-1 h-10 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border transition-all ${
-                                          formData.is_active === false
-                                            ? 'bg-rose-500 text-white border-rose-600 shadow-xs'
-                                            : 'bg-background/80 text-muted-foreground border-border hover:bg-secondary'
-                                        } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                      >
-                                        <span className="w-2 h-2 rounded-full bg-rose-200" />
-                                        Inactif (Accès suspendu)
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* ── SECTION 2 : RÔLE SYSTÈME & MOT DE PASSE (2 COLONNES) ── */}
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                              {/* Colonne Gauche : Rôle Système & Niveau de Privilège */}
-                              <div className="p-5 rounded-2xl bg-secondary/20 border border-border/80 space-y-3.5 flex flex-col justify-between">
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <label className="text-[11px] font-black uppercase tracking-wider text-primary flex items-center gap-1.5">
-                                      <ShieldCheck className="w-3.5 h-3.5" />
-                                      {isScoutJobTitle ? 'Rôle Scout & Niveau de Privilège *' : 'Rôle Système Officiel *'}
-                                    </label>
-                                    {isScoutJobTitle && (
-                                      <span className="text-[9px] font-mono font-bold text-purple-600 dark:text-purple-400">
-                                        {formData.system_role}
-                                      </span>
+                                        <Trash2 className="w-3 h-3" />
+                                      </Button>
                                     )}
-                                  </div>
-                                  <p className="text-[10px] text-muted-foreground">
-                                    Définit les privilèges opérationnels et le profil de sécurité.
-                                  </p>
-                                </div>
-
-                                {isScoutJobTitle ? (
-                                  <div className="space-y-2.5">
-                                    {isScoutAdmin && (
-                                      <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1.5">
-                                        <span>🔒 Rôles <strong>Scout Manager</strong> et <strong>Scout Admin</strong> réservés à la Direction.</span>
-                                      </div>
-                                    )}
-
-                                    <div className={`grid gap-1.5 ${isScoutAdmin ? 'grid-cols-2' : 'grid-cols-2'}`}>
-                                      {(isScoutAdmin 
-                                        ? SCOUT_ROLES.filter(sr => sr.value === 'scout_editor' || sr.value === 'scout_user')
-                                        : SCOUT_ROLES
-                                      ).map(sr => {
-                                        const isSelected = formData.system_role === sr.value;
-                                        return (
-                                          <button
-                                            key={sr.value}
-                                            type="button"
-                                            disabled={modalMode === 'view'}
-                                            onClick={() => setFormData({ ...formData, system_role: sr.value })}
-                                            className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
-                                              isSelected
-                                                ? 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-600/30 ring-2 ring-purple-400/40'
-                                                : 'bg-background/80 text-foreground border-border hover:bg-secondary hover:border-purple-300'
-                                            } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                          >
-                                            <span className="text-[11px] font-black uppercase tracking-wide">
-                                              {sr.level}
-                                            </span>
-                                            <span className="text-[9px] font-semibold opacity-85 leading-tight">
-                                              {sr.label}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-
-                                    <select 
-                                      disabled={modalMode === 'view'}
-                                      value={formData.system_role || (isScoutAdmin ? 'scout_editor' : 'scout_manager')} 
-                                      onChange={e => setFormData({...formData, system_role: e.target.value})}
-                                      className="w-full h-9 px-3 rounded-xl bg-background border border-border text-xs font-bold text-foreground outline-none"
-                                    >
-                                      <optgroup label="Rôles Cellule Détection">
-                                        {(isScoutAdmin 
-                                          ? SCOUT_ROLES.filter(sr => sr.value === 'scout_editor' || sr.value === 'scout_user')
-                                          : SCOUT_ROLES
-                                        ).map(r => (
-                                          <option key={r.value} value={r.value}>
-                                            {r.label} — {r.desc}
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                      {!isScoutAdmin && (
-                                        <optgroup label="Administration Globale">
-                                          <option value="super_admin">👑 Super Administrateur (Global)</option>
-                                          <option value="admin">Administrateur Club</option>
-                                        </optgroup>
-                                      )}
-                                    </select>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-2.5">
-                                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-                                      {[
-                                        { value: 'super_admin', label: '👑 Super', desc: 'Total' },
-                                        { value: 'admin', label: 'Admin', desc: 'Gestion' },
-                                        { value: 'manager', label: 'Manager', desc: 'Staff' },
-                                        { value: 'editor', label: 'Éditeur', desc: 'Saisie' },
-                                        { value: 'viewer', label: 'Viewer', desc: 'Lecture' }
-                                      ].map(r => {
-                                        const isSelected = formData.system_role === r.value;
-                                        return (
-                                          <button
-                                            key={r.value}
-                                            type="button"
-                                            disabled={modalMode === 'view'}
-                                            onClick={() => setFormData({ ...formData, system_role: r.value })}
-                                            className={`p-2 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
-                                              isSelected
-                                                ? r.value === 'super_admin'
-                                                  ? 'bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-400/50'
-                                                  : 'bg-primary text-primary-foreground border-primary shadow-md ring-2 ring-primary/30'
-                                                : 'bg-background/80 text-foreground border-border hover:bg-secondary hover:border-primary/40'
-                                            } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                          >
-                                            <span className="text-[10px] font-black uppercase tracking-wide">
-                                              {r.label}
-                                            </span>
-                                            <span className="text-[8px] font-semibold opacity-85 leading-tight">
-                                              {r.desc}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-
-                                    <select 
-                                      disabled={modalMode === 'view'}
-                                      value={formData.system_role || 'admin'} 
-                                      onChange={e => setFormData({...formData, system_role: e.target.value})}
-                                      className="w-full h-9 px-3 rounded-xl bg-background border border-border text-xs font-bold text-foreground outline-none"
-                                    >
-                                      <optgroup label="Rôles Système Officiels">
-                                        {SYSTEM_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                                      </optgroup>
-                                    </select>
                                   </div>
                                 )}
+
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider text-center">
+                                  Photo Officielle
+                                </span>
                               </div>
 
-                              {/* Colonne Droite : Mot de passe / Authentification */}
-                              <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-3.5 flex flex-col justify-between">
-                                <div className="space-y-1">
+                              {/* Form Fields: Grille 2 colonnes équilibrée */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 flex-1 w-full">
+                                {/* Nom & Prénom */}
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                    Nom & Prénom *
+                                  </label>
+                                  <Input
+                                    disabled={modalMode === 'view'}
+                                    value={formData.full_name}
+                                    onChange={e => setFormData({ ...formData, full_name: e.target.value })}
+                                    placeholder="Ex: Walid Regragui"
+                                    className="bg-background/90 border-border/80 focus:bg-background h-10 rounded-xl font-medium text-xs"
+                                  />
+                                </div>
+
+                                {/* Adresse Email */}
+                                <div className="space-y-1.5">
                                   <div className="flex items-center justify-between">
-                                    <label className="text-[11px] font-black uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                                      <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                                      {modalMode === 'edit' ? "Modifier / Réinitialiser le mot de passe" : "Mot de passe d'accès initial"}
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                      Adresse Email *
                                     </label>
-                                    {modalMode !== 'view' && (
+                                    {modalMode === 'create' && formData.full_name?.trim() && (
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          const generated = generateSecureTempPassword();
-                                          setFormData({ ...formData, password: generated });
-                                          toast.success('Nouveau mot de passe généré !', { icon: '⚡' });
+                                          const generatedEmail = generateScoutLogin(formData.full_name);
+                                          setFormData({ ...formData, email: generatedEmail });
+                                          toast.success(`Email suggéré : ${generatedEmail}`, { icon: '⚡' });
                                         }}
-                                        className="px-2 py-0.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                                        className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer"
                                       >
-                                        <Sparkles className="w-3 h-3" />
-                                        <span>⚡ Générer</span>
+                                        <Sparkles className="w-3 h-3" /> Suggérer @fus.ma
                                       </button>
                                     )}
                                   </div>
-                                  <p className="text-[10px] text-amber-800/80 dark:text-amber-300/80">
-                                    {modalMode === 'edit' 
-                                      ? "Laissez vide pour conserver l'actuel, ou générez un nouveau mot de passe temporaire." 
-                                      : "Mot de passe sécurisé à communiquer au collaborateur."}
-                                  </p>
+                                  <Input
+                                    disabled={modalMode === 'view'}
+                                    type="email"
+                                    value={formData.email}
+                                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                    placeholder="coach@fus.ma"
+                                    className="bg-background/90 border-border/80 focus:bg-background h-10 rounded-xl font-medium text-xs"
+                                  />
                                 </div>
 
-                                {modalMode !== 'view' ? (
-                                  <div className="space-y-2">
-                                    <div className="relative">
-                                      <Input
-                                        type="text"
-                                        value={formData.password}
-                                        onChange={e => setFormData({...formData, password: e.target.value})}
-                                        placeholder={modalMode === 'edit' ? "Laissez vide pour conserver l'actuel" : "Mot de passe temporaire"}
-                                        className="bg-background border-amber-300 dark:border-amber-800 focus:ring-amber-500/30 h-10 rounded-xl font-mono text-xs font-bold pr-16 text-foreground"
-                                      />
-                                      {formData.password && (
-                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              navigator.clipboard.writeText(formData.password);
-                                              toast.success('Mot de passe copié !');
-                                            }}
-                                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-amber-500/20 transition-colors cursor-pointer"
-                                            title="Copier le mot de passe"
-                                          >
-                                            <Copy className="w-3.5 h-3.5" />
-                                          </button>
-                                        </div>
+                                {/* Numéro WhatsApp */}
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                                    <MessageCircle className="w-3.5 h-3.5 text-emerald-500" /> Numéro WhatsApp
+                                  </label>
+                                  <Input
+                                    disabled={modalMode === 'view'}
+                                    type="tel"
+                                    value={formData.phone_number}
+                                    onChange={e => setFormData({ ...formData, phone_number: e.target.value })}
+                                    placeholder="+212 600-000000"
+                                    className="bg-background/90 border-border/80 focus:bg-background h-10 rounded-xl font-medium text-xs font-mono"
+                                  />
+                                </div>
+
+                                {/* Intitulé de Poste / Fonction Officielle */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                                      <Briefcase className="w-3.5 h-3.5 text-primary" /> Intitulé de Poste *
+                                    </label>
+                                    {isScoutJobTitle && (
+                                      <span className="text-[9px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950/80 px-2 py-0.2 rounded-full border border-purple-200 dark:border-purple-800">
+                                        🎯 Cellule Scouting
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="relative">
+                                    <select
+                                      disabled={modalMode === 'view'}
+                                      value={formData.job_title || ''}
+                                      onChange={e => {
+                                        const title = e.target.value;
+                                        const isNowScout = title.trim().toLowerCase() === 'scout';
+                                        let newRole = formData.system_role;
+                                        if (isNowScout && !formData.system_role?.startsWith('scout_') && formData.system_role !== 'super_admin' && formData.system_role !== 'admin') {
+                                          newRole = isScoutAdmin ? 'scout_editor' : 'scout_manager';
+                                        } else if (!isNowScout && formData.system_role?.startsWith('scout_')) {
+                                          newRole = 'manager';
+                                        }
+                                        setFormData({ ...formData, job_title: title, system_role: newRole });
+                                      }}
+                                      className="w-full h-10 px-3 rounded-xl bg-background/90 border border-border/80 focus:bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none font-semibold text-xs text-foreground cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                                    >
+                                      <option value="" disabled>Sélectionner un intitulé officiel...</option>
+                                      {OFFICIAL_JOB_TITLES.map(title => (
+                                        <option key={title} value={title}>
+                                          {title}
+                                        </option>
+                                      ))}
+                                      {formData.job_title && !OFFICIAL_JOB_TITLES.includes(formData.job_title as any) && (
+                                        <option value={formData.job_title}>
+                                          {formData.job_title} (Intitulé existant)
+                                        </option>
                                       )}
+                                    </select>
+                                  </div>
+                                </div>
+
+                                {/* Statut du Compte */}
+                                <div className="space-y-1.5 sm:col-span-2">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                                      <Power className="w-3.5 h-3.5 text-primary" /> Statut du Compte Utilisateur
+                                    </label>
+                                    <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${formData.is_active !== false
+                                        ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                                        : 'bg-rose-500/10 text-rose-600 border-rose-500/20'
+                                      }`}>
+                                      {formData.is_active !== false ? '● Compte Actif' : '○ Compte Désactivé'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      disabled={modalMode === 'view'}
+                                      onClick={() => setFormData({ ...formData, is_active: true })}
+                                      className={`flex-1 h-10 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border transition-all ${formData.is_active !== false
+                                          ? 'bg-emerald-500 text-white border-emerald-600 shadow-xs'
+                                          : 'bg-background/80 text-muted-foreground border-border hover:bg-secondary'
+                                        } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                    >
+                                      <span className="w-2 h-2 rounded-full bg-emerald-200 animate-pulse" />
+                                      Actif (Accès autorisé)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={modalMode === 'view'}
+                                      onClick={() => setFormData({ ...formData, is_active: false })}
+                                      className={`flex-1 h-10 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border transition-all ${formData.is_active === false
+                                          ? 'bg-rose-500 text-white border-rose-600 shadow-xs'
+                                          : 'bg-background/80 text-muted-foreground border-border hover:bg-secondary'
+                                        } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                    >
+                                      <span className="w-2 h-2 rounded-full bg-rose-200" />
+                                      Inactif (Accès suspendu)
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ── SECTION 2 : RÔLE SYSTÈME & MOT DE PASSE (2 COLONNES) ── */}
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {/* Colonne Gauche : Rôle Système & Niveau de Privilège */}
+                            <div className="p-5 rounded-2xl bg-secondary/20 border border-border/80 space-y-3.5 flex flex-col justify-between">
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[11px] font-black uppercase tracking-wider text-primary flex items-center gap-1.5">
+                                    <ShieldCheck className="w-3.5 h-3.5" />
+                                    {isScoutJobTitle ? 'Rôle Scout & Niveau de Privilège *' : 'Rôle Système Officiel *'}
+                                  </label>
+                                  {isScoutJobTitle && (
+                                    <span className="text-[9px] font-mono font-bold text-purple-600 dark:text-purple-400">
+                                      {formData.system_role}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-muted-foreground">
+                                  Définit les privilèges opérationnels et le profil de sécurité.
+                                </p>
+                              </div>
+
+                              {isScoutJobTitle ? (
+                                <div className="space-y-2.5">
+                                  {isScoutAdmin && (
+                                    <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                                      <span>🔒 Rôles <strong>Scout Manager</strong> et <strong>Scout Admin</strong> réservés à la Direction.</span>
                                     </div>
-                                    <div className="flex items-start gap-1.5 text-[9.5px] text-amber-800 dark:text-amber-300 leading-snug">
-                                      <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                                      <span>
-                                        Haché en base (bcrypt). <strong>force_password_change = true</strong> imposera le choix d'un mot de passe personnel dès sa première connexion.
+                                  )}
+
+                                  <div className={`grid gap-1.5 ${isScoutAdmin ? 'grid-cols-2' : 'grid-cols-2'}`}>
+                                    {(isScoutAdmin
+                                      ? SCOUT_ROLES.filter(sr => sr.value === 'scout_editor' || sr.value === 'scout_user')
+                                      : SCOUT_ROLES
+                                    ).map(sr => {
+                                      const isSelected = formData.system_role === sr.value;
+                                      return (
+                                        <button
+                                          key={sr.value}
+                                          type="button"
+                                          disabled={modalMode === 'view'}
+                                          onClick={() => setFormData({ ...formData, system_role: sr.value })}
+                                          className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${isSelected
+                                              ? 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-600/30 ring-2 ring-purple-400/40'
+                                              : 'bg-background/80 text-foreground border-border hover:bg-secondary hover:border-purple-300'
+                                            } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                        >
+                                          <span className="text-[11px] font-black uppercase tracking-wide">
+                                            {sr.level}
+                                          </span>
+                                          <span className="text-[9px] font-semibold opacity-85 leading-tight">
+                                            {sr.label}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  <select
+                                    disabled={modalMode === 'view'}
+                                    value={formData.system_role || (isScoutAdmin ? 'scout_editor' : 'scout_manager')}
+                                    onChange={e => setFormData({ ...formData, system_role: e.target.value })}
+                                    className="w-full h-9 px-3 rounded-xl bg-background border border-border text-xs font-bold text-foreground outline-none"
+                                  >
+                                    <optgroup label="Rôles Cellule Détection">
+                                      {(isScoutAdmin
+                                        ? SCOUT_ROLES.filter(sr => sr.value === 'scout_editor' || sr.value === 'scout_user')
+                                        : SCOUT_ROLES
+                                      ).map(r => (
+                                        <option key={r.value} value={r.value}>
+                                          {r.label} — {r.desc}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                    {!isScoutAdmin && (
+                                      <optgroup label="Administration Globale">
+                                        <option value="super_admin">👑 Super Administrateur (Global)</option>
+                                        <option value="admin">Administrateur Club</option>
+                                      </optgroup>
+                                    )}
+                                  </select>
+                                </div>
+                              ) : (
+                                <div className="space-y-2.5">
+                                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+                                    {[
+                                      { value: 'super_admin', label: '👑 Super', desc: 'Total' },
+                                      { value: 'admin', label: 'Admin', desc: 'Gestion' },
+                                      { value: 'manager', label: 'Manager', desc: 'Staff' },
+                                      { value: 'editor', label: 'Éditeur', desc: 'Saisie' },
+                                      { value: 'viewer', label: 'Viewer', desc: 'Lecture' }
+                                    ].map(r => {
+                                      const isSelected = formData.system_role === r.value;
+                                      return (
+                                        <button
+                                          key={r.value}
+                                          type="button"
+                                          disabled={modalMode === 'view'}
+                                          onClick={() => setFormData({ ...formData, system_role: r.value })}
+                                          className={`p-2 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${isSelected
+                                              ? r.value === 'super_admin'
+                                                ? 'bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-400/50'
+                                                : 'bg-primary text-primary-foreground border-primary shadow-md ring-2 ring-primary/30'
+                                              : 'bg-background/80 text-foreground border-border hover:bg-secondary hover:border-primary/40'
+                                            } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                        >
+                                          <span className="text-[10px] font-black uppercase tracking-wide">
+                                            {r.label}
+                                          </span>
+                                          <span className="text-[8px] font-semibold opacity-85 leading-tight">
+                                            {r.desc}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  <select
+                                    disabled={modalMode === 'view'}
+                                    value={formData.system_role || 'admin'}
+                                    onChange={e => setFormData({ ...formData, system_role: e.target.value })}
+                                    className="w-full h-9 px-3 rounded-xl bg-background border border-border text-xs font-bold text-foreground outline-none"
+                                  >
+                                    <optgroup label="Rôles Système Officiels">
+                                      {SYSTEM_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                                    </optgroup>
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Colonne Droite : Mot de passe / Authentification */}
+                            <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-3.5 flex flex-col justify-between">
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[11px] font-black uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                                    <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                                    {modalMode === 'edit' ? "Modifier / Réinitialiser le mot de passe" : "Mot de passe d'accès initial"}
+                                  </label>
+                                  {modalMode !== 'view' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const generated = generateSecureTempPassword();
+                                        setFormData({ ...formData, password: generated });
+                                        toast.success('Nouveau mot de passe généré !', { icon: '⚡' });
+                                      }}
+                                      className="px-2 py-0.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Sparkles className="w-3 h-3" />
+                                      <span>⚡ Générer</span>
+                                    </button>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-amber-800/80 dark:text-amber-300/80">
+                                  {modalMode === 'edit'
+                                    ? "Laissez vide pour conserver l'actuel, ou générez un nouveau mot de passe temporaire."
+                                    : "Mot de passe sécurisé à communiquer au collaborateur."}
+                                </p>
+                              </div>
+
+                              {modalMode !== 'view' ? (
+                                <div className="space-y-2">
+                                  <div className="relative">
+                                    <Input
+                                      type="text"
+                                      value={formData.password}
+                                      onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                      placeholder={modalMode === 'edit' ? "Laissez vide pour conserver l'actuel" : "Mot de passe temporaire"}
+                                      className="bg-background border-amber-300 dark:border-amber-800 focus:ring-amber-500/30 h-10 rounded-xl font-mono text-xs font-bold pr-16 text-foreground"
+                                    />
+                                    {formData.password && (
+                                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(formData.password);
+                                            toast.success('Mot de passe copié !');
+                                          }}
+                                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-amber-500/20 transition-colors cursor-pointer"
+                                          title="Copier le mot de passe"
+                                        >
+                                          <Copy className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex items-start gap-1.5 text-[9.5px] text-amber-800 dark:text-amber-300 leading-snug">
+                                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                                    <span>
+                                      Haché en base (bcrypt). <strong>force_password_change = true</strong> imposera le choix d'un mot de passe personnel dès sa première connexion.
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-3 rounded-xl bg-background/60 border border-amber-300/30 text-[11px] font-mono text-muted-foreground">
+                                  Mot de passe sécurisé et haché en base de données.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* ── SECTION 3 : PÉRIMÈTRE D'INTERVENTION — CATÉGORIES (U7 À PRO) ── */}
+                          <div className="p-5 rounded-2xl bg-secondary/20 border border-border/80 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-primary" />
+                                <label className="text-[11px] font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                                  <Layers className="w-3.5 h-3.5 text-primary" />
+                                  2. Périmètre d'Intervention — Catégories d'Âge (U7 à PRO)
+                                </label>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                                  {formData.categories.length} / {AGE_CATEGORIES.length}
+                                </span>
+                              </div>
+
+                              {modalMode !== 'view' && (
+                                <div className="flex items-center gap-2 text-xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => setFormData({ ...formData, categories: [...AGE_CATEGORIES] })}
+                                    className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                                  >
+                                    Tout sélectionner
+                                  </button>
+                                  <span className="text-muted-foreground text-xs">•</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setFormData({ ...formData, categories: [] })}
+                                    className="text-[10px] font-bold text-muted-foreground hover:text-destructive hover:underline cursor-pointer"
+                                  >
+                                    Effacer
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap gap-1.5">
+                              {AGE_CATEGORIES.map(cat => {
+                                const isSelected = formData.categories.includes(cat);
+                                return (
+                                  <button
+                                    key={cat}
+                                    type="button"
+                                    disabled={modalMode === 'view'}
+                                    onClick={() => toggleCategory(cat)}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border transition-all ${isSelected
+                                        ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                                        : 'bg-background/80 text-muted-foreground border-border hover:bg-secondary hover:text-foreground'
+                                      } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                  >
+                                    {cat}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* ── SECTION 4 : PERMISSIONS SPÉCIFIQUES & HABILITATIONS ── */}
+                          <div>
+                            {formData.system_role === 'super_admin' ? (
+                              <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-6 text-center space-y-2">
+                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
+                                  <ShieldCheck className="w-7 h-7" />
+                                </div>
+                                <div>
+                                  <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-widest">
+                                    👑 Rôle Super Administrateur — Accès Total Suprême
+                                  </span>
+                                  <p className="text-xs font-bold text-emerald-800 dark:text-emerald-200 mt-1 max-w-lg mx-auto">
+                                    Le Super Administrateur dispose de l'intégralité des privilèges sans restriction.
+                                  </p>
+                                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5 max-w-lg mx-auto">
+                                    Accès total débloqué à 100% sur l'App Mobile (Gestion de Match & Scout) et sur l'ensemble du Web Dashboard.
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="space-y-4 pt-1">
+                                {/* Header permissions */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-2xl bg-secondary/30 border border-border/80">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-primary" />
+                                      <label className="text-[11px] font-black uppercase tracking-wider text-primary flex items-center gap-1.5">
+                                        <SlidersHorizontal className="w-3.5 h-3.5" /> 3. Permissions Spécifiques & Habilitations
+                                      </label>
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground border border-border">
+                                        {totalActive === 0 ? 'Défaut (0)' : `${totalActive} active${totalActive > 1 ? 's' : ''}`}
                                       </span>
                                     </div>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                                      Activez ou désactivez précisément chaque module pour l'Application Mobile et le Web Dashboard.
+                                    </p>
                                   </div>
-                                ) : (
-                                  <div className="p-3 rounded-xl bg-background/60 border border-amber-300/30 text-[11px] font-mono text-muted-foreground">
-                                    Mot de passe sécurisé et haché en base de données.
+
+                                  {modalMode !== 'view' && totalActive > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={clearAllPermissions}
+                                      className="text-[10px] font-bold text-destructive hover:underline flex items-center gap-1 shrink-0 self-start sm:self-auto cursor-pointer"
+                                    >
+                                      <RotateCcw className="w-3 h-3" /> Tout réinitialiser
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* Alerte pour les Administrateurs */}
+                                {isGlobalAdminUser && (
+                                  <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-foreground text-xs flex items-start gap-2.5">
+                                    <ShieldCheck className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                                    <div className="space-y-0.5">
+                                      <p className="font-bold text-[11px]">Privilège Administrateur Global</p>
+                                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                        En tant qu'administrateur, cet utilisateur a un accès global. Les interrupteurs ci-dessous vous permettent de verrouiller ou d'autoriser sélectivement des opérations sensibles.
+                                      </p>
+                                    </div>
                                   </div>
                                 )}
+
+                                {/* ── VOLET 1 : APPLICATION MOBILE (fus-app) ── */}
+                                <div className="p-4 sm:p-5 rounded-2xl border border-blue-500/30 bg-blue-500/5 space-y-3.5">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-blue-500/20">
+                                    <div className="flex items-center gap-2">
+                                      <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-600 dark:text-blue-400">
+                                        <Smartphone className="w-4 h-4" />
+                                      </div>
+                                      <div>
+                                        <h4 className="text-xs font-bold text-blue-950 dark:text-blue-200">
+                                          Application Mobile (fus-app)
+                                        </h4>
+                                        <p className="text-[10px] text-blue-800/80 dark:text-blue-300/80">
+                                          Actions opérationnelles sur smartphone pour les modules terrain
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/30">
+                                        {activeMobileCount} / {APP_MOBILE_PERMISSIONS.length}
+                                      </span>
+                                      {modalMode !== 'view' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const currentSubPerms = mobileAppSubTab === 'match' ? MATCH_GLOBAL_PLANNING_PERMISSIONS : SCOUT_MOBILE_PERMISSIONS;
+                                            const currentActiveInSub = currentSubPerms.filter(p => formData.permissions_overrides[p.key]).length;
+                                            setAllPermissionsForTarget(mobileAppSubTab, currentActiveInSub < currentSubPerms.length);
+                                          }}
+                                          className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                                        >
+                                          {(() => {
+                                            const currentSubPerms = mobileAppSubTab === 'match' ? MATCH_GLOBAL_PLANNING_PERMISSIONS : SCOUT_MOBILE_PERMISSIONS;
+                                            const currentActiveInSub = currentSubPerms.filter(p => formData.permissions_overrides[p.key]).length;
+                                            return currentActiveInSub === currentSubPerms.length ? 'Tout décocher ce volet' : 'Tout cocher ce volet';
+                                          })()}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Sélecteur de sous-application mobile : Gestion de Match vs Scout */}
+                                  <div className="flex items-center gap-1.5 p-1 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                                    <button
+                                      type="button"
+                                      onClick={() => setMobileAppSubTab('match')}
+                                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${mobileAppSubTab === 'match'
+                                          ? 'bg-blue-600 text-white shadow-xs'
+                                          : 'text-blue-900/80 dark:text-blue-200 hover:bg-blue-500/15'
+                                        }`}
+                                    >
+                                      <span>⚽ Planification Match</span>
+                                      <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${mobileAppSubTab === 'match' ? 'bg-white/20 text-white' : 'bg-blue-500/20 text-blue-800 dark:text-blue-300'
+                                        }`}>
+                                        {MATCH_GLOBAL_PLANNING_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length}/{MATCH_GLOBAL_PLANNING_PERMISSIONS.length}
+                                      </span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setMobileAppSubTab('scout')}
+                                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${mobileAppSubTab === 'scout'
+                                          ? 'bg-blue-600 text-white shadow-xs'
+                                          : 'text-blue-900/80 dark:text-blue-200 hover:bg-blue-500/15'
+                                        }`}
+                                    >
+                                      <span>🔍 Scout & Détection</span>
+                                      <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${mobileAppSubTab === 'scout' ? 'bg-white/20 text-white' : 'bg-blue-500/20 text-blue-800 dark:text-blue-300'
+                                        }`}>
+                                        {SCOUT_MOBILE_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length}/{SCOUT_MOBILE_PERMISSIONS.length}
+                                      </span>
+                                    </button>
+                                  </div>
+
+                                  {/* Note explicative : Habilitations de match terrain déplacées en Section 4 */}
+                                  {mobileAppSubTab === 'match' && (
+                                    <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/25 text-xs flex items-start gap-2.5">
+                                      <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                                      <div className="space-y-1 text-[11px] text-blue-900/90 dark:text-blue-200/90">
+                                        <span className="font-bold text-blue-950 dark:text-blue-100 flex items-center gap-1.5">
+                                          <span>Habilitations Opérations Terrain & Direct</span>
+                                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-red-500/15 text-red-600 font-bold uppercase">Section 4 Dédiée</span>
+                                        </span>
+                                        <p className="leading-relaxed">
+                                          La permission ci-dessous est globale et concerne uniquement la création de futurs matchs. Toutes les autres habilitations terrain (<strong>Live Tracking, Modification de feuille, Changement de système de jeu, Report et Évaluation</strong>) sont désormais gérées exclusivement dans la <strong>Section 4 « Matchs Assignés pour Opérations Live »</strong> ci-dessous.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Grille de cartes de permissions Mobile */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    {(mobileAppSubTab === 'match' ? MATCH_GLOBAL_PLANNING_PERMISSIONS : SCOUT_MOBILE_PERMISSIONS).map(perm => {
+                                      const isChecked = Boolean(formData.permissions_overrides[perm.key]);
+                                      return (
+                                        <button
+                                          key={perm.key}
+                                          type="button"
+                                          disabled={modalMode === 'view'}
+                                          onClick={() => togglePermission(perm.key)}
+                                          className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 min-h-[74px] ${isChecked
+                                              ? 'bg-blue-500/15 border-blue-500 shadow-xs ring-1 ring-blue-500/30'
+                                              : 'bg-background/90 border-border/80 hover:bg-secondary/40 hover:border-blue-300 dark:hover:border-blue-800'
+                                            } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                        >
+                                          <div className="mt-0.5 shrink-0">
+                                            {isChecked ? (
+                                              <div className="w-4 h-4 rounded bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                                                <Check className="w-3 h-3 stroke-[3]" />
+                                              </div>
+                                            ) : (
+                                              <div className="w-4 h-4 rounded border border-muted-foreground/40 bg-transparent" />
+                                            )}
+                                          </div>
+                                          <div className="space-y-1 min-w-0 flex-1">
+                                            <div className="flex items-center justify-between gap-1 w-full">
+                                              <span className="text-xs font-bold text-foreground truncate">
+                                                {perm.label}
+                                              </span>
+                                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-700 dark:text-blue-300 shrink-0">
+                                                {perm.badge}
+                                              </span>
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">
+                                              {perm.desc}
+                                            </p>
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* ── VOLET 2 : WEB DASHBOARD (fus-dashboard) — HIERARCHIE PAR SOUS-RUBRIQUE & ACTIONS CRUD ── */}
+                                <div className="p-4 sm:p-5 rounded-2xl border border-purple-500/30 bg-purple-500/5 space-y-4">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-purple-500/20">
+                                    <div className="flex items-center gap-2">
+                                      <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-600 dark:text-purple-400">
+                                        <LayoutDashboard className="w-4 h-4" />
+                                      </div>
+                                      <div>
+                                        <h4 className="text-xs font-bold text-purple-950 dark:text-purple-200">
+                                          Web Dashboard — Gestion des Accès par Sous-Rubrique
+                                        </h4>
+                                        <p className="text-[10px] text-purple-800/80 dark:text-purple-300/80">
+                                          Accordéons par rubrique métier avec contrôle granulaire des actions (Create, Read, Update, Delete)
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                                        {(() => {
+                                          const totalSub = DASHBOARD_HIERARCHY_MODULES.reduce((acc, cat) => acc + cat.subModules.length, 0);
+                                          const activeSub = DASHBOARD_HIERARCHY_MODULES.reduce((acc, cat) =>
+                                            acc + cat.subModules.filter(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`])).length, 0
+                                          );
+                                          return `${activeSub} / ${totalSub} sous-rubriques`;
+                                        })()}
+                                      </span>
+                                      {modalMode !== 'view' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const allSubActive = DASHBOARD_HIERARCHY_MODULES.every(cat =>
+                                              cat.subModules.every(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`]))
+                                            );
+                                            setFormData(prev => {
+                                              const next = { ...prev.permissions_overrides };
+                                              DASHBOARD_HIERARCHY_MODULES.forEach(cat => {
+                                                cat.subModules.forEach(sub => {
+                                                  CRUD_ACTIONS.forEach(a => {
+                                                    if (!allSubActive) {
+                                                      next[`sub:${sub.id}:${a.key}`] = true;
+                                                    } else {
+                                                      delete next[`sub:${sub.id}:${a.key}`];
+                                                    }
+                                                  });
+                                                });
+                                                if (!allSubActive) {
+                                                  next[`${cat.id}:read`] = true;
+                                                } else {
+                                                  delete next[`${cat.id}:read`];
+                                                }
+                                              });
+                                              if (!allSubActive) next['manage_recruitment'] = true;
+                                              else delete next['manage_recruitment'];
+                                              return { ...prev, permissions_overrides: next };
+                                            });
+                                          }}
+                                          className="text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+                                        >
+                                          {DASHBOARD_HIERARCHY_MODULES.every(cat =>
+                                            cat.subModules.every(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`]))
+                                          ) ? 'Tout décocher' : 'Tout cocher'}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Liste des 4 grandes rubriques sous forme d'accordéons */}
+                                  <div className="space-y-3">
+                                    {DASHBOARD_HIERARCHY_MODULES.map(cat => {
+                                      const CatIcon = cat.icon;
+                                      const isExpanded = Boolean(expandedCats[cat.id]);
+                                      const activeSubCount = cat.subModules.filter(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`])).length;
+                                      const allSubActive = activeSubCount === cat.subModules.length;
+                                      const isCatPartiallyActive = activeSubCount > 0;
+
+                                      return (
+                                        <div
+                                          key={cat.id}
+                                          className={`rounded-2xl border transition-all overflow-hidden ${isCatPartiallyActive
+                                              ? `${cat.colorBorder} ${cat.colorBg} shadow-xs`
+                                              : 'border-border/80 bg-background/50 opacity-90'
+                                            }`}
+                                        >
+                                          {/* Header de la rubrique (Accordéon trigger) */}
+                                          <div className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleCatExpand(cat.id)}
+                                              className="flex items-start gap-3 text-left flex-1 min-w-0 cursor-pointer"
+                                            >
+                                              <div className={`p-2 rounded-xl shrink-0 mt-0.5 transition-colors ${isCatPartiallyActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                                                }`}>
+                                                <CatIcon className="w-5 h-5" />
+                                              </div>
+                                              <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                  <span className="text-xs sm:text-sm font-bold text-foreground">
+                                                    {cat.title}
+                                                  </span>
+                                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${cat.colorBadge}`}>
+                                                    {cat.badge}
+                                                  </span>
+                                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground border border-border">
+                                                    {activeSubCount} / {cat.subModules.length} sous-rubriques
+                                                  </span>
+                                                </div>
+                                                <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+                                                  {cat.desc}
+                                                </p>
+                                              </div>
+                                            </button>
+
+                                            {/* Actions header : Tout cocher / Déplier */}
+                                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                                              {modalMode !== 'view' && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => toggleCategoryAll(cat)}
+                                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${allSubActive
+                                                      ? 'bg-purple-600 text-white shadow-xs'
+                                                      : isCatPartiallyActive
+                                                        ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 hover:bg-purple-500/30'
+                                                        : 'bg-secondary/60 text-muted-foreground hover:bg-secondary'
+                                                    }`}
+                                                >
+                                                  {allSubActive ? (
+                                                    <>
+                                                      <CheckSquare className="w-3 h-3" />
+                                                      <span>Tout coché</span>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <Square className="w-3 h-3" />
+                                                      <span>Tout cocher ({activeSubCount}/{cat.subModules.length})</span>
+                                                    </>
+                                                  )}
+                                                </button>
+                                              )}
+
+                                              <button
+                                                type="button"
+                                                onClick={() => toggleCatExpand(cat.id)}
+                                                className="p-1.5 rounded-lg bg-secondary/80 hover:bg-secondary text-foreground transition-colors cursor-pointer"
+                                                title={isExpanded ? 'Réduire' : 'Déplier'}
+                                              >
+                                                {isExpanded ? (
+                                                  <ChevronUp className="w-4 h-4" />
+                                                ) : (
+                                                  <ChevronDown className="w-4 h-4" />
+                                                )}
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* Contenu de l'accordéon : Liste des sous-rubriques */}
+                                          {isExpanded && (
+                                            <div className="px-3.5 pb-4 sm:px-4 pt-1 border-t border-border/50 space-y-2.5 bg-background/40">
+                                              {cat.subModules.map(sub => {
+                                                const isSubReadActive = Boolean(formData.permissions_overrides[`sub:${sub.id}:read`]);
+                                                const subActionsList = sub.id === 'players'
+                                                  ? [...CRUD_ACTIONS.map(a => a.key), ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
+                                                  : sub.id === 'candidates'
+                                                    ? [...CRUD_ACTIONS.map(a => a.key), ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
+                                                    : sub.id === 'matches'
+                                                      ? [...CRUD_ACTIONS.map(a => a.key), ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
+                                                      : CRUD_ACTIONS.map(a => a.key);
+                                                const activeActionsCount = subActionsList.filter(k => Boolean(formData.permissions_overrides[`sub:${sub.id}:${k}`])).length;
+
+                                                return (
+                                                  <div
+                                                    key={sub.id}
+                                                    className={`p-3 rounded-xl border transition-all ${isSubReadActive
+                                                        ? 'bg-background shadow-xs border-purple-500/30 ring-1 ring-purple-500/10'
+                                                        : 'bg-background/70 border-border/70 opacity-75'
+                                                      }`}
+                                                  >
+                                                    {/* Ligne d'en-tête du sous-module avec Master Toggle */}
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/50">
+                                                      <div className="min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                          <span className="text-xs font-bold text-foreground">
+                                                            {sub.title}
+                                                          </span>
+                                                          <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-secondary text-secondary-foreground">
+                                                            {sub.badge}
+                                                          </span>
+                                                        </div>
+                                                        <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                                                          {sub.desc}
+                                                        </p>
+                                                      </div>
+
+                                                      {/* Toggle de la sous-rubrique */}
+                                                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                                                        <button
+                                                          type="button"
+                                                          disabled={modalMode === 'view'}
+                                                          onClick={() => toggleSubModuleAll(sub.id, cat.id)}
+                                                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed ${isSubReadActive
+                                                              ? 'bg-purple-600 text-white shadow-xs'
+                                                              : 'bg-secondary/60 text-muted-foreground hover:bg-secondary'
+                                                            }`}
+                                                        >
+                                                          {isSubReadActive ? (
+                                                            <>
+                                                              <CheckSquare className="w-3 h-3" />
+                                                              <span>Actif ({activeActionsCount}/{subActionsList.length})</span>
+                                                            </>
+                                                          ) : (
+                                                            <>
+                                                              <Square className="w-3 h-3" />
+                                                              <span>Désactivé</span>
+                                                            </>
+                                                          )}
+                                                        </button>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* 4 Boutons CRUD pour la sous-rubrique */}
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+                                                      {CRUD_ACTIONS.map(action => {
+                                                        const permKey = `sub:${sub.id}:${action.key}`;
+                                                        const isChecked = sub.id === 'matches' && action.key === 'create'
+                                                          ? Boolean(formData.permissions_overrides['sub:matches:plan_match'])
+                                                          : Boolean(formData.permissions_overrides[permKey]);
+
+                                                        return (
+                                                          <button
+                                                            key={action.key}
+                                                            type="button"
+                                                            disabled={modalMode === 'view'}
+                                                            onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
+                                                            className={`p-1.5 sm:p-2 rounded-xl border text-left transition-all flex items-center gap-2 ${isChecked
+                                                                ? 'bg-purple-500/10 border-purple-500/40 shadow-xs ring-1 ring-purple-500/20'
+                                                                : 'bg-muted/20 border-border/60 hover:bg-muted/40'
+                                                              } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                                          >
+                                                            <div className="shrink-0">
+                                                              {isChecked ? (
+                                                                <div className="w-4 h-4 rounded bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                                                                  <Check className="w-3 h-3 stroke-[3]" />
+                                                                </div>
+                                                              ) : (
+                                                                <div className="w-4 h-4 rounded border border-muted-foreground/40 bg-background" />
+                                                              )}
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                              <div className="flex items-center justify-between">
+                                                                <span className="text-[11px] font-bold text-foreground">
+                                                                  {action.label}
+                                                                </span>
+                                                              </div>
+                                                              <p className="text-[9px] text-muted-foreground truncate">
+                                                                {action.sublabel}
+                                                              </p>
+                                                            </div>
+                                                          </button>
+                                                        );
+                                                      })}
+                                                    </div>
+
+                                                    {/* Actions Spécifiques Dédiées aux Joueurs (US-DASH-57) */}
+                                                    {sub.id === 'players' && (
+                                                      <div className="mt-2.5 pt-2 border-t border-border/50">
+                                                        <div className="flex items-center gap-1.5 mb-2">
+                                                          <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
+                                                            Actions Métier Spécifiques (Fiche Joueur)
+                                                          </span>
+                                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                                                            Permissions Dédiées
+                                                          </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                                          {PLAYER_SPECIFIC_ACTIONS.map(action => {
+                                                            const permKey = `sub:players:${action.key}`;
+                                                            const isChecked = Boolean(formData.permissions_overrides[permKey]);
+                                                            const IconComponent = action.icon;
+
+                                                            return (
+                                                              <button
+                                                                key={action.key}
+                                                                type="button"
+                                                                disabled={modalMode === 'view'}
+                                                                onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
+                                                                className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${isChecked
+                                                                    ? 'bg-amber-500/10 border-amber-500/40 shadow-xs ring-1 ring-amber-500/20'
+                                                                    : 'bg-muted/20 border-border/60 hover:bg-muted/40'
+                                                                  } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                                              >
+                                                                <div className="shrink-0">
+                                                                  {isChecked ? (
+                                                                    <div className="w-5 h-5 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-xs">
+                                                                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                                    </div>
+                                                                  ) : (
+                                                                    <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
+                                                                      <IconComponent className="w-3 h-3" />
+                                                                    </div>
+                                                                  )}
+                                                                </div>
+                                                                <div className="min-w-0 flex-1">
+                                                                  <div className="flex items-center justify-between">
+                                                                    <span className="text-[11px] font-bold text-foreground">
+                                                                      {action.label}
+                                                                    </span>
+                                                                  </div>
+                                                                  <p className="text-[9px] text-muted-foreground truncate">
+                                                                    {action.sublabel}
+                                                                  </p>
+                                                                </div>
+                                                              </button>
+                                                            );
+                                                          })}
+                                                        </div>
+                                                      </div>
+                                                    )}
+
+                                                    {/* Actions Spécifiques Dédiées aux Candidats / Vivier (US-DASH-59) */}
+                                                    {sub.id === 'candidates' && (
+                                                      <div className="mt-2.5 pt-2 border-t border-border/50">
+                                                        <div className="flex items-center gap-1.5 mb-2">
+                                                          <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
+                                                            Actions Métier Spécifiques (Vivier Candidats)
+                                                          </span>
+                                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                                                            Permissions Dédiées
+                                                          </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                                          {CANDIDATE_SPECIFIC_ACTIONS.map(action => {
+                                                            const permKey = `sub:candidates:${action.key}`;
+                                                            const isChecked = Boolean(formData.permissions_overrides[permKey]);
+                                                            const IconComponent = action.icon;
+
+                                                            return (
+                                                              <button
+                                                                key={action.key}
+                                                                type="button"
+                                                                disabled={modalMode === 'view'}
+                                                                onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
+                                                                className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${isChecked
+                                                                    ? 'bg-emerald-500/10 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/20'
+                                                                    : 'bg-muted/20 border-border/60 hover:bg-muted/40'
+                                                                  } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                                              >
+                                                                <div className="shrink-0">
+                                                                  {isChecked ? (
+                                                                    <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                                                                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                                    </div>
+                                                                  ) : (
+                                                                    <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
+                                                                      <IconComponent className="w-3 h-3" />
+                                                                    </div>
+                                                                  )}
+                                                                </div>
+                                                                <div className="min-w-0 flex-1">
+                                                                  <div className="flex items-center justify-between">
+                                                                    <span className="text-[11px] font-bold text-foreground">
+                                                                      {action.label}
+                                                                    </span>
+                                                                  </div>
+                                                                  <p className="text-[9px] text-muted-foreground truncate">
+                                                                    {action.sublabel}
+                                                                  </p>
+                                                                </div>
+                                                              </button>
+                                                            );
+                                                          })}
+                                                        </div>
+                                                      </div>
+                                                    )}
+
+                                                    {/* Actions Spécifiques : Calendrier des Matchs */}
+                                                    {sub.id === 'matches' && (
+                                                      <div className="mt-2.5 pt-2 border-t border-border/50">
+                                                        <div className="flex items-center gap-1.5 mb-2">
+                                                          <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
+                                                            Actions Métier Spécifiques (Calendrier des Matchs)
+                                                          </span>
+                                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                                                            Permissions Dédiées
+                                                          </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                          {MATCH_SPECIFIC_ACTIONS.map(action => {
+                                                            const permKey = `sub:matches:${action.key}`;
+                                                            const isChecked = Boolean(formData.permissions_overrides[permKey]);
+                                                            const IconComponent = action.icon;
+                                                            return (
+                                                              <button
+                                                                key={action.key}
+                                                                type="button"
+                                                                disabled={modalMode === 'view'}
+                                                                onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
+                                                                className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${isChecked
+                                                                    ? 'bg-amber-500/10 border-amber-500/40 shadow-xs ring-1 ring-amber-500/20'
+                                                                    : 'bg-muted/20 border-border/60 hover:bg-muted/40'
+                                                                  } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                                              >
+                                                                <div className="shrink-0">
+                                                                  {isChecked ? (
+                                                                    <div className="w-5 h-5 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-xs">
+                                                                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                                    </div>
+                                                                  ) : (
+                                                                    <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
+                                                                      <IconComponent className="w-3 h-3" />
+                                                                    </div>
+                                                                  )}
+                                                                </div>
+                                                                <div className="min-w-0 flex-1">
+                                                                  <div className="flex items-center justify-between">
+                                                                    <span className="text-[11px] font-bold text-foreground">
+                                                                      {action.label}
+                                                                    </span>
+                                                                  </div>
+                                                                  <p className="text-[9px] text-muted-foreground truncate">
+                                                                    {action.sublabel}
+                                                                  </p>
+                                                                </div>
+                                                              </button>
+                                                            );
+                                                          })}
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* ── SECTION 4 : MATCHS ASSIGNÉS POUR OPÉRATIONS LIVE (fus-app & Direct) ── */}
+                          <div className="p-5 rounded-2xl bg-secondary/20 border border-border/80 space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-red-600" />
+                                <label className="text-[11px] font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                                  <Radio className="w-3.5 h-3.5 text-red-600 animate-pulse" />
+                                  4. Matchs Assignés pour Opérations Live (fus-app & Direct)
+                                </label>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/20">
+                                  {assignedMatchIds.length} match{assignedMatchIds.length > 1 ? 's' : ''} assigné{assignedMatchIds.length > 1 ? 's' : ''}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">
+                                Sélectionnez les matchs que ce collaborateur pilotera en direct
+                              </p>
+                            </div>
+
+                            {/* Note explicative Super Admin vs Opérateur Assigné */}
+                            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-border/70 text-xs flex items-start gap-2.5">
+                              <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                              <div className="space-y-0.5 text-[11px] text-muted-foreground">
+                                <span className="font-bold text-foreground">Règle d'Habilitation Terrain & Super Admin :</span>
+                                <p>
+                                  Si aucun opérateur n'est assigné à un match, <strong>seul le Super Admin</strong> dispose des commandes (lancement live, chrono, modifications, scores).
+                                  Dès qu'un match est coché ci-dessous, ce collaborateur devient l'opérateur officiel habilité pour cette rencontre sur <code>fus-app</code> et le dashboard.
+                                </p>
                               </div>
                             </div>
 
-                            {/* ── SECTION 3 : PÉRIMÈTRE D'INTERVENTION — CATÉGORIES (U7 À PRO) ── */}
-                            <div className="p-5 rounded-2xl bg-secondary/20 border border-border/80 space-y-3">
+                            {/* A. Habilitations Opérationnelles sur les Matchs Assignés */}
+                            <div className="p-4 rounded-xl bg-background/70 border border-border/80 space-y-3">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full bg-primary" />
-                                  <label className="text-[11px] font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                                    <Layers className="w-3.5 h-3.5 text-primary" />
-                                    2. Périmètre d'Intervention — Catégories d'Âge (U7 à PRO)
-                                  </label>
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-                                    {formData.categories.length} / {AGE_CATEGORIES.length}
+                                  <ShieldCheck className="w-4 h-4 text-red-500" />
+                                  <span className="text-xs font-bold text-foreground uppercase tracking-wide">
+                                    A. Habilitations Opérationnelles (Pour les Matchs Assignés)
+                                  </span>
+                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/20 font-bold">
+                                    {MATCH_OPERATION_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length}/{MATCH_OPERATION_PERMISSIONS.length} actives
                                   </span>
                                 </div>
-
                                 {modalMode !== 'view' && (
-                                  <div className="flex items-center gap-2 text-xs">
-                                    <button
-                                      type="button"
-                                      onClick={() => setFormData({ ...formData, categories: [...AGE_CATEGORIES] })}
-                                      className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
-                                    >
-                                      Tout sélectionner
-                                    </button>
-                                    <span className="text-muted-foreground text-xs">•</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => setFormData({ ...formData, categories: [] })}
-                                      className="text-[10px] font-bold text-muted-foreground hover:text-destructive hover:underline cursor-pointer"
-                                    >
-                                      Effacer
-                                    </button>
-                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const allActive = MATCH_OPERATION_PERMISSIONS.every(p => formData.permissions_overrides[p.key]);
+                                      setFormData(prev => {
+                                        const next = { ...prev.permissions_overrides };
+                                        MATCH_OPERATION_PERMISSIONS.forEach(p => {
+                                          if (allActive) delete next[p.key];
+                                          else next[p.key] = true;
+                                        });
+                                        return { ...prev, permissions_overrides: next };
+                                      });
+                                    }}
+                                    className="text-[10px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer"
+                                  >
+                                    {MATCH_OPERATION_PERMISSIONS.every(p => formData.permissions_overrides[p.key]) ? 'Tout décocher' : 'Tout cocher'}
+                                  </button>
                                 )}
                               </div>
+                              <p className="text-[11px] text-muted-foreground">
+                                Cochez les actions que ce collaborateur sera habilité à effectuer sur les rencontres qui lui sont assignées ci-dessous :
+                              </p>
 
-                              <div className="flex flex-wrap gap-1.5">
-                                {AGE_CATEGORIES.map(cat => {
-                                  const isSelected = formData.categories.includes(cat);
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                {MATCH_OPERATION_PERMISSIONS.map(perm => {
+                                  const isChecked = Boolean(formData.permissions_overrides[perm.key]);
                                   return (
                                     <button
-                                      key={cat}
+                                      key={perm.key}
                                       type="button"
                                       disabled={modalMode === 'view'}
-                                      onClick={() => toggleCategory(cat)}
-                                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border transition-all ${
-                                        isSelected 
-                                          ? 'bg-primary text-primary-foreground border-primary shadow-xs' 
-                                          : 'bg-background/80 text-muted-foreground border-border hover:bg-secondary hover:text-foreground'
-                                      } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                      onClick={() => togglePermission(perm.key)}
+                                      className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 min-h-[70px] ${isChecked
+                                          ? 'bg-red-500/10 border-red-500 shadow-xs ring-1 ring-red-500/30'
+                                          : 'bg-background/90 border-border/80 hover:bg-secondary/40 hover:border-red-300 dark:hover:border-red-800'
+                                        } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
                                     >
-                                      {cat}
+                                      <div className="mt-0.5 shrink-0">
+                                        {isChecked ? (
+                                          <div className="w-4 h-4 rounded bg-[#FF3737] text-white flex items-center justify-center shadow-xs">
+                                            <Check className="w-3 h-3 stroke-[3]" />
+                                          </div>
+                                        ) : (
+                                          <div className="w-4 h-4 rounded border border-muted-foreground/40 bg-transparent" />
+                                        )}
+                                      </div>
+                                      <div className="space-y-1 min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-1 w-full">
+                                          <span className="text-xs font-bold text-foreground truncate">
+                                            {perm.label}
+                                          </span>
+                                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-red-500/15 text-red-600 dark:text-red-400 shrink-0">
+                                            {perm.badge}
+                                          </span>
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">
+                                          {perm.desc}
+                                        </p>
+                                      </div>
                                     </button>
                                   );
                                 })}
                               </div>
                             </div>
 
-                            {/* ── SECTION 4 : PERMISSIONS SPÉCIFIQUES & HABILITATIONS ── */}
-                            <div>
-                              {formData.system_role === 'super_admin' ? (
-                                <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-6 text-center space-y-2">
-                                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
-                                    <ShieldCheck className="w-7 h-7" />
-                                  </div>
-                                  <div>
-                                    <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-widest">
-                                      👑 Rôle Super Administrateur — Accès Total Suprême
-                                    </span>
-                                    <p className="text-xs font-bold text-emerald-800 dark:text-emerald-200 mt-1 max-w-lg mx-auto">
-                                      Le Super Administrateur dispose de l'intégralité des privilèges sans restriction.
-                                    </p>
-                                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5 max-w-lg mx-auto">
-                                      Accès total débloqué à 100% sur l'App Mobile (Gestion de Match & Scout) et sur l'ensemble du Web Dashboard.
-                                    </p>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="space-y-4 pt-1">
-                                  {/* Header permissions */}
-                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-2xl bg-secondary/30 border border-border/80">
-                                    <div>
-                                      <div className="flex items-center gap-2">
-                                        <div className="w-2 h-2 rounded-full bg-primary" />
-                                        <label className="text-[11px] font-black uppercase tracking-wider text-primary flex items-center gap-1.5">
-                                          <SlidersHorizontal className="w-3.5 h-3.5" /> 3. Permissions Spécifiques & Habilitations
-                                        </label>
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground border border-border">
-                                          {totalActive === 0 ? 'Défaut (0)' : `${totalActive} active${totalActive > 1 ? 's' : ''}`}
+                            {/* B. Rencontres Attribuées */}
+                            {(() => {
+                              const isUserCovered = (m: OperableMatch) => {
+                                return (
+                                  assignedMatchIds.includes(m.id) ||
+                                  Boolean(
+                                    m.live_operator_id &&
+                                    selectedUserId &&
+                                    String(m.live_operator_id).toLowerCase() === String(selectedUserId).toLowerCase()
+                                  )
+                                );
+                              };
+
+                              const isProgrammedOrLive = (m: OperableMatch) => {
+                                return m.status !== 'finished' && m.status !== 'cancelled';
+                              };
+
+                              // Seuls les matchs programmés (ou en direct) ET les matchs couverts par le user concerné sont éligibles
+                              const eligibleMatches = operableMatches.filter(m => isProgrammedOrLive(m) || isUserCovered(m));
+
+                              const filteredList = eligibleMatches.filter(m => {
+                                if (matchFilterScope === 'programmed') return isProgrammedOrLive(m);
+                                if (matchFilterScope === 'covered') return isUserCovered(m);
+                                return true;
+                              });
+
+                              const programmedCount = eligibleMatches.filter(isProgrammedOrLive).length;
+                              const coveredCount = eligibleMatches.filter(isUserCovered).length;
+
+                              return (
+                                <>
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 pb-1 border-b border-border/40">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <Calendar className="w-4 h-4 text-foreground" />
+                                      <span className="text-xs font-bold text-foreground uppercase tracking-wide">
+                                        B. Rencontres Attribuées à cet Opérateur
+                                      </span>
+                                      {assignedMatchIds.length > 0 && (
+                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-red-500/15 text-red-500 border border-red-500/30 flex items-center gap-1 shadow-xs">
+                                          <Check className="w-3 h-3 stroke-[3]" />
+                                          {assignedMatchIds.length} attribué{assignedMatchIds.length > 1 ? 's' : ''}
                                         </span>
-                                      </div>
-                                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                                        Activez ou désactivez précisément chaque module pour l'Application Mobile et le Web Dashboard.
-                                      </p>
+                                      )}
                                     </div>
-
-                                    {modalMode !== 'view' && totalActive > 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={clearAllPermissions}
-                                        className="text-[10px] font-bold text-destructive hover:underline flex items-center gap-1 shrink-0 self-start sm:self-auto cursor-pointer"
-                                      >
-                                        <RotateCcw className="w-3 h-3" /> Tout réinitialiser
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  {/* Alerte pour les Administrateurs */}
-                                  {isGlobalAdminUser && (
-                                    <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-foreground text-xs flex items-start gap-2.5">
-                                      <ShieldCheck className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                                      <div className="space-y-0.5">
-                                        <p className="font-bold text-[11px]">Privilège Administrateur Global</p>
-                                        <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                          En tant qu'administrateur, cet utilisateur a un accès global. Les interrupteurs ci-dessous vous permettent de verrouiller ou d'autoriser sélectivement des opérations sensibles.
-                                        </p>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* ── VOLET 1 : APPLICATION MOBILE (fus-app) ── */}
-                                  <div className="p-4 sm:p-5 rounded-2xl border border-blue-500/30 bg-blue-500/5 space-y-3.5">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-blue-500/20">
-                                      <div className="flex items-center gap-2">
-                                        <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-600 dark:text-blue-400">
-                                          <Smartphone className="w-4 h-4" />
-                                        </div>
-                                        <div>
-                                          <h4 className="text-xs font-bold text-blue-950 dark:text-blue-200">
-                                            Application Mobile (fus-app)
-                                          </h4>
-                                          <p className="text-[10px] text-blue-800/80 dark:text-blue-300/80">
-                                            Actions opérationnelles sur smartphone pour les modules terrain
-                                          </p>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-500/30">
-                                          {activeMobileCount} / {APP_MOBILE_PERMISSIONS.length}
-                                        </span>
-                                        {modalMode !== 'view' && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const currentSubPerms = mobileAppSubTab === 'match' ? MATCH_GLOBAL_PLANNING_PERMISSIONS : SCOUT_MOBILE_PERMISSIONS;
-                                              const currentActiveInSub = currentSubPerms.filter(p => formData.permissions_overrides[p.key]).length;
-                                              setAllPermissionsForTarget(mobileAppSubTab, currentActiveInSub < currentSubPerms.length);
-                                            }}
-                                            className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                                          >
-                                            {(() => {
-                                              const currentSubPerms = mobileAppSubTab === 'match' ? MATCH_GLOBAL_PLANNING_PERMISSIONS : SCOUT_MOBILE_PERMISSIONS;
-                                              const currentActiveInSub = currentSubPerms.filter(p => formData.permissions_overrides[p.key]).length;
-                                              return currentActiveInSub === currentSubPerms.length ? 'Tout décocher ce volet' : 'Tout cocher ce volet';
-                                            })()}
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Sélecteur de sous-application mobile : Gestion de Match vs Scout */}
-                                    <div className="flex items-center gap-1.5 p-1 bg-blue-500/10 rounded-xl border border-blue-500/20">
-                                      <button
-                                        type="button"
-                                        onClick={() => setMobileAppSubTab('match')}
-                                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                                          mobileAppSubTab === 'match'
-                                            ? 'bg-blue-600 text-white shadow-xs'
-                                            : 'text-blue-900/80 dark:text-blue-200 hover:bg-blue-500/15'
-                                        }`}
-                                      >
-                                        <span>⚽ Planification Match</span>
-                                        <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                                          mobileAppSubTab === 'match' ? 'bg-white/20 text-white' : 'bg-blue-500/20 text-blue-800 dark:text-blue-300'
-                                        }`}>
-                                          {MATCH_GLOBAL_PLANNING_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length}/{MATCH_GLOBAL_PLANNING_PERMISSIONS.length}
-                                        </span>
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => setMobileAppSubTab('scout')}
-                                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                                          mobileAppSubTab === 'scout'
-                                            ? 'bg-blue-600 text-white shadow-xs'
-                                            : 'text-blue-900/80 dark:text-blue-200 hover:bg-blue-500/15'
-                                        }`}
-                                      >
-                                        <span>🔍 Scout & Détection</span>
-                                        <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                                          mobileAppSubTab === 'scout' ? 'bg-white/20 text-white' : 'bg-blue-500/20 text-blue-800 dark:text-blue-300'
-                                        }`}>
-                                          {SCOUT_MOBILE_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length}/{SCOUT_MOBILE_PERMISSIONS.length}
-                                        </span>
-                                      </button>
-                                    </div>
-
-                                    {/* Note explicative : Habilitations de match terrain déplacées en Section 4 */}
-                                    {mobileAppSubTab === 'match' && (
-                                      <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/25 text-xs flex items-start gap-2.5">
-                                        <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                                        <div className="space-y-1 text-[11px] text-blue-900/90 dark:text-blue-200/90">
-                                          <span className="font-bold text-blue-950 dark:text-blue-100 flex items-center gap-1.5">
-                                            <span>Habilitations Opérations Terrain & Direct</span>
-                                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-red-500/15 text-red-600 font-bold uppercase">Section 4 Dédiée</span>
-                                          </span>
-                                          <p className="leading-relaxed">
-                                            La permission ci-dessous est globale et concerne uniquement la création de futurs matchs. Toutes les autres habilitations terrain (<strong>Live Tracking, Modification de feuille, Changement de système de jeu, Report et Évaluation</strong>) sont désormais gérées exclusivement dans la <strong>Section 4 « Matchs Assignés pour Opérations Live »</strong> ci-dessous.
-                                          </p>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Grille de cartes de permissions Mobile */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                      {(mobileAppSubTab === 'match' ? MATCH_GLOBAL_PLANNING_PERMISSIONS : SCOUT_MOBILE_PERMISSIONS).map(perm => {
-                                        const isChecked = Boolean(formData.permissions_overrides[perm.key]);
-                                        return (
-                                          <button
-                                            key={perm.key}
-                                            type="button"
-                                            disabled={modalMode === 'view'}
-                                            onClick={() => togglePermission(perm.key)}
-                                            className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 min-h-[74px] ${
-                                              isChecked
-                                                ? 'bg-blue-500/15 border-blue-500 shadow-xs ring-1 ring-blue-500/30'
-                                                : 'bg-background/90 border-border/80 hover:bg-secondary/40 hover:border-blue-300 dark:hover:border-blue-800'
-                                            } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                          >
-                                            <div className="mt-0.5 shrink-0">
-                                              {isChecked ? (
-                                                <div className="w-4 h-4 rounded bg-blue-600 text-white flex items-center justify-center shadow-xs">
-                                                  <Check className="w-3 h-3 stroke-[3]" />
-                                                </div>
-                                              ) : (
-                                                <div className="w-4 h-4 rounded border border-muted-foreground/40 bg-transparent" />
-                                              )}
-                                            </div>
-                                            <div className="space-y-1 min-w-0 flex-1">
-                                              <div className="flex items-center justify-between gap-1 w-full">
-                                                <span className="text-xs font-bold text-foreground truncate">
-                                                  {perm.label}
-                                                </span>
-                                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-700 dark:text-blue-300 shrink-0">
-                                                  {perm.badge}
-                                                </span>
-                                              </div>
-                                              <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">
-                                                {perm.desc}
-                                              </p>
-                                            </div>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-
-                                  {/* ── VOLET 2 : WEB DASHBOARD (fus-dashboard) — HIERARCHIE PAR SOUS-RUBRIQUE & ACTIONS CRUD ── */}
-                                  <div className="p-4 sm:p-5 rounded-2xl border border-purple-500/30 bg-purple-500/5 space-y-4">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-purple-500/20">
-                                      <div className="flex items-center gap-2">
-                                        <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-600 dark:text-purple-400">
-                                          <LayoutDashboard className="w-4 h-4" />
-                                        </div>
-                                        <div>
-                                          <h4 className="text-xs font-bold text-purple-950 dark:text-purple-200">
-                                            Web Dashboard — Gestion des Accès par Sous-Rubrique
-                                          </h4>
-                                          <p className="text-[10px] text-purple-800/80 dark:text-purple-300/80">
-                                            Accordéons par rubrique métier avec contrôle granulaire des actions (Create, Read, Update, Delete)
-                                          </p>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30">
-                                          {(() => {
-                                            const totalSub = DASHBOARD_HIERARCHY_MODULES.reduce((acc, cat) => acc + cat.subModules.length, 0);
-                                            const activeSub = DASHBOARD_HIERARCHY_MODULES.reduce((acc, cat) => 
-                                              acc + cat.subModules.filter(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`])).length, 0
-                                            );
-                                            return `${activeSub} / ${totalSub} sous-rubriques`;
-                                          })()}
-                                        </span>
-                                        {modalMode !== 'view' && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const allSubActive = DASHBOARD_HIERARCHY_MODULES.every(cat => 
-                                                cat.subModules.every(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`]))
-                                              );
-                                              setFormData(prev => {
-                                                const next = { ...prev.permissions_overrides };
-                                                DASHBOARD_HIERARCHY_MODULES.forEach(cat => {
-                                                  cat.subModules.forEach(sub => {
-                                                    CRUD_ACTIONS.forEach(a => {
-                                                      if (!allSubActive) {
-                                                        next[`sub:${sub.id}:${a.key}`] = true;
-                                                      } else {
-                                                        delete next[`sub:${sub.id}:${a.key}`];
-                                                      }
-                                                    });
-                                                  });
-                                                  if (!allSubActive) {
-                                                    next[`${cat.id}:read`] = true;
-                                                  } else {
-                                                    delete next[`${cat.id}:read`];
-                                                  }
-                                                });
-                                                if (!allSubActive) next['manage_recruitment'] = true;
-                                                else delete next['manage_recruitment'];
-                                                return { ...prev, permissions_overrides: next };
-                                              });
-                                            }}
-                                            className="text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
-                                          >
-                                            {DASHBOARD_HIERARCHY_MODULES.every(cat => 
-                                              cat.subModules.every(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`]))
-                                            ) ? 'Tout décocher' : 'Tout cocher'}
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Liste des 4 grandes rubriques sous forme d'accordéons */}
-                                    <div className="space-y-3">
-                                      {DASHBOARD_HIERARCHY_MODULES.map(cat => {
-                                        const CatIcon = cat.icon;
-                                        const isExpanded = Boolean(expandedCats[cat.id]);
-                                        const activeSubCount = cat.subModules.filter(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`])).length;
-                                        const allSubActive = activeSubCount === cat.subModules.length;
-                                        const isCatPartiallyActive = activeSubCount > 0;
-
-                                        return (
-                                          <div 
-                                            key={cat.id}
-                                            className={`rounded-2xl border transition-all overflow-hidden ${
-                                              isCatPartiallyActive 
-                                                ? `${cat.colorBorder} ${cat.colorBg} shadow-xs` 
-                                                : 'border-border/80 bg-background/50 opacity-90'
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {/* Filtres rapides : Tous / Programmés / Couverts */}
+                                      <div className="inline-flex items-center p-0.5 rounded-lg bg-secondary/80 border border-border/60 text-[10px] font-bold">
+                                        <button
+                                          type="button"
+                                          onClick={() => setMatchFilterScope('all')}
+                                          className={`px-2 py-0.5 rounded-md transition-all ${matchFilterScope === 'all'
+                                              ? 'bg-primary text-primary-foreground shadow-xs'
+                                              : 'text-muted-foreground hover:text-foreground'
                                             }`}
-                                          >
-                                            {/* Header de la rubrique (Accordéon trigger) */}
-                                            <div className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                              <button
-                                                type="button"
-                                                onClick={() => toggleCatExpand(cat.id)}
-                                                className="flex items-start gap-3 text-left flex-1 min-w-0 cursor-pointer"
-                                              >
-                                                <div className={`p-2 rounded-xl shrink-0 mt-0.5 transition-colors ${
-                                                  isCatPartiallyActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-                                                }`}>
-                                                  <CatIcon className="w-5 h-5" />
-                                                </div>
-                                                <div className="min-w-0 flex-1">
-                                                  <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="text-xs sm:text-sm font-bold text-foreground">
-                                                      {cat.title}
-                                                    </span>
-                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${cat.colorBadge}`}>
-                                                      {cat.badge}
-                                                    </span>
-                                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground border border-border">
-                                                      {activeSubCount} / {cat.subModules.length} sous-rubriques
-                                                    </span>
-                                                  </div>
-                                                  <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                                                    {cat.desc}
-                                                  </p>
-                                                </div>
-                                              </button>
+                                        >
+                                          Tous ({eligibleMatches.length})
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setMatchFilterScope('programmed')}
+                                          className={`px-2 py-0.5 rounded-md transition-all ${matchFilterScope === 'programmed'
+                                              ? 'bg-primary text-primary-foreground shadow-xs'
+                                              : 'text-muted-foreground hover:text-foreground'
+                                            }`}
+                                        >
+                                          Programmés ({programmedCount})
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setMatchFilterScope('covered')}
+                                          className={`px-2 py-0.5 rounded-md transition-all ${matchFilterScope === 'covered'
+                                              ? 'bg-primary text-primary-foreground shadow-xs'
+                                              : 'text-muted-foreground hover:text-foreground'
+                                            }`}
+                                        >
+                                          Couverts ({coveredCount})
+                                        </button>
+                                      </div>
 
-                                              {/* Actions header : Tout cocher / Déplier */}
-                                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                                                {modalMode !== 'view' && (
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => toggleCategoryAll(cat)}
-                                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                                                      allSubActive
-                                                        ? 'bg-purple-600 text-white shadow-xs'
-                                                        : isCatPartiallyActive
-                                                          ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 hover:bg-purple-500/30'
-                                                          : 'bg-secondary/60 text-muted-foreground hover:bg-secondary'
-                                                    }`}
-                                                  >
-                                                    {allSubActive ? (
-                                                      <>
-                                                        <CheckSquare className="w-3 h-3" />
-                                                        <span>Tout coché</span>
-                                                      </>
-                                                    ) : (
-                                                      <>
-                                                        <Square className="w-3 h-3" />
-                                                        <span>Tout cocher ({activeSubCount}/{cat.subModules.length})</span>
-                                                      </>
-                                                    )}
-                                                  </button>
-                                                )}
+                                      {assignedMatchIds.length > 0 && modalMode !== 'view' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setAssignedMatchIds([])}
+                                          className="text-[11px] font-bold text-red-500 hover:text-red-400 hover:underline flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-red-500/10"
+                                          title="Décocher toutes les rencontres attribuées à cet utilisateur"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                          <span>Tout décocher ({assignedMatchIds.length})</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
 
-                                                <button
-                                                  type="button"
-                                                  onClick={() => toggleCatExpand(cat.id)}
-                                                  className="p-1.5 rounded-lg bg-secondary/80 hover:bg-secondary text-foreground transition-colors cursor-pointer"
-                                                  title={isExpanded ? 'Réduire' : 'Déplier'}
-                                                >
-                                                  {isExpanded ? (
-                                                    <ChevronUp className="w-4 h-4" />
+                                  {/* Liste des Cartes de Matchs */}
+                                  {loadingMatches ? (
+                                    <div className="py-8 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                                      <span>Chargement du calendrier des matchs...</span>
+                                    </div>
+                                  ) : filteredList.length === 0 ? (
+                                    <div className="p-6 text-center rounded-xl bg-background/50 border border-dashed border-border/80 text-xs text-muted-foreground">
+                                      {matchFilterScope === 'covered'
+                                        ? 'Aucun match couvert par cet opérateur pour le moment.'
+                                        : matchFilterScope === 'programmed'
+                                          ? 'Aucun match programmé disponible actuellement.'
+                                          : 'Aucun match programmé ou attribué à cet opérateur pour le moment.'}
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[380px] overflow-y-auto pr-1">
+                                      {(() => {
+                                        // Trier les matchs : Attribués EN PREMIER, puis en direct, puis programmés, puis terminés
+                                        const sortedList = [...filteredList].sort((a, b) => {
+                                          const aAssigned = assignedMatchIds.includes(a.id);
+                                          const bAssigned = assignedMatchIds.includes(b.id);
+                                          if (aAssigned && !bAssigned) return -1;
+                                          if (!aAssigned && bAssigned) return 1;
+
+                                          const isLiveStatus = (s: string) => ['live', 'halftime', 'paused', 'extra_time', 'penalties'].includes(s);
+                                          if (isLiveStatus(a.status) && !isLiveStatus(b.status)) return -1;
+                                          if (!isLiveStatus(a.status) && isLiveStatus(b.status)) return 1;
+
+                                          const aIsFuture = isProgrammedOrLive(a);
+                                          const bIsFuture = isProgrammedOrLive(b);
+                                          if (aIsFuture && bIsFuture) {
+                                            return new Date(a.match_date || 0).getTime() - new Date(b.match_date || 0).getTime();
+                                          }
+
+                                          return new Date(b.match_date || 0).getTime() - new Date(a.match_date || 0).getTime();
+                                        });
+
+                                        return sortedList.map(m => {
+                                          const isAssigned = assignedMatchIds.includes(m.id);
+                                          const isAssignedToOther = Boolean(m.live_operator_id && m.live_operator_id !== selectedUserId && !isAssigned);
+
+                                          const renderMatchStatus = () => {
+                                            switch (m.status) {
+                                              case 'live':
+                                                return (
+                                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-red-600 text-white animate-pulse shadow-xs">
+                                                    🔴 En Direct
+                                                  </span>
+                                                );
+                                              case 'halftime':
+                                                return (
+                                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-amber-500 text-white shadow-xs">
+                                                    ⏸️ Mi-Temps
+                                                  </span>
+                                                );
+                                              case 'paused':
+                                                return (
+                                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-amber-600 text-white shadow-xs">
+                                                    ⏸️ Pause
+                                                  </span>
+                                                );
+                                              case 'extra_time':
+                                                return (
+                                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-red-700 text-white animate-pulse">
+                                                    ⏱️ Prolongations
+                                                  </span>
+                                                );
+                                              case 'penalties':
+                                                return (
+                                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-red-800 text-white animate-pulse">
+                                                    🥅 Tirs au But
+                                                  </span>
+                                                );
+                                              case 'finished':
+                                                return (
+                                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-muted text-muted-foreground border border-border">
+                                                    🏁 Terminé
+                                                  </span>
+                                                );
+                                              case 'cancelled':
+                                                return (
+                                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-rose-500/20 text-rose-500 border border-rose-500/30">
+                                                    ❌ Annulé
+                                                  </span>
+                                                );
+                                              default:
+                                                return (
+                                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-secondary text-muted-foreground border border-border">
+                                                    📅 Programmé
+                                                  </span>
+                                                );
+                                            }
+                                          };
+
+                                          return (
+                                            <div
+                                              key={m.id}
+                                              onClick={() => {
+                                                if (modalMode === 'view') return;
+                                                toggleAssignMatch(m.id);
+                                              }}
+                                              className={`p-3.5 rounded-2xl border transition-all text-left relative flex flex-col justify-between gap-2.5 ${modalMode === 'view' ? 'cursor-default' : 'cursor-pointer hover:border-red-500/50'
+                                                } ${isAssigned
+                                                  ? 'bg-red-500/10 border-red-500 shadow-sm ring-1 ring-red-500/40'
+                                                  : 'bg-background/80 border-border/80 hover:bg-secondary/40'
+                                                }`}
+                                            >
+                                              {/* Header de la carte : Catégorie Badge & Status */}
+                                              <div className="flex items-center justify-between gap-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-[#FF3737] text-white shadow-xs">
+                                                    {m.category || 'Équipe'}
+                                                  </span>
+                                                  {renderMatchStatus()}
+                                                </div>
+
+                                                {/* Checkbox / Statut d'attribution */}
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                  {isAssigned ? (
+                                                    <div className="flex items-center gap-1.5">
+                                                      <span className="text-[10px] font-black text-red-500 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-lg hidden sm:inline-flex items-center gap-1">
+                                                        <Check className="w-3 h-3 stroke-[3]" />
+                                                        Attribué (décocher)
+                                                      </span>
+                                                      <div className="w-5 h-5 rounded-lg border flex items-center justify-center transition-all bg-[#FF3737] border-[#FF3737] text-white shadow-xs">
+                                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                      </div>
+                                                    </div>
                                                   ) : (
-                                                    <ChevronDown className="w-4 h-4" />
+                                                    <div className="flex items-center gap-1.5">
+                                                      <span className="text-[10px] font-medium text-muted-foreground hidden sm:inline">
+                                                        Cliquer pour attribuer
+                                                      </span>
+                                                      <div className="w-5 h-5 rounded-lg border border-muted-foreground/30 bg-background text-transparent flex items-center justify-center transition-all">
+                                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                      </div>
+                                                    </div>
                                                   )}
-                                                </button>
+                                                </div>
                                               </div>
-                                            </div>
 
-                                            {/* Contenu de l'accordéon : Liste des sous-rubriques */}
-                                            {isExpanded && (
-                                              <div className="px-3.5 pb-4 sm:px-4 pt-1 border-t border-border/50 space-y-2.5 bg-background/40">
-                                                {cat.subModules.map(sub => {
-                                                  const isSubReadActive = Boolean(formData.permissions_overrides[`sub:${sub.id}:read`]);
-                                                  const subActionsList = sub.id === 'players'
-                                                    ? [...CRUD_ACTIONS.map(a => a.key), ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
-                                                    : sub.id === 'candidates'
-                                                    ? [...CRUD_ACTIONS.map(a => a.key), ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
-                                                    : sub.id === 'matches'
-                                                    ? [...CRUD_ACTIONS.map(a => a.key), ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
-                                                    : CRUD_ACTIONS.map(a => a.key);
-                                                  const activeActionsCount = subActionsList.filter(k => Boolean(formData.permissions_overrides[`sub:${sub.id}:${k}`])).length;
-
-                                                  return (
-                                                    <div 
-                                                      key={sub.id}
-                                                      className={`p-3 rounded-xl border transition-all ${
-                                                        isSubReadActive
-                                                          ? 'bg-background shadow-xs border-purple-500/30 ring-1 ring-purple-500/10'
-                                                          : 'bg-background/70 border-border/70 opacity-75'
-                                                      }`}
-                                                    >
-                                                      {/* Ligne d'en-tête du sous-module avec Master Toggle */}
-                                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/50">
-                                                        <div className="min-w-0">
-                                                          <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-bold text-foreground">
-                                                              {sub.title}
-                                                            </span>
-                                                            <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-secondary text-secondary-foreground">
-                                                              {sub.badge}
-                                                            </span>
-                                                          </div>
-                                                          <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                                                            {sub.desc}
-                                                          </p>
-                                                        </div>
-
-                                                        {/* Toggle de la sous-rubrique */}
-                                                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                                                          <button
-                                                            type="button"
-                                                            disabled={modalMode === 'view'}
-                                                            onClick={() => toggleSubModuleAll(sub.id, cat.id)}
-                                                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed ${
-                                                              isSubReadActive
-                                                                ? 'bg-purple-600 text-white shadow-xs'
-                                                                : 'bg-secondary/60 text-muted-foreground hover:bg-secondary'
-                                                            }`}
-                                                          >
-                                                            {isSubReadActive ? (
-                                                              <>
-                                                                <CheckSquare className="w-3 h-3" />
-                                                                <span>Actif ({activeActionsCount}/{subActionsList.length})</span>
-                                                              </>
-                                                            ) : (
-                                                              <>
-                                                                <Square className="w-3 h-3" />
-                                                                <span>Désactivé</span>
-                                                              </>
-                                                            )}
-                                                          </button>
-                                                        </div>
-                                                      </div>
-
-                                                      {/* 4 Boutons CRUD pour la sous-rubrique */}
-                                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
-                                                        {CRUD_ACTIONS.map(action => {
-                                                          const permKey = `sub:${sub.id}:${action.key}`;
-                                                          const isChecked = sub.id === 'matches' && action.key === 'create'
-                                                            ? Boolean(formData.permissions_overrides['sub:matches:plan_match'])
-                                                            : Boolean(formData.permissions_overrides[permKey]);
-
-                                                          return (
-                                                            <button
-                                                              key={action.key}
-                                                              type="button"
-                                                              disabled={modalMode === 'view'}
-                                                              onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
-                                                              className={`p-1.5 sm:p-2 rounded-xl border text-left transition-all flex items-center gap-2 ${
-                                                                isChecked
-                                                                  ? 'bg-purple-500/10 border-purple-500/40 shadow-xs ring-1 ring-purple-500/20'
-                                                                  : 'bg-muted/20 border-border/60 hover:bg-muted/40'
-                                                              } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                                            >
-                                                              <div className="shrink-0">
-                                                                {isChecked ? (
-                                                                  <div className="w-4 h-4 rounded bg-purple-600 text-white flex items-center justify-center shadow-xs">
-                                                                    <Check className="w-3 h-3 stroke-[3]" />
-                                                                  </div>
-                                                                ) : (
-                                                                  <div className="w-4 h-4 rounded border border-muted-foreground/40 bg-background" />
-                                                                )}
-                                                              </div>
-                                                              <div className="min-w-0 flex-1">
-                                                                <div className="flex items-center justify-between">
-                                                                  <span className="text-[11px] font-bold text-foreground">
-                                                                    {action.label}
-                                                                  </span>
-                                                                </div>
-                                                                <p className="text-[9px] text-muted-foreground truncate">
-                                                                  {action.sublabel}
-                                                                </p>
-                                                              </div>
-                                                            </button>
-                                                          );
-                                                        })}
-                                                      </div>
-
-                                                      {/* Actions Spécifiques Dédiées aux Joueurs (US-DASH-57) */}
-                                                      {sub.id === 'players' && (
-                                                        <div className="mt-2.5 pt-2 border-t border-border/50">
-                                                          <div className="flex items-center gap-1.5 mb-2">
-                                                            <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
-                                                              Actions Métier Spécifiques (Fiche Joueur)
-                                                            </span>
-                                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
-                                                              Permissions Dédiées
-                                                            </span>
-                                                          </div>
-                                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                                            {PLAYER_SPECIFIC_ACTIONS.map(action => {
-                                                              const permKey = `sub:players:${action.key}`;
-                                                              const isChecked = Boolean(formData.permissions_overrides[permKey]);
-                                                              const IconComponent = action.icon;
-
-                                                              return (
-                                                                <button
-                                                                  key={action.key}
-                                                                  type="button"
-                                                                  disabled={modalMode === 'view'}
-                                                                  onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
-                                                                  className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
-                                                                    isChecked
-                                                                      ? 'bg-amber-500/10 border-amber-500/40 shadow-xs ring-1 ring-amber-500/20'
-                                                                      : 'bg-muted/20 border-border/60 hover:bg-muted/40'
-                                                                  } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                                                >
-                                                                  <div className="shrink-0">
-                                                                    {isChecked ? (
-                                                                      <div className="w-5 h-5 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-xs">
-                                                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                                      </div>
-                                                                    ) : (
-                                                                      <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
-                                                                        <IconComponent className="w-3 h-3" />
-                                                                      </div>
-                                                                    )}
-                                                                  </div>
-                                                                  <div className="min-w-0 flex-1">
-                                                                    <div className="flex items-center justify-between">
-                                                                      <span className="text-[11px] font-bold text-foreground">
-                                                                        {action.label}
-                                                                      </span>
-                                                                    </div>
-                                                                    <p className="text-[9px] text-muted-foreground truncate">
-                                                                      {action.sublabel}
-                                                                    </p>
-                                                                  </div>
-                                                                </button>
-                                                              );
-                                                            })}
-                                                          </div>
-                                                        </div>
-                                                      )}
-
-                                                      {/* Actions Spécifiques Dédiées aux Candidats / Vivier (US-DASH-59) */}
-                                                      {sub.id === 'candidates' && (
-                                                        <div className="mt-2.5 pt-2 border-t border-border/50">
-                                                          <div className="flex items-center gap-1.5 mb-2">
-                                                            <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
-                                                              Actions Métier Spécifiques (Vivier Candidats)
-                                                            </span>
-                                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
-                                                              Permissions Dédiées
-                                                            </span>
-                                                          </div>
-                                                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                                                            {CANDIDATE_SPECIFIC_ACTIONS.map(action => {
-                                                              const permKey = `sub:candidates:${action.key}`;
-                                                              const isChecked = Boolean(formData.permissions_overrides[permKey]);
-                                                              const IconComponent = action.icon;
-
-                                                              return (
-                                                                <button
-                                                                  key={action.key}
-                                                                  type="button"
-                                                                  disabled={modalMode === 'view'}
-                                                                  onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
-                                                                  className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
-                                                                    isChecked
-                                                                      ? 'bg-emerald-500/10 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/20'
-                                                                      : 'bg-muted/20 border-border/60 hover:bg-muted/40'
-                                                                  } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                                                >
-                                                                  <div className="shrink-0">
-                                                                    {isChecked ? (
-                                                                      <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                                                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                                      </div>
-                                                                    ) : (
-                                                                      <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
-                                                                        <IconComponent className="w-3 h-3" />
-                                                                      </div>
-                                                                    )}
-                                                                  </div>
-                                                                  <div className="min-w-0 flex-1">
-                                                                    <div className="flex items-center justify-between">
-                                                                      <span className="text-[11px] font-bold text-foreground">
-                                                                        {action.label}
-                                                                      </span>
-                                                                    </div>
-                                                                    <p className="text-[9px] text-muted-foreground truncate">
-                                                                      {action.sublabel}
-                                                                    </p>
-                                                                  </div>
-                                                                </button>
-                                                              );
-                                                            })}
-                                                          </div>
-                                                        </div>
-                                                      )}
-
-                                                      {/* Actions Spécifiques : Calendrier des Matchs */}
-                                                      {sub.id === 'matches' && (
-                                                        <div className="mt-2.5 pt-2 border-t border-border/50">
-                                                          <div className="flex items-center gap-1.5 mb-2">
-                                                            <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
-                                                              Actions Métier Spécifiques (Calendrier des Matchs)
-                                                            </span>
-                                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
-                                                              Permissions Dédiées
-                                                            </span>
-                                                          </div>
-                                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                            {MATCH_SPECIFIC_ACTIONS.map(action => {
-                                                              const permKey = `sub:matches:${action.key}`;
-                                                              const isChecked = Boolean(formData.permissions_overrides[permKey]);
-                                                              const IconComponent = action.icon;
-                                                              return (
-                                                                <button
-                                                                  key={action.key}
-                                                                  type="button"
-                                                                  disabled={modalMode === 'view'}
-                                                                  onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
-                                                                  className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
-                                                                    isChecked
-                                                                      ? 'bg-amber-500/10 border-amber-500/40 shadow-xs ring-1 ring-amber-500/20'
-                                                                      : 'bg-muted/20 border-border/60 hover:bg-muted/40'
-                                                                  } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                                                >
-                                                                  <div className="shrink-0">
-                                                                    {isChecked ? (
-                                                                      <div className="w-5 h-5 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-xs">
-                                                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                                      </div>
-                                                                    ) : (
-                                                                      <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
-                                                                        <IconComponent className="w-3 h-3" />
-                                                                      </div>
-                                                                    )}
-                                                                  </div>
-                                                                  <div className="min-w-0 flex-1">
-                                                                    <div className="flex items-center justify-between">
-                                                                      <span className="text-[11px] font-bold text-foreground">
-                                                                        {action.label}
-                                                                      </span>
-                                                                    </div>
-                                                                    <p className="text-[9px] text-muted-foreground truncate">
-                                                                      {action.sublabel}
-                                                                    </p>
-                                                                  </div>
-                                                                </button>
-                                                              );
-                                                            })}
-                                                          </div>
-                                                        </div>
+                                              {/* Clubs & Logos */}
+                                              <div className="flex items-center justify-between gap-2 py-1.5 bg-secondary/40 rounded-xl px-3 border border-border/50">
+                                                {/* Domicile */}
+                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                  <div className="flex flex-col items-center shrink-0">
+                                                    <div className="w-7 h-7 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden shadow-xs">
+                                                      {m.homeLogo ? (
+                                                        <img
+                                                          src={m.homeLogo}
+                                                          alt={m.homeName}
+                                                          className="w-full h-full object-contain p-0.5"
+                                                          onError={(e) => {
+                                                            const target = e.currentTarget;
+                                                            target.onerror = null;
+                                                            target.src = defaultClubLogo;
+                                                          }}
+                                                        />
+                                                      ) : (
+                                                        <span className="text-[10px] font-black text-muted-foreground">
+                                                          {m.homeName?.slice(0, 2).toUpperCase() || 'DOM'}
+                                                        </span>
                                                       )}
                                                     </div>
-                                                  );
-                                                })}
-                                              </div>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* ── SECTION 4 : MATCHS ASSIGNÉS POUR OPÉRATIONS LIVE (fus-app & Direct) ── */}
-                            <div className="p-5 rounded-2xl bg-secondary/20 border border-border/80 space-y-4">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full bg-red-600" />
-                                  <label className="text-[11px] font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                                    <Radio className="w-3.5 h-3.5 text-red-600 animate-pulse" />
-                                    4. Matchs Assignés pour Opérations Live (fus-app & Direct)
-                                  </label>
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/20">
-                                    {assignedMatchIds.length} match{assignedMatchIds.length > 1 ? 's' : ''} assigné{assignedMatchIds.length > 1 ? 's' : ''}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-muted-foreground">
-                                  Sélectionnez les matchs que ce collaborateur pilotera en direct
-                                </p>
-                              </div>
-
-                              {/* Note explicative Super Admin vs Opérateur Assigné */}
-                              <div className="p-3.5 rounded-xl bg-slate-900/60 border border-border/70 text-xs flex items-start gap-2.5">
-                                <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                                <div className="space-y-0.5 text-[11px] text-muted-foreground">
-                                  <span className="font-bold text-foreground">Règle d'Habilitation Terrain & Super Admin :</span>
-                                  <p>
-                                    Si aucun opérateur n'est assigné à un match, <strong>seul le Super Admin</strong> dispose des commandes (lancement live, chrono, modifications, scores).
-                                    Dès qu'un match est coché ci-dessous, ce collaborateur devient l'opérateur officiel habilité pour cette rencontre sur <code>fus-app</code> et le dashboard.
-                                  </p>
-                                </div>
-                              </div>
-
-                              {/* A. Habilitations Opérationnelles sur les Matchs Assignés */}
-                              <div className="p-4 rounded-xl bg-background/70 border border-border/80 space-y-3">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
-                                  <div className="flex items-center gap-2">
-                                    <ShieldCheck className="w-4 h-4 text-red-500" />
-                                    <span className="text-xs font-bold text-foreground uppercase tracking-wide">
-                                      A. Habilitations Opérationnelles (Pour les Matchs Assignés)
-                                    </span>
-                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/20 font-bold">
-                                      {MATCH_OPERATION_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length}/{MATCH_OPERATION_PERMISSIONS.length} actives
-                                    </span>
-                                  </div>
-                                  {modalMode !== 'view' && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const allActive = MATCH_OPERATION_PERMISSIONS.every(p => formData.permissions_overrides[p.key]);
-                                        setFormData(prev => {
-                                          const next = { ...prev.permissions_overrides };
-                                          MATCH_OPERATION_PERMISSIONS.forEach(p => {
-                                            if (allActive) delete next[p.key];
-                                            else next[p.key] = true;
-                                          });
-                                          return { ...prev, permissions_overrides: next };
-                                        });
-                                      }}
-                                      className="text-[10px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer"
-                                    >
-                                      {MATCH_OPERATION_PERMISSIONS.every(p => formData.permissions_overrides[p.key]) ? 'Tout décocher' : 'Tout cocher'}
-                                    </button>
-                                  )}
-                                </div>
-                                <p className="text-[11px] text-muted-foreground">
-                                  Cochez les actions que ce collaborateur sera habilité à effectuer sur les rencontres qui lui sont assignées ci-dessous :
-                                </p>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                                  {MATCH_OPERATION_PERMISSIONS.map(perm => {
-                                    const isChecked = Boolean(formData.permissions_overrides[perm.key]);
-                                    return (
-                                      <button
-                                        key={perm.key}
-                                        type="button"
-                                        disabled={modalMode === 'view'}
-                                        onClick={() => togglePermission(perm.key)}
-                                        className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 min-h-[70px] ${
-                                          isChecked
-                                            ? 'bg-red-500/10 border-red-500 shadow-xs ring-1 ring-red-500/30'
-                                            : 'bg-background/90 border-border/80 hover:bg-secondary/40 hover:border-red-300 dark:hover:border-red-800'
-                                        } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                      >
-                                        <div className="mt-0.5 shrink-0">
-                                          {isChecked ? (
-                                            <div className="w-4 h-4 rounded bg-[#FF3737] text-white flex items-center justify-center shadow-xs">
-                                              <Check className="w-3 h-3 stroke-[3]" />
-                                            </div>
-                                          ) : (
-                                            <div className="w-4 h-4 rounded border border-muted-foreground/40 bg-transparent" />
-                                          )}
-                                        </div>
-                                        <div className="space-y-1 min-w-0 flex-1">
-                                          <div className="flex items-center justify-between gap-1 w-full">
-                                            <span className="text-xs font-bold text-foreground truncate">
-                                              {perm.label}
-                                            </span>
-                                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-red-500/15 text-red-600 dark:text-red-400 shrink-0">
-                                              {perm.badge}
-                                            </span>
-                                          </div>
-                                          <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">
-                                            {perm.desc}
-                                          </p>
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-
-                              {/* B. Rencontres Attribuées */}
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 pb-1 border-b border-border/40">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <Calendar className="w-4 h-4 text-foreground" />
-                                  <span className="text-xs font-bold text-foreground uppercase tracking-wide">
-                                    B. Rencontres Attribuées à cet Opérateur
-                                  </span>
-                                  {assignedMatchIds.length > 0 && (
-                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-red-500/15 text-red-500 border border-red-500/30 flex items-center gap-1 shadow-xs">
-                                      <Check className="w-3 h-3 stroke-[3]" />
-                                      {assignedMatchIds.length} attribué{assignedMatchIds.length > 1 ? 's' : ''}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  {assignedMatchIds.length > 0 && modalMode !== 'view' && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setAssignedMatchIds([])}
-                                      className="text-[11px] font-bold text-red-500 hover:text-red-400 hover:underline flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-red-500/10"
-                                      title="Décocher toutes les rencontres attribuées à cet utilisateur"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                      <span>Tout décocher ({assignedMatchIds.length})</span>
-                                    </button>
-                                  )}
-                                  <span className="text-[11px] text-muted-foreground hidden md:inline">
-                                    Cliquez sur une carte pour cocher / décocher
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Liste des Cartes de Matchs */}
-                              {loadingMatches ? (
-                                <div className="py-8 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                                  <span>Chargement du calendrier des matchs...</span>
-                                </div>
-                              ) : operableMatches.length === 0 ? (
-                                <div className="p-6 text-center rounded-xl bg-background/50 border border-dashed border-border/80 text-xs text-muted-foreground">
-                                  Aucun match disponible actuellement.
-                                </div>
-                              ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[380px] overflow-y-auto pr-1">
-                                  {(() => {
-                                    // Trier les matchs : Attribués EN PREMIER, puis en direct, puis programmés, puis terminés
-                                    const sortedList = [...operableMatches].sort((a, b) => {
-                                      const aAssigned = assignedMatchIds.includes(a.id);
-                                      const bAssigned = assignedMatchIds.includes(b.id);
-                                      if (aAssigned && !bAssigned) return -1;
-                                      if (!aAssigned && bAssigned) return 1;
-
-                                      const isLiveStatus = (s: string) => ['live', 'halftime', 'paused', 'extra_time', 'penalties'].includes(s);
-                                      if (isLiveStatus(a.status) && !isLiveStatus(b.status)) return -1;
-                                      if (!isLiveStatus(a.status) && isLiveStatus(b.status)) return 1;
-
-                                      return new Date(b.match_date || 0).getTime() - new Date(a.match_date || 0).getTime();
-                                    });
-
-                                    return sortedList.map(m => {
-                                      const isAssigned = assignedMatchIds.includes(m.id);
-                                      const isAssignedToOther = Boolean(m.live_operator_id && m.live_operator_id !== selectedUserId && !isAssigned);
-                                      
-                                      const renderMatchStatus = () => {
-                                        switch (m.status) {
-                                          case 'live':
-                                            return (
-                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-red-600 text-white animate-pulse shadow-xs">
-                                                🔴 En Direct
-                                              </span>
-                                            );
-                                          case 'halftime':
-                                            return (
-                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-amber-500 text-white shadow-xs">
-                                                ⏸️ Mi-Temps
-                                              </span>
-                                            );
-                                          case 'paused':
-                                            return (
-                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-amber-600 text-white shadow-xs">
-                                                ⏸️ Pause
-                                              </span>
-                                            );
-                                          case 'extra_time':
-                                            return (
-                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-red-700 text-white animate-pulse">
-                                                ⏱️ Prolongations
-                                              </span>
-                                            );
-                                          case 'penalties':
-                                            return (
-                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-red-800 text-white animate-pulse">
-                                                🥅 Tirs au But
-                                              </span>
-                                            );
-                                          case 'finished':
-                                            return (
-                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-muted text-muted-foreground border border-border">
-                                                🏁 Terminé
-                                              </span>
-                                            );
-                                          case 'cancelled':
-                                            return (
-                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-rose-500/20 text-rose-500 border border-rose-500/30">
-                                                ❌ Annulé
-                                              </span>
-                                            );
-                                          default:
-                                            return (
-                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-secondary text-muted-foreground border border-border">
-                                                📅 Programmé
-                                              </span>
-                                            );
-                                        }
-                                      };
-
-                                      return (
-                                        <div
-                                          key={m.id}
-                                          onClick={() => {
-                                            if (modalMode === 'view') return;
-                                            toggleAssignMatch(m.id);
-                                          }}
-                                          className={`p-3.5 rounded-2xl border transition-all text-left relative flex flex-col justify-between gap-2.5 ${
-                                            modalMode === 'view' ? 'cursor-default' : 'cursor-pointer hover:border-red-500/50'
-                                          } ${
-                                            isAssigned
-                                              ? 'bg-red-500/10 border-red-500 shadow-sm ring-1 ring-red-500/40'
-                                              : 'bg-background/80 border-border/80 hover:bg-secondary/40'
-                                          }`}
-                                        >
-                                          {/* Header de la carte : Catégorie Badge & Status */}
-                                          <div className="flex items-center justify-between gap-2">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-[#FF3737] text-white shadow-xs">
-                                                {m.category || 'Équipe'}
-                                              </span>
-                                              {renderMatchStatus()}
-                                            </div>
-
-                                            {/* Checkbox / Statut d'attribution */}
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                              {isAssigned ? (
-                                                <div className="flex items-center gap-1.5">
-                                                  <span className="text-[10px] font-black text-red-500 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-lg hidden sm:inline-flex items-center gap-1">
-                                                    <Check className="w-3 h-3 stroke-[3]" />
-                                                    Attribué (décocher)
-                                                  </span>
-                                                  <div className="w-5 h-5 rounded-lg border flex items-center justify-center transition-all bg-[#FF3737] border-[#FF3737] text-white shadow-xs">
-                                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                  </div>
-                                                </div>
-                                              ) : (
-                                                <div className="flex items-center gap-1.5">
-                                                  <span className="text-[10px] font-medium text-muted-foreground hidden sm:inline">
-                                                    Cliquer pour attribuer
-                                                  </span>
-                                                  <div className="w-5 h-5 rounded-lg border border-muted-foreground/30 bg-background text-transparent flex items-center justify-center transition-all">
-                                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                  </div>
-                                                </div>
-                                              )}
-                                            </div>
-                                          </div>
-
-                                          {/* Clubs & Logos */}
-                                          <div className="flex items-center justify-between gap-2 py-1.5 bg-secondary/40 rounded-xl px-3 border border-border/50">
-                                            {/* Domicile */}
-                                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                                              <div className="w-7 h-7 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                                                {m.homeLogo ? (
-                                                  <img 
-                                                    src={m.homeLogo} 
-                                                    alt={m.homeName} 
-                                                    className="w-full h-full object-contain p-0.5" 
-                                                    onError={(e) => {
-                                                      const target = e.currentTarget;
-                                                      target.onerror = null;
-                                                      target.src = defaultClubLogo;
-                                                    }}
-                                                  />
-                                                ) : (
-                                                  <span className="text-[10px] font-black text-muted-foreground">
-                                                    {m.homeName?.slice(0, 2).toUpperCase() || 'DOM'}
-                                                  </span>
-                                                )}
-                                              </div>
-                                              <span className="text-xs font-bold text-foreground truncate" title={m.homeName}>
-                                                {m.homeName}
-                                              </span>
-                                            </div>
-
-                                            <span className="text-[10px] font-black text-muted-foreground/60 px-1 shrink-0">VS</span>
-
-                                            {/* Extérieur */}
-                                            <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
-                                              <span className="text-xs font-bold text-foreground truncate" title={m.awayName}>
-                                                {m.awayName}
-                                              </span>
-                                              <div className="w-7 h-7 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                                                {m.awayLogo ? (
-                                                  <img 
-                                                    src={m.awayLogo} 
-                                                    alt={m.awayName} 
-                                                    className="w-full h-full object-contain p-0.5" 
-                                                    onError={(e) => {
-                                                      const target = e.currentTarget;
-                                                      target.style.display = 'none';
-                                                      if (target.parentElement) {
-                                                        const span = document.createElement('span');
-                                                        span.className = 'text-[10px] font-black text-muted-foreground';
-                                                        span.innerText = m.awayName?.slice(0, 2).toUpperCase() || 'EXT';
-                                                        target.parentElement.appendChild(span);
-                                                      }
-                                                    }}
-                                                  />
-                                                ) : (
-                                                  <span className="text-[10px] font-black text-muted-foreground">
-                                                    {m.awayName?.slice(0, 2).toUpperCase() || 'EXT'}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
-
-                                          {/* Date, Heure & Stade */}
-                                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-muted-foreground pt-1 border-t border-border/40">
-                                            <div className="flex items-center gap-1.5 font-medium">
-                                              <CalendarPlus className="w-3.5 h-3.5 text-primary shrink-0" />
-                                              <span>
-                                                {m.match_date ? new Date(m.match_date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Date TBD'}
-                                                {m.match_time ? ` à ${m.match_time.slice(0, 5)}` : ''}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center gap-1.5 font-medium truncate" title={m.stadiumName}>
-                                              <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                              <span className="truncate">{m.stadiumName}</span>
-                                            </div>
-                                          </div>
-
-                                          {/* Accusé de réception de l'opérateur (US-MATCH-125) */}
-                                          {isAssigned && (
-                                            <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2">
-                                              {m.live_operator_acknowledged_at || m.live_operator_status === 'acknowledged' ? (
-                                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
-                                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                                  <span>
-                                                    Accusé de réception validé
-                                                    {m.live_operator_acknowledged_at && (
-                                                      <span className="opacity-80 font-normal ml-1">
-                                                        ({new Date(m.live_operator_acknowledged_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} à {new Date(m.live_operator_acknowledged_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})
+                                                    {m.homeFormation && (
+                                                      <span className="text-[8px] font-black text-muted-foreground mt-0.5 tracking-tight">
+                                                        {m.homeFormation}
                                                       </span>
                                                     )}
+                                                  </div>
+                                                  <span className="text-xs font-bold text-foreground truncate" title={m.homeName}>
+                                                    {m.homeName}
                                                   </span>
                                                 </div>
-                                              ) : (
-                                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold animate-pulse">
-                                                  <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                                  <span>⏳ En attente d'accusé mobile (fus-app)</span>
+
+                                                <span className="text-[10px] font-black text-muted-foreground/60 px-1 shrink-0">VS</span>
+
+                                                {/* Extérieur */}
+                                                <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
+                                                  <span className="text-xs font-bold text-foreground truncate" title={m.awayName}>
+                                                    {m.awayName}
+                                                  </span>
+                                                  <div className="flex flex-col items-center shrink-0">
+                                                    <div className="w-7 h-7 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden shadow-xs">
+                                                      {m.awayLogo ? (
+                                                        <img
+                                                          src={m.awayLogo}
+                                                          alt={m.awayName}
+                                                          className="w-full h-full object-contain p-0.5"
+                                                          onError={(e) => {
+                                                            const target = e.currentTarget;
+                                                            target.style.display = 'none';
+                                                            if (target.parentElement) {
+                                                              const span = document.createElement('span');
+                                                              span.className = 'text-[10px] font-black text-muted-foreground';
+                                                              span.innerText = m.awayName?.slice(0, 2).toUpperCase() || 'EXT';
+                                                              target.parentElement.appendChild(span);
+                                                            }
+                                                          }}
+                                                        />
+                                                      ) : (
+                                                        <span className="text-[10px] font-black text-muted-foreground">
+                                                          {m.awayName?.slice(0, 2).toUpperCase() || 'EXT'}
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                    {m.awayFormation && (
+                                                      <span className="text-[8px] font-black text-muted-foreground mt-0.5 tracking-tight">
+                                                        {m.awayFormation}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+
+                                              {/* Date, Heure & Stade */}
+                                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-muted-foreground pt-1 border-t border-border/40">
+                                                <div className="flex items-center gap-1.5 font-medium">
+                                                  <CalendarPlus className="w-3.5 h-3.5 text-primary shrink-0" />
+                                                  <span>
+                                                    {m.match_date ? new Date(m.match_date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Date TBD'}
+                                                    {m.match_time ? ` à ${m.match_time.slice(0, 5)}` : ''}
+                                                  </span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 font-medium truncate" title={m.stadiumName}>
+                                                  <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                                  <span className="truncate">{m.stadiumName}</span>
+                                                </div>
+                                              </div>
+
+                                              {/* Accusé de réception de l'opérateur (US-MATCH-125) */}
+                                              {isAssigned && (
+                                                <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2">
+                                                  {m.live_operator_acknowledged_at || m.live_operator_status === 'acknowledged' ? (
+                                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
+                                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                                      <span>
+                                                        Accusé de réception validé
+                                                        {m.live_operator_acknowledged_at && (
+                                                          <span className="opacity-80 font-normal ml-1">
+                                                            ({new Date(m.live_operator_acknowledged_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} à {new Date(m.live_operator_acknowledged_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})
+                                                          </span>
+                                                        )}
+                                                      </span>
+                                                    </div>
+                                                  ) : (
+                                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold animate-pulse">
+                                                      <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                                      <span>⏳ En attente d'accusé mobile (fus-app)</span>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )}
+
+                                              {/* Alerte si déjà assigné à un autre opérateur */}
+                                              {isAssignedToOther && (
+                                                <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 bg-amber-500/10 p-1.5 rounded-lg border border-amber-500/20">
+                                                  <span>⚠️ Actuellement assigné à :</span>
+                                                  <strong className="truncate">{m.live_operator_name || 'Autre collaborateur'}</strong>
                                                 </div>
                                               )}
                                             </div>
-                                          )}
-
-                                          {/* Alerte si déjà assigné à un autre opérateur */}
-                                          {isAssignedToOther && (
-                                            <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 bg-amber-500/10 p-1.5 rounded-lg border border-amber-500/20">
-                                              <span>⚠️ Actuellement assigné à :</span>
-                                              <strong className="truncate">{m.live_operator_name || 'Autre collaborateur'}</strong>
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    });
-                                  })()}
-                                </div>
-                              )}
-                            </div>
+                                          );
+                                        });
+                                      })()}
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
-                        );
-                      })()}
+                        </div>
+                      );
+                    })()}
 
-                      {/* Modal Action Buttons */}
-                      <div className="pt-5 flex items-center justify-end gap-3 border-t border-border">
-                        <Button 
-                          type="button" 
-                          variant="ghost" 
-                          className="px-5 rounded-xl font-bold text-xs" 
-                          onClick={() => setModalMode('none')}
+                    {/* Modal Action Buttons */}
+                    <div className="pt-5 flex items-center justify-end gap-3 border-t border-border">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="px-5 rounded-xl font-bold text-xs"
+                        onClick={() => setModalMode('none')}
+                      >
+                        {modalMode === 'view' ? 'Fermer' : 'Annuler'}
+                      </Button>
+
+                      {modalMode === 'view' && selectedUserId && (
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            const target = users.find(u => u.id === selectedUserId);
+                            if (target) openCredentialsQuickModal(target);
+                          }}
+                          className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 gap-2 cursor-pointer"
                         >
-                          {modalMode === 'view' ? 'Fermer' : 'Annuler'}
+                          <KeyRound className="w-4 h-4" />
+                          <span>Générer / Renvoyer Accès</span>
                         </Button>
+                      )}
 
-                        {modalMode === 'view' && selectedUserId && (
-                          <Button
-                            type="button"
-                            onClick={() => {
-                              const target = users.find(u => u.id === selectedUserId);
-                              if (target) openCredentialsQuickModal(target);
-                            }}
-                            className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 gap-2 cursor-pointer"
-                          >
-                            <KeyRound className="w-4 h-4" />
-                            <span>Générer / Renvoyer Accès</span>
-                          </Button>
-                        )}
-
-                        {modalMode !== 'view' && (
-                          <Button 
-                            type="button" 
-                            className="px-6 bg-primary text-primary-foreground hover:bg-primary/90 font-bold text-xs rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-95 cursor-pointer" 
-                            onClick={modalMode === 'create' ? handleCreateUser : handleUpdateUser} 
-                            disabled={isSubmitting}
-                          >
-                            {isSubmitting ? (
-                              <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                            ) : (
-                              modalMode === 'create' ? 'Créer le Compte' : 'Enregistrer les Modifications'
-                            )}
-                          </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </>
-            )}
-             </Card>
-          </motion.div>
+                      {modalMode !== 'view' && (
+                        <Button
+                          type="button"
+                          className="px-6 bg-primary text-primary-foreground hover:bg-primary/90 font-bold text-xs rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-95 cursor-pointer"
+                          onClick={modalMode === 'create' ? handleCreateUser : handleUpdateUser}
+                          disabled={isSubmitting}
+                        >
+                          {isSubmitting ? (
+                            <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                          ) : (
+                            modalMode === 'create' ? 'Créer le Compte' : 'Enregistrer les Modifications'
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </>
+              )}
+            </Card>
+          </div>
         )}
-      </AnimatePresence>
 
       <MediaPickerModal
         isOpen={mediaPickerOpen}

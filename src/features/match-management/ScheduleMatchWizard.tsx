@@ -13,7 +13,7 @@ import type { OpponentPlayer } from '../../types';
 import { PLAYER_CATEGORIES, normalizeAgeCategory } from '../../constants';
 import { useSurclassements } from '../../hooks/useSurclassements';
 import { isLowerCategory } from '../../services/surclassementService';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -206,6 +206,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
     match_time: '18:00',
     category: 'SENIOR',
     is_home: true,
+    round_name: 'Journée 1',
     match_phase: '' as MatchPhase | '',
     qualif_status: '' as 'won' | 'lost' | '',
   });
@@ -435,6 +436,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         match_time: initialMatch.match_time || '18:00',
         category: initialMatch.category || 'SENIOR',
         is_home: initialMatch.is_home ?? true,
+        round_name: (initialMatch as any).round_name || ((initialMatch as any).lineup as any)?.round_name || 'Journée 1',
         match_phase: (initialMatch.match_phase as MatchPhase) || '',
         qualif_status: (initialMatch.match_phase as 'won' | 'lost' | '') || '',
       });
@@ -909,6 +911,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         status: initialMatch ? (initialMatch.status ?? 'scheduled') : 'scheduled',
         match_format: setup.match_format,
         lineup: {
+          round_name: setup.round_name || 'Journée 1',
           startingXI,
           substitutes,
           formation,
@@ -1159,22 +1162,11 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
   }, [matchPlayers]);
 
   if (isLoading) {
-    return (
-      <div className="max-w-6xl mx-auto space-y-8 pb-24">
-        <Skeleton className="h-64 rounded-[3rem] w-full" />
-        <Skeleton className="h-[500px] rounded-[3.5rem] w-full" />
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Préparation de l'assistant match…" />;
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -16 }}
-      transition={{ duration: 0.3 }}
-      className="max-w-7xl mx-auto space-y-8 pb-24"
-    >
+    <div className="max-w-7xl mx-auto space-y-8 pb-24">
       {/* Premium Gradient Header */}
       <div className="relative bg-gradient-to-r from-slate-900 via-primary to-blue-900 rounded-[3rem] px-10 pt-10 pb-14 text-white overflow-hidden shadow-2xl border-b-[8px] border-primary/20">
         <div className="absolute inset-0 opacity-[0.08]"
@@ -1237,9 +1229,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
       </div>
 
       <div className="bg-white rounded-[3.5rem] shadow-2xl border border-secondary/60 overflow-hidden min-h-[750px] flex flex-col">
-        <AnimatePresence mode="wait">
           {currentStep === 'setup' && (
-            <motion.div key="setup" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="p-12 space-y-12 flex-1">
+            <div key="setup" className="p-12 space-y-12 flex-1">
               <SectionTitle icon={<Calendar className="w-5 h-5 text-primary" />} title="Logistique du Match" subtitle="Initialisez les informations logistiques de la rencontre" />
               <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10 bg-secondary/10 p-12 rounded-[3.5rem] border-2 border-dashed border-secondary">
                 <div className="space-y-8">
@@ -1328,8 +1319,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                         <div
                           onClick={() => setSetup(prev => ({ ...prev, internal_opposition_type: 'intra_squad' }))}
                           className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${setup.internal_opposition_type === 'intra_squad'
-                              ? 'bg-red-50/50 border-primary shadow-sm ring-2 ring-primary/20'
-                              : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                            ? 'bg-red-50/50 border-primary shadow-sm ring-2 ring-primary/20'
+                            : 'bg-slate-50 border-slate-200 hover:border-slate-300'
                             }`}
                         >
                           <div className="flex items-start justify-between">
@@ -1360,8 +1351,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                         <div
                           onClick={() => setSetup(prev => ({ ...prev, internal_opposition_type: 'inter_category' }))}
                           className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${setup.internal_opposition_type === 'inter_category'
-                              ? 'bg-red-50/50 border-primary shadow-sm ring-2 ring-primary/20'
-                              : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                            ? 'bg-red-50/50 border-primary shadow-sm ring-2 ring-primary/20'
+                            : 'bg-slate-50 border-slate-200 hover:border-slate-300'
                             }`}
                         >
                           <div className="flex items-start justify-between">
@@ -1537,6 +1528,59 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       })()}
                     </div>
                   )}
+
+                  {/* Choix de la Journée de Championnat (US-MATCH-134) */}
+                  <div className="space-y-3 p-5 rounded-3xl bg-white/90 border border-slate-200/80 shadow-xs">
+                    <div className="flex items-center justify-between ml-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-primary" /> Journée de Championnat
+                      </label>
+                      <span className="text-[10px] font-black uppercase text-primary bg-primary/10 px-2.5 py-0.5 rounded-full">
+                        {setup.round_name || 'Journée 1'}
+                      </span>
+                    </div>
+
+                    {/* Raccourcis rapides J1 à J10 */}
+                    <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 pt-1">
+                      {Array.from({ length: 10 }, (_, i) => i + 1).map(jNum => {
+                        const val = `Journée ${jNum}`;
+                        const isSel = setup.round_name === val;
+                        return (
+                          <button
+                            key={jNum}
+                            type="button"
+                            onClick={() => setSetup(prev => ({ ...prev, round_name: val }))}
+                            className={`h-9 rounded-xl text-[11px] font-black transition-all border ${isSel
+                                ? 'bg-primary text-white border-primary shadow-md scale-105'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                              }`}
+                          >
+                            J{jNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Liste déroulante complète (J1 à J38 + Tournois/Coupes) */}
+                    <select
+                      className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-black text-xs text-slate-800 outline-none focus:ring-2 ring-primary/20 appearance-none cursor-pointer mt-1"
+                      value={setup.round_name || 'Journée 1'}
+                      onChange={e => setSetup(prev => ({ ...prev, round_name: e.target.value }))}
+                    >
+                      {Array.from({ length: 38 }, (_, i) => `Journée ${i + 1}`).map(rName => (
+                        <option key={rName} value={rName}>{rName}</option>
+                      ))}
+                      <option value="Match Amical">Match Amical</option>
+                      <option value="Opposition Interne">Opposition Interne</option>
+                      <option value="Match de Coupe">Match de Coupe</option>
+                      <option value="Tour préliminaire">Tour préliminaire</option>
+                      <option value="16ème de finale">16ème de finale</option>
+                      <option value="8ème de finale">8ème de finale</option>
+                      <option value="Quart de finale">Quart de finale</option>
+                      <option value="Demi-finale">Demi-finale</option>
+                      <option value="Finale">Finale</option>
+                    </select>
+                  </div>
                   {setup.is_home ? (
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-3">
@@ -1556,11 +1600,10 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                 location: `Académie FUS — Terrain ${n}`
                               }));
                             }}
-                            className={`h-16 rounded-2xl font-black text-xl tracking-tight transition-all border-2 ${
-                              setup.pitch_number === n
+                            className={`h-16 rounded-2xl font-black text-xl tracking-tight transition-all border-2 ${setup.pitch_number === n
                                 ? 'bg-primary text-white border-primary shadow-xl shadow-primary/30 scale-105'
                                 : 'bg-white text-slate-700 border-transparent hover:border-primary/30 hover:bg-primary/5 shadow-sm'
-                            }`}
+                              }`}
                           >
                             Terrain {n}
                           </button>
@@ -1627,8 +1670,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                           type="button"
                           onClick={() => handleFormatChange(fmt)}
                           className={`h-12 rounded-2xl font-black text-xs transition-all flex flex-col items-center justify-center border-2 ${setup.match_format === fmt
-                              ? 'bg-primary text-white border-primary shadow-lg scale-105 ring-2 ring-primary/20'
-                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-primary/40'
+                            ? 'bg-primary text-white border-primary shadow-lg scale-105 ring-2 ring-primary/20'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-primary/40'
                             }`}
                         >
                           <span>{fmt}v{fmt}</span>
@@ -1658,8 +1701,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                           type="button"
                           onClick={() => setHalfDuration(mins)}
                           className={`h-11 rounded-xl font-black text-xs transition-all border-2 ${halfDuration === mins
-                              ? 'bg-primary text-white border-primary shadow-md scale-105'
-                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-primary/40'
+                            ? 'bg-primary text-white border-primary shadow-md scale-105'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-primary/40'
                             }`}
                         >
                           {mins}'
@@ -1687,11 +1730,11 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
 
                 </div>
               </div>
-            </motion.div>
+            </div>
           )}
 
           {currentStep === 'arbitres' && (
-            <motion.div key="arbitres" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="p-12 space-y-10 flex-1">
+            <div key="arbitres" className="p-12 space-y-10 flex-1">
               <SectionTitle icon={<UserCheck className="w-5 h-5 text-primary" />} title="Corps d'Arbitrage" subtitle="Désignez les arbitres officiels de la rencontre (chaque arbitre ne peut être sélectionné qu'une seule fois)" />
 
               <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-secondary/10 p-8 rounded-[3rem] border-2 border-dashed border-secondary">
@@ -1745,12 +1788,12 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                           const roleName = a.role_principal === 'central'
                             ? 'Principal'
                             : a.role_principal === 'commissaire'
-                            ? 'Commissaire'
-                            : a.role_principal === 'quatrieme'
-                            ? '4ème Officiel'
-                            : a.role_principal === 'var'
-                            ? 'VAR'
-                            : 'Assistant';
+                              ? 'Commissaire'
+                              : a.role_principal === 'quatrieme'
+                                ? '4ème Officiel'
+                                : a.role_principal === 'var'
+                                  ? 'VAR'
+                                  : 'Assistant';
                           return (
                             <option key={a.id} value={a.id}>
                               {a.prenom} {a.nom} ({roleName} • {a.grade})
@@ -1784,10 +1827,10 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                   {selectedArbitre.role_principal === 'central'
                                     ? 'Arbitre Principal'
                                     : selectedArbitre.role_principal === 'commissaire'
-                                    ? 'Commissaire du Match'
-                                    : selectedArbitre.role_principal === 'quatrieme'
-                                    ? '4ème Officiel'
-                                    : 'Arbitre Assistant'}
+                                      ? 'Commissaire du Match'
+                                      : selectedArbitre.role_principal === 'quatrieme'
+                                        ? '4ème Officiel'
+                                        : 'Arbitre Assistant'}
                                 </span>
                               </div>
                             </div>
@@ -1811,11 +1854,11 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   );
                 })}
               </div>
-            </motion.div>
+            </div>
           )}
 
           {currentStep === 'staff' && (
-            <motion.div key="staff" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="p-12 space-y-10 flex-1">
+            <div key="staff" className="p-12 space-y-10 flex-1">
               <SectionTitle icon={<Briefcase className="w-5 h-5 text-primary" />} title="Membres du Staff" subtitle="Désignez les membres techniques présents pour cette rencontre" />
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
                 {staff.map(member => {
@@ -1837,11 +1880,11 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   );
                 })}
               </div>
-            </motion.div>
+            </div>
           )}
 
           {currentStep === 'lineup' && (
-            <motion.div key="lineup" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="p-8 space-y-8 flex-1">
+            <div key="lineup" className="p-8 space-y-8 flex-1">
               <SectionTitle icon={<Users className="w-5 h-5 text-primary" />} title="Organisation Tactique" subtitle="Définissez votre système et convoquez l'équipe type" />
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
                 <div className="lg:col-span-4 space-y-8 flex flex-col">
@@ -1977,24 +2020,22 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                     layout
                                     draggable
                                     onDragStart={(e) => { e.dataTransfer.setData('playerId', p.id); }}
-                                    className={`p-3 rounded-[1.8rem] border-2 transition-all flex items-center gap-4 cursor-grab active:cursor-grabbing hover:bg-black/5 ${
-                                      isStarter
+                                    className={`p-3 rounded-[1.8rem] border-2 transition-all flex items-center gap-4 cursor-grab active:cursor-grabbing hover:bg-black/5 ${isStarter
                                         ? `border-transparent bg-gradient-to-r ${positionColor} text-white shadow-md`
                                         : isSub
-                                        ? 'border-emerald-400 bg-emerald-50/20'
-                                        : surclass
-                                        ? isSousClass
-                                          ? 'border-sky-300 dark:border-sky-700/60 bg-sky-50/30 dark:bg-sky-950/20'
-                                          : 'border-amber-300 dark:border-amber-700/60 bg-amber-50/30 dark:bg-amber-950/20'
-                                        : 'border-secondary bg-white'
-                                    }`}
+                                          ? 'border-emerald-400 bg-emerald-50/20'
+                                          : surclass
+                                            ? isSousClass
+                                              ? 'border-sky-300 dark:border-sky-700/60 bg-sky-50/30 dark:bg-sky-950/20'
+                                              : 'border-amber-300 dark:border-amber-700/60 bg-amber-50/30 dark:bg-amber-950/20'
+                                            : 'border-secondary bg-white'
+                                      }`}
                                   >
                                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs overflow-hidden border-2 border-white relative ${isStarter ? 'bg-white/20' : 'bg-secondary'}`}>
                                       <img src={(p.photo_url && p.photo_url !== 'null') ? p.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random&color=fff&size=200`} className="w-full h-full object-cover" />
                                       {surclass && (
-                                        <span className={`absolute bottom-0 right-0 text-white text-[7px] font-black px-0.5 rounded-tl shadow-xs ${
-                                          isSousClass ? 'bg-sky-600' : 'bg-amber-400 !text-slate-950'
-                                        }`}>
+                                        <span className={`absolute bottom-0 right-0 text-white text-[7px] font-black px-0.5 rounded-tl shadow-xs ${isSousClass ? 'bg-sky-600' : 'bg-amber-400 !text-slate-950'
+                                          }`}>
                                           {isSousClass ? '⬇️' : '⭐'}
                                         </span>
                                       )}
@@ -2003,13 +2044,12 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                                       <div className="flex items-center gap-1.5 flex-wrap">
                                         <p className={`font-black text-[11px] uppercase ${isStarter ? 'text-white' : ''} truncate`}>{p.full_name}</p>
                                         {surclass && (
-                                          <span className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${
-                                            isStarter
+                                          <span className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${isStarter
                                               ? isSousClass ? 'bg-sky-500 text-white shadow-xs' : 'bg-amber-400 text-slate-950 shadow-xs'
                                               : isSousClass
-                                              ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-700/60'
-                                              : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60'
-                                          }`}>
+                                                ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-700/60'
+                                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60'
+                                            }`}>
                                             {isSousClass ? '⬇️ Sous-classé' : '⭐ Surclassé'} ({surclass.original_category})
                                           </span>
                                         )}
@@ -2067,20 +2107,18 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                             key={sid}
                             draggable
                             onDragStart={(e) => { e.dataTransfer.setData('playerId', sid); }}
-                            className={`flex items-center gap-2.5 p-2 pr-4 rounded-2xl border-2 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:scale-105 ${
-                              surclass 
+                            className={`flex items-center gap-2.5 p-2 pr-4 rounded-2xl border-2 transition-all shadow-sm cursor-grab active:cursor-grabbing hover:scale-105 ${surclass
                                 ? isSousClass
                                   ? 'border-sky-400 bg-sky-50/40 dark:bg-sky-950/30'
-                                  : 'border-amber-400 bg-amber-50/40 dark:bg-amber-950/30' 
+                                  : 'border-amber-400 bg-amber-50/40 dark:bg-amber-950/30'
                                 : 'border-emerald-400 bg-white'
-                            }`}
+                              }`}
                           >
                             <div className="w-8 h-8 rounded-lg bg-secondary overflow-hidden border border-secondary shadow-inner relative shrink-0">
                               <img src={(p.photo_url && p.photo_url !== 'null') ? p.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(p.full_name)}&background=random&color=fff&size=200`} className="w-full h-full object-cover" />
                               {surclass && (
-                                <span className={`absolute bottom-0 right-0 text-[7px] leading-none px-0.5 py-0.5 rounded-tl font-black ${
-                                  isSousClass ? 'bg-sky-600 text-white' : 'bg-amber-400 text-slate-950'
-                                }`}>
+                                <span className={`absolute bottom-0 right-0 text-[7px] leading-none px-0.5 py-0.5 rounded-tl font-black ${isSousClass ? 'bg-sky-600 text-white' : 'bg-amber-400 text-slate-950'
+                                  }`}>
                                   {isSousClass ? '⬇️' : '⭐'}
                                 </span>
                               )}
@@ -2090,9 +2128,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                               <div className="flex items-center gap-1">
                                 <span className="text-[8px] font-bold text-muted-foreground">#{displayJersey}</span>
                                 {surclass && (
-                                  <span className={`text-[7.5px] font-black uppercase tracking-tight ${
-                                    isSousClass ? 'text-sky-700 dark:text-sky-400' : 'text-amber-700 dark:text-amber-400'
-                                  }`}>
+                                  <span className={`text-[7.5px] font-black uppercase tracking-tight ${isSousClass ? 'text-sky-700 dark:text-sky-400' : 'text-amber-700 dark:text-amber-400'
+                                    }`}>
                                     {isSousClass ? '⬇️' : '⭐'} {surclass.original_category}
                                   </span>
                                 )}
@@ -2106,11 +2143,11 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   </div>
                 </div>
               </div>
-            </motion.div>
+            </div>
           )}
 
           {currentStep === 'opponent' && (
-            <motion.div key="opponent" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="p-8 space-y-8 flex-1">
+            <div key="opponent" className="p-8 space-y-8 flex-1">
               <SectionTitle icon={<Target className="w-5 h-5 text-primary" />} title="Scouting Tactique Adverse" subtitle="Configurez le système et les forces de l'opposition" />
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 pt-4">
@@ -2162,8 +2199,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                           toast.success(`🪄 Système adverse aligné sur mon club : ${formation}`);
                         }}
                         className={`w-full py-2.5 px-3 mb-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 border-2 transition-all ${opponentFormation === formation
-                            ? 'bg-amber-400 text-slate-950 border-amber-500 shadow-sm'
-                            : 'bg-primary/10 border-primary/20 text-primary hover:bg-primary/20'
+                          ? 'bg-amber-400 text-slate-950 border-amber-500 shadow-sm'
+                          : 'bg-primary/10 border-primary/20 text-primary hover:bg-primary/20'
                           }`}
                         title="Adopter exactement le même système tactique que mon club"
                       >
@@ -2264,10 +2301,10 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                               <div
                                 key={p.id}
                                 className={`w-full p-2.5 rounded-xl flex items-center justify-between transition-all select-none ${isStarter
-                                    ? 'bg-primary/10 border-2 border-primary text-primary font-black shadow-sm'
-                                    : isSub
-                                      ? 'bg-blue-50 border-2 border-blue-300 text-blue-800 font-bold'
-                                      : 'bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800'
+                                  ? 'bg-primary/10 border-2 border-primary text-primary font-black shadow-sm'
+                                  : isSub
+                                    ? 'bg-blue-50 border-2 border-blue-300 text-blue-800 font-bold'
+                                    : 'bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800'
                                   }`}
                               >
                                 <label className="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1 py-0.5">
@@ -2497,11 +2534,11 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   </div>
                 </div>
               </div>
-            </motion.div>
+            </div>
           )}
 
           {currentStep === 'validate' && (
-            <motion.div key="validate" initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }} className="p-12 space-y-12 flex-1">
+            <div key="validate" className="p-12 space-y-12 flex-1">
               <SectionTitle icon={<CheckCircle2 className="w-5 h-5 text-primary" />} title="Validation de la Planification" subtitle="Veuillez confirmer les détails avant la synchronisation finale" />
               <div className="flex items-center justify-between bg-primary/5 rounded-[4rem] p-16 border-2 border-primary/10 relative overflow-hidden shadow-2xl">
                 <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(45deg,#000 0,#000 1px,transparent 0,transparent 50%)', backgroundSize: '15px 15px' }} />
@@ -2583,9 +2620,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   </div>
                 </div>
               </div>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
 
         <div className="px-12 py-10 border-t bg-secondary/10 flex items-center justify-between mt-auto">
           <Button variant="ghost" onClick={goPrev} className="h-16 px-10 rounded-[2rem] font-black uppercase tracking-widest text-[11px] gap-3 hover:bg-white transition-all shadow-sm">
@@ -2655,8 +2691,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   type="button"
                   onClick={() => setQuickOpponentTab('single')}
                   className={`flex-1 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all ${quickOpponentTab === 'single'
-                      ? 'bg-primary text-white shadow-md'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    ? 'bg-primary text-white shadow-md'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                     }`}
                 >
                   Joueur Unique
@@ -2665,8 +2701,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   type="button"
                   onClick={() => setQuickOpponentTab('batch')}
                   className={`flex-1 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${quickOpponentTab === 'batch'
-                      ? 'bg-primary text-white shadow-md'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    ? 'bg-primary text-white shadow-md'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                     }`}
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -2904,7 +2940,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
           club={opponentClub}
         />
       )}
-    </motion.div>
+    </div>
   );
 };
 
@@ -3078,9 +3114,8 @@ const Pitch: React.FC<{
                         return (
                           <span
                             title={isPitchSousClass ? `Sous-classé depuis ${surclass.original_category}` : `Surclassé depuis ${surclass.original_category}`}
-                            className={`absolute -top-1 -left-1 h-5 w-5 rounded-full flex items-center justify-center p-0 border-2 border-white text-[9px] font-black shadow-md z-20 cursor-help ${
-                              isPitchSousClass ? 'bg-sky-500 text-white' : 'bg-amber-400 text-slate-950'
-                            }`}
+                            className={`absolute -top-1 -left-1 h-5 w-5 rounded-full flex items-center justify-center p-0 border-2 border-white text-[9px] font-black shadow-md z-20 cursor-help ${isPitchSousClass ? 'bg-sky-500 text-white' : 'bg-amber-400 text-slate-950'
+                              }`}
                           >
                             {isPitchSousClass ? '⬇️' : '⭐'}
                           </span>

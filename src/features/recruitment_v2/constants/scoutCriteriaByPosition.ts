@@ -24,7 +24,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
   GK: {
     id: 'GK',
     code: 'GK',
-    name: 'Gardien',
+    name: 'Gardien de but',
     emoji: '',
     category: 'GK',
     criteria: {
@@ -84,7 +84,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
         'Prise d’information & décision (rapidité, sélection de passe, orientation du corps)',
       ],
       tactique: [
-        'Transitions & pressing (B+ ↔ B-, réactivité, marquage préventif, gestion profondeur)',
+        'Transitions & pressing (avec et sans ballon, réactivité, marquage préventif, gestion profondeur)',
         'Positionnement & couverture (placement, alignement, cadrage, couverture espace)',
         'Lecture & anticipation (trajectoires, pertes, profondeur, danger immédiat)',
         'Gestion du bloc & tempo (remontée, contrôle défensif, rythme du jeu)',
@@ -93,7 +93,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
       physique: [
         'Vitesse & accélération (profondeur, mobilité, transitions rapides)',
         'Explosivité & détente (premiers appuis, duels aériens, impulsion)',
-        'Puissance & gabarit (force, impact physique, jeu de tête off/def)',
+        'Puissance & gabarit (force, impact physique, jeu de tête offensif et défensif)',
         'Endurance & intensité (répétition d’efforts, volume de jeu)',
         'Coordination & agilité (appuis, équilibre, profil latéral inclus)',
       ],
@@ -122,7 +122,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
         'Défense individuelle (cadrage, interceptions, tacles/charges, défense haute)',
       ],
       tactique: [
-        'Transitions & pressing (B+ ↔ B-, réactivité, repli, pressing intelligent)',
+        'Transitions & pressing (avec et sans ballon, réactivité, repli, pressing intelligent)',
         'Positionnement & discipline (alignement, replacement, marquage individuel/couverture)',
         'Lecture & compréhension du jeu (anticipation pertes/profondeur, conscience espace-temps, gestion infériorité)',
         'Verticalité & largeur (appels en profondeur, participation offensive, dédoublements couloir droit)',
@@ -160,7 +160,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
         'Défense individuelle (cadrage, interceptions, tacles/charges, défense haute)',
       ],
       tactique: [
-        'Transitions & pressing (B+ ↔ B-, réactivité, repli, pressing intelligent)',
+        'Transitions & pressing (avec et sans ballon, réactivité, repli, pressing intelligent)',
         'Positionnement & discipline (alignement, replacement, marquage individuel/couverture)',
         'Lecture & compréhension du jeu (anticipation pertes/profondeur, conscience espace-temps, gestion infériorité)',
         'Verticalité & largeur (appels en profondeur, participation offensive, dédoublements couloir gauche)',
@@ -198,7 +198,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
         'Défense individuelle (cadrage, interceptions, tacles/charges, défense haute)',
       ],
       tactique: [
-        'Transitions & pressing (B+ ↔ B-, réactivité, repli, pressing intelligent)',
+        'Transitions & pressing (avec et sans ballon, réactivité, repli, pressing intelligent)',
         'Positionnement & discipline (alignement, replacement, marquage individuel/couverture)',
         'Lecture & compréhension du jeu (anticipation pertes/profondeur, conscience espace-temps, gestion infériorité)',
         'Verticalité & largeur (appels en profondeur, participation offensive, dédoublements)',
@@ -237,7 +237,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
         'Contrôle du tempo (accélérer/décélérer, orientation du corps, rythme du jeu)',
       ],
       tactique: [
-        'Transitions & pressing (B+ ↔ B-, réactivité, pressing/repli, marquage préventif)',
+        'Transitions & pressing (avec et sans ballon, réactivité, pressing/repli, marquage préventif)',
         'Positionnement & couverture (placement, alignement, cadrage, marquage, gestion infériorité)',
         'Lecture & contrôle du jeu (prise d’info, anticipation, gestion des temps forts/faibles)',
         'Gestion & occupation d’espaces (mouvements entre lignes, projection vers l’avant, couverture défensive)',
@@ -248,7 +248,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
         'Puissance & duels (force, impact physique)',
         'Vitesse & explosivité (profondeur, premiers appuis)',
         'Coordination & agilité (appuis, vivacité, équilibre)',
-        'Profils spécifiques (latéral, box-to-box)',
+        'Profils spécifiques (latéral, de surface à surface)',
       ],
       mental: [
         'Vision & intelligence de jeu (orientation, gestion du temps, perception/prise d’info)',
@@ -277,7 +277,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
         'Défense individuelle (interceptions, récupération, cadrage, pression)',
       ],
       tactique: [
-        'Réactivité en transitions (B+ ↔ B-, pressing/repli)',
+        'Réactivité en transitions (avec et sans ballon, pressing/repli)',
         'Positionnement & couverture (placement, alignement, cadrage, marquage, couverture)',
         'Lecture & compréhension du jeu (prise d’info, contrôle du tempo, anticipation, gestion déséquilibres)',
         'Verticalité & occupation espaces (appels en profondeur, déplacements entre lignes, occupation surface)',
@@ -317,7 +317,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
         'Capacités défensives spécifiques (interceptions, récupération, pression orientée)',
       ],
       tactique: [
-        'Réactivité en transitions (B+ ↔ B-, pressing/repli)',
+        'Réactivité en transitions (avec et sans ballon, pressing/repli)',
         'Positionnement & alignement (placement, cadrage, couverture, marquage)',
         'Verticalité & occupation des espaces (appels en profondeur, déplacements entre lignes, occupation surface)',
         'Lecture & compréhension du jeu (prise d’info, contrôle du tempo, gestion déséquilibres)',
@@ -353,7 +353,7 @@ export const SCOUT_POSITION_CONFIGS: Record<string, ScoutPositionConfig> = {
         'Finition (dans surface, têtes, frappes variées)',
       ],
       tactique: [
-        'Réactivité en transitions (B+ ↔ B-, pressing/repli)',
+        'Réactivité en transitions (avec et sans ballon, pressing/repli)',
         'Pressing & contre-pressing (déclenchements, cadrage, fermer l’axe)',
         'Positionnement & déplacements (entre lignes, appels en profondeur, occupation surface)',
         'Jeu sans ballon (création/occupation d’espaces, connexions avec milieux/ailiers)',

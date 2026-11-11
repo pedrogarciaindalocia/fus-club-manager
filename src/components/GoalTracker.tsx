@@ -2,7 +2,6 @@ import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Target, TrendingUp } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 const goals = [
   { id: 'goal-revenue', value: 78, label: 'Revenue', sub: '$78K / $100K', color: '#e03d3d' },
@@ -56,12 +55,7 @@ const GoalItem: React.FC<{ label: string; value: number; sub: string; color: str
 };
 
 const GoalTracker: React.FC = () => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5, delay: 0.5 }}
-    id="goal-tracker-card"
-  >
+  <div id="goal-tracker-card">
     <Card className="h-full hover:shadow-md transition-shadow border">
       <CardHeader className="flex-row items-center justify-between pb-6">
         <div className="space-y-1">
@@ -91,7 +85,7 @@ const GoalTracker: React.FC = () => (
         </div>
       </CardContent>
     </Card>
-  </motion.div>
+  </div>
 );
 
 export default GoalTracker;

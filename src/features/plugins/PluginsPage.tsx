@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Blocks, 
   Compass, 
@@ -131,18 +130,10 @@ export const PluginsPage: React.FC = () => {
 
       {/* PLUGINS GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AnimatePresence mode="popLayout">
           {filteredPlugins.map((plugin) => {
             const active = isPluginActive(plugin.id);
             return (
-              <motion.div
-                key={plugin.id}
-                layout
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.25 }}
-              >
+              <div key={plugin.id}>
                 <Card className={`relative overflow-hidden border-2 transition-all duration-300 rounded-2xl shadow-sm ${
                   active 
                     ? 'border-emerald-500/40 bg-white hover:shadow-md hover:border-emerald-500/60' 
@@ -272,10 +263,9 @@ export const PluginsPage: React.FC = () => {
                     </div>
                   </CardContent>
                 </Card>
-              </motion.div>
+              </div>
             );
           })}
-        </AnimatePresence>
 
         {/* ROADMAP / PREVIEW EXTENSIONS CARDS */}
         <Card className="border border-dashed border-slate-300 bg-slate-50/50 rounded-2xl p-6 sm:p-7 flex flex-col justify-between space-y-6">

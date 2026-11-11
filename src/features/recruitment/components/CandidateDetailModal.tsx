@@ -7,6 +7,7 @@ import type {
   RecruitmentTimelineEvent
 } from '../types/recruitment';
 import PlayerRadarChart from './PlayerRadarChart';
+import { getMetricCategoryFrenchLabel, getMetricPositionFrenchName } from '../../../utils/metricSetsHelpers';
 import {
   X, User, Shield, Calendar, Award, Sparkles, Phone, Mail,
   HeartHandshake, Clock, MapPin, CheckCircle2, AlertCircle, FileText, Briefcase, Building2,
@@ -511,10 +512,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="font-bold text-slate-900 text-sm">
-                        Métriques de Poste : {positionConfig.name} ({positionConfig.code})
+                        Métriques de Poste : {getMetricPositionFrenchName(positionConfig)}
                       </h4>
                       <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase">
-                        {positionConfig.category || 'Poste'}
+                        {positionConfig.category ? getMetricCategoryFrenchLabel(positionConfig.category) : 'Poste'}
                       </span>
                     </div>
                     <p className="text-[11px] text-muted-foreground">

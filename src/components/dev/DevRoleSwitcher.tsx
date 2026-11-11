@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Crown, 
-  Compass, 
-  Briefcase, 
-  ShieldCheck, 
-  BarChart3, 
-  User, 
-  ChevronDown, 
-  Check, 
+import {
+  Crown,
+  Compass,
+  Briefcase,
+  ShieldCheck,
+  BarChart3,
+  User,
+  ChevronDown,
+  Check,
   Sparkles,
   Minimize2,
   Maximize2,
@@ -101,8 +101,15 @@ export const DevRoleSwitcher: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // État pour la sélection d'utilisateur réel
-  const [userList, setUserList] = useState<RealUserItem[]>([]);
+  // État pour la sélection d'utilisateur réel avec cache local
+  const [userList, setUserList] = useState<RealUserItem[]>(() => {
+    try {
+      const cached = localStorage.getItem('fusc_cached_dev_userlist');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState('');
 
@@ -116,27 +123,40 @@ export const DevRoleSwitcher: React.FC = () => {
     let isMounted = true;
     const fetchAllRealUsers = async () => {
       setLoadingUsers(true);
+      const timeoutPromise = new Promise<{ timeout: true }>((resolve) =>
+        setTimeout(() => resolve({ timeout: true }), 3500)
+      );
+
       try {
-        const [rpcRes, profRes, scoutsRes, staffRes] = await Promise.all([
-          Promise.resolve(supabase.rpc('get_all_users')).catch(() => ({ data: [] })),
+        const fetchPromise = Promise.all([
+          Promise.resolve(supabaseAdmin.rpc('get_all_users')).catch(() => ({ data: [] })),
           Promise.resolve(
-            supabase
+            supabaseAdmin
               .from('user_profiles')
               .select('id, full_name, avatar_url, system_role, job_title, is_active')
               .order('full_name', { ascending: true })
           ).catch(() => ({ data: [] })),
           Promise.resolve(
-            supabase
+            supabaseAdmin
               .from('scouts')
               .select('id, full_name, photo_url, email, role_title')
               .neq('status', 'inactive')
           ).catch(() => ({ data: [] })),
           Promise.resolve(
-            supabase
+            supabaseAdmin
               .from('staff')
               .select('id, full_name, photo_url, email, role')
           ).catch(() => ({ data: [] }))
         ]);
+
+        const raceResult = await Promise.race([fetchPromise, timeoutPromise]);
+        if ('timeout' in raceResult) {
+          console.warn('[DevRoleSwitcher] Timeout récupération utilisateurs réels (>3.5s).');
+          if (isMounted) setLoadingUsers(false);
+          return;
+        }
+
+        const [rpcRes, profRes, scoutsRes, staffRes] = raceResult;
 
         const rpcUsers = (rpcRes.data || []) as any[];
         const profiles = (profRes.data || []) as any[];
@@ -253,7 +273,11 @@ export const DevRoleSwitcher: React.FC = () => {
         });
 
         if (isMounted) {
-          setUserList(Array.from(userMap.values()));
+          const list = Array.from(userMap.values());
+          setUserList(list);
+          if (list.length > 0) {
+            localStorage.setItem('fusc_cached_dev_userlist', JSON.stringify(list));
+          }
         }
       } catch (err) {
         console.warn('[DevRoleSwitcher] fetchAllRealUsers error:', err);
@@ -270,8 +294,8 @@ export const DevRoleSwitcher: React.FC = () => {
   useEffect(() => {
     if (currentRole === 'super_admin' && !authState?.isImpersonating) return;
 
-    const matchedBranch = JOB_BRANCHES.find(b => 
-      currentRole.startsWith(b.key) || 
+    const matchedBranch = JOB_BRANCHES.find(b =>
+      currentRole.startsWith(b.key) ||
       (currentJobTitle && b.defaultJobTitles.some(t => t.toLowerCase() === currentJobTitle.toLowerCase()))
     );
     if (matchedBranch) {
@@ -285,32 +309,7 @@ export const DevRoleSwitcher: React.FC = () => {
     else if (currentRole.endsWith('_user') || currentRole === 'user' || currentRole === 'analyst') setSelectedLevel('user');
   }, [currentRole, currentJobTitle, authState?.isImpersonating]);
 
-  // Masquer en environnement de production
-  if (import.meta.env.MODE === 'production') return null;
-
-  // Restriction stricte : Seul le Super Administrateur a accès
-  const isSuperAdminAuthorized = Boolean(
-    authState?.isAuthenticated && 
-    (authState?.isRealSuperAdmin || authState?.user?.system_role === 'super_admin')
-  );
-
-  if (!isSuperAdminAuthorized) {
-    return null;
-  }
-
-  // Filtrage des utilisateurs selon la recherche
-  const filteredUsers = userList.filter(u => {
-    if (!userSearchQuery.trim()) return true;
-    const q = userSearchQuery.toLowerCase();
-    return (
-      u.full_name.toLowerCase().includes(q) ||
-      (u.job_title && u.job_title.toLowerCase().includes(q)) ||
-      (u.system_role && u.system_role.toLowerCase().includes(q)) ||
-      (u.email && u.email.toLowerCase().includes(q))
-    );
-  });
-
-  // Groupement des utilisateurs par catégorie de poste pour la liste déroulante
+  // Groupement des utilisateurs par catégorie de poste pour la liste déroulante (doit être avant tout return conditionnel pour respecter les Rules of Hooks)
   const usersByJobGroup = useMemo(() => {
     const groups: Record<string, RealUserItem[]> = {
       '👑 Direction & Administration': [],
@@ -343,6 +342,33 @@ export const DevRoleSwitcher: React.FC = () => {
     return groups;
   }, [userList]);
 
+  // Filtrage des utilisateurs selon la recherche
+  const filteredUsers = useMemo(() => {
+    return userList.filter(u => {
+      if (!userSearchQuery.trim()) return true;
+      const q = userSearchQuery.toLowerCase();
+      return (
+        u.full_name.toLowerCase().includes(q) ||
+        (u.job_title && u.job_title.toLowerCase().includes(q)) ||
+        (u.system_role && u.system_role.toLowerCase().includes(q)) ||
+        (u.email && u.email.toLowerCase().includes(q))
+      );
+    });
+  }, [userList, userSearchQuery]);
+
+  // Masquer en environnement de production
+  if (import.meta.env.MODE === 'production') return null;
+
+  // Restriction stricte : Seul le Super Administrateur a accès
+  const isSuperAdminAuthorized = Boolean(
+    authState?.isAuthenticated &&
+    (authState?.isRealSuperAdmin || authState?.user?.system_role === 'super_admin')
+  );
+
+  if (!isSuperAdminAuthorized) {
+    return null;
+  }
+
   // Gestion du choix d'un utilisateur réel
   const handleSelectRealUser = async (user: RealUserItem) => {
     // 1. Récupération des permissions explicites
@@ -356,7 +382,7 @@ export const DevRoleSwitcher: React.FC = () => {
         userPerms = data.map(p => p.permission_id);
         try {
           localStorage.setItem(`fusc_user_perms_${user.id}`, JSON.stringify(userPerms));
-        } catch {}
+        } catch { }
       } else {
         const cached = localStorage.getItem(`fusc_user_perms_${user.id}`);
         if (cached) userPerms = JSON.parse(cached);
@@ -377,7 +403,7 @@ export const DevRoleSwitcher: React.FC = () => {
         userCats = data.map(c => c.category);
         try {
           localStorage.setItem(`fusc_user_categories_${user.id}`, JSON.stringify(userCats));
-        } catch {}
+        } catch { }
       } else {
         const cached = localStorage.getItem(`fusc_user_categories_${user.id}`);
         if (cached) userCats = JSON.parse(cached);
@@ -437,7 +463,7 @@ export const DevRoleSwitcher: React.FC = () => {
   const categoriesCount = authState?.userCategories?.length || 0;
 
   return (
-    <motion.div 
+    <motion.div
       drag
       dragMomentum={false}
       whileDrag={{ scale: 1.02, cursor: 'grabbing' }}
@@ -453,7 +479,7 @@ export const DevRoleSwitcher: React.FC = () => {
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-[8px] font-bold text-slate-500 uppercase">Dev</span>
-          <button 
+          <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="w-5 h-5 rounded-md hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
             title={isCollapsed ? 'Déplier' : 'Réduire'}
@@ -519,11 +545,10 @@ export const DevRoleSwitcher: React.FC = () => {
           <div>
             <button
               onClick={handleResetToSuperAdmin}
-              className={`w-full py-2 px-3 rounded-xl font-black text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 border transition-all ${
-                isSuperAdminActive
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 border-purple-400 text-white shadow-lg shadow-purple-500/30'
-                  : 'bg-white/5 border-purple-500/30 text-purple-300 hover:bg-purple-500/20 hover:border-purple-400'
-              }`}
+              className={`w-full py-2 px-3 rounded-xl font-black text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 border transition-all ${isSuperAdminActive
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 border-purple-400 text-white shadow-lg shadow-purple-500/30'
+                : 'bg-white/5 border-purple-500/30 text-purple-300 hover:bg-purple-500/20 hover:border-purple-400'
+                }`}
             >
               <Crown className="w-3.5 h-3.5 text-amber-300" />
               <span>Super Administrateur (Global)</span>
@@ -536,11 +561,10 @@ export const DevRoleSwitcher: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('users')}
-              className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
-                activeTab === 'users'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${activeTab === 'users'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+                }`}
             >
               <Users className="w-3 h-3" />
               <span>Par Utilisateur</span>
@@ -548,11 +572,10 @@ export const DevRoleSwitcher: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('roles')}
-              className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
-                activeTab === 'roles'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${activeTab === 'roles'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+                }`}
             >
               <Shield className="w-3 h-3" />
               <span>Par Métier & Rôle</span>
@@ -634,11 +657,10 @@ export const DevRoleSwitcher: React.FC = () => {
                         key={user.id}
                         type="button"
                         onClick={() => handleSelectRealUser(user)}
-                        className={`w-full text-left p-2 rounded-xl border transition-all flex items-center justify-between gap-2.5 ${
-                          isSelected
-                            ? 'bg-indigo-600/30 border-indigo-400/80 shadow-md shadow-indigo-500/20'
-                            : 'bg-slate-900/70 border-slate-800/80 hover:bg-slate-800/80 hover:border-slate-700'
-                        }`}
+                        className={`w-full text-left p-2 rounded-xl border transition-all flex items-center justify-between gap-2.5 ${isSelected
+                          ? 'bg-indigo-600/30 border-indigo-400/80 shadow-md shadow-indigo-500/20'
+                          : 'bg-slate-900/70 border-slate-800/80 hover:bg-slate-800/80 hover:border-slate-700'
+                          }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <UserAvatar url={user.avatar_url} name={user.full_name} size={30} />
@@ -682,7 +704,7 @@ export const DevRoleSwitcher: React.FC = () => {
                   <span>1. Intitulé de poste / Métier</span>
                   <span className="text-[9px] text-indigo-400 font-semibold">{activeBranch.shortLabel}</span>
                 </label>
-                
+
                 <div className="grid grid-cols-2 gap-1.5">
                   <select
                     value={selectedBranchKey}
@@ -727,11 +749,10 @@ export const DevRoleSwitcher: React.FC = () => {
                         key={lvl.level}
                         type="button"
                         onClick={() => handleLevelSelect(lvl.level)}
-                        className={`py-2 px-1.5 rounded-xl text-center border transition-all flex flex-col items-center justify-center gap-0.5 ${
-                          isSelected
-                            ? 'bg-indigo-600 border-indigo-400 text-white shadow-md shadow-indigo-600/30'
-                            : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200 hover:border-slate-700'
-                        }`}
+                        className={`py-2 px-1.5 rounded-xl text-center border transition-all flex flex-col items-center justify-center gap-0.5 ${isSelected
+                          ? 'bg-indigo-600 border-indigo-400 text-white shadow-md shadow-indigo-600/30'
+                          : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200 hover:border-slate-700'
+                          }`}
                       >
                         <span className="text-[10px] font-black uppercase tracking-wide">
                           {lvl.label}

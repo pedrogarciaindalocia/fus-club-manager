@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Banner } from '../../types';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { toast } from 'sonner';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
 
@@ -138,19 +138,7 @@ const StoreManagement: React.FC = () => {
   };
 
   if (isLoadingBanners) {
-    return (
-      <div className="space-y-8 animate-in fade-in duration-700">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-11 w-40 rounded-xl" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[1, 2].map((i) => (
-            <Skeleton key={i} className="h-64 w-full rounded-3xl" />
-          ))}
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement des bannières…" />;
   }
 
   return (
@@ -173,13 +161,9 @@ const StoreManagement: React.FC = () => {
         </Button>
       </div>
 
-      <AnimatePresence mode="wait">
         {showForm ? (
-          <motion.div
+          <div
             key="form"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
             className="max-w-2xl mx-auto"
           >
             <Card className="rounded-[2.5rem] border shadow-xl overflow-hidden bg-white">
@@ -312,12 +296,10 @@ const StoreManagement: React.FC = () => {
                 </div>
               </div>
             </Card>
-          </motion.div>
+          </div>
         ) : (
-          <motion.div
+          <div
             key="list"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
             className="grid grid-cols-1 md:grid-cols-2 gap-6"
           >
             {banners.length === 0 ? (
@@ -381,9 +363,8 @@ const StoreManagement: React.FC = () => {
                 </Card>
               ))
             )}
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
       {/* Modal de Recadrage */}
       <AnimatePresence>

@@ -48,9 +48,7 @@ const buildChartData = (
   const scores = criteriaList.map((crit) => {
     const raw = report.criteria_scores?.[crit];
     if (typeof raw === 'number') return raw;
-    const fallbackKey = `${pillar}Score` as keyof CandidateEvaluation;
-    const fallback = report[fallbackKey] as unknown as number;
-    return typeof fallback === 'number' ? fallback : 5;
+    return 0;
   });
   return {
     labels: criteriaList.map(parseCriterion),

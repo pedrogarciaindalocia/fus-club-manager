@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 
 interface LeagueOverviewPanelProps {
   league: League;
@@ -119,9 +120,7 @@ const LeagueOverviewPanel: React.FC<LeagueOverviewPanelProps> = ({ league, onBac
       {/* ── CONTENT ── */}
       <div className="bg-white rounded-[2rem] border border-slate-100 shadow-xl p-8 min-h-[500px]">
         {eventsLoading ? (
-          <div className="h-full flex items-center justify-center text-red-300 min-h-[400px]">
-            <Activity className="w-10 h-10 animate-spin" />
-          </div>
+          <FusLogoLoader fullPage size="lg" label="Chargement des statistiques de compétition…" />
         ) : (
           <>
             {activeTab === 'resume' && (

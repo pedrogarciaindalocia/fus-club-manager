@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   UserCheck,
   UserPlus,
@@ -20,7 +19,9 @@ import { ArbitreDetailModal } from './components/ArbitreDetailModal';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Card, CardContent } from '../../components/ui/card';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { useClubData } from '../../hooks/useClubData';
+import { resolvePreferredViewMode } from '../../utils/viewModePreference';
 import type { Arbitre, ArbitreFormData, RolePrincipalArbitre, StatutArbitre, GradeArbitre } from '../../types/arbitre';
 
 export const ArbitresPage: React.FC = () => {
@@ -44,16 +45,15 @@ export const ArbitresPage: React.FC = () => {
   } = useArbitres();
 
   const { mainClub } = useClubData();
-  const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(mainClub?.preferred_view_mode || 'grid');
+  const preferredViewMode = resolvePreferredViewMode(mainClub, 'grid');
+  const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(preferredViewMode);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingArbitre, setEditingArbitre] = useState<Arbitre | null>(null);
   const [selectedArbitreForDetail, setSelectedArbitreForDetail] = useState<Arbitre | null>(null);
 
   useEffect(() => {
-    if (mainClub?.preferred_view_mode) {
-      setDisplayMode(mainClub.preferred_view_mode);
-    }
-  }, [mainClub]);
+    setDisplayMode(preferredViewMode);
+  }, [preferredViewMode]);
 
   const handleOpenAdd = () => {
     setEditingArbitre(null);
@@ -254,10 +254,7 @@ export const ArbitresPage: React.FC = () => {
 
       {/* Grid or List of Arbitres */}
       {loading ? (
-        <div className="py-20 text-center space-y-3">
-          <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto" />
-          <p className="text-muted-foreground text-sm font-medium">Chargement des officiels...</p>
-        </div>
+        <FusLogoLoader fullPage size="lg" label="Chargement des officiels..." />
       ) : arbitres.length === 0 ? (
         <div className="py-16 text-center bg-card border border-border rounded-3xl p-8 shadow-sm">
           <UserCheck className="w-12 h-12 text-muted-foreground/40 mx-auto mb-3" />
@@ -280,34 +277,30 @@ export const ArbitresPage: React.FC = () => {
         </div>
       ) : displayMode === 'list' ? (
         <div className="space-y-3">
-          <AnimatePresence>
-            {arbitres.map((arbitre) => (
-              <ArbitreCard
-                key={arbitre.id}
-                arbitre={arbitre}
-                onEdit={handleOpenEdit}
-                onDelete={deleteArbitre}
-                onSelect={(arb) => setSelectedArbitreForDetail(arb)}
-                viewMode="list"
-              />
-            ))}
-          </AnimatePresence>
+          {arbitres.map((arbitre) => (
+            <ArbitreCard
+              key={arbitre.id}
+              arbitre={arbitre}
+              onEdit={handleOpenEdit}
+              onDelete={deleteArbitre}
+              onSelect={(arb) => setSelectedArbitreForDetail(arb)}
+              viewMode="list"
+            />
+          ))}
         </div>
       ) : (
-        <motion.div layout className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <AnimatePresence>
-            {arbitres.map((arbitre) => (
-              <ArbitreCard
-                key={arbitre.id}
-                arbitre={arbitre}
-                onEdit={handleOpenEdit}
-                onDelete={deleteArbitre}
-                onSelect={(arb) => setSelectedArbitreForDetail(arb)}
-                viewMode="grid"
-              />
-            ))}
-          </AnimatePresence>
-        </motion.div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {arbitres.map((arbitre) => (
+            <ArbitreCard
+              key={arbitre.id}
+              arbitre={arbitre}
+              onEdit={handleOpenEdit}
+              onDelete={deleteArbitre}
+              onSelect={(arb) => setSelectedArbitreForDetail(arb)}
+              viewMode="grid"
+            />
+          ))}
+        </div>
       )}
 
       {/* Form Modal */}

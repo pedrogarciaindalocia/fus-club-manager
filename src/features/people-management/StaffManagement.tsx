@@ -26,14 +26,14 @@ import {
   ImageIcon,
   Scissors
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import type { StaffMember } from '../types';
 import { storageService } from '../../services/storageService';
 import ImageCropperModal from '../../components/ImageCropperModal';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 
 import { useClubData } from '../../hooks/useClubData';
+import { resolvePreferredViewMode } from '../../utils/viewModePreference';
 
 const StaffManagement: React.FC = () => {
   const { staff, isLoading: staffLoading, addStaff, updateStaff, deleteStaff } = useStaff();
@@ -51,13 +51,17 @@ const StaffManagement: React.FC = () => {
   const [selectedFileUrl, setSelectedFileUrl] = useState<string | null>(null);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
 
-  // Settings sync
-  const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(mainClub?.preferred_view_mode || 'list');
+  // Settings sync (mode Grille par défaut)
+  const preferredViewMode = resolvePreferredViewMode(mainClub, 'grid');
+  const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(preferredViewMode);
   const [pageSize, setPageSize] = useState(mainClub?.pagination_limit || 10);
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    if (mainClub?.preferred_view_mode) setDisplayMode(mainClub.preferred_view_mode);
+    setDisplayMode(preferredViewMode);
+  }, [preferredViewMode]);
+
+  useEffect(() => {
     if (mainClub?.pagination_limit) setPageSize(mainClub.pagination_limit);
   }, [mainClub]);
 
@@ -190,29 +194,14 @@ const StaffManagement: React.FC = () => {
   };
 
   if (isLoading) {
-    return (
-      <div className="space-y-8 animate-in fade-in duration-700">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-11 w-40 rounded-xl" />
-        </div>
-        <Skeleton className="h-16 w-full rounded-2xl" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[1,2,3,4].map(i => <Skeleton key={i} className="h-64 w-full rounded-3xl" />)}
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement du staff technique…" />;
   }
 
   return (
     <div className="space-y-8 pb-20 overflow-visible">
-      <AnimatePresence mode="wait">
         {!showForm ? (
-          <motion.div
+          <div
             key="list"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
             className="space-y-8"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -286,16 +275,8 @@ const StaffManagement: React.FC = () => {
             {/* Grid / List Content */}
             {displayMode === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                <AnimatePresence mode="popLayout">
                   {paginatedStaff.map((person) => (
-                    <motion.div
-                      key={person.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      transition={{ duration: 0.2 }}
-                    >
+                    <div key={person.id}>
                       <Card className="group relative overflow-hidden border-secondary hover:border-primary/20 hover:shadow-2xl transition-all duration-500 bg-white">
                         <CardContent className="p-0">
                            <div className="h-16 bg-gradient-to-br from-secondary/50 to-secondary" />
@@ -393,9 +374,8 @@ const StaffManagement: React.FC = () => {
                            </div>
                         </CardContent>
                       </Card>
-                    </motion.div>
+                    </div>
                   ))}
-                </AnimatePresence>
               </div>
             ) : (
               <div className="bg-white border rounded-[2rem] overflow-hidden shadow-sm">
@@ -515,13 +495,10 @@ const StaffManagement: React.FC = () => {
                   <p className="text-muted-foreground font-medium italic uppercase tracking-widest text-[10px]">Aucun membre trouvé dans cette catégorie.</p>
                </div>
             )}
-          </motion.div>
+          </div>
         ) : (
-          <motion.div
+          <div
             key="form"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
             className="max-w-4xl mx-auto"
           >
             <div className="flex items-center gap-6 mb-10">
@@ -736,9 +713,8 @@ const StaffManagement: React.FC = () => {
                 </div>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
       <ImageCropperModal
         isOpen={cropModalOpen}

@@ -20,11 +20,19 @@ const AddPlayerPage: React.FC = () => {
   const editIdParam = searchParams.get('editId') || undefined;
   const returnTab = searchParams.get('returnTab') || 'candidates';
 
-  const { scouts, candidates, createCandidate, updateCandidate } = useRecruitment();
+  const { scouts, candidates, evaluations, createCandidate, updateCandidate } = useRecruitment();
   const isSavingRef = useRef(false);
   const [createdCandidateInfo, setCreatedCandidateInfo] = useState<{ id: string; name: string } | null>(null);
 
-  const candidateToEdit = editIdParam ? (candidates.find(c => c.id === editIdParam) || null) : null;
+  const rawCandidateToEdit = editIdParam ? (candidates.find(c => c.id === editIdParam) || null) : null;
+  const candidateToEdit = React.useMemo(() => {
+    if (!rawCandidateToEdit) return null;
+    const candEvals = evaluations.filter(e => e.candidate_id === rawCandidateToEdit.id);
+    return {
+      ...rawCandidateToEdit,
+      evaluations: candEvals.length > 0 ? candEvals : (rawCandidateToEdit.evaluations || []),
+    };
+  }, [rawCandidateToEdit, evaluations]);
 
   const currentScout = scouts.find(s => 
     (s.email && s.email.toLowerCase().trim() === authState?.user?.email?.toLowerCase().trim()) ||

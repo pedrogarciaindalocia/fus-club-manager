@@ -38,6 +38,7 @@ import type { TrialCandidate, CandidateEvaluation, EvaluationVerdict, PlayerTest
 import { cn } from '../../../lib/utils';
 import { usePermissions } from '../../../context/PermissionsContext';
 import { useMetrics } from '../../../hooks/useMetrics';
+import { getMetricPositionFrenchName } from '../../../utils/metricSetsHelpers';
 import {
   type ScoutPillarKey
 } from '../constants/scoutCriteriaByPosition';
@@ -113,7 +114,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const candidateTests = tests.filter(t => t.candidate_id === candidate.id);
+  const candidateTests = tests.filter(t => t.candidate_id === candidate.id || t.candidate_ids?.includes(candidate.id));
   const selectedTest = candidateTests.find(t => t.id === selectedTestId);
   const isFutureTest = Boolean(selectedTest && selectedTest.test_date > todayStr);
 
@@ -158,12 +159,12 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
   const isMid = posUpper.includes('CDM') || posUpper.includes('CM') || posUpper.includes('CAM') || candidate.primary_position.toLowerCase().includes('milieu');
   const isWng = posUpper.includes('LW') || posUpper.includes('RW') || candidate.primary_position.toLowerCase().includes('ailier');
 
-  const [posTrait1Label, setPosTrait1Label] = useState(isGK ? 'Réflexes & Arrêts sur sa ligne' : isDef ? 'Duels Aériens & Tacles' : isMid ? 'Résistance au Pressing' : isWng ? 'Percussion 1v1 & Dribble' : 'Finition Clinique');
-  const [posTrait1Score, setPosTrait1Score] = useState(8.0);
-  const [posTrait2Label, setPosTrait2Label] = useState(isGK ? 'Sorties Aériennes & 1v1' : isDef ? 'Relance & Vision défensive' : isMid ? 'Passes Progressives & Rupture' : isWng ? 'Qualité de Centre' : 'Instinct de Buteur');
-  const [posTrait2Score, setPosTrait2Score] = useState(7.5);
+  const [posTrait1Label, setPosTrait1Label] = useState(isGK ? 'Réflexes & Arrêts sur sa ligne' : isDef ? 'Duels Aériens & Tacles' : isMid ? 'Résistance au Pressing' : isWng ? 'Percussion 1 contre 1 & Dribble' : 'Finition Clinique');
+  const [posTrait1Score, setPosTrait1Score] = useState(0);
+  const [posTrait2Label, setPosTrait2Label] = useState(isGK ? 'Sorties Aériennes & 1 contre 1' : isDef ? 'Relance & Vision défensive' : isMid ? 'Passes Progressives & Rupture' : isWng ? 'Qualité de Centre' : 'Instinct de Buteur');
+  const [posTrait2Score, setPosTrait2Score] = useState(0);
   const [posTrait3Label, setPosTrait3Label] = useState(isGK ? 'Jeu au pied & Relance' : isDef ? 'Couverture & Vitesse de repli' : isMid ? 'Contrôle du Tempo' : isWng ? 'Vitesse de Transition' : 'Jeu Dos au But');
-  const [posTrait3Score, setPosTrait3Score] = useState(7.5);
+  const [posTrait3Score, setPosTrait3Score] = useState(0);
 
   // Verdict & Synthèse
   const [verdict, setVerdict] = useState<EvaluationVerdict>('shortlist');
@@ -195,13 +196,8 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
           scores[key] = Number(evaluation.criteria_scores[title]);
         } else if (criterionScores[key] !== undefined) {
           scores[key] = criterionScores[key];
-        } else if (evaluation) {
-          if (p === 'technique') scores[key] = evaluation.technical_score ?? 7.5;
-          else if (p === 'tactique') scores[key] = evaluation.tactical_score ?? 7.5;
-          else if (p === 'physique') scores[key] = evaluation.physical_score ?? 7.5;
-          else scores[key] = evaluation.mental_score ?? 7.5;
         } else {
-          scores[key] = 7.5;
+          scores[key] = 0;
         }
         enabled[key] = true;
       });
@@ -257,9 +253,9 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
 
       initCriterionScores(null);
 
-      setPosTrait1Score(8.0);
-      setPosTrait2Score(7.5);
-      setPosTrait3Score(7.5);
+      setPosTrait1Score(0);
+      setPosTrait2Score(0);
+      setPosTrait3Score(0);
 
       setVerdict('shortlist');
       setStrengths('');
@@ -326,10 +322,10 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
       const lbl = typeof c === 'string' ? c : (c as any)?.label;
       return criterionEnabled[`${pillar}-${lbl}`] !== false;
     });
-    if (active.length === 0) return 7.0;
+    if (active.length === 0) return 0;
     const sum = active.reduce((acc, c) => {
       const lbl = typeof c === 'string' ? c : (c as any)?.label;
-      return acc + (criterionScores[`${pillar}-${lbl}`] || 7.5);
+      return acc + (criterionScores[`${pillar}-${lbl}`] ?? 0);
     }, 0);
     return Math.round((sum / active.length) * 10) / 10;
   };
@@ -413,41 +409,41 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
           })
         ),
 
-        // Rétrocompatibilité legacy avec les anciens champs DB / composants
-        tech_ball_control: criterionScores['technique-Contrôle'] ?? criterionScores['technique-Prise de balle'] ?? techScore,
-        tech_first_touch: criterionScores['technique-Contrôle orienté'] ?? criterionScores['technique-Contrôle'] ?? techScore,
-        tech_passing_short: criterionScores['technique-Passe courte'] ?? criterionScores['technique-Passe'] ?? techScore,
-        tech_passing_long: criterionScores['technique-Passe longue'] ?? techScore,
-        tech_dribbling: criterionScores['technique-Dribble'] ?? techScore,
-        tech_crossing: criterionScores['technique-Centre'] ?? techScore,
-        tech_finishing: criterionScores['technique-Finition'] ?? criterionScores['technique-Tir'] ?? techScore,
-        tech_heading: criterionScores['technique-Jeu aérien'] ?? criterionScores['technique-Jeu de tête'] ?? techScore,
-        tech_1v1_attacking: criterionScores['technique-Duel 1v1'] ?? criterionScores['technique-1 contre 1'] ?? techScore,
-        tech_1v1_defending: criterionScores['technique-Tacle'] ?? techScore,
-        tech_weak_foot: techScore,
+        // Rétrocompatibilité legacy avec les anciens champs DB / composants (0 si non modifié)
+        tech_ball_control: criterionScores['technique-Contrôle'] ?? criterionScores['technique-Prise de balle'] ?? 0,
+        tech_first_touch: criterionScores['technique-Contrôle orienté'] ?? criterionScores['technique-Contrôle'] ?? 0,
+        tech_passing_short: criterionScores['technique-Passe courte'] ?? criterionScores['technique-Passe'] ?? 0,
+        tech_passing_long: criterionScores['technique-Passe longue'] ?? 0,
+        tech_dribbling: criterionScores['technique-Dribble'] ?? 0,
+        tech_crossing: criterionScores['technique-Centre'] ?? 0,
+        tech_finishing: criterionScores['technique-Finition'] ?? criterionScores['technique-Tir'] ?? 0,
+        tech_heading: criterionScores['technique-Jeu aérien'] ?? criterionScores['technique-Jeu de tête'] ?? 0,
+        tech_1v1_attacking: criterionScores['technique-Duel 1v1'] ?? criterionScores['technique-1 contre 1'] ?? 0,
+        tech_1v1_defending: criterionScores['technique-Tacle'] ?? 0,
+        tech_weak_foot: 0,
 
-        phys_acceleration: criterionScores['physique-Accélération'] ?? physScore,
-        phys_sprint_speed: criterionScores['physique-Vitesse'] ?? physScore,
-        phys_agility: criterionScores['physique-Agilité'] ?? physScore,
-        phys_balance: criterionScores['physique-Souplesse'] ?? criterionScores['physique-Coordination'] ?? physScore,
-        phys_strength: criterionScores['physique-Force'] ?? criterionScores['physique-Puissance'] ?? physScore,
-        phys_endurance: criterionScores['physique-Endurance'] ?? criterionScores['physique-Résistance'] ?? physScore,
-        phys_explosiveness: criterionScores['physique-Explosivité'] ?? criterionScores['physique-Détente'] ?? physScore,
+        phys_acceleration: criterionScores['physique-Accélération'] ?? 0,
+        phys_sprint_speed: criterionScores['physique-Vitesse'] ?? 0,
+        phys_agility: criterionScores['physique-Agilité'] ?? 0,
+        phys_balance: criterionScores['physique-Souplesse'] ?? criterionScores['physique-Coordination'] ?? 0,
+        phys_strength: criterionScores['physique-Force'] ?? criterionScores['physique-Puissance'] ?? 0,
+        phys_endurance: criterionScores['physique-Endurance'] ?? criterionScores['physique-Résistance'] ?? 0,
+        phys_explosiveness: criterionScores['physique-Explosivité'] ?? criterionScores['physique-Détente'] ?? 0,
 
-        tact_positioning: criterionScores['tactique-Placement'] ?? criterionScores['tactique-Positionnement'] ?? tactScore,
-        tact_awareness: criterionScores['tactique-Lecture du jeu'] ?? criterionScores['tactique-Vision'] ?? tactScore,
-        tact_decision_making: criterionScores['tactique-Prise de décision'] ?? tactScore,
-        tact_anticipation: criterionScores['tactique-Anticipation'] ?? tactScore,
-        tact_space_awareness: criterionScores['tactique-Gestion profondeur'] ?? criterionScores['tactique-Occupation espaces'] ?? tactScore,
-        tact_transition: criterionScores['tactique-Transition défensive'] ?? criterionScores['tactique-Transition'] ?? tactScore,
+        tact_positioning: criterionScores['tactique-Placement'] ?? criterionScores['tactique-Positionnement'] ?? 0,
+        tact_awareness: criterionScores['tactique-Lecture du jeu'] ?? criterionScores['tactique-Vision'] ?? 0,
+        tact_decision_making: criterionScores['tactique-Prise de décision'] ?? 0,
+        tact_anticipation: criterionScores['tactique-Anticipation'] ?? 0,
+        tact_space_awareness: criterionScores['tactique-Gestion profondeur'] ?? criterionScores['tactique-Occupation espaces'] ?? 0,
+        tact_transition: criterionScores['tactique-Transition défensive'] ?? criterionScores['tactique-Transition'] ?? 0,
 
-        ment_concentration: criterionScores['mental-Concentration'] ?? mentScore,
-        ment_discipline: criterionScores['mental-Discipline'] ?? mentScore,
-        ment_motivation: criterionScores['mental-Combativité'] ?? criterionScores['mental-Courage'] ?? mentScore,
-        ment_confidence: criterionScores['mental-Confiance'] ?? mentScore,
-        ment_teamwork: criterionScores['mental-Communication'] ?? mentScore,
-        ment_leadership: criterionScores['mental-Leadership'] ?? mentScore,
-        ment_coachability: criterionScores['mental-Intelligence'] ?? mentScore,
+        ment_concentration: criterionScores['mental-Concentration'] ?? 0,
+        ment_discipline: criterionScores['mental-Discipline'] ?? 0,
+        ment_motivation: criterionScores['mental-Combativité'] ?? criterionScores['mental-Courage'] ?? 0,
+        ment_confidence: criterionScores['mental-Confiance'] ?? 0,
+        ment_teamwork: criterionScores['mental-Communication'] ?? 0,
+        ment_leadership: criterionScores['mental-Leadership'] ?? 0,
+        ment_coachability: criterionScores['mental-Intelligence'] ?? 0,
 
         pos_specific_1_label: posTrait1Label,
         pos_specific_1_score: posTrait1Score,
@@ -507,7 +503,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
       await updatePosition({ id: posId, data: { criteria: updatedCriteria } });
       
       const key = `${pillar}-${trimmed}`;
-      setCriterionScores((prev) => ({ ...prev, [key]: 7.5 }));
+      setCriterionScores((prev) => ({ ...prev, [key]: 0 }));
       setCriterionEnabled((prev) => ({ ...prev, [key]: true }));
       setInlineNewCriterionName('');
       setInlineAddingPillar(null);
@@ -611,12 +607,12 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
   const renderCriterionSlider = (pillar: ScoutPillarKey, label: string) => {
     const key = `${pillar}-${label}`;
     const isEnabled = criterionEnabled[key] ?? true;
-    const value = criterionScores[key] ?? 7.5;
+    const value = criterionScores[key] ?? 0;
     const isEditing = editingCriterion?.pillar === pillar && editingCriterion?.oldName === label;
     const { title, detail } = parseCriterion(label);
     const isTooltipOpen = activeCriterionTooltip === key;
 
-    let scoreBadgeColor = 'bg-slate-100 text-slate-700';
+    let scoreBadgeColor = value === 0 ? 'bg-slate-100 text-slate-400' : 'bg-slate-100 text-slate-700';
     if (value >= 9) scoreBadgeColor = 'bg-red-50 text-primary font-black';
     else if (value >= 7.5) scoreBadgeColor = 'bg-emerald-50 text-emerald-700 font-bold';
     else if (value >= 6) scoreBadgeColor = 'bg-blue-50 text-blue-700';
@@ -721,7 +717,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
               <div className="flex items-center gap-1 shrink-0">
                 {isEnabled ? (
                   <span className={cn("px-2 py-0.5 rounded-lg text-xs font-black", scoreBadgeColor)}>
-                    {value.toFixed(1)}
+                    {value === 0 ? '0' : value.toFixed(1)}
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded-lg text-[10px] bg-slate-200 text-slate-500 font-bold shrink-0">
@@ -759,7 +755,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
         </div>
         <input
           type="range"
-          min="1"
+          min="0"
           max="10"
           step="0.1"
           disabled={!isEnabled}
@@ -789,7 +785,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b gap-2">
           <div>
             <h4 className="text-sm font-bold text-foreground flex items-center gap-2 flex-wrap">
-              <span>{letter}. Critères {label} — {positionConfig.name} ({positionConfig.code})</span>
+              <span>{letter}. Critères {label} — {getMetricPositionFrenchName(positionConfig)}</span>
             </h4>
             <p className="text-[11px] text-muted-foreground">{desc}</p>
           </div>
@@ -897,7 +893,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
 
                 {/* Badge du Poste Spécifique Détecté */}
                 <span className="text-xs font-black px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5 shadow-xs">
-                  <span>{positionConfig.code} — {positionConfig.name}</span>
+                  <span>{getMetricPositionFrenchName(positionConfig)}</span>
                 </span>
 
                 {isSuperAdmin && (
@@ -908,7 +904,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
                     title="Gérer les critères d'évaluation de ce poste (Super Admin)"
                   >
                     <Sliders className="w-3 h-3 text-amber-600" />
-                    <span>Gérer critères ({positionConfig.code})</span>
+                    <span>Gérer critères ({getMetricPositionFrenchName(positionConfig)})</span>
                   </button>
                 )}
 
@@ -1681,7 +1677,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
                   </div>
                   <input
                     type="range"
-                    min="1"
+                    min="0"
                     max="10"
                     step="0.1"
                     value={posTrait1Score}
@@ -1700,7 +1696,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
                   </div>
                   <input
                     type="range"
-                    min="1"
+                    min="0"
                     max="10"
                     step="0.1"
                     value={posTrait2Score}
@@ -1719,7 +1715,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
                   </div>
                   <input
                     type="range"
-                    min="1"
+                    min="0"
                     max="10"
                     step="0.1"
                     value={posTrait3Score}

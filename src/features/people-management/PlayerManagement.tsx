@@ -1,19 +1,22 @@
+
+
+
+
 import React, { useState, useMemo, useEffect } from 'react';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-} from 'recharts';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePlayers } from '../../hooks/usePlayers';
 import { useTeams } from '../../hooks/useTeams';
 import { useClubData } from '../../hooks/useClubData';
+import { resolvePreferredViewMode } from '../../utils/viewModePreference';
 import { useCompetitions } from '../../hooks/useCompetitions';
+import { useMatches } from '../../hooks/useMatches';
+import { useOpponentMatches } from '../../hooks/useOpponentMatches';
+import { frmfDataService, type FRMFDataset } from '../../services/frmfDataService';
+import {
+  getTieRuleBadgeLabel,
+  resolveCategoryStandingsWithFrmfFallback,
+} from '../../utils/championshipTimelineHelper';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -27,7 +30,6 @@ import {
   Scissors,
   Eye,
   Calendar,
-  CalendarDays,
   Ruler,
   Weight,
   Footprints,
@@ -40,20 +42,14 @@ import {
   ChevronLeft,
   ChevronRight,
   MoreVertical,
-  BarChart3,
   Trophy,
   Clock,
   Target,
-  Users,
   ChevronLeft as PrevIcon,
   ChevronRight as NextIcon,
   Save,
   Loader2,
   CheckSquare,
-  Star,
-  GripHorizontal,
-  CheckCircle2,
-  NotebookPen,
   ArrowUpCircle,
   ArrowDownCircle,
   RotateCcw,
@@ -61,12 +57,15 @@ import {
   ArrowLeft,
   Flame,
   Zap,
-  Award,
   TrendingUp,
+  TrendingDown,
   Shield,
   Filter,
-  HelpCircle,
   Image as ImageIcon,
+  Play,
+  Share2,
+  ExternalLink,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -75,7 +74,7 @@ import { storageService } from '../../services/storageService';
 import { supabase } from '../../lib/supabase';
 import ImageCropperModal from '../../components/ImageCropperModal';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { PLAYER_CATEGORIES, NATIONALITIES, PLAYER_POSITIONS, getPositionDetails, matchesPositionFilter, normalizeAgeCategory } from '../../constants';
 import { useMetrics } from '../../hooks/useMetrics';
 
@@ -86,171 +85,101 @@ import SurclassementModal from './SurclassementModal';
 import { usePermissions } from '../../context/PermissionsContext';
 import { isScoutBranch } from '../../constants/roles';
 import FeatureGate from '../../components/FeatureGate';
-import { PlayerDepartureModal } from './components/PlayerDepartureModal';
 import { PlayerMatchCalendarModal } from './components/PlayerMatchCalendarModal';
-import { opponentPlayerService } from '../../services/opponentPlayerService';
-
-// ─── Fake player generation utilities ────────────────────────────────────────
-const _FIRST_NAMES = [
-  'Yassine', 'Mehdi', 'Soufiane', 'Omar', 'Amine', 'Hamza', 'Bilal', 'Rachid',
-  'Karim', 'Saad', 'Adil', 'Younes', 'Tarik', 'Zakaria', 'Hicham', 'Khalid',
-  'Abdellah', 'Nabil', 'Said', 'Driss', 'Mouad', 'Ayoub', 'Reda', 'Othmane',
-  'Ilyas', 'Marouane', 'Nassim', 'Walid', 'Badr', 'Sami', 'Anass', 'Imad',
-  'Hakim', 'Ryad', 'Taha', 'Brahim', 'Jawad', 'Aziz', 'Salim', 'Fouad',
-];
-const _LAST_NAMES = [
-  'Benali', 'El Amrani', 'Ouali', 'Benabdallah', 'Rami', 'Hajji', 'Benameur',
-  'Zine', 'Hassani', 'El Idrissi', 'Boukhari', 'Sebari', 'Naciri', 'El Housni',
-  'Khadhraoui', 'Derras', 'Benkhali', 'Lahmidi', 'Talbi', 'Bensalem', 'Arabi',
-  'Mouttaki', 'Faqir', 'Cherkaoui', 'Alaoui', 'Benjelloun', 'El Khamlichi',
-  'Boussairi', 'Rahimi', 'Tlemçani', 'El Yamani', 'Chaabi', 'Ghazali', 'Essafi',
-];
-const _POSITIONS = [
-  'GK', 'GK',
-  'CB', 'CB', 'CB', 'LB', 'RB',
-  'CDM', 'CDM', 'CM', 'CM', 'CAM',
-  'LW', 'RW', 'SS', 'ST', 'ST',
-];
-const _CAT_YEAR: Record<string, number> = {
-  U7: 2019, U9: 2017, U11: 2015, U13: 2013, U14: 2012,
-  U15: 2011, U16: 2010, U17: 2009, U18: 2008, U19: 2007, U21: 2005,
-  U23: 2003, SENIOR: 1998, PRO: 1997, OTHER: 1998,
-};
-const _r = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-const _pick = <T,>(arr: T[]): T => arr[_r(0, arr.length - 1)];
-const _shuffle = <T,>(arr: T[]): T[] => {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-};
-
-function buildFakePlayers(category: string, teamId: string) {
-  const year = _CAT_YEAR[category] ?? 1998;
-  const isYouth = ['U7', 'U9', 'U11'].includes(category);
-  const isMid = ['U13', 'U14', 'U15', 'U16'].includes(category);
-  const isAdol = ['U17', 'U19'].includes(category);
-  const feet = ['right', 'right', 'right', 'left', 'left', 'both'] as const;
-
-  // Numéros 1-99 mélangés, on prend les 22 premiers
-  const jerseys = _shuffle(Array.from({ length: 99 }, (_, i) => i + 1)).slice(0, 22);
-  const positions = _shuffle([..._POSITIONS]);
-
-  // Pool de noms : toutes les combinaisons prénom+nom possibles, mélangées
-  const namePool = _shuffle(
-    _FIRST_NAMES.flatMap(f => _LAST_NAMES.map(l => `${f} ${l}`))
-  );
-
-  return Array.from({ length: 22 }, (_, i) => {
-    const birthYear = year + _r(-1, 1);
-    const birthDate = `${birthYear}-${String(_r(1, 12)).padStart(2, '0')}-${String(_r(1, 28)).padStart(2, '0')}`;
-    let height: number, weight: number;
-    if (isYouth) { height = _r(110, 135); weight = _r(25, 40); }
-    else if (isMid) { height = _r(140, 165); weight = _r(38, 58); }
-    else if (isAdol) { height = _r(160, 182); weight = _r(55, 72); }
-    else { height = _r(170, 192); weight = _r(65, 85); }
-    return {
-      full_name: namePool[i],
-      jersey_number: jerseys[i],
-      position: positions[i],
-      birth_date: birthDate,
-      nationality: 'Maroc',
-      height,
-      weight,
-      preferred_foot: _pick([...feet]) as 'right' | 'left' | 'both',
-      photo_url: null,
-      team_id: teamId,
-      category: category === 'PRO' ? 'SENIOR' : category,
-      is_active: true,
-    };
-  });
-}
-
-// ─── Planning utilities ───────────────────────────────────────────────────────
-const FR_DAYS_SHORT = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-const FR_DAYS_FULL = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-const FR_MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-
-const getWeekDays = (offset: number): string[] => {
-  const today = new Date();
-  const dow = today.getDay();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((dow + 6) % 7) + offset * 7);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d.toISOString().split('T')[0];
-  });
-};
-
-const fmtShort = (iso: string) => {
-  const d = new Date(iso + 'T00:00:00');
-  return `${FR_DAYS_SHORT[d.getDay()]} ${d.getDate()}`;
-};
-const fmtFull = (iso: string) => {
-  const d = new Date(iso + 'T00:00:00');
-  return `${FR_DAYS_FULL[d.getDay()]} ${d.getDate()} ${FR_MONTHS[d.getMonth()]}`;
-};
-
-type Attendance = 'present' | 'absent' | 'blesse' | 'suspendu';
-interface PlanningEntry { attendance: Attendance; rating: number; notes: string; }
-interface PlanningData { [playerId: string]: { [isoDate: string]: PlanningEntry } }
-interface ScheduleModal { players: Player[]; days: string[]; }
-
-const ATTENDANCE_OPTS: { value: Attendance; label: string; color: string }[] = [
-  { value: 'present', label: '✅ Présent', color: 'emerald' },
-  { value: 'absent', label: '❌ Absent', color: 'red' },
-  { value: 'blesse', label: '🤕 Blessé', color: 'orange' },
-  { value: 'suspendu', label: '🚫 Suspendu', color: 'amber' },
-];
-
-const ATTENDANCE_BG: Record<Attendance, string> = {
-  present: 'bg-emerald-500',
-  absent: 'bg-red-500',
-  blesse: 'bg-orange-500',
-  suspendu: 'bg-amber-500',
-};
+import PlayerMentionsChart from '../../components/PlayerMentionsChart';
+import { usePlayerMentions } from '../../hooks/usePlayerMentions';
+import {
+  formatPreferredFootFrench,
+  filterPlayersForCategoryNav,
+  computePlayerMatchSummary,
+} from '../../utils/playerProfileHelpers';
 
 const getPositionInfo = (position: string | undefined | null) => getPositionDetails(position);
 
-const IndicatorHelpTooltip: React.FC<{ title: string; role: string; metric: string }> = ({ title, role, metric }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative inline-flex items-center">
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        className="w-5 h-5 rounded-full bg-slate-100 hover:bg-primary/10 text-slate-400 hover:text-primary transition-colors flex items-center justify-center text-[10px] font-black border border-slate-200/80 shadow-xs focus:outline-none cursor-pointer"
-        title="Rôle de cet indicateur"
-      >
-        <HelpCircle className="w-3.5 h-3.5" />
-      </button>
+// ── Types & Helpers pour le Widget Tactique "Position sur le Terrain" (Style BeSoccer FUS) ──
+interface TacticalPosition {
+  code: string;
+  label: string;
+  x: number; // 0-100%
+  y: number; // 0-100%
+  percentage: number;
+  isPrimary: boolean;
+}
 
-      {open && (
-        <div
-          className="absolute z-50 left-0 top-full mt-2 w-64 sm:w-72 p-3.5 bg-slate-950/95 backdrop-blur-md text-white rounded-2xl shadow-2xl text-[11px] border border-slate-700/80 pointer-events-auto transition-all animate-in fade-in-50 zoom-in-95"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="space-y-1.5 text-left">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-              <span className="font-black text-primary uppercase text-[10px] tracking-wider">{title}</span>
-              <span className="text-[9px] font-bold text-slate-400 uppercase">{metric}</span>
-            </div>
-            <p className="text-slate-300 leading-relaxed font-medium">
-              <strong className="text-white font-bold">Rôle de l'indicateur : </strong>
-              {role}
-            </p>
-          </div>
-          {/* Tooltip caret pointing up */}
-          <div className="absolute bottom-full left-2.5 -mb-px border-4 border-transparent border-b-slate-950/95" />
-        </div>
-      )}
-    </div>
-  );
+const PITCH_COORDINATES: Record<string, { code: string; label: string; x: number; y: number }> = {
+  GK: { code: 'GB', label: 'Gardien de but', x: 50, y: 88 },
+  GB: { code: 'GB', label: 'Gardien de but', x: 50, y: 88 },
+  GARDIEN: { code: 'GB', label: 'Gardien de but', x: 50, y: 88 },
+  CB: { code: 'DC', label: 'Défenseur central', x: 50, y: 72 },
+  DC: { code: 'DC', label: 'Défenseur central', x: 50, y: 72 },
+  'DÉFENSEUR CENTRAL': { code: 'DC', label: 'Défenseur central', x: 50, y: 72 },
+  'DEFENSEUR CENTRAL': { code: 'DC', label: 'Défenseur central', x: 50, y: 72 },
+  LB: { code: 'DG', label: 'Latéral gauche', x: 18, y: 68 },
+  DG: { code: 'DG', label: 'Latéral gauche', x: 18, y: 68 },
+  'LATÉRAL GAUCHE': { code: 'DG', label: 'Latéral gauche', x: 18, y: 68 },
+  'LATERAL GAUCHE': { code: 'DG', label: 'Latéral gauche', x: 18, y: 68 },
+  'ARRIÈRE GAUCHE': { code: 'DG', label: 'Latéral gauche', x: 18, y: 68 },
+  RB: { code: 'DD', label: 'Latéral droit', x: 82, y: 68 },
+  DD: { code: 'DD', label: 'Latéral droit', x: 82, y: 68 },
+  'LATÉRAL DROIT': { code: 'DD', label: 'Latéral droit', x: 82, y: 68 },
+  'LATERAL DROIT': { code: 'DD', label: 'Latéral droit', x: 82, y: 68 },
+  'ARRIÈRE DROIT': { code: 'DD', label: 'Latéral droit', x: 82, y: 68 },
+  CDM: { code: 'MDC', label: 'Milieu défensif', x: 50, y: 56 },
+  MDC: { code: 'MDC', label: 'Milieu défensif', x: 50, y: 56 },
+  'MILIEU DÉFENSIF': { code: 'MDC', label: 'Milieu défensif', x: 50, y: 56 },
+  'MILIEU DEFENSIF': { code: 'MDC', label: 'Milieu défensif', x: 50, y: 56 },
+  CM: { code: 'MC', label: 'Milieu central', x: 50, y: 44 },
+  MC: { code: 'MC', label: 'Milieu central', x: 50, y: 44 },
+  'MILIEU CENTRAL': { code: 'MC', label: 'Milieu central', x: 50, y: 44 },
+  CAM: { code: 'MO', label: 'Milieu offensif', x: 50, y: 32 },
+  MO: { code: 'MO', label: 'Milieu offensif', x: 50, y: 32 },
+  MOC: { code: 'MO', label: 'Milieu offensif', x: 50, y: 32 },
+  'MILIEU OFFENSIF': { code: 'MO', label: 'Milieu offensif', x: 50, y: 32 },
+  RW: { code: 'AD', label: 'Ailier droit', x: 82, y: 22 },
+  AD: { code: 'AD', label: 'Ailier droit', x: 82, y: 22 },
+  'AILIER DROIT': { code: 'AD', label: 'Ailier droit', x: 82, y: 22 },
+  'ATTAQUANT DROIT': { code: 'AD', label: 'Ailier droit', x: 82, y: 22 },
+  LW: { code: 'AG', label: 'Ailier gauche', x: 18, y: 22 },
+  AG: { code: 'AG', label: 'Ailier gauche', x: 18, y: 22 },
+  'AILIER GAUCHE': { code: 'AG', label: 'Ailier gauche', x: 18, y: 22 },
+  'ATTAQUANT GAUCHE': { code: 'AG', label: 'Ailier gauche', x: 18, y: 22 },
+  ST: { code: 'ATT', label: 'Attaquant', x: 50, y: 15 },
+  ATT: { code: 'ATT', label: 'Attaquant', x: 50, y: 15 },
+  BU: { code: 'ATT', label: 'Attaquant', x: 50, y: 15 },
+  ATTAQUANT: { code: 'ATT', label: 'Attaquant', x: 50, y: 15 },
+  'AVANT-CENTRE': { code: 'ATT', label: 'Avant-centre', x: 50, y: 15 },
+  SS: { code: 'SA', label: 'Second attaquant', x: 50, y: 24 },
+  'SECOND ATTAQUANT': { code: 'SA', label: 'Second attaquant', x: 50, y: 24 },
+};
+
+const resolvePitchCoordinate = (raw: string | undefined | null) => {
+  if (!raw) return PITCH_COORDINATES['MC'];
+  const upper = raw.trim().toUpperCase();
+  if (PITCH_COORDINATES[upper]) return PITCH_COORDINATES[upper];
+  const details = getPositionDetails(raw);
+  if (details && PITCH_COORDINATES[details.code]) return PITCH_COORDINATES[details.code];
+  if (upper.includes('GARDIEN') || upper.includes('GK')) return PITCH_COORDINATES['GK'];
+  if (upper.includes('CENTRAL') || upper.includes('CB')) return PITCH_COORDINATES['CB'];
+  if (upper.includes('GAUCHE') && (upper.includes('LAT') || upper.includes('ARR') || upper.includes('DG'))) return PITCH_COORDINATES['LB'];
+  if (upper.includes('DROIT') && (upper.includes('LAT') || upper.includes('ARR') || upper.includes('DD'))) return PITCH_COORDINATES['RB'];
+  if (upper.includes('DEFENSIF') || upper.includes('MDC')) return PITCH_COORDINATES['CDM'];
+  if (upper.includes('OFFENSIF') || upper.includes('CAM')) return PITCH_COORDINATES['CAM'];
+  if (upper.includes('MILIEU') || upper.includes('MC')) return PITCH_COORDINATES['CM'];
+  if (upper.includes('AILIER') && upper.includes('DROIT')) return PITCH_COORDINATES['RW'];
+  if (upper.includes('AILIER') && upper.includes('GAUCHE')) return PITCH_COORDINATES['LW'];
+  if (upper.includes('ATTAQUANT') || upper.includes('BUTEUR') || upper.includes('ST')) return PITCH_COORDINATES['ST'];
+  return PITCH_COORDINATES['MC'];
+};
+
+const formatBirthDateLong = (dob: string | null | undefined): string => {
+  if (!dob) return 'Date non renseignée';
+  try {
+    const d = new Date(dob);
+    if (isNaN(d.getTime())) return dob;
+    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  } catch {
+    return dob;
+  }
 };
 
 const PlayerManagement: React.FC = () => {
@@ -264,14 +193,12 @@ const PlayerManagement: React.FC = () => {
   const canCreatePlayer = hasSubModuleAccess('players', 'create');
   const canUpdatePlayer = hasSubModuleAccess('players', 'update');
   const canDeletePlayer = hasSubModuleAccess('players', 'delete');
-  const canViewStats = hasSubModuleAccess('players', 'stats');
   const canSurclassPlayer = hasSubModuleAccess('players', 'surclasser');
-  const canDeparturePlayer = hasSubModuleAccess('players', 'departure');
 
   const [playerToDelete, setPlayerToDelete] = useState<Player | null>(null);
   const [isDeletingPlayer, setIsDeletingPlayer] = useState(false);
 
-  const { players, isLoading: playersLoading, isError: playersError, addPlayer, updatePlayer, deletePlayer, bulkDeletePlayers, isBulkDeleting, bulkAddPlayers, isBulkAdding } = usePlayers();
+  const { players, isLoading: playersLoading, isError: playersError, addPlayer, updatePlayer, deletePlayer, bulkDeletePlayers, isBulkDeleting } = usePlayers();
   const { teams, isLoading: teamsLoading, isError: teamsError } = useTeams();
 
   // Helper centralisé pour calculer l'âge
@@ -291,10 +218,12 @@ const PlayerManagement: React.FC = () => {
     if (player.birth_date) {
       const age = calculateAge(player.birth_date);
       if (age <= 13) return 'U13';
+      if (age <= 14) return 'U14';
       if (age <= 15) return 'U15';
+      if (age <= 16) return 'U16';
       if (age <= 17) return 'U17';
-      if (age <= 19) return 'U19';
-      if (age <= 21) return 'U21';
+      if (age <= 18) return 'U18';
+      if (age <= 21) return 'U21'; // 19, 20 et 21 ans sont en catégorie U21
       if (age <= 23) return 'U23';
     }
     return 'SENIOR';
@@ -339,92 +268,6 @@ const PlayerManagement: React.FC = () => {
   }, [allowedCategories, authState.userCategories]);
 
   const { mainClub, opponentClubs = [], isLoading: clubLoading } = useClubData();
-  const [departurePlayer, setDeparturePlayer] = useState<Player | null>(null);
-  const [departureModalOpen, setDepartureModalOpen] = useState(false);
-
-  const handleOpenDeparture = (player: Player) => {
-    const playerCategory = getPlayerCategory(player);
-    if (!canDeparturePlayer || !canManageCategory(playerCategory)) {
-      toast.error(`Action non autorisée : le joueur ${player.full_name} (${playerCategory}) est hors de vos catégories assignées. Consultation seule.`);
-      return;
-    }
-    setDeparturePlayer(player);
-    setDepartureModalOpen(true);
-  };
-
-  const handleConfirmTransfer = async (player: Player, targetClub: Club) => {
-    const playerCategory = getPlayerCategory(player);
-    if (!canDeparturePlayer || !canManageCategory(playerCategory)) {
-      toast.error(`Transfert non autorisé pour la catégorie ${playerCategory}.`);
-      return;
-    }
-    await opponentPlayerService.addOpponentPlayer({
-      opponent_id: targetClub.id,
-      full_name: player.full_name,
-      jersey_number: player.jersey_number ?? null,
-      position: player.position ?? null,
-      category: playerCategory,
-      height: player.height ?? null,
-      weight: player.weight ?? null,
-      preferred_foot: player.preferred_foot === 'right' ? 'Droit' : player.preferred_foot === 'left' ? 'Gauche' : player.preferred_foot || 'Droit',
-      nationality: player.nationality || 'Maroc',
-      photo_url: player.photo_url || null,
-    });
-    await deletePlayer(player.id);
-    toast.success(`Joueur ${player.full_name} transféré vers ${targetClub.name} avec succès !`);
-  };
-
-  const handleConfirmArchive = async (player: Player) => {
-    const playerCategory = getPlayerCategory(player);
-    if (!canDeparturePlayer || !canManageCategory(playerCategory)) {
-      toast.error(`Archivage non autorisé pour la catégorie ${playerCategory}.`);
-      return;
-    }
-    const nameParts = player.full_name.trim().split(' ');
-    const firstName = nameParts[0] || player.full_name;
-    const lastName = nameParts.slice(1).join(' ') || player.full_name;
-
-    // Fetch player stats from match_events before archiving
-    let matchesCount = 0;
-    let goalsCount = 0;
-    let assistsCount = 0;
-    let yellowCardsCount = 0;
-    let redCardsCount = 0;
-
-    try {
-      const { data: events } = await supabase
-        .from('match_events')
-        .select('*')
-        .eq('player_id', player.id);
-
-      if (events) {
-        goalsCount = events.filter((e: any) => e.type === 'goal').length;
-        assistsCount = events.filter((e: any) => e.type === 'goal' && e.related_player_id === player.id).length;
-        yellowCardsCount = events.filter((e: any) => e.type === 'yellow_card').length;
-        redCardsCount = events.filter((e: any) => e.type === 'red_card').length;
-      }
-
-      const { data: playerMatches } = await supabase
-        .from('matches')
-        .select('id, lineup')
-        .eq('status', 'finished');
-
-      if (playerMatches) {
-        matchesCount = playerMatches.filter((m: any) => {
-          if (!m.lineup) return false;
-          const lineupArray = Array.isArray(m.lineup) ? m.lineup : [];
-          return lineupArray.some((item: any) =>
-            item === player.id || item?.id === player.id || item?.jersey_number === player.jersey_number
-          );
-        }).length;
-      }
-    } catch (err) {
-      console.error('Error fetching player stats for archiving:', err);
-    }
-
-    await deletePlayer(player.id);
-    toast.success(`Joueur ${player.full_name} retiré du roster FUS et archivé avec toutes ses données & statistiques.`);
-  };
   const {
     activeByPlayerId,
     createSurclassement,
@@ -434,63 +277,6 @@ const PlayerManagement: React.FC = () => {
   } = useSurclassements();
 
   const queryClient = useQueryClient();
-
-  // ─── Generate fake players ────────────────────────────────────────────────
-  const [genModal, setGenModal] = useState(false);
-  const [genCategory, setGenCategory] = useState('');
-  const [genTeamId, setGenTeamId] = useState('');
-  const [genProgress, setGenProgress] = useState(0);
-  const [genRunning, setGenRunning] = useState(false);
-
-  const genTeams = useMemo(
-    () => teams.filter(t => t.category === genCategory),
-    [teams, genCategory],
-  );
-
-  const handleGenerateFakePlayers = async () => {
-    if (!genTeamId || !genCategory) return;
-
-    // Vérification session Supabase
-    const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) {
-      toast.error('Session expirée — veuillez vous reconnecter (Déconnexion → reconnexion)');
-      return;
-    }
-
-    setGenRunning(true);
-    setGenProgress(0);
-
-    // Progression animée pendant l'insert bulk
-    const timer = setInterval(() => {
-      setGenProgress(p => (p < 21 ? p + 1 : p));
-    }, 120);
-
-    try {
-      if (!canManageCategory(genCategory)) {
-        clearInterval(timer);
-        setGenRunning(false);
-        toast.error(`Catégorie ${genCategory} non autorisée pour votre compte.`);
-        return;
-      }
-      const fakePlayers = buildFakePlayers(genCategory, genTeamId);
-      await bulkAddPlayers(fakePlayers as any);
-      clearInterval(timer);
-      setGenProgress(22);
-      setTimeout(() => {
-        setGenModal(false);
-        setGenCategory('');
-        setGenTeamId('');
-        setGenRunning(false);
-        setGenProgress(0);
-      }, 600);
-    } catch (err: any) {
-      clearInterval(timer);
-      toast.error(`Erreur génération : ${err.message}`);
-      setGenRunning(false);
-      setGenProgress(0);
-    }
-  };
 
   // Surclassement modal state
   const [surclassementPlayer, setSurclassementPlayer] = useState<Player | null>(null);
@@ -506,13 +292,17 @@ const PlayerManagement: React.FC = () => {
   };
   const handleCloseSurclassement = () => setSurclassementPlayer(null);
 
-  // Settings sync
-  const [displayMode, setDisplayMode] = useState<'grid' | 'list'>((mainClub?.preferred_view_mode as 'grid' | 'list') || 'list');
+  // Settings sync (mode Grille par défaut)
+  const preferredViewMode = resolvePreferredViewMode(mainClub, 'grid');
+  const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(preferredViewMode);
   const [pageSize, setPageSize] = useState(mainClub?.pagination_limit || 10);
   const [currentPage, setCurrentPage] = useState(1);
 
   React.useEffect(() => {
-    if (mainClub?.preferred_view_mode) setDisplayMode(mainClub.preferred_view_mode as 'grid' | 'list');
+    setDisplayMode(preferredViewMode);
+  }, [preferredViewMode]);
+
+  React.useEffect(() => {
     if (mainClub?.pagination_limit) setPageSize(mainClub.pagination_limit);
   }, [mainClub]);
 
@@ -534,8 +324,63 @@ const PlayerManagement: React.FC = () => {
     }
   }, [searchParams, authState.userCategories]);
 
-  const [viewState, setViewState] = useState<'LIST' | 'FORM' | 'VIEW' | 'STATS' | 'PLANNING' | 'BULK_ADD'>('LIST');
+  const [viewState, setViewState] = useState<'LIST' | 'FORM' | 'VIEW'>('LIST');
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const { playerMentions: selectedPlayerMentions } = usePlayerMentions(selectedPlayer?.id);
+  const [profileCategoryFilter, setProfileCategoryFilter] = useState<string>('');
+
+  // ── Gestion du lien Drive / Vidéo Joueur ──
+  const [driveModalOpen, setDriveModalOpen] = useState(false);
+  const [driveUrlInput, setDriveUrlInput] = useState('');
+  const [driveUrlSaving, setDriveUrlSaving] = useState(false);
+
+  const getPlayerDriveUrl = (player: Player | null | undefined): string => {
+    if (!player) return '';
+    return (player as any).drive_url || (player as any).video_url || localStorage.getItem(`fus_player_drive_${player.id}`) || '';
+  };
+
+  const handleOpenDriveModal = (player: Player) => {
+    const current = getPlayerDriveUrl(player);
+    setDriveUrlInput(current);
+    setDriveModalOpen(true);
+  };
+
+  const handleSaveDriveUrl = async () => {
+    if (!selectedPlayer) return;
+    setDriveUrlSaving(true);
+    const cleanUrl = driveUrlInput.trim();
+    try {
+      if (cleanUrl) {
+        localStorage.setItem(`fus_player_drive_${selectedPlayer.id}`, cleanUrl);
+      } else {
+        localStorage.removeItem(`fus_player_drive_${selectedPlayer.id}`);
+      }
+
+      const updated = {
+        ...selectedPlayer,
+        drive_url: cleanUrl || null,
+        video_url: cleanUrl || null,
+      } as Player;
+      setSelectedPlayer(updated);
+
+      try {
+        await supabase
+          .from('players')
+          .update({ drive_url: cleanUrl || null, video_url: cleanUrl || null } as any)
+          .eq('id', selectedPlayer.id);
+      } catch (dbErr) {
+        console.warn('DB drive_url update note:', dbErr);
+      }
+
+      toast.success(cleanUrl ? 'Lien Drive vidéo enregistré avec succès !' : 'Lien Drive supprimé.');
+      setDriveModalOpen(false);
+    } catch (err: any) {
+      console.error('Error saving drive url:', err);
+      toast.error("Erreur lors de l'enregistrement du lien Drive");
+    } finally {
+      setDriveUrlSaving(false);
+    }
+  };
   // Multi-sélection
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -577,114 +422,6 @@ const PlayerManagement: React.FC = () => {
     }));
   }, [dynamicPositions]);
 
-  // Bulk add
-  type BulkRow = {
-    id: string; full_name: string; jersey_number: number; position: string;
-    birth_date: string; nationality: string; team_id: string; category: string;
-    photo_url: string; uploading: boolean;
-  };
-
-  const getActiveBulkCategory = (): string => {
-    if (categoryFilter && categoryFilter !== 'ALL' && allowedCategories.includes(categoryFilter)) {
-      return categoryFilter;
-    }
-    return defaultCategory || allowedCategories[0] || 'SENIOR';
-  };
-
-  const newBulkRow = (idx: number, catOverride?: string): BulkRow => {
-    const activeCat = catOverride || getActiveBulkCategory();
-    const matchingTeam = teams.find(t => t.category === activeCat) || allowedTeams[0];
-    return {
-      id: crypto.randomUUID(), full_name: '', jersey_number: players.length + idx + 1,
-      position: 'FW', birth_date: '2012-01-01', nationality: 'Maroc',
-      team_id: matchingTeam?.id || '',
-      category: activeCat,
-      photo_url: '', uploading: false,
-    };
-  };
-  const [bulkRows, setBulkRows] = useState<BulkRow[]>([newBulkRow(0)]);
-  const updateBulkRow = (id: string, field: keyof BulkRow, value: any) =>
-    setBulkRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
-  const removeBulkRow = (id: string) => setBulkRows(prev => prev.filter(r => r.id !== id));
-  const [isBulkSaving, setIsBulkSaving] = useState(false);
-  const [bulkSaveProgress, setBulkSaveProgress] = useState(0);
-  const [bulkSavedCount, setBulkSavedCount] = useState(0);
-  const [bulkTotalCount, setBulkTotalCount] = useState(0);
-
-  const handleBulkPhotoUpload = async (rowId: string, file: File) => {
-    updateBulkRow(rowId, 'uploading', true);
-    try {
-      const url = await storageService.uploadFile(file, 'players');
-      updateBulkRow(rowId, 'photo_url', url);
-    } catch { toast.error('Erreur upload photo'); }
-    finally { updateBulkRow(rowId, 'uploading', false); }
-  };
-
-  const handleBulkSave = async () => {
-    if (!canCreatePlayer) {
-      toast.error("Création de joueur non autorisée.");
-      return;
-    }
-    const valid = bulkRows.filter(r => r.full_name.trim());
-    if (!valid.length) { toast.error('Remplissez au moins un nom'); return; }
-    const unauthorized = valid.some(r => !canManageCategory(r.category));
-    if (unauthorized) {
-      toast.error("Vous ne pouvez créer des joueurs que dans vos catégories assignées.");
-      return;
-    }
-
-    const payload = valid.map(({ id, uploading, ...r }) => ({
-      ...r,
-      jersey_number: Number(r.jersey_number),
-      team_id: r.team_id || null,
-      birth_date: r.birth_date || null,
-      category: r.category === 'PRO' ? 'SENIOR' : r.category,
-      preferred_foot: 'right' as const,
-      photo_url: r.photo_url || null, height: null, weight: null,
-    }));
-
-    setIsBulkSaving(true);
-    setBulkSaveProgress(10);
-    setBulkSavedCount(0);
-    setBulkTotalCount(valid.length);
-
-    try {
-      const chunkSize = 5;
-      const chunks: typeof payload[] = [];
-      for (let i = 0; i < payload.length; i += chunkSize) {
-        chunks.push(payload.slice(i, i + chunkSize));
-      }
-
-      let saved = 0;
-      for (let i = 0; i < chunks.length; i++) {
-        await bulkAddPlayers(chunks[i] as any);
-        saved += chunks[i].length;
-        setBulkSavedCount(saved);
-        const pct = Math.min(95, Math.round((saved / payload.length) * 100));
-        setBulkSaveProgress(pct);
-        if (chunks.length > 1) {
-          await new Promise(r => setTimeout(r, 120));
-        }
-      }
-
-      setBulkSaveProgress(100);
-      setBulkSavedCount(payload.length);
-      toast.success(`${payload.length} joueur${payload.length > 1 ? 's' : ''} enregistré${payload.length > 1 ? 's' : ''} avec succès !`);
-
-      setTimeout(() => {
-        setIsBulkSaving(false);
-        setBulkSaveProgress(0);
-        setBulkSavedCount(0);
-        setBulkTotalCount(0);
-        const activeCat = getActiveBulkCategory();
-        setBulkRows([newBulkRow(0, activeCat)]);
-        setViewState('LIST');
-      }, 500);
-    } catch (err: any) {
-      setIsBulkSaving(false);
-      toast.error(`Erreur lors de l'enregistrement : ${err.message || 'Erreur inconnue'}`);
-    }
-  };
   const [isUploading, setIsUploading] = useState(false);
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
@@ -694,339 +431,387 @@ const PlayerManagement: React.FC = () => {
 
   // Player Stats State
   const [playerStats, setPlayerStats] = useState<any>(null);
-  const [loadingStats, setLoadingStats] = useState(false);
   const { leagues } = useCompetitions();
-  const [selectedSeasonFilter, setSelectedSeasonFilter] = useState('ALL');
-  const [selectedLeagueFilter, setSelectedLeagueFilter] = useState('ALL');
-  const [selectedMatchFilter, setSelectedMatchFilter] = useState('ALL');
-  const [evalSeasonFilter, setEvalSeasonFilter] = useState('ALL');
-  const [evalMonthFilter, setEvalMonthFilter] = useState('ALL');
-  const [evalTypeFilter, setEvalTypeFilter] = useState<'ALL' | 'FRIENDLY' | 'OFFICIAL'>('ALL');
+  const { matches: allFusMatches = [] } = useMatches();
+  const { opponentMatches: allOpponentMatches = [] } = useOpponentMatches();
   const [rawPlayerEvents, setRawPlayerEvents] = useState<any[]>([]);
   const [rawPlayerMatches, setRawPlayerMatches] = useState<any[]>([]);
 
-  const { participatedMatches, participatedLeagues, participatedSeasons, hasFriendlyMatches } = useMemo(() => {
-    if (!rawPlayerMatches || !selectedPlayer) return { participatedMatches: [], participatedLeagues: [], participatedSeasons: [], hasFriendlyMatches: false };
+  // ── Profil Tactique BeSoccer (Position sur le Terrain, Forme & Métriques) ──
+  const tacticalPositions = useMemo(() => {
+    if (!selectedPlayer) return null;
 
-    const pMatches: any[] = [];
-    const leagueIds = new Set<string>();
-    let hasFriendlies = false;
+    const primaryCoord = resolvePitchCoordinate(selectedPlayer.position);
+    const hasSec = selectedPlayer.secondary_position &&
+      selectedPlayer.secondary_position.trim().toLowerCase() !== (selectedPlayer.position || '').trim().toLowerCase();
+    const secondaryCoord = hasSec ? resolvePitchCoordinate(selectedPlayer.secondary_position) : null;
 
-    rawPlayerMatches.forEach(m => {
-      const lineup = m.lineup as any;
-      const mpRecord = m.match_players?.find((p: any) => p.player_id === selectedPlayer.id);
-      const isStarter = mpRecord?.is_starting || lineup?.startingXI?.includes(selectedPlayer.id);
-      const isSub = (mpRecord && !mpRecord.is_starting) || lineup?.substitutes?.includes(selectedPlayer.id);
-      const hasEvent = rawPlayerEvents?.some((e: any) => e.match_id === m.id);
+    // Analyse des matchs récents joués pour mesurer la distribution tactique
+    const positionCounts: Record<string, number> = {};
+    let totalTrackedMatches = 0;
 
-      if (isStarter || isSub || hasEvent) {
-        pMatches.push(m);
-        if (m.league_id) {
-          leagueIds.add(m.league_id);
-        } else {
-          hasFriendlies = true;
+    (rawPlayerMatches || []).forEach((m: any) => {
+      const mpRecord = (m as any).match_players?.find((p: any) => p.player_id === selectedPlayer.id);
+      if (mpRecord && (mpRecord.is_starting || mpRecord.position_index != null)) {
+        if (mpRecord.position_index != null) {
+          const idx = mpRecord.position_index;
+          let posKey = 'MC';
+          if (idx === 0) posKey = 'GK';
+          else if (idx === 1) posKey = 'RB';
+          else if (idx === 2 || idx === 3) posKey = 'CB';
+          else if (idx === 4) posKey = 'LB';
+          else if (idx === 5) posKey = 'CDM';
+          else if (idx === 6) posKey = 'CM';
+          else if (idx === 7) posKey = 'CAM';
+          else if (idx === 8) posKey = 'RW';
+          else if (idx === 9) posKey = 'ST';
+          else if (idx === 10) posKey = 'LW';
+          positionCounts[posKey] = (positionCounts[posKey] || 0) + 1;
+          totalTrackedMatches++;
         }
       }
     });
 
-    const pLeagues = leagues?.filter((l: any) => leagueIds.has(l.id)) || [];
-    const seasons = new Set<string>();
-    pLeagues.forEach(l => { if (l.season) seasons.add(l.season) });
+    if (totalTrackedMatches >= 2) {
+      const sorted = Object.entries(positionCounts).sort((a, b) => b[1] - a[1]);
+      const topKey = sorted[0][0];
+      const topCoord = PITCH_COORDINATES[topKey] || primaryCoord;
+      const topPct = Math.round((sorted[0][1] / totalTrackedMatches) * 100);
 
-    return {
-      participatedMatches: pMatches,
-      participatedLeagues: pLeagues,
-      participatedSeasons: Array.from(seasons),
-      hasFriendlyMatches: hasFriendlies
-    };
-  }, [rawPlayerMatches, rawPlayerEvents, selectedPlayer, leagues]);
-
-  const computedPlayerStats = useMemo(() => {
-    if (!rawPlayerEvents && !rawPlayerMatches) return null;
-
-    let eventsToUse = rawPlayerEvents || [];
-    let matchesToUse = rawPlayerMatches || [];
-
-    if (selectedSeasonFilter !== 'ALL') {
-      const validLeagueIds = leagues?.filter(l => l.season === selectedSeasonFilter).map(l => l.id) || [];
-      matchesToUse = matchesToUse.filter(m => validLeagueIds.includes(m.league_id));
-    }
-
-    if (selectedLeagueFilter === 'FRIENDLY') {
-      matchesToUse = matchesToUse.filter(m => !m.league_id || m.category?.toLowerCase().includes('amical') || m.notes?.toLowerCase().includes('amical'));
-    } else if (selectedLeagueFilter === 'OFFICIAL') {
-      matchesToUse = matchesToUse.filter(m => !!m.league_id && !m.category?.toLowerCase().includes('amical'));
-    } else if (selectedLeagueFilter !== 'ALL') {
-      matchesToUse = matchesToUse.filter(m => m.league_id === selectedLeagueFilter);
-    }
-
-    if (selectedMatchFilter !== 'ALL') {
-      matchesToUse = matchesToUse.filter(m => m.id === selectedMatchFilter);
-    }
-
-    const validMatchIds = new Set(matchesToUse.map(m => m.id));
-    eventsToUse = eventsToUse.filter(e => validMatchIds.has(e.match_id));
-
-    let matchesPlayed = 0;
-    let startsCount = 0;
-    let subsCount = 0;
-    let minutesPlayed = 0;
-
-    matchesToUse.forEach(match => {
-      const lineup = match.lineup as { startingXI?: string[]; substitutes?: string[] } | null;
-      const mpRecord = (match as any).match_players?.find((p: any) => p.player_id === selectedPlayer?.id);
-      const isStarter = mpRecord?.is_starting || lineup?.startingXI?.includes(selectedPlayer?.id);
-      const isSub = (mpRecord && !mpRecord.is_starting) || lineup?.substitutes?.includes(selectedPlayer?.id);
-      const hasEvent = eventsToUse?.some((e: any) => e.match_id === match.id);
-
-      if (isStarter || isSub || hasEvent) {
-        matchesPlayed++;
-        const matchDuration = (match.half_duration_minutes || 45) * 2;
-        if (isStarter) {
-          startsCount++;
-          minutesPlayed += matchDuration;
-        } else if (isSub) {
-          subsCount++;
-          minutesPlayed += 30;
-        } else {
-          minutesPlayed += 20;
-        }
-      }
-    });
-
-    eventsToUse.forEach((e: any) => {
-      if (e.type === 'substitution') {
-        if (e.player_id === selectedPlayer?.id) {
-          minutesPlayed -= 15;
-        } else if (e.related_player_id === selectedPlayer?.id) {
-          minutesPlayed += 15;
-        }
-      }
-    });
-
-    const goals = eventsToUse.filter((e: any) => e.type === 'goal' && e.player_id === selectedPlayer?.id).length || 0;
-    const assists = eventsToUse.filter((e: any) =>
-      e.type === 'assist' || (e.type === 'goal' && e.related_player_id === selectedPlayer?.id)
-    ).length || 0;
-    const yellowCards = eventsToUse.filter((e: any) => e.type === 'yellow_card' && e.player_id === selectedPlayer?.id).length || 0;
-    const redCards = eventsToUse.filter((e: any) => e.type === 'red_card' && e.player_id === selectedPlayer?.id).length || 0;
-    const substitutions = eventsToUse.filter((e: any) => e.type === 'substitution').length || 0;
-
-    return {
-      matches: matchesPlayed,
-      starts: startsCount,
-      subs: subsCount,
-      minutes: Math.max(0, minutesPlayed),
-      goals,
-      assists,
-      yellowCards,
-      redCards,
-      substitutions,
-      totalContributions: goals + assists,
-      avgMinutes: matchesPlayed > 0 ? Math.round(Math.max(0, minutesPlayed) / matchesPlayed) : 0,
-      starterRate: matchesPlayed > 0 ? Math.round((startsCount / matchesPlayed) * 100) : 0,
-    };
-  }, [rawPlayerEvents, rawPlayerMatches, selectedSeasonFilter, selectedLeagueFilter, selectedMatchFilter, leagues, selectedPlayer]);
-
-  const displayStats = computedPlayerStats || playerStats;
-
-  // ── Évaluations de tous les matchs (amicaux & officiels) pour le joueur ──
-  const evaluatedMatches = useMemo(() => {
-    if (!rawPlayerMatches || !selectedPlayer) return [];
-    return rawPlayerMatches
-      .filter((m: any) => {
-        const mpRecord = (m as any).match_players?.find((p: any) => p.player_id === selectedPlayer.id);
-        return mpRecord && mpRecord.rating != null;
-      })
-      .map((m: any) => {
-        const mpRecord = (m as any).match_players?.find((p: any) => p.player_id === selectedPlayer.id);
-        const lg = leagues?.find((l: any) => l.id === m.league_id);
-        const season = lg?.season || (m.match_date ? `${new Date(m.match_date).getFullYear()}` : '2025');
-        const opp = opponentClubs.find((c: any) => c.id === m.opponent_id);
-        const isFriendly = !m.league_id || m.category?.toLowerCase().includes('amical') || m.notes?.toLowerCase().includes('amical') || (lg?.name && lg.name.toLowerCase().includes('amical'));
-        return {
-          ...m,
-          isFriendly,
-          rating: Number(mpRecord.rating),
-          ratingComment: mpRecord.rating_comment,
-          season,
-          opponentName: opp?.name || 'Adversaire',
-          leagueName: isFriendly ? 'Match Amical' : (lg?.name || 'Compétition Officielle'),
-        };
-      });
-  }, [rawPlayerMatches, selectedPlayer, leagues, opponentClubs]);
-
-  const availableEvalSeasons = useMemo(() => {
-    const s = new Set<string>();
-    evaluatedMatches.forEach(m => { if (m.season) s.add(m.season); });
-    return Array.from(s).sort();
-  }, [evaluatedMatches]);
-
-  const availableEvalMonths = useMemo(() => {
-    const mSet = new Set<string>();
-    evaluatedMatches.forEach(m => {
-      if (m.match_date && m.match_date.length >= 7) mSet.add(m.match_date.slice(5, 7));
-    });
-    return Array.from(mSet).sort();
-  }, [evaluatedMatches]);
-
-  const filteredEvaluatedMatches = useMemo(() => {
-    return evaluatedMatches.filter(m => {
-      if (evalSeasonFilter !== 'ALL' && m.season !== evalSeasonFilter) return false;
-      if (evalMonthFilter !== 'ALL' && m.match_date?.slice(5, 7) !== evalMonthFilter) return false;
-      if (evalTypeFilter === 'FRIENDLY' && !m.isFriendly) return false;
-      if (evalTypeFilter === 'OFFICIAL' && m.isFriendly) return false;
-      return true;
-    }).sort((a, b) => (a.match_date || '').localeCompare(b.match_date || ''));
-  }, [evaluatedMatches, evalSeasonFilter, evalMonthFilter, evalTypeFilter]);
-
-  const evalKPIs = useMemo(() => {
-    if (filteredEvaluatedMatches.length === 0) {
-      return { avg: '-', max: '-', min: '-', count: 0 };
-    }
-    const ratings = filteredEvaluatedMatches.map(m => m.rating);
-    const avg = (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1);
-    const max = Math.max(...ratings).toFixed(1);
-    const min = Math.min(...ratings).toFixed(1);
-    return { avg, max, min, count: filteredEvaluatedMatches.length };
-  }, [filteredEvaluatedMatches]);
-
-  const evalChartData = useMemo(() => {
-    return filteredEvaluatedMatches.map((m, idx) => {
-      const d = m.match_date ? new Date(m.match_date) : null;
-      const dateFormatted = d ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : `M${idx + 1}`;
-      return {
-        name: `${dateFormatted} vs ${m.opponentName}`,
-        date: dateFormatted,
-        fullDate: m.match_date,
-        opponent: m.opponentName,
-        rating: m.rating,
-        comment: m.ratingComment,
-        isFriendly: m.isFriendly,
-        leagueName: m.leagueName,
-        score: `${m.is_home ? m.score_home : m.score_away} - ${m.is_home ? m.score_away : m.score_home}`,
+      const primary: TacticalPosition = {
+        code: topCoord.code,
+        label: topCoord.label,
+        x: topCoord.x,
+        y: topCoord.y,
+        percentage: topPct,
+        isPrimary: true,
       };
-    });
-  }, [filteredEvaluatedMatches]);
 
-  const MONTH_LABELS: Record<string, string> = {
-    '01': 'Janvier', '02': 'Février', '03': 'Mars', '04': 'Avril',
-    '05': 'Mai', '06': 'Juin', '07': 'Juillet', '08': 'Août',
-    '09': 'Septembre', '10': 'Octobre', '11': 'Novembre', '12': 'Décembre',
+      let secondary: TacticalPosition | null = null;
+      if (sorted.length > 1) {
+        const secKey = sorted[1][0];
+        const secCoord = PITCH_COORDINATES[secKey] || secondaryCoord || primaryCoord;
+        const secPct = Math.round((sorted[1][1] / totalTrackedMatches) * 100);
+        secondary = {
+          code: secCoord.code,
+          label: secCoord.label,
+          x: secCoord.x,
+          y: secCoord.y,
+          percentage: secPct,
+          isPrimary: false,
+        };
+      } else if (secondaryCoord && secondaryCoord.code !== topCoord.code) {
+        secondary = {
+          code: secondaryCoord.code,
+          label: secondaryCoord.label,
+          x: secondaryCoord.x,
+          y: secondaryCoord.y,
+          percentage: Math.max(5, 100 - topPct),
+          isPrimary: false,
+        };
+      }
+
+      return {
+        primary,
+        secondary,
+        all: [primary, ...(secondary ? [secondary] : [])],
+      };
+    }
+
+    // Profil standard sans match : basé sur le profil sportif officiel (Excel / Foot'Mine)
+    if (secondaryCoord && secondaryCoord.code !== primaryCoord.code) {
+      const primary: TacticalPosition = {
+        code: primaryCoord.code,
+        label: primaryCoord.label,
+        x: primaryCoord.x,
+        y: primaryCoord.y,
+        percentage: 85,
+        isPrimary: true,
+      };
+      const secondary: TacticalPosition = {
+        code: secondaryCoord.code,
+        label: secondaryCoord.label,
+        x: secondaryCoord.x,
+        y: secondaryCoord.y,
+        percentage: 15,
+        isPrimary: false,
+      };
+      return { primary, secondary, all: [primary, secondary] };
+    }
+
+    const primary: TacticalPosition = {
+      code: primaryCoord.code,
+      label: primaryCoord.label,
+      x: primaryCoord.x,
+      y: primaryCoord.y,
+      percentage: 100,
+      isPrimary: true,
+    };
+    return { primary, secondary: null, all: [primary] };
+  }, [selectedPlayer, rawPlayerMatches]);
+
+  // Résumé réel des matchs joués par ce joueur (Derniers matchs + Dernier match)
+  const playerMatchSummary = useMemo(() => {
+    return computePlayerMatchSummary(
+      selectedPlayer?.id,
+      rawPlayerMatches || [],
+      rawPlayerEvents || [],
+      opponentClubs,
+      leagues,
+      mainClub
+    );
+  }, [selectedPlayer, rawPlayerMatches, rawPlayerEvents, opponentClubs, leagues, mainClub]);
+
+  const recentFormMatches = playerMatchSummary.recentFormMatches;
+  const lastMatchData = playerMatchSummary.lastMatchData;
+  const displayStats = selectedPlayer && (rawPlayerEvents.length > 0 || rawPlayerMatches.length > 0)
+    ? playerMatchSummary.stats
+    : playerStats;
+
+  const handleOpenMatchOverview = (matchId?: string | null) => {
+    if (!matchId) return;
+    navigate(`/matches?matchId=${encodeURIComponent(matchId)}&tab=overview`);
   };
 
-  const filteredPlayerMatches = useMemo(() => {
-    if (!selectedPlayer || !rawPlayerMatches) return [];
+  // ── Classements : Catégorie Officielle & Catégorie de Surclassement (source FRMF prioritaire) ──
+  const [standingsTab, setStandingsTab] = useState<'official' | 'surclassement'>('official');
+  const [showAllStandings, setShowAllStandings] = useState(false);
+  const [selectedStandingsGroup, setSelectedStandingsGroup] = useState<string | null>(null);
+  const [frmfDataset, setFrmfDataset] = useState<FRMFDataset>(() => frmfDataService.getDataset());
 
-    return rawPlayerMatches
-      .filter((m: any) => {
-        const lineup = m.lineup as { startingXI?: string[]; substitutes?: string[] } | null;
-        const mpRecord = (m as any).match_players?.find((p: any) => p.player_id === selectedPlayer.id);
-        const isStarter = mpRecord?.is_starting || lineup?.startingXI?.includes(selectedPlayer.id);
-        const isSub = (mpRecord && !mpRecord.is_starting) || lineup?.substitutes?.includes(selectedPlayer.id);
-        const hasEvent = rawPlayerEvents?.some((e: any) => e.match_id === m.id);
-
-        if (!isStarter && !isSub && !hasEvent) return false;
-
-        if (selectedSeasonFilter !== 'ALL') {
-          const lg = leagues?.find((l: any) => l.id === m.league_id);
-          if (lg?.season !== selectedSeasonFilter) return false;
+  useEffect(() => {
+    let mounted = true;
+    const syncFrmf = () => {
+      frmfDataService.loadFromDatabase().then((res) => {
+        if (mounted && res?.dataset) {
+          setFrmfDataset(res.dataset);
         }
-
-        if (selectedLeagueFilter === 'FRIENDLY') {
-          const isFriendly = !m.league_id || m.category?.toLowerCase().includes('amical') || m.notes?.toLowerCase().includes('amical');
-          if (!isFriendly) return false;
-        } else if (selectedLeagueFilter === 'OFFICIAL') {
-          const isOfficial = !!m.league_id && !m.category?.toLowerCase().includes('amical');
-          if (!isOfficial) return false;
-        } else if (selectedLeagueFilter !== 'ALL' && m.league_id !== selectedLeagueFilter) {
-          return false;
-        }
-
-        if (selectedMatchFilter !== 'ALL' && m.id !== selectedMatchFilter) {
-          return false;
-        }
-
-        return true;
-      })
-      .sort((a: any, b: any) => new Date(b.match_date || 0).getTime() - new Date(a.match_date || 0).getTime());
-  }, [rawPlayerMatches, rawPlayerEvents, selectedPlayer, selectedSeasonFilter, selectedLeagueFilter, selectedMatchFilter, leagues]);
-
-  // Planning State
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [selectedDays, setSelectedDays] = useState<string[]>([]);
-  const [scheduleModal, setScheduleModal] = useState<ScheduleModal | null>(null);
-  const [planningData, setPlanningData] = useState<PlanningData>(() => {
-    try { return JSON.parse(localStorage.getItem('fus_planning') || '{}'); }
-    catch { return {}; }
-  });
-  const [modalForms, setModalForms] = useState<Record<string, PlanningEntry>>({});
-
-  const weekDays = useMemo(() => getWeekDays(weekOffset), [weekOffset]);
-
-  const toggleDay = (day: string) =>
-    setSelectedDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
-
-  const openScheduleModal = (player: Player, adjPlayer: Player | undefined, days: string[]) => {
-    const players = [player, adjPlayer].filter(Boolean) as Player[];
-    const initForms: Record<string, PlanningEntry> = {};
-    players.forEach(p => {
-      initForms[p.id] = planningData[p.id]?.[days[0]] || { attendance: 'present', rating: 0, notes: '' };
-    });
-    setModalForms(initForms);
-    setScheduleModal({ players, days });
-  };
-
-  const handleSavePlanning = () => {
-    if (!scheduleModal) return;
-    const updated = { ...planningData };
-    scheduleModal.players.forEach(p => {
-      if (!updated[p.id]) updated[p.id] = {};
-      scheduleModal.days.forEach(day => {
-        updated[p.id][day] = modalForms[p.id] || { attendance: 'present', rating: 0, notes: '' };
       });
+    };
+    syncFrmf();
+
+    const channel = supabase
+      .channel('player-mgmt-frmf-standings')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'frmf_matches' },
+        () => {
+          if (mounted) syncFrmf();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const playerOfficialCategory = useMemo(() => {
+    return getPlayerCategory(selectedPlayer);
+  }, [selectedPlayer, teams]);
+
+  const playerActiveSurclassement = useMemo(() => {
+    if (!selectedPlayer) return null;
+    return activeByPlayerId[selectedPlayer.id] || null;
+  }, [selectedPlayer, activeByPlayerId]);
+
+  const playerSurclassCategory = playerActiveSurclassement?.target_category || null;
+
+  useEffect(() => {
+    setSelectedStandingsGroup(null);
+    setShowAllStandings(false);
+  }, [selectedPlayer?.id, standingsTab, playerOfficialCategory, playerSurclassCategory]);
+
+  const allClubsList = useMemo(() => {
+    const list: Club[] = [];
+    if (mainClub) list.push(mainClub);
+    (opponentClubs || []).forEach(c => {
+      if (!list.some(existing => existing.id === c.id)) {
+        list.push(c);
+      }
     });
-    setPlanningData(updated);
-    localStorage.setItem('fus_planning', JSON.stringify(updated));
-    setScheduleModal(null);
-    setSelectedDays([]);
-    toast.success('Planning enregistré !');
+    return list;
+  }, [mainClub, opponentClubs]);
+
+  const officialStandingsResolution = useMemo(() => {
+    if (!selectedPlayer || !playerOfficialCategory) {
+      return resolveCategoryStandingsWithFrmfFallback({
+        frmfDataset,
+        category: null,
+      });
+    }
+    return resolveCategoryStandingsWithFrmfFallback({
+      frmfDataset,
+      category: playerOfficialCategory,
+      availableGroups: frmfDataService.getGroups(playerOfficialCategory),
+      requestedGroup: standingsTab === 'official' ? selectedStandingsGroup : null,
+      fusMatches: allFusMatches || [],
+      opponentMatches: allOpponentMatches || [],
+      allClubs: allClubsList,
+      mainClub,
+    });
+  }, [
+    selectedPlayer,
+    playerOfficialCategory,
+    frmfDataset,
+    standingsTab,
+    selectedStandingsGroup,
+    allFusMatches,
+    allOpponentMatches,
+    allClubsList,
+    mainClub,
+  ]);
+
+  const surclassStandingsResolution = useMemo(() => {
+    if (!selectedPlayer || !playerSurclassCategory) {
+      return resolveCategoryStandingsWithFrmfFallback({
+        frmfDataset,
+        category: null,
+      });
+    }
+    return resolveCategoryStandingsWithFrmfFallback({
+      frmfDataset,
+      category: playerSurclassCategory,
+      availableGroups: frmfDataService.getGroups(playerSurclassCategory),
+      requestedGroup: standingsTab === 'surclassement' ? selectedStandingsGroup : null,
+      fusMatches: allFusMatches || [],
+      opponentMatches: allOpponentMatches || [],
+      allClubs: allClubsList,
+      mainClub,
+    });
+  }, [
+    selectedPlayer,
+    playerSurclassCategory,
+    frmfDataset,
+    standingsTab,
+    selectedStandingsGroup,
+    allFusMatches,
+    allOpponentMatches,
+    allClubsList,
+    mainClub,
+  ]);
+
+  const officialCategoryStandings = officialStandingsResolution.standings;
+  const surclassCategoryStandings = surclassStandingsResolution.standings;
+
+  const currentCategoryForStandings = standingsTab === 'surclassement' && playerSurclassCategory
+    ? playerSurclassCategory
+    : playerOfficialCategory;
+
+  const activeStandingsResolution = standingsTab === 'surclassement' && playerSurclassCategory
+    ? surclassStandingsResolution
+    : officialStandingsResolution;
+
+  const activeStandings = activeStandingsResolution.standings;
+
+  const fusStandingRow = useMemo(() => {
+    return activeStandings.find(r => r.is_fus);
+  }, [activeStandings]);
+
+  const isU21Standings = Boolean(currentCategoryForStandings?.toUpperCase().includes('U21'));
+
+  // Catégories concrètes accessibles dans le sélecteur de profil / pagination
+  const profileFilterCategories = useMemo(() => {
+    const base = visibleFilterCategories.filter(c => c !== 'ALL').map(c => normalizeAgeCategory(c));
+    const playerCat = selectedPlayer ? normalizeAgeCategory(getPlayerCategory(selectedPlayer) || '') : '';
+    const merged = [...base];
+    if (playerCat && playerCat !== 'ALL' && !merged.includes(playerCat)) {
+      merged.push(playerCat);
+    }
+    return Array.from(new Set(merged)).filter(Boolean);
+  }, [visibleFilterCategories, selectedPlayer, teams]);
+
+  const categoryPlayerCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    players.forEach(p => {
+      const cat = normalizeAgeCategory(getPlayerCategory(p) || '');
+      if (cat && canManageCategory(cat)) {
+        counts[cat] = (counts[cat] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [players, teams, canManageCategory]);
+
+  const activeProfileCategory = useMemo(() => {
+    const chosen = normalizeAgeCategory(profileCategoryFilter || '');
+    if (chosen && chosen !== 'ALL') return chosen;
+    if (selectedPlayer) {
+      const playerCat = normalizeAgeCategory(getPlayerCategory(selectedPlayer) || '');
+      if (playerCat && playerCat !== 'ALL') return playerCat;
+    }
+    const listCat = normalizeAgeCategory(categoryFilter || '');
+    if (listCat && listCat !== 'ALL') return listCat;
+    return profileFilterCategories[0] || '';
+  }, [profileCategoryFilter, selectedPlayer, categoryFilter, profileFilterCategories, teams]);
+
+  // Pagination strictement bornée à la catégorie active
+  const profileNavPlayers = useMemo(() => {
+    const manageablePlayers = players.filter(p => canManageCategory(getPlayerCategory(p)));
+    return filterPlayersForCategoryNav(manageablePlayers, activeProfileCategory, getPlayerCategory);
+  }, [players, activeProfileCategory, canManageCategory, teams]);
+
+  const currentProfileIndex = useMemo(() => {
+    if (!selectedPlayer || profileNavPlayers.length === 0) return 0;
+    const idx = profileNavPlayers.findIndex(p => p.id === selectedPlayer.id);
+    return idx >= 0 ? idx : 0;
+  }, [selectedPlayer, profileNavPlayers]);
+
+  const handleProfileCategoryChange = (nextCategory: string) => {
+    const normCat = normalizeAgeCategory(nextCategory);
+    setProfileCategoryFilter(normCat);
+    const catPlayers = filterPlayersForCategoryNav(
+      players.filter(p => canManageCategory(getPlayerCategory(p))),
+      normCat,
+      getPlayerCategory
+    );
+    if (catPlayers.length === 0) {
+      toast.info(`Aucun joueur enregistré dans la catégorie ${normCat}.`);
+      return;
+    }
+    const targetPlayer = catPlayers[0];
+    handleViewPlayer(targetPlayer, normCat);
   };
 
-  const updateModalForm = (playerId: string, field: keyof PlanningEntry, value: any) =>
-    setModalForms(prev => ({ ...prev, [playerId]: { ...prev[playerId], [field]: value } }));
-
-  // Navigation functions for player details
+  // Navigation functions for player details (exclusivement limitée à la catégorie active)
   const goToNextPlayer = () => {
-    if (!selectedPlayer || filteredPlayers.length <= 1) return;
-    const currentIndex = filteredPlayers.findIndex(p => p.id === selectedPlayer.id);
-    const nextIndex = (currentIndex + 1) % filteredPlayers.length;
-    const nextPlayer = filteredPlayers[nextIndex];
+    if (!selectedPlayer || profileNavPlayers.length <= 1) return;
+    const currentIndex = profileNavPlayers.findIndex(p => p.id === selectedPlayer.id);
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % profileNavPlayers.length : 0;
+    const nextPlayer = profileNavPlayers[nextIndex];
     if (viewState === 'VIEW') {
-      handleViewPlayer(nextPlayer);
-    } else if (viewState === 'STATS') {
-      handleViewStats(nextPlayer);
+      handleViewPlayer(nextPlayer, activeProfileCategory);
     }
   };
 
   const goToPreviousPlayer = () => {
-    if (!selectedPlayer || filteredPlayers.length <= 1) return;
-    const currentIndex = filteredPlayers.findIndex(p => p.id === selectedPlayer.id);
-    const prevIndex = currentIndex === 0 ? filteredPlayers.length - 1 : currentIndex - 1;
-    const prevPlayer = filteredPlayers[prevIndex];
+    if (!selectedPlayer || profileNavPlayers.length <= 1) return;
+    const currentIndex = profileNavPlayers.findIndex(p => p.id === selectedPlayer.id);
+    const prevIndex = currentIndex <= 0 ? profileNavPlayers.length - 1 : currentIndex - 1;
+    const prevPlayer = profileNavPlayers[prevIndex];
     if (viewState === 'VIEW') {
-      handleViewPlayer(prevPlayer);
-    } else if (viewState === 'STATS') {
-      handleViewStats(prevPlayer);
+      handleViewPlayer(prevPlayer, activeProfileCategory);
     }
   };
 
   // Form State
-  const [formData, setFormData] = useState<Partial<Player> & { category?: string }>({
+  const [formData, setFormData] = useState<Partial<Player> & {
+    category?: string;
+    first_name?: string;
+    last_name?: string;
+    category_number?: number;
+    secondary_position?: string;
+    birth_year?: number;
+  }>({
     full_name: '',
+    first_name: '',
+    last_name: '',
+    category_number: 1,
     jersey_number: 1,
     position: 'FW',
+    secondary_position: '',
     birth_date: '2010-01-01',
+    birth_year: 2010,
     nationality: 'Maroc',
     height: 160,
     weight: 50,
@@ -1036,6 +821,34 @@ const PlayerManagement: React.FC = () => {
     category: 'U13',
     team_id: ''
   });
+
+  // Calcul dynamique de l'Année de Naissance et de l'Âge de Référence au 01/01/2027
+  const derivedBirthYear = useMemo(() => {
+    if (!formData.birth_date) return null;
+    const y = new Date(formData.birth_date).getFullYear();
+    return isNaN(y) ? null : y;
+  }, [formData.birth_date]);
+
+  const derivedAgeAt2027 = useMemo(() => {
+    if (!formData.birth_date) return null;
+    const parts = formData.birth_date.split('-');
+    if (parts.length < 3) return null;
+    const birthYear = parseInt(parts[0], 10);
+    const birthMonth = parseInt(parts[1], 10) - 1;
+    const birthDay = parseInt(parts[2], 10);
+    if (isNaN(birthYear) || isNaN(birthMonth) || isNaN(birthDay)) return null;
+
+    // Date de référence pivot : 01 Janvier 2027 (standard d'éligibilité des catégories)
+    const refYear = 2027;
+    const refMonth = 0; // Janvier (0-indexed)
+    const refDay = 1;
+
+    let age = refYear - birthYear;
+    if (refMonth < birthMonth || (refMonth === birthMonth && refDay < birthDay)) {
+      age--;
+    }
+    return age >= 0 ? age : 0;
+  }, [formData.birth_date]);
 
   const filteredPlayers = useMemo(() => {
     return players.filter(p => {
@@ -1092,8 +905,16 @@ const PlayerManagement: React.FC = () => {
       return;
     }
     setSelectedPlayer(player);
+    const nameParts = (player.full_name || '').trim().split(/\s+/);
+    const parsedFirstName = player.first_name || (nameParts.length > 1 ? nameParts[0] : '');
+    const parsedLastName = player.last_name || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : player.full_name || '');
     setFormData({
       ...player,
+      first_name: parsedFirstName,
+      last_name: parsedLastName,
+      category_number: player.category_number ?? undefined,
+      secondary_position: player.secondary_position || '',
+      birth_year: player.birth_year ?? (player.birth_date ? new Date(player.birth_date).getFullYear() : undefined),
       photo_url: player.photo_url || '',
       celebration_photo_url: (player as any).celebration_photo_url || '',
     });
@@ -1117,9 +938,14 @@ const PlayerManagement: React.FC = () => {
     setSelectedPlayer(null);
     setFormData({
       full_name: '',
+      first_name: '',
+      last_name: '',
+      category_number: players.length + 1,
       jersey_number: players.length + 1,
       position: 'FW',
+      secondary_position: '',
       birth_date: '2012-01-01',
+      birth_year: 2012,
       nationality: 'Maroc',
       height: 155,
       weight: 45,
@@ -1182,10 +1008,13 @@ const PlayerManagement: React.FC = () => {
     }
   };
 
-  const handleViewPlayer = async (player: Player) => {
+  const handleViewPlayer = async (player: Player, explicitCategory?: string) => {
+    const resolvedCategory = normalizeAgeCategory(explicitCategory || getPlayerCategory(player) || '');
+    if (resolvedCategory && resolvedCategory !== 'ALL') {
+      setProfileCategoryFilter(resolvedCategory);
+    }
     setSelectedPlayer(player);
     setViewState('VIEW');
-    setLoadingStats(true);
 
     // Fetch player stats from match_events and matches
     try {
@@ -1203,187 +1032,47 @@ const PlayerManagement: React.FC = () => {
 
       if (matchesError) console.error('Matches error:', matchesError);
 
-      let matchesPlayed = 0;
-      let startsCount = 0;
-      let subsCount = 0;
-      let minutesPlayed = 0;
-
-      playerMatches?.forEach(match => {
-        const lineup = match.lineup as { startingXI?: string[]; substitutes?: string[] } | null;
-        const mpRecord = (match as any).match_players?.find((p: any) => p.player_id === player.id);
-        const isStarter = mpRecord?.is_starting || lineup?.startingXI?.includes(player.id);
-        const isSub = (mpRecord && !mpRecord.is_starting) || lineup?.substitutes?.includes(player.id);
-        const hasEvent = events?.some((e: any) => e.match_id === match.id);
-
-        if (isStarter || isSub || hasEvent) {
-          matchesPlayed++;
-          const matchDuration = (match.half_duration_minutes || 45) * 2;
-          if (isStarter) {
-            startsCount++;
-            minutesPlayed += matchDuration;
-          } else if (isSub) {
-            subsCount++;
-            minutesPlayed += 30;
-          } else {
-            minutesPlayed += 20;
-          }
-        }
-      });
-
-      events?.forEach((e: any) => {
-        if (e.type === 'substitution') {
-          if (e.player_id === player.id) {
-            minutesPlayed -= 15;
-          } else if (e.related_player_id === player.id) {
-            minutesPlayed += 15;
-          }
-        }
-      });
-
-      const goals = events?.filter((e: any) => e.type === 'goal' && e.player_id === player.id).length || 0;
-      const assists = events?.filter((e: any) => e.type === 'assist' || (e.type === 'goal' && e.related_player_id === player.id)).length || 0;
-      const yellowCards = events?.filter((e: any) => e.type === 'yellow_card' && e.player_id === player.id).length || 0;
-      const redCards = events?.filter((e: any) => e.type === 'red_card' && e.player_id === player.id).length || 0;
-      const substitutions = events?.filter((e: any) => e.type === 'substitution').length || 0;
-
-      const stats = {
-        matches: matchesPlayed,
-        starts: startsCount,
-        subs: subsCount,
-        minutes: Math.max(0, minutesPlayed),
-        goals,
-        assists,
-        yellowCards,
-        redCards,
-        substitutions,
-        totalContributions: goals + assists,
-        avgMinutes: matchesPlayed > 0 ? Math.round(Math.max(0, minutesPlayed) / matchesPlayed) : 0,
-        starterRate: matchesPlayed > 0 ? Math.round((startsCount / matchesPlayed) * 100) : 0,
-      };
+      const { stats } = computePlayerMatchSummary(
+        player.id,
+        playerMatches || [],
+        events || [],
+        opponentClubs,
+        leagues,
+        mainClub
+      );
 
       setPlayerStats(stats);
       setRawPlayerEvents(events || []);
       setRawPlayerMatches(playerMatches || []);
-      setSelectedSeasonFilter('ALL');
-      setSelectedLeagueFilter('ALL');
-      setSelectedMatchFilter('ALL');
     } catch (error) {
       console.error('Error fetching stats:', error);
       setPlayerStats({ matches: 0, starts: 0, subs: 0, minutes: 0, goals: 0, assists: 0, yellowCards: 0, redCards: 0, substitutions: 0, totalContributions: 0, avgMinutes: 0, starterRate: 0 });
-    } finally {
-      setLoadingStats(false);
     }
   };
-
-  const handleViewStats = async (player: Player) => {
-    setSelectedPlayer(player);
-    setLoadingStats(true);
-    setViewState('STATS');
-
-    // Fetch player stats from match_events and matches
-    try {
-      const { data: events, error: eventsError } = await supabase
-        .from('match_events')
-        .select('*')
-        .or(`player_id.eq.${player.id},related_player_id.eq.${player.id}`);
-
-      if (eventsError) console.error('Events error:', eventsError);
-
-      const { data: playerMatches, error: matchesError } = await supabase
-        .from('matches')
-        .select('*, match_players(player_id, is_starting, position_index, rating, rating_comment)')
-        .order('match_date', { ascending: false });
-
-      if (matchesError) console.error('Matches error:', matchesError);
-
-      let matchesPlayed = 0;
-      let startsCount = 0;
-      let subsCount = 0;
-      let minutesPlayed = 0;
-
-      playerMatches?.forEach(match => {
-        const lineup = match.lineup as { startingXI?: string[]; substitutes?: string[] } | null;
-        const mpRecord = (match as any).match_players?.find((p: any) => p.player_id === player.id);
-        const isStarter = mpRecord?.is_starting || lineup?.startingXI?.includes(player.id);
-        const isSub = (mpRecord && !mpRecord.is_starting) || lineup?.substitutes?.includes(player.id);
-        const hasEvent = events?.some((e: any) => e.match_id === match.id);
-
-        if (isStarter || isSub || hasEvent) {
-          matchesPlayed++;
-          const matchDuration = (match.half_duration_minutes || 45) * 2;
-          if (isStarter) {
-            startsCount++;
-            minutesPlayed += matchDuration;
-          } else if (isSub) {
-            subsCount++;
-            minutesPlayed += 30;
-          } else {
-            minutesPlayed += 20;
-          }
-        }
-      });
-
-      events?.forEach((e: any) => {
-        if (e.type === 'substitution') {
-          if (e.player_id === player.id) {
-            minutesPlayed -= 15;
-          } else if (e.related_player_id === player.id) {
-            minutesPlayed += 15;
-          }
-        }
-      });
-
-      const goals = events?.filter((e: any) => e.type === 'goal' && e.player_id === player.id).length || 0;
-      const assists = events?.filter((e: any) => e.type === 'assist' || (e.type === 'goal' && e.related_player_id === player.id)).length || 0;
-      const yellowCards = events?.filter((e: any) => e.type === 'yellow_card' && e.player_id === player.id).length || 0;
-      const redCards = events?.filter((e: any) => e.type === 'red_card' && e.player_id === player.id).length || 0;
-      const substitutions = events?.filter((e: any) => e.type === 'substitution').length || 0;
-
-      const stats = {
-        matches: matchesPlayed,
-        starts: startsCount,
-        subs: subsCount,
-        minutes: Math.max(0, minutesPlayed),
-        goals,
-        assists,
-        yellowCards,
-        redCards,
-        substitutions,
-        totalContributions: goals + assists,
-        avgMinutes: matchesPlayed > 0 ? Math.round(Math.max(0, minutesPlayed) / matchesPlayed) : 0,
-        starterRate: matchesPlayed > 0 ? Math.round((startsCount / matchesPlayed) * 100) : 0,
-      };
-
-      setPlayerStats(stats);
-      setRawPlayerEvents(events || []);
-      setRawPlayerMatches(playerMatches || []);
-      setSelectedSeasonFilter('ALL');
-      setSelectedLeagueFilter('ALL');
-      setSelectedMatchFilter('ALL');
-    } catch (error) {
-      console.error('Error fetching stats:', error);
-      setPlayerStats({ matches: 0, starts: 0, subs: 0, minutes: 0, goals: 0, assists: 0, yellowCards: 0, redCards: 0, substitutions: 0, totalContributions: 0, avgMinutes: 0, starterRate: 0 });
-    } finally {
-      setLoadingStats(false);
-    }
-  };
-
-  useEffect(() => {
-    if (viewState === 'STATS' && selectedPlayer && (!rawPlayerMatches || rawPlayerMatches.length === 0) && !loadingStats) {
-      handleViewStats(selectedPlayer);
-    }
-  }, [viewState, selectedPlayer]);
 
   const handleSave = async () => {
     try {
-      if (!formData.full_name?.trim()) {
-        toast.error("Veuillez saisir le nom complet du joueur.");
+      const resolvedFirst = (formData.first_name || '').trim();
+      const resolvedLast = (formData.last_name || '').trim();
+      const resolvedFull = (resolvedFirst || resolvedLast)
+        ? `${resolvedFirst} ${resolvedLast}`.trim()
+        : (formData.full_name || '').trim();
+
+      if (!resolvedFull) {
+        toast.error("Veuillez saisir le nom et le prénom du joueur.");
         return;
       }
 
+      const birthYear = formData.birth_date ? new Date(formData.birth_date).getFullYear() : null;
+
       const sanitizedData = {
         ...formData,
-        full_name: formData.full_name.trim(),
+        full_name: resolvedFull,
+        first_name: resolvedFirst || null,
+        last_name: resolvedLast || null,
+        category_number: formData.category_number ? Number(formData.category_number) : null,
+        birth_year: birthYear && !isNaN(birthYear) ? birthYear : null,
+        secondary_position: formData.secondary_position?.trim() || null,
         team_id: formData.team_id === '' ? null : formData.team_id,
         birth_date: formData.birth_date === '' ? null : formData.birth_date,
         preferred_foot: (formData.preferred_foot as string)?.toLowerCase() as any, // DB expects lowercase 'left', 'right', 'both'
@@ -1424,23 +1113,7 @@ const PlayerManagement: React.FC = () => {
 
 
   if (isLoading) {
-    return (
-      <div className="space-y-8">
-        <div className="flex justify-between items-center">
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-4 w-64" />
-          </div>
-          <Skeleton className="h-11 w-40 rounded-xl" />
-        </div>
-        <div className="h-16 w-full rounded-2xl bg-secondary/20 border border-secondary/50 animate-pulse" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-            <Skeleton key={i} className="h-64 w-full rounded-3xl" />
-          ))}
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement de l'effectif joueurs…" />;
   }
 
   if (isError) {
@@ -1457,13 +1130,9 @@ const PlayerManagement: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-20">
-      <AnimatePresence mode="wait">
         {viewState === 'LIST' ? (
-          <motion.div
+          <div
             key="list"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
             className="space-y-8"
           >
             {/* Scout Orientation Banner (US-DASH-19 / US-DASH-52) */}
@@ -1550,17 +1219,6 @@ const PlayerManagement: React.FC = () => {
 
               {/* Secondary Actions - Scrollable on mobile */}
               <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0">
-                {/* Planning Button */}
-                <Button
-                  variant={(viewState as string) === 'PLANNING' ? 'default' : 'outline'}
-                  onClick={() => setViewState((viewState as string) === 'PLANNING' ? 'LIST' : 'PLANNING')}
-                  className={`h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs gap-2 transition-all shrink-0 ${(viewState as string) === 'PLANNING' ? 'bg-primary shadow-lg shadow-primary/20' : 'border-primary/30 text-primary hover:bg-primary/5'}`}
-                >
-                  <CalendarDays className="w-4 h-4" />
-                  <span className="hidden sm:inline">Planning</span>
-                  <span className="sm:hidden">Plan</span>
-                </Button>
-
                 {/* Bouton mode sélection */}
                 <Button
                   variant={selectionMode ? 'default' : 'outline'}
@@ -1628,40 +1286,6 @@ const PlayerManagement: React.FC = () => {
                     })()}
                   </Button>
                 )}
-
-                {canCreatePlayer && allowedCategories.length > 0 && (
-                  <>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        const activeCat = getActiveBulkCategory();
-                        const matchingTeam = teams.find(t => t.category === activeCat) || teams[0];
-                        setGenCategory(activeCat);
-                        setGenTeamId(matchingTeam?.id || '');
-                        setGenModal(true);
-                      }}
-                      className="gap-2 h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs border-violet-300 text-violet-600 hover:bg-violet-50 shrink-0"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      <span className="hidden sm:inline">Générer 22</span>
-                      <span className="sm:hidden">Générer</span>
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        const activeCat = getActiveBulkCategory();
-                        setBulkRows([newBulkRow(0, activeCat)]);
-                        setViewState('BULK_ADD');
-                      }}
-                      className="gap-2 h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs border-primary/30 text-primary hover:bg-primary/5 shrink-0"
-                    >
-                      <Users className="w-4 h-4" />
-                      <span className="hidden sm:inline">Ajout multiple</span>
-                      <span className="sm:hidden">Multiple</span>
-                    </Button>
-                  </>
-                )}
               </div>
             </div>
 
@@ -1711,16 +1335,8 @@ const PlayerManagement: React.FC = () => {
             {/* Content Area */}
             {displayMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                <AnimatePresence mode="popLayout">
                   {paginatedPlayers.map((player) => (
-                    <motion.div
-                      key={player.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      transition={{ duration: 0.2 }}
-                    >
+                    <div key={player.id}>
                       <Card className="group relative overflow-hidden border-secondary hover:border-primary/20 hover:shadow-2xl transition-all duration-500 bg-white rounded-[2rem]">
                         <CardContent className="p-0">
                           {/* Card Header Illustration */}
@@ -1779,11 +1395,6 @@ const PlayerManagement: React.FC = () => {
                                 <Button variant="secondary" size="icon" onClick={() => handleViewPlayer(player)} className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-primary hover:text-white transition-all" title="Consulter le détail">
                                   <Eye className="w-4 h-4" />
                                 </Button>
-                                {canViewStats && (
-                                  <Button variant="secondary" size="icon" onClick={() => handleViewStats(player)} className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-emerald-500 hover:text-white transition-all" title="Statistiques">
-                                    <BarChart3 className="w-4 h-4" />
-                                  </Button>
-                                )}
                                 {canUpdatePlayer && canManageCategory(getPlayerCategory(player)) && (
                                   <Button variant="secondary" size="icon" onClick={() => handleOpenEdit(player)} className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-primary hover:text-white transition-all" title="Modifier">
                                     <Edit2 className="w-4 h-4" />
@@ -1800,7 +1411,7 @@ const PlayerManagement: React.FC = () => {
                                       className={`h-9 w-9 rounded-xl transition-all ${activeMob
                                         ? 'bg-orange-100 text-orange-600 hover:bg-orange-200'
                                         : 'bg-secondary/50 hover:bg-orange-500 hover:text-white'
-                                      }`}
+                                        }`}
                                     >
                                       {activeMob
                                         ? <RotateCcw className="w-4 h-4" />
@@ -1829,11 +1440,6 @@ const PlayerManagement: React.FC = () => {
                                     </span>
                                   ) : (
                                     <>
-                                      {canDeparturePlayer && (
-                                        <Button variant="ghost" size="icon" onClick={() => handleOpenDeparture(player)} title="Sortie / Transfert du club" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-red-50 transition-all">
-                                          <X className="w-4 h-4 text-red-500" />
-                                        </Button>
-                                      )}
                                       {canDeletePlayer && (
                                         <Button variant="ghost" size="icon" onClick={() => setPlayerToDelete(player)} title="Supprimer définitivement" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-all">
                                           <Trash2 className="w-4 h-4 text-rose-600" />
@@ -1847,9 +1453,8 @@ const PlayerManagement: React.FC = () => {
                           </div>
                         </CardContent>
                       </Card>
-                    </motion.div>
+                    </div>
                   ))}
-                </AnimatePresence>
               </div>
             ) : (
               <div className="bg-white border rounded-[2rem] overflow-hidden shadow-sm">
@@ -1910,11 +1515,10 @@ const PlayerManagement: React.FC = () => {
                               const activeMob = activeByPlayerId[player.id];
                               const isSousClass = isLowerCategory(activeMob.original_category, activeMob.target_category);
                               return (
-                                <Badge className={`text-[9px] font-black uppercase gap-1 border ${
-                                  isSousClass
-                                    ? 'bg-sky-100 text-sky-700 border-sky-200'
-                                    : 'bg-orange-100 text-orange-600 border-orange-200'
-                                }`}>
+                                <Badge className={`text-[9px] font-black uppercase gap-1 border ${isSousClass
+                                  ? 'bg-sky-100 text-sky-700 border-sky-200'
+                                  : 'bg-orange-100 text-orange-600 border-orange-200'
+                                  }`}>
                                   {isSousClass ? (
                                     <ArrowDownCircle className="w-2.5 h-2.5 text-sky-600" />
                                   ) : (
@@ -1944,11 +1548,6 @@ const PlayerManagement: React.FC = () => {
                                 <Button variant="ghost" size="icon" onClick={() => handleViewPlayer(player)} className="h-9 w-9 rounded-xl hover:bg-white hover:shadow-md transition-all" title="Consulter le détail">
                                   <Eye className="w-4 h-4" />
                                 </Button>
-                                {canViewStats && (
-                                  <Button variant="ghost" size="icon" onClick={() => handleViewStats(player)} className="h-9 w-9 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 hover:shadow-md transition-all" title="Statistiques">
-                                    <BarChart3 className="w-4 h-4" />
-                                  </Button>
-                                )}
                                 <Button variant="ghost" size="icon" onClick={() => setCalendarModalPlayer(player)} className="h-9 w-9 rounded-xl hover:bg-blue-50 hover:text-blue-600 hover:shadow-md transition-all" title="Calendrier & Stats Matchs Joueur">
                                   <Calendar className="w-4 h-4 text-blue-600" />
                                 </Button>
@@ -1971,11 +1570,10 @@ const PlayerManagement: React.FC = () => {
                                           size="icon"
                                           onClick={() => handleOpenSurclassement(player)}
                                           title={activeMob ? 'Gérer le surclassement (Matchs planifiés)' : 'Surclasser sur des matchs à venir'}
-                                          className={`h-9 w-9 rounded-xl transition-all ${
-                                            activeMob
-                                              ? 'text-orange-500 bg-orange-50 hover:bg-orange-100'
-                                              : 'text-muted-foreground hover:text-orange-500 hover:bg-orange-50'
-                                          }`}
+                                          className={`h-9 w-9 rounded-xl transition-all ${activeMob
+                                            ? 'text-orange-500 bg-orange-50 hover:bg-orange-100'
+                                            : 'text-muted-foreground hover:text-orange-500 hover:bg-orange-50'
+                                            }`}
                                         >
                                           {activeMob
                                             ? <RotateCcw className="w-4 h-4" />
@@ -1984,11 +1582,6 @@ const PlayerManagement: React.FC = () => {
                                         </Button>
                                       );
                                     })()}
-                                    {canDeparturePlayer && (
-                                      <Button variant="ghost" size="icon" onClick={() => handleOpenDeparture(player)} title="Sortie / Transfert du club" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-red-50 transition-all">
-                                        <X className="w-4 h-4 text-red-500" />
-                                      </Button>
-                                    )}
                                     {canDeletePlayer && (
                                       <Button variant="ghost" size="icon" onClick={() => setPlayerToDelete(player)} title="Supprimer définitivement" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-all">
                                         <Trash2 className="w-4 h-4 text-rose-600" />
@@ -2028,13 +1621,10 @@ const PlayerManagement: React.FC = () => {
                 </div>
               </div>
             )}
-          </motion.div>
+          </div>
         ) : viewState === 'FORM' ? (
-          <motion.div
+          <div
             key="form"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
             className="max-w-4xl mx-auto"
           >
             <div className="flex items-center gap-6 mb-10">
@@ -2174,21 +1764,19 @@ const PlayerManagement: React.FC = () => {
                     {(() => {
                       const isGk = ['GK', 'G', 'GB', 'GARDIEN', 'GARDIEN DE BUT'].includes((formData.position || '').toUpperCase());
                       return (
-                        <div className={`space-y-4 p-6 rounded-3xl border shadow-xs flex flex-col justify-between transition-all ${
-                          isGk
-                            ? 'bg-emerald-50/60 border-emerald-200'
-                            : 'bg-rose-50/60 border-rose-200'
-                        }`}>
+                        <div className={`space-y-4 p-6 rounded-3xl border shadow-xs flex flex-col justify-between transition-all ${isGk
+                          ? 'bg-emerald-50/60 border-emerald-200'
+                          : 'bg-rose-50/60 border-rose-200'
+                          }`}>
                           <div className="flex items-center justify-between">
                             <label className="text-[11px] font-black uppercase tracking-widest text-slate-700 flex items-center gap-2">
                               {isGk ? <Shield className="w-3.5 h-3.5 text-emerald-600" /> : <Flame className="w-3.5 h-3.5 text-rose-600" />}
                               {isGk ? "Célébration Arrêt Décisif" : "Célébration But"}
                             </label>
-                            <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
-                              isGk
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                : 'bg-rose-100 text-rose-800 border border-rose-200'
-                            }`}>
+                            <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 ${isGk
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-rose-100 text-rose-800 border border-rose-200'
+                              }`}>
                               {isGk ? '🧤 Penalty Arrêté' : '⚽ But / Penalty'}
                             </span>
                           </div>
@@ -2203,9 +1791,8 @@ const PlayerManagement: React.FC = () => {
                             />
                             <label
                               htmlFor="player-celebration-photo"
-                              className={`block aspect-4/3 w-full rounded-2xl bg-white border-2 border-dashed transition-all cursor-pointer overflow-hidden group shadow-inner ${
-                                isGk ? 'border-emerald-200 hover:border-emerald-400' : 'border-rose-200 hover:border-rose-400'
-                              }`}
+                              className={`block aspect-4/3 w-full rounded-2xl bg-white border-2 border-dashed transition-all cursor-pointer overflow-hidden group shadow-inner ${isGk ? 'border-emerald-200 hover:border-emerald-400' : 'border-rose-200 hover:border-rose-400'
+                                }`}
                             >
                               {(formData.celebration_photo_url && formData.celebration_photo_url !== 'null') ? (
                                 <div className="relative w-full h-full">
@@ -2235,11 +1822,10 @@ const PlayerManagement: React.FC = () => {
                                 setMediaPickerTarget('celebration_photo_url');
                                 setMediaPickerOpen(true);
                               }}
-                              className={`flex-1 gap-1.5 rounded-xl text-[11px] font-bold bg-white h-9 shadow-xs cursor-pointer ${
-                                isGk
-                                  ? 'border-emerald-200 hover:bg-emerald-50 text-emerald-800'
-                                  : 'border-rose-200 hover:bg-rose-50 text-rose-800'
-                              }`}
+                              className={`flex-1 gap-1.5 rounded-xl text-[11px] font-bold bg-white h-9 shadow-xs cursor-pointer ${isGk
+                                ? 'border-emerald-200 hover:bg-emerald-50 text-emerald-800'
+                                : 'border-rose-200 hover:bg-rose-50 text-rose-800'
+                                }`}
                             >
                               <ImageIcon className={`w-3.5 h-3.5 ${isGk ? 'text-emerald-600' : 'text-rose-600'}`} />
                               Médiathèque
@@ -2256,11 +1842,10 @@ const PlayerManagement: React.FC = () => {
                                 type="button"
                                 variant="outline"
                                 onClick={() => handleEditExistingPhoto('celebration_photo_url')}
-                                className={`flex-1 gap-1.5 rounded-xl text-[11px] font-bold h-9 shadow-xs cursor-pointer ${
-                                  isGk
-                                    ? 'border-emerald-300 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
-                                    : 'border-rose-300 hover:border-rose-500 bg-rose-50 hover:bg-rose-100 text-rose-800'
-                                }`}
+                                className={`flex-1 gap-1.5 rounded-xl text-[11px] font-bold h-9 shadow-xs cursor-pointer ${isGk
+                                  ? 'border-emerald-300 hover:border-emerald-500 bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                                  : 'border-rose-300 hover:border-rose-500 bg-rose-50 hover:bg-rose-100 text-rose-800'
+                                  }`}
                                 title="Recadrer et zoomer la photo de célébration existante"
                               >
                                 <Scissors className={`w-3.5 h-3.5 ${isGk ? 'text-emerald-600' : 'text-rose-600'}`} />
@@ -2284,76 +1869,132 @@ const PlayerManagement: React.FC = () => {
                   </div>
                 </div>
 
-                {/* ── SECTION IDENTITÉ & AFFECTATION SPORTIVE ── */}
+                {/* ── SECTION IDENTITÉ (Conforme nomenclature officielle FUS) ── */}
                 <div className="space-y-4 pt-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-4 rounded-full bg-primary" />
-                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-700">
-                      Identité & Affectation Sportive
-                    </h3>
+                  <div className="flex items-center justify-between border-b pb-2 border-blue-500/20">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-6 rounded-md bg-blue-600 shadow-sm" />
+                      <div>
+                        <h3 className="text-sm font-black uppercase tracking-wider text-blue-900 dark:text-blue-200">
+                          Identité Officielle
+                        </h3>
+                        <p className="text-[10px] text-muted-foreground font-medium">Informations d'état civil et matricule</p>
+                      </div>
+                    </div>
+                    <Badge className="bg-blue-600 text-white font-black text-[10px] uppercase tracking-wider px-2.5 py-0.5 shadow-xs">
+                      Section Identité
+                    </Badge>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Nom Complet de l'Athlète */}
-                    <div className="md:col-span-2 space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Nom Complet de l'Athlète</label>
-                      <Input
-                        value={formData.full_name}
-                        onChange={e => setFormData({ ...formData, full_name: e.target.value })}
-                        placeholder="ex. Cristiano Ronaldo"
-                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20"
-                      />
-                    </div>
-
-                    {/* Numéro de Dossard */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Numéro de Dossard</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* N° dans la catégorie */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        N° dans la catégorie
+                      </label>
                       <Input
                         type="number"
-                        value={formData.jersey_number}
+                        min="1"
+                        value={formData.category_number ?? ''}
+                        onChange={e => setFormData({ ...formData, category_number: parseInt(e.target.value) || undefined })}
+                        placeholder="ex. 1"
+                        className="h-14 px-4 rounded-xl bg-blue-50/40 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-800/40 font-bold text-base focus:ring-2 ring-blue-500/30"
+                      />
+                    </div>
+
+                    {/* Nom */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Nom <span className="text-rose-500">*</span>
+                      </label>
+                      <Input
+                        value={formData.last_name || ''}
+                        onChange={e => setFormData({ ...formData, last_name: e.target.value })}
+                        placeholder="ex. Benali"
+                        className="h-14 px-4 rounded-xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
+                      />
+                    </div>
+
+                    {/* Prénom */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Prénom <span className="text-rose-500">*</span>
+                      </label>
+                      <Input
+                        value={formData.first_name || ''}
+                        onChange={e => setFormData({ ...formData, first_name: e.target.value })}
+                        placeholder="ex. Yassine"
+                        className="h-14 px-4 rounded-xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
+                      />
+                    </div>
+
+                    {/* Numéro de Maillot (Match) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        N° Dossard (Match)
+                      </label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={formData.jersey_number ?? ''}
                         onChange={e => setFormData({ ...formData, jersey_number: parseInt(e.target.value) || 0 })}
-                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-lg focus:ring-2 ring-primary/20"
+                        className="h-14 px-4 rounded-xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Catégorie d'Âge */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Catégorie d'Âge</label>
-                      <select
-                        value={formData.category}
-                        onChange={e => setFormData({ ...formData, category: e.target.value as any, team_id: '' })}
-                        className="w-full h-16 rounded-2xl bg-secondary/30 border-none font-bold px-6 text-base outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20"
-                      >
-                        {allowedCategories.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                      </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-1">
+                    {/* Date de Naissance (jj/mm/aaaa) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Date de naissance (jj/mm/aaaa)
+                      </label>
+                      <Input
+                        type="date"
+                        value={formData.birth_date || ''}
+                        onChange={e => setFormData({ ...formData, birth_date: e.target.value })}
+                        className="h-14 px-4 rounded-xl bg-secondary/30 border-none font-bold text-sm focus:ring-2 ring-primary/20"
+                      />
                     </div>
 
-                    {/* Affectation Équipe */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Affectation Équipe</label>
-                      <select
-                        value={(formData as any).team_id || ''}
-                        onChange={e => setFormData({ ...formData, team_id: e.target.value })}
-                        className="w-full h-16 rounded-2xl bg-primary/5 border border-primary/20 text-primary font-bold px-6 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20 text-base"
-                      >
-                        <option value="">-- Sans Équipe (Agent Libre) --</option>
-                        {allowedTeams.filter(t => t.category === formData.category).map(t => (
-                          <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
-                        ))}
-                      </select>
+                    {/* Année de naissance (Calculée automatiquement) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1 flex items-center justify-between">
+                        <span>Année de naissance</span>
+                        <span className="text-[9px] text-blue-600 font-semibold lowercase">auto</span>
+                      </label>
+                      <div className="h-14 px-4 rounded-xl bg-blue-50/50 dark:bg-blue-950/30 border border-blue-200/50 dark:border-blue-900/40 flex items-center justify-between font-black text-blue-900 dark:text-blue-100 text-base">
+                        <span>{derivedBirthYear || '—'}</span>
+                        <span className="text-[10px] font-semibold text-blue-600/80 bg-blue-100/70 dark:bg-blue-900/60 px-2 py-0.5 rounded-md">
+                          Génération
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Nationalité (Liste Déroulante) */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Nationalité (Liste Déroulante)</label>
+                    {/* Âge au 01/01/2027 (Calculé automatiquement selon barème officiel) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1 flex items-center justify-between">
+                        <span>Âge au 01/01/2027</span>
+                        <span className="text-[9px] text-blue-600 font-semibold lowercase">pivot</span>
+                      </label>
+                      <div className="h-14 px-4 rounded-xl bg-blue-50/50 dark:bg-blue-950/30 border border-blue-200/50 dark:border-blue-900/40 flex items-center justify-between font-black text-blue-900 dark:text-blue-100 text-base">
+                        <span>{derivedAgeAt2027 !== null ? `${derivedAgeAt2027} ans` : '—'}</span>
+                        <Badge variant="outline" className="text-[10px] font-bold border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300">
+                          Saison 26/27
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Nationalité */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Nationalité
+                      </label>
                       <select
                         value={formData.nationality || 'Maroc'}
                         onChange={e => setFormData({ ...formData, nationality: e.target.value })}
-                        className="w-full h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20 appearance-none outline-none cursor-pointer"
+                        className="w-full h-14 px-4 rounded-xl bg-secondary/30 border-none font-bold text-sm focus:ring-2 ring-primary/20 appearance-none outline-none cursor-pointer"
                       >
                         {NATIONALITIES.map(nat => (
                           <option key={nat} value={nat}>{nat}</option>
@@ -2363,23 +2004,100 @@ const PlayerManagement: React.FC = () => {
                   </div>
                 </div>
 
-                {/* ── SECTION PROFIL TERRAIN & CARACTÉRISTIQUES PHYSIQUES ── */}
-                <div className="space-y-4 pt-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-4 rounded-full bg-primary" />
-                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-700">
-                      Profil Terrain & Caractéristiques Physiques
-                    </h3>
+                {/* ── SECTION PROFIL SPORTIF (Conforme nomenclature officielle FUS) ── */}
+                <div className="space-y-4 pt-4">
+                  <div className="flex items-center justify-between border-b pb-2 border-emerald-500/20">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-6 rounded-md bg-emerald-600 shadow-sm" />
+                      <div>
+                        <h3 className="text-sm font-black uppercase tracking-wider text-emerald-900 dark:text-emerald-200">
+                          Profil Sportif
+                        </h3>
+                        <p className="text-[10px] text-muted-foreground font-medium">Catégorie, caractéristiques athlétiques et compétences tactiques</p>
+                      </div>
+                    </div>
+                    <Badge className="bg-emerald-600 text-white font-black text-[10px] uppercase tracking-wider px-2.5 py-0.5 shadow-xs">
+                      Section Profil Sportif
+                    </Badge>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
-                    {/* Poste Tactique */}
-                    <div className="space-y-2 col-span-2 md:col-span-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Poste Tactique</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* Catégorie */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Catégorie
+                      </label>
+                      <select
+                        value={formData.category}
+                        onChange={e => setFormData({ ...formData, category: e.target.value as any, team_id: '' })}
+                        className="w-full h-14 rounded-xl bg-emerald-50/40 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40 font-bold px-4 text-sm outline-none appearance-none cursor-pointer focus:ring-2 ring-emerald-500/30"
+                      >
+                        {allowedCategories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Équipe d'affectation */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Équipe Rattachée
+                      </label>
+                      <select
+                        value={(formData as any).team_id || ''}
+                        onChange={e => setFormData({ ...formData, team_id: e.target.value })}
+                        className="w-full h-14 rounded-xl bg-secondary/30 border-none font-bold px-4 text-sm outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20"
+                      >
+                        <option value="">-- Sans Équipe Spécifique --</option>
+                        {allowedTeams.filter(t => t.category === formData.category).map(t => (
+                          <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Taille (cm) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Taille (cm)
+                      </label>
+                      <Input
+                        type="number"
+                        min="100"
+                        max="230"
+                        value={formData.height || ''}
+                        onChange={e => setFormData({ ...formData, height: parseFloat(e.target.value) || 0 })}
+                        placeholder="ex. 175"
+                        className="h-14 px-4 rounded-xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
+                      />
+                    </div>
+
+                    {/* Poids (kg) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Poids (kg)
+                      </label>
+                      <Input
+                        type="number"
+                        min="30"
+                        max="130"
+                        value={formData.weight || ''}
+                        onChange={e => setFormData({ ...formData, weight: parseFloat(e.target.value) || 0 })}
+                        placeholder="ex. 68"
+                        className="h-14 px-4 rounded-xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-1">
+                    {/* Poste principal */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Poste Principal
+                      </label>
                       <select
                         value={formData.position}
                         onChange={e => setFormData({ ...formData, position: e.target.value as any })}
-                        className="w-full h-16 rounded-2xl bg-secondary/30 border-none font-bold px-6 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20 text-base"
+                        className="w-full h-14 rounded-xl bg-emerald-50/40 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40 font-bold px-4 outline-none appearance-none cursor-pointer focus:ring-2 ring-emerald-500/30 text-sm"
                       >
                         {availablePositions.map(pos => (
                           <option key={pos.code} value={pos.code}>
@@ -2389,46 +2107,28 @@ const PlayerManagement: React.FC = () => {
                       </select>
                     </div>
 
-                    {/* Date de Naissance */}
-                    <div className="space-y-2 col-span-2 md:col-span-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Date de Naissance</label>
+                    {/* Poste(s) secondaire(s) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Poste(s) Secondaire(s)
+                      </label>
                       <Input
-                        type="date"
-                        value={formData.birth_date}
-                        onChange={e => setFormData({ ...formData, birth_date: e.target.value })}
-                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
+                        value={formData.secondary_position || ''}
+                        onChange={e => setFormData({ ...formData, secondary_position: e.target.value })}
+                        placeholder="ex. Ailier Droit, Milieu Offensif (RW, CAM)"
+                        className="h-14 px-4 rounded-xl bg-secondary/30 border-none font-bold text-sm focus:ring-2 ring-primary/20"
                       />
                     </div>
 
-                    {/* Taille (cm) */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Taille (cm)</label>
-                      <Input
-                        type="number"
-                        value={formData.height}
-                        onChange={e => setFormData({ ...formData, height: parseFloat(e.target.value) || 0 })}
-                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
-                      />
-                    </div>
-
-                    {/* Poids (kg) */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Poids (kg)</label>
-                      <Input
-                        type="number"
-                        value={formData.weight}
-                        onChange={e => setFormData({ ...formData, weight: parseFloat(e.target.value) || 0 })}
-                        className="h-16 px-6 rounded-2xl bg-secondary/30 border-none font-bold text-base focus:ring-2 ring-primary/20"
-                      />
-                    </div>
-
-                    {/* Pied de Prédilection */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Pied Fort</label>
+                    {/* Pied dominant */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 ml-1">
+                        Pied Dominant
+                      </label>
                       <select
                         value={formData.preferred_foot}
                         onChange={e => setFormData({ ...formData, preferred_foot: e.target.value as any })}
-                        className="w-full h-16 rounded-2xl bg-secondary/30 border-none font-bold px-6 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20 text-base"
+                        className="w-full h-14 rounded-xl bg-secondary/30 border-none font-bold px-4 outline-none appearance-none cursor-pointer focus:ring-2 ring-primary/20 text-sm"
                       >
                         <option value="Right">Droitier</option>
                         <option value="Left">Gaucher</option>
@@ -2446,306 +2146,70 @@ const PlayerManagement: React.FC = () => {
                 </div>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         ) : viewState === 'VIEW' ? (
-          <motion.div
+          <div
             key="view"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="max-w-5xl mx-auto"
-          >
-            {selectedPlayer && (
-              <div className="space-y-8">
-                <div className="flex items-center gap-4">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setViewState('LIST')}
-                    className="w-14 h-14 rounded-2xl bg-white border shadow-sm hover:bg-secondary transition-all"
-                  >
-                    <X className="w-6 h-6 rotate-90" />
-                  </Button>
-
-                  {/* Navigation buttons */}
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={goToPreviousPlayer}
-                      disabled={filteredPlayers.length <= 1}
-                      className="w-12 h-12 rounded-xl bg-white border shadow-sm hover:bg-secondary transition-all disabled:opacity-40"
-                      title="Joueur précédent"
-                    >
-                      <PrevIcon className="w-5 h-5" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={goToNextPlayer}
-                      disabled={filteredPlayers.length <= 1}
-                      className="w-12 h-12 rounded-xl bg-white border shadow-sm hover:bg-secondary transition-all disabled:opacity-40"
-                      title="Joueur suivant"
-                    >
-                      <NextIcon className="w-5 h-5" />
-                    </Button>
-                  </div>
-
-                  <div className="flex-1">
-                    <h3 className="text-4xl font-black tracking-tight uppercase italic">{selectedPlayer.full_name}</h3>
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-[0.3em] mt-1">Détails du Profil Joueur</p>
-                  </div>
-
-                  <Badge variant="outline" className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest">
-                    {filteredPlayers.findIndex(p => p.id === selectedPlayer.id) + 1} / {filteredPlayers.length}
-                  </Badge>
-                </div>
-
-                <Card className="border-none shadow-2xl rounded-[4rem] bg-white overflow-hidden">
-                  <div className="grid grid-cols-1 md:grid-cols-12">
-                    {/* Left Side: Photo & Hero */}
-                    <div className="md:col-span-5 bg-slate-950 p-16 text-white relative flex flex-col justify-between min-h-[600px]">
-                      <div className="absolute top-0 right-0 w-80 h-80 -mr-40 -mt-40 bg-primary/20 rounded-full blur-[100px] pointer-events-none" />
-
-                      {/* Club Logo + Category Badge stacked */}
-                      {mainClub?.logo_url && (
-                        <div className="absolute top-6 left-6 z-20 flex flex-col items-center gap-2">
-                          <div className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-md border border-white/20 p-2 shadow-xl">
-                            <img src={mainClub.logo_url} alt="Club" className="w-full h-full object-contain rounded-full" />
-                          </div>
-                          <Badge className="bg-white/10 backdrop-blur-md text-white font-black uppercase px-3 py-1 border border-white/20 text-xs">
-                            {teams.find(t => t.id === selectedPlayer.team_id)?.category || 'N/A'}
-                          </Badge>
-                        </div>
-                      )}
-
-                      <div className="relative z-10 mt-20">
-                        <span className="text-9xl font-black italic opacity-20 select-none">#{selectedPlayer.jersey_number}</span>
-                        <div className="mt-6">
-                          <h2 className="text-6xl font-black tracking-tighter uppercase leading-none">
-                            {selectedPlayer.full_name.split(' ').map((n, i) => (
-                              <span key={i} className="block">{n}</span>
-                            ))}
-                          </h2>
-                          <Badge className="mt-8 bg-primary text-white font-black uppercase px-6 py-2 border-none text-sm">{selectedPlayer.position}</Badge>
-                        </div>
-                      </div>
-
-                      <div className="relative z-10 w-full aspect-square rounded-[3.5rem] bg-white/5 backdrop-blur-md border border-white/10 overflow-hidden shadow-2xl mt-12">
-                        <img src={(selectedPlayer.photo_url && selectedPlayer.photo_url !== 'null') ? selectedPlayer.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedPlayer.full_name)}&background=random&color=fff&size=256`} alt={selectedPlayer.full_name} className="w-full h-full object-cover" />
-                      </div>
-                    </div>
-
-                    {/* Right Side: Attributes */}
-                    <div className="md:col-span-7 p-16 space-y-12 bg-white flex flex-col justify-center">
-                      <div>
-                        <h4 className="text-[10px] font-black uppercase tracking-widest text-primary mb-8 flex items-center gap-3">
-                          <div className="w-8 h-px bg-primary/30" /> Passeport Technique
-                        </h4>
-
-                        <div className="grid grid-cols-2 gap-12">
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Nationalité</p>
-                            <div className="flex items-center gap-3 text-2xl font-black italic uppercase">
-                              <Globe className="w-6 h-6 text-primary" /> {selectedPlayer.nationality}
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Âge / Date de Naissance</p>
-                            <div className="flex items-center gap-3 text-2xl font-black italic uppercase">
-                              <Calendar className="w-6 h-6 text-primary" /> {calculateAge(selectedPlayer.birth_date)} ans
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-8">
-                        <div className="p-8 rounded-[2.5rem] bg-secondary/20 space-y-3 border border-secondary/50">
-                          <Ruler className="w-6 h-6 text-primary/40" />
-                          <div>
-                            <p className="text-[10px] font-black text-muted-foreground uppercase">Taille</p>
-                            <p className="text-2xl font-black">{selectedPlayer.height} <span className="text-xs uppercase ml-1 opacity-50">cm</span></p>
-                          </div>
-                        </div>
-                        <div className="p-8 rounded-[2.5rem] bg-secondary/20 space-y-3 border border-secondary/50">
-                          <Weight className="w-6 h-6 text-primary/40" />
-                          <div>
-                            <p className="text-[10px] font-black text-muted-foreground uppercase">Poids</p>
-                            <p className="text-2xl font-black">{selectedPlayer.weight} <span className="text-xs uppercase ml-1 opacity-50">kg</span></p>
-                          </div>
-                        </div>
-                        <div className="p-8 rounded-[2.5rem] bg-secondary/20 space-y-3 border border-secondary/50">
-                          <Footprints className="w-6 h-6 text-primary/40" />
-                          <div>
-                            <p className="text-[10px] font-black text-muted-foreground uppercase">Pied</p>
-                            <p className="text-2xl font-black uppercase italic">{selectedPlayer.preferred_foot}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Player Stats Section */}
-                      <div className="pt-8 border-t border-secondary/50">
-                        <div className="flex justify-between items-center mb-6">
-                          <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-3 m-0">
-                            <BarChart3 className="w-4 h-4 text-primary" />
-                            <div className="w-8 h-px bg-primary/30" /> Statistiques Performance
-                          </h4>
-                          <div className="flex flex-wrap gap-2">
-                            <select
-                              value={selectedSeasonFilter}
-                              onChange={(e) => { setSelectedSeasonFilter(e.target.value); setSelectedLeagueFilter('ALL'); setSelectedMatchFilter('ALL'); }}
-                              className="h-8 rounded-lg border border-input bg-background px-3 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-primary min-w-[120px]"
-                            >
-                              <option value="ALL">Toutes Saisons</option>
-                              {participatedSeasons.map((s: string) => <option key={s} value={s}>{s}</option>)}
-                            </select>
-
-                            <select
-                              value={selectedLeagueFilter}
-                              onChange={(e) => { setSelectedLeagueFilter(e.target.value); setSelectedMatchFilter('ALL'); }}
-                              className="h-8 rounded-lg border border-input bg-background px-3 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-primary min-w-[120px]"
-                            >
-                              <option value="ALL">Toutes Ligues</option>
-                              {participatedLeagues
-                                .filter((l: any) => selectedSeasonFilter === 'ALL' || l.season === selectedSeasonFilter)
-                                .map((league: any) => (
-                                  <option key={league.id} value={league.id}>{league.name}</option>
-                                ))
-                              }
-                            </select>
-
-                            <select
-                              value={selectedMatchFilter}
-                              onChange={(e) => setSelectedMatchFilter(e.target.value)}
-                              className="h-8 rounded-lg border border-input bg-background px-3 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-primary max-w-[200px]"
-                            >
-                              <option value="ALL">Tous les Matchs</option>
-                              {participatedMatches
-                                .filter((m: any) => selectedLeagueFilter === 'ALL' || m.league_id === selectedLeagueFilter)
-                                .filter((m: any) => {
-                                  if (selectedSeasonFilter === 'ALL') return true;
-                                  const lg = leagues.find((l: any) => l.id === m.league_id);
-                                  return lg?.season === selectedSeasonFilter;
-                                })
-                                .map((match: any) => {
-                                  const oppName = match.clubs?.name || 'Inconnu';
-                                  const dateStr = match.match_date ? new Date(match.match_date).toLocaleDateString('fr-FR') : '';
-                                  return (
-                                    <option key={match.id} value={match.id}>vs {oppName} {dateStr ? `(${dateStr})` : ''}</option>
-                                  );
-                                })
-                              }
-                            </select>
-                          </div>
-                        </div>
-
-                        {loadingStats ? (
-                          <div className="flex items-center justify-center h-24">
-                            <div className="w-8 h-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                            <div className="p-5 rounded-[1.5rem] bg-emerald-50 border border-emerald-100 text-center">
-                              <Trophy className="w-5 h-5 text-emerald-500 mx-auto mb-2" />
-                              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-1">Matchs</p>
-                              <p className="text-2xl font-black text-emerald-700">{displayStats?.matches || 0}</p>
-                            </div>
-                            <div className="p-5 rounded-[1.5rem] bg-blue-50 border border-blue-100 text-center">
-                              <Clock className="w-5 h-5 text-blue-500 mx-auto mb-2" />
-                              <div>
-                                <p className="text-[10px] font-black text-blue-900/60 uppercase tracking-wider mb-1">Minutes</p>
-                                <p className="text-2xl font-black text-blue-700">{displayStats?.minutes || 0}</p>
-                              </div>
-                            </div>
-                            <div className="p-5 rounded-[1.5rem] bg-indigo-50 border border-indigo-100 text-center">
-                              <Target className="w-5 h-5 text-indigo-500 mx-auto mb-2" />
-                              <div>
-                                <p className="text-[10px] font-black text-indigo-900/60 uppercase tracking-wider mb-1">Buts</p>
-                                <p className="text-2xl font-black text-indigo-700">{displayStats?.goals || 0}</p>
-                              </div>
-                            </div>
-                            <div className="p-5 rounded-[1.5rem] bg-amber-50 border border-amber-100 text-center">
-                              <div className="w-4 h-5 bg-amber-400 rounded-sm mx-auto mb-2" />
-                              <div>
-                                <p className="text-[10px] font-black text-amber-900/60 uppercase tracking-wider mb-1">Jaunes</p>
-                                <p className="text-2xl font-black text-amber-700">{displayStats?.yellowCards || 0}</p>
-                              </div>
-                            </div>
-                            <div className="p-5 rounded-[1.5rem] bg-red-50 border border-red-100 text-center">
-                              <div className="w-4 h-5 bg-red-500 rounded-sm mx-auto mb-2" />
-                              <div>
-                                <p className="text-[10px] font-black text-red-900/60 uppercase tracking-wider mb-1">Rouges</p>
-                                <p className="text-2xl font-black text-red-700">{displayStats?.redCards || 0}</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="pt-12 border-t border-secondary/50 flex gap-4 items-center">
-                        {canUpdatePlayer && canManageCategory(getPlayerCategory(selectedPlayer)) ? (
-                          <Button onClick={() => handleOpenEdit(selectedPlayer)} className="flex-1 h-16 rounded-[1.5rem] font-black uppercase tracking-widest text-xs gap-3 shadow-xl transition-all active:scale-95 bg-primary">
-                            <Edit2 className="w-5 h-5" /> Modifier le Profil
-                          </Button>
-                        ) : (
-                          <div className="flex-1 flex items-center justify-center h-16 rounded-[1.5rem] bg-slate-100 border border-slate-200 text-slate-500 text-xs font-black uppercase tracking-widest gap-2">
-                            <Eye className="w-4 h-4 text-slate-400" /> Profil Hors Catégorie Assignée — Consultation Seule
-                          </div>
-                        )}
-                        <Button variant="outline" onClick={() => setViewState('LIST')} className="h-16 rounded-[1.5rem] font-black uppercase tracking-widest text-xs px-12 hover:bg-secondary transition-all">
-                          Fermer
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-            )}
-          </motion.div>
-        ) : viewState === 'STATS' ? (
-          <motion.div
-            key="stats"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.25 }}
             className="max-w-6xl mx-auto space-y-6 pb-16"
           >
             {selectedPlayer && (
               <div className="space-y-6">
-                {/* ── Top Navigation Bar ── */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-2xl border border-secondary/60 shadow-sm">
-                  <div className="flex items-center gap-3">
+                {/* ── 1. Top Navigation & Action Bar ── */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-3xl border border-secondary/70 shadow-sm">
+                  <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                     <Button
                       variant="outline"
                       onClick={() => setViewState('LIST')}
-                      className="h-11 px-4 rounded-xl border-border hover:bg-secondary text-xs font-black uppercase tracking-wider gap-2 shadow-sm transition-all hover:scale-[1.02]"
+                      className="h-11 px-4 rounded-2xl border-secondary/80 hover:bg-secondary text-xs font-black uppercase tracking-wider gap-2 shadow-sm transition-all hover:scale-[1.02]"
                     >
                       <ArrowLeft className="w-4 h-4 text-primary" />
                       <span>Retour Effectif</span>
                     </Button>
 
-                    <div className="flex items-center bg-secondary/40 p-1 rounded-xl border border-secondary">
+                    {/* Filtre de catégorie dédié à la navigation de fiche */}
+                    <div className="flex items-center gap-2 bg-primary/5 px-3 py-1.5 rounded-2xl border border-primary/20">
+                      <Filter className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-600 hidden sm:inline">
+                        Catégorie
+                      </span>
+                      <select
+                        aria-label="Filtrer par catégorie"
+                        value={activeProfileCategory}
+                        onChange={(e) => handleProfileCategoryChange(e.target.value)}
+                        className="h-8 bg-white border border-secondary/80 rounded-xl px-2.5 text-xs font-black text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        {profileFilterCategories.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat} ({categoryPlayerCounts[cat] || 0})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center bg-secondary/40 p-1 rounded-2xl border border-secondary/60">
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={goToPreviousPlayer}
-                        disabled={filteredPlayers.length <= 1}
-                        className="w-9 h-9 rounded-lg hover:bg-white transition-all disabled:opacity-30"
-                        title="Joueur précédent"
+                        disabled={profileNavPlayers.length <= 1}
+                        className="w-9 h-9 rounded-xl hover:bg-white transition-all disabled:opacity-30"
+                        title="Joueur précédent dans cette catégorie"
                       >
                         <PrevIcon className="w-4 h-4" />
                       </Button>
-                      <div className="px-3 text-[11px] font-black tracking-widest uppercase text-muted-foreground whitespace-nowrap">
-                        {filteredPlayers.findIndex(p => p.id === selectedPlayer.id) + 1} / {filteredPlayers.length}
+                      <div className="px-3 text-[11px] font-black tracking-widest uppercase text-slate-700 whitespace-nowrap">
+                        {profileNavPlayers.length > 0 ? `${currentProfileIndex + 1} / ${profileNavPlayers.length}` : '0 / 0'}
+                        {activeProfileCategory && (
+                          <span className="ml-1.5 text-[10px] text-primary">• {activeProfileCategory}</span>
+                        )}
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={goToNextPlayer}
-                        disabled={filteredPlayers.length <= 1}
-                        className="w-9 h-9 rounded-lg hover:bg-white transition-all disabled:opacity-30"
-                        title="Joueur suivant"
+                        disabled={profileNavPlayers.length <= 1}
+                        className="w-9 h-9 rounded-xl hover:bg-white transition-all disabled:opacity-30"
+                        title="Joueur suivant dans cette catégorie"
                       >
                         <NextIcon className="w-4 h-4" />
                       </Button>
@@ -2753,1458 +2217,1203 @@ const PlayerManagement: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2 self-end sm:self-auto">
-                    <Button
-                      variant="outline"
-                      onClick={() => handleViewPlayer(selectedPlayer)}
-                      className="h-11 px-4 rounded-xl border-secondary hover:bg-secondary text-xs font-black uppercase tracking-wider gap-2 transition-all"
-                    >
-                      <Eye className="w-4 h-4 text-primary" />
-                      <span className="hidden md:inline">Voir Profil Complet</span>
-                      <span className="md:hidden">Profil</span>
-                    </Button>
                     {canUpdatePlayer && canManageCategory(getPlayerCategory(selectedPlayer)) && (
                       <Button
                         onClick={() => handleOpenEdit(selectedPlayer)}
-                        className="h-11 px-4 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-black uppercase tracking-wider gap-2 shadow-md shadow-primary/20 transition-all"
+                        className="h-11 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-white text-xs font-black uppercase tracking-wider gap-2 shadow-md shadow-primary/20 transition-all"
                       >
                         <Edit2 className="w-4 h-4" />
-                        <span className="hidden md:inline">Modifier Joueur</span>
-                        <span className="md:hidden">Modifier</span>
+                        <span className="hidden sm:inline">Modifier le Profil</span>
+                        <span className="sm:hidden">Modifier</span>
                       </Button>
                     )}
                   </div>
                 </div>
 
-                {/* ── Player Header (Directement dans la page, sans carte fermée, photo à gauche) ── */}
-                <div className="relative pt-2 pb-2">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 sm:gap-8">
-                    {/* Photo Joueur À GAUCHE */}
-                    <div className="shrink-0">
-                      <div className="relative group">
-                        <div className="relative w-28 h-28 sm:w-36 sm:h-36 lg:w-40 lg:h-40 rounded-3xl bg-white p-1.5 shadow-xl border-4 border-white ring-1 ring-slate-200/80 overflow-hidden">
-                          <img
-                            src={(selectedPlayer.photo_url && selectedPlayer.photo_url !== 'null') ? selectedPlayer.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedPlayer.full_name)}&background=e2e8f0&color=1e293b&size=256`}
-                            alt={selectedPlayer.full_name}
-                            className="w-full h-full object-cover rounded-2xl transition-transform duration-500 group-hover:scale-105"
-                          />
-                        </div>
-                        {selectedPlayer.jersey_number && (
-                          <div className="absolute -bottom-2 -right-2 bg-primary text-white text-xs sm:text-sm font-black px-2.5 py-1 rounded-xl shadow-lg border-2 border-white">
-                            #{selectedPlayer.jersey_number}
-                          </div>
-                        )}
-                      </div>
+                {/* ── 2. Top Stats Bar (Ruban BeSoccer Exact) ── */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-white p-3.5 rounded-3xl border border-secondary/70 shadow-sm">
+                  {/* Matchs */}
+                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-800 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
+                      <Trophy className="w-5 h-5 text-amber-500" />
                     </div>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.matches || 0}</span>
+                      </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Matchs</p>
+                    </div>
+                  </div>
 
-                    {/* Infos Joueur (À DROITE de la photo) */}
-                    <div className="space-y-4 flex-1">
-                      {/* Tags club, position & catégorie */}
-                      <div className="flex items-center gap-2.5 flex-wrap">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-[11px] font-black uppercase tracking-wider border border-primary/20">
-                          <Sparkles className="w-3.5 h-3.5" /> FUS Rabat • Centre de Performance
+                  {/* Minutes */}
+                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 text-blue-600 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
+                      <Clock className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.minutes || 0}&apos;</span>
+                      </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Minutes</p>
+                    </div>
+                  </div>
+
+                  {/* Buts */}
+                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 text-emerald-600 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
+                      <Target className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.goals || 0}</span>
+                        <span className="text-[10px] font-black text-emerald-600 flex items-center">
+                          ▲ {displayStats?.minutes && displayStats.minutes > 0 ? ((displayStats.goals / displayStats.minutes) * 90).toFixed(2) : '0.00'}/90&apos;
                         </span>
-                        <Badge className={`font-black uppercase text-[11px] px-3 py-1 border shadow-xs ${getPositionInfo(selectedPlayer.position).badgeBg}`}>
-                          {getPositionInfo(selectedPlayer.position).label}
-                        </Badge>
-                        <Badge className="bg-secondary text-slate-700 font-black uppercase text-[11px] px-3 py-1 border border-secondary/80">
-                          {teams.find(t => t.id === selectedPlayer.team_id)?.category || (selectedPlayer as any).category || 'U16'}
-                        </Badge>
-                        <Badge variant="outline" className="text-slate-600 border-border text-[11px] uppercase font-bold px-2.5 py-0.5">
-                          <Globe className="w-3.5 h-3.5 mr-1 text-primary" />
-                          {selectedPlayer.nationality || 'Maroc'}
-                        </Badge>
                       </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Buts</p>
+                    </div>
+                  </div>
 
-                      {/* Nom & Numéro de Maillot */}
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-3">
-                          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight text-slate-900 leading-none">
-                            {selectedPlayer.full_name}
-                          </h1>
-                          {selectedPlayer.jersey_number && (
-                            <span className="px-3 py-1 rounded-xl bg-primary text-white font-mono font-black text-lg sm:text-xl shadow-md shadow-primary/20">
-                              #{selectedPlayer.jersey_number}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground font-semibold">
-                          Fiche analytique individuelle et statistiques de jeu en compétition
-                        </p>
+                  {/* Passes D */}
+                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
+                      <Zap className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.assists || 0}</span>
+                        <span className="text-[10px] font-black text-emerald-600 flex items-center">
+                          ▲ {displayStats?.minutes && displayStats.minutes > 0 ? ((displayStats.assists / displayStats.minutes) * 90).toFixed(2) : '0.00'}/90&apos;
+                        </span>
                       </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Passes D.</p>
+                    </div>
+                  </div>
 
-                      {/* Passeport physique (Pills dans la page) */}
-                      <div className="inline-flex flex-wrap items-center gap-2 sm:gap-3 pt-1">
-                        <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-secondary shadow-xs">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Âge</span>
-                          <span className="text-sm font-black text-slate-900">{calculateAge(selectedPlayer.birth_date)} <span className="text-xs font-normal text-slate-500">ans</span></span>
-                        </div>
-                        <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-secondary shadow-xs">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Taille</span>
-                          <span className="text-sm font-black text-slate-900">{selectedPlayer.height || '-'} <span className="text-xs font-normal text-slate-500">cm</span></span>
-                        </div>
-                        <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-secondary shadow-xs">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Poids</span>
-                          <span className="text-sm font-black text-slate-900">{selectedPlayer.weight || '-'} <span className="text-xs font-normal text-slate-500">kg</span></span>
-                        </div>
-                        <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-secondary shadow-xs">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Pied</span>
-                          <span className="text-sm font-black text-slate-900 uppercase">{selectedPlayer.preferred_foot || 'Droit'}</span>
-                        </div>
+                  {/* Cartons */}
+                  <div className="col-span-2 sm:col-span-1 flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center gap-1 shrink-0 shadow-xs border border-slate-200">
+                      <div className="w-2.5 h-3.5 bg-amber-400 rounded-[2px]" />
+                      <div className="w-2.5 h-3.5 bg-rose-500 rounded-[2px]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-amber-500 leading-none">{displayStats?.yellowCards || 0}</span>
+                        <span className="text-xl font-black text-slate-400 leading-none">/</span>
+                        <span className="text-xl font-black text-rose-500 leading-none">{displayStats?.redCards || 0}</span>
+                        <span className="text-[10px] font-black text-rose-600 flex items-center ml-1">
+                          ▼ {displayStats?.minutes && displayStats.minutes > 0 ? (((displayStats.yellowCards + displayStats.redCards) / displayStats.minutes) * 90).toFixed(2) : '0.00'}/90&apos;
+                        </span>
                       </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Cartons J/R</p>
                     </div>
                   </div>
                 </div>
 
-                {/* ── Filters Toolbar ── */}
-                <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-secondary/70 shadow-sm">
-                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-600">
-                    <Filter className="w-4 h-4 text-primary" />
-                    <span>Filtrer les statistiques :</span>
+                {/* ── 3. RANGÉE 1 (3 BLOCS SUR 3) ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+                  {/* BLOC 1/3 (Gauche) : Identité Joueur */}
+                  <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
+                    {(() => {
+                      const footDisplay = formatPreferredFootFrench(selectedPlayer.preferred_foot);
+                      const primaryPos = getPositionDetails(selectedPlayer.position);
+                      const secondaryPos = selectedPlayer.secondary_position
+                        ? getPositionDetails(selectedPlayer.secondary_position)
+                        : null;
+                      const ageValue = calculateAge(selectedPlayer.birth_date);
+
+                      return (
+                        <>
+                          <div>
+                            <div className="flex items-center justify-between gap-2 mb-4">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <Badge className="bg-primary text-white border-primary/20 text-[11px] font-black uppercase tracking-wider px-3 py-1 shadow-xs">
+                                  Catégorie {playerOfficialCategory || 'Non assignée'}
+                                </Badge>
+                                {playerSurclassCategory && (
+                                  <Badge className="bg-amber-500/15 text-amber-800 border border-amber-300 text-[10px] font-black uppercase px-2.5 py-0.5">
+                                    Surclassé {playerSurclassCategory}
+                                  </Badge>
+                                )}
+                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                                  • {mainClub?.name || 'FUS Rabat'}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors shrink-0"
+                                title="Partager le profil"
+                              >
+                                <Share2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            <div className="text-center mb-5">
+                              <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900 leading-tight">
+                                {selectedPlayer.full_name}
+                              </h2>
+                            </div>
+
+                            {/* Ligne 1 : Mensurations physiques (groupement logique) */}
+                            <div className="grid grid-cols-4 gap-2 text-center py-3.5 border-t border-slate-100">
+                              <div className="space-y-0.5">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Âge</p>
+                                <p className="text-xl font-black text-slate-900 leading-none">{ageValue > 0 ? ageValue : '—'}</p>
+                                <p className="text-[10px] font-bold text-muted-foreground">{ageValue > 0 ? 'ans' : '—'}</p>
+                              </div>
+
+                              <div className="space-y-0.5">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Taille</p>
+                                <p className="text-xl font-black text-slate-900 leading-none">{selectedPlayer.height || '—'}</p>
+                                <p className="text-[10px] font-bold text-muted-foreground">{selectedPlayer.height ? 'cm' : 'n/d'}</p>
+                              </div>
+
+                              <div className="space-y-0.5">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Poids</p>
+                                <p className="text-xl font-black text-slate-900 leading-none">{selectedPlayer.weight || '—'}</p>
+                                <p className="text-[10px] font-bold text-muted-foreground">{selectedPlayer.weight ? 'kg' : 'n/d'}</p>
+                              </div>
+
+                              <div className="space-y-0.5">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Pied fort</p>
+                                <div className="flex justify-center">
+                                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-600 text-white text-[10px] font-black shadow-xs">
+                                    {footDisplay.code}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] font-bold text-slate-700 truncate" title={footDisplay.label}>
+                                  {footDisplay.label}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Ligne 2 : Repères sportifs & civils */}
+                            <div className="grid grid-cols-4 gap-2 text-center py-3.5 border-y border-slate-100 bg-slate-50/50 rounded-2xl">
+                              <div className="space-y-1 px-1">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Nationalité</p>
+                                <div className="w-7 h-7 mx-auto rounded-full overflow-hidden border border-slate-200 flex items-center justify-center text-sm shadow-xs bg-white">
+                                  🇲🇦
+                                </div>
+                                <p className="text-[10px] font-bold text-slate-700 truncate">{selectedPlayer.nationality || 'Maroc'}</p>
+                              </div>
+
+                              <div className="space-y-1 px-1">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Poste</p>
+                                <div className="w-7 h-7 mx-auto rounded-full bg-primary text-white text-[10px] font-black flex items-center justify-center shadow-xs">
+                                  {primaryPos.code || '—'}
+                                </div>
+                                <p className="text-[10px] font-bold text-slate-700 truncate" title={primaryPos.label}>
+                                  {primaryPos.label}
+                                </p>
+                              </div>
+
+                              <div className="space-y-1 px-1">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Poste sec.</p>
+                                <div className="w-7 h-7 mx-auto rounded-full bg-slate-200 text-slate-800 text-[10px] font-black flex items-center justify-center shadow-xs">
+                                  {secondaryPos ? secondaryPos.code : '—'}
+                                </div>
+                                <p className="text-[10px] font-bold text-slate-600 truncate" title={secondaryPos?.label || 'Spécialiste'}>
+                                  {secondaryPos ? secondaryPos.label : 'Spécialiste'}
+                                </p>
+                              </div>
+
+                              <div className="space-y-1 px-1">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Maillot</p>
+                                <div className="w-7 h-7 mx-auto rounded-full bg-slate-900 text-white text-[10px] font-black flex items-center justify-center shadow-xs">
+                                  {selectedPlayer.jersey_number ?? '•'}
+                                </div>
+                                <p className="text-[10px] font-bold text-slate-700">
+                                  {selectedPlayer.jersey_number ? `N° ${selectedPlayer.jersey_number}` : 'Non défini'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="pt-4 text-center">
+                            <p className="text-[11px] font-medium text-muted-foreground">
+                              Né(e) le {formatBirthDateLong(selectedPlayer.birth_date)}
+                            </p>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                    {/* Season Filter */}
-                    <select
-                      value={selectedSeasonFilter}
-                      onChange={(e) => { setSelectedSeasonFilter(e.target.value); setSelectedLeagueFilter('ALL'); setSelectedMatchFilter('ALL'); }}
-                      className="h-10 rounded-xl border border-input bg-secondary/30 px-3 text-xs font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-primary min-w-[130px]"
-                    >
-                      <option value="ALL">🗓️ Toutes Saisons</option>
-                      {participatedSeasons.map((s: string) => <option key={s} value={s}>Saison {s}</option>)}
-                    </select>
-
-                    {/* League / Competition Filter with Matchs Amicaux */}
-                    <select
-                      value={selectedLeagueFilter}
-                      onChange={(e) => { setSelectedLeagueFilter(e.target.value); setSelectedMatchFilter('ALL'); }}
-                      className="h-10 rounded-xl border border-input bg-secondary/30 px-3 text-xs font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-primary min-w-[170px]"
-                    >
-                      <option value="ALL">🏆 Toutes Compétitions</option>
-                      <option value="FRIENDLY">🤝 Matchs Amicaux</option>
-                      <option value="OFFICIAL">🏅 Compétitions Officielles</option>
-                      {participatedLeagues
-                        .filter((l: any) => selectedSeasonFilter === 'ALL' || l.season === selectedSeasonFilter)
-                        .map((league: any) => (
-                          <option key={league.id} value={league.id}>{league.name}</option>
-                        ))
+                  {/* BLOC 2/3 (Centre) : Dernier Match réellement disputé par ce joueur */}
+                  <div
+                    role={lastMatchData?.id ? 'button' : undefined}
+                    tabIndex={lastMatchData?.id ? 0 : undefined}
+                    onClick={() => lastMatchData?.id && handleOpenMatchOverview(lastMatchData.id)}
+                    onKeyDown={(e) => {
+                      if (lastMatchData?.id && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault();
+                        handleOpenMatchOverview(lastMatchData.id);
                       }
-                    </select>
+                    }}
+                    title={lastMatchData?.id ? 'Ouvrir la vue complète de ce match' : undefined}
+                    className={`bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between transition-all ${
+                      lastMatchData?.id ? 'cursor-pointer hover:border-primary/40 hover:shadow-md group' : ''
+                    }`}
+                  >
+                    {lastMatchData ? (
+                      <>
+                        <div>
+                          <div className="border-b border-secondary/60 pb-3 mb-3 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 group-hover:text-primary transition-colors">
+                                Dernier Match
+                              </h3>
+                              <p className="text-[11px] font-medium text-muted-foreground truncate">
+                                {lastMatchData.compName}, {lastMatchData.timeAgoStr} • {lastMatchData.isHome ? 'Domicile' : 'Extérieur'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <Badge variant="outline" className="border-slate-200 text-slate-600 text-[10px] font-bold">
+                                {lastMatchData.statusLabel}
+                              </Badge>
+                              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                            </div>
+                          </div>
 
-                    {/* Match Filter */}
-                    <select
-                      value={selectedMatchFilter}
-                      onChange={(e) => setSelectedMatchFilter(e.target.value)}
-                      className="h-10 rounded-xl border border-input bg-secondary/30 px-3 text-xs font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-primary max-w-[240px]"
-                    >
-                      <option value="ALL">⚽ Tous les Matchs</option>
-                      {participatedMatches
-                        .filter((m: any) => {
-                          if (selectedLeagueFilter === 'FRIENDLY') {
-                            return !m.league_id || m.category?.toLowerCase().includes('amical') || m.notes?.toLowerCase().includes('amical');
-                          }
-                          if (selectedLeagueFilter === 'OFFICIAL') {
-                            return !!m.league_id && !m.category?.toLowerCase().includes('amical');
-                          }
-                          if (selectedLeagueFilter !== 'ALL') {
-                            return m.league_id === selectedLeagueFilter;
-                          }
-                          return true;
-                        })
-                        .filter((m: any) => {
-                          if (selectedSeasonFilter === 'ALL') return true;
-                          const lg = leagues?.find((l: any) => l.id === m.league_id);
-                          return lg?.season === selectedSeasonFilter;
-                        })
-                        .map((match: any) => {
-                          const opp = opponentClubs.find((c: any) => c.id === match.opponent_id);
-                          const oppName = opp?.name || 'Adversaire';
-                          const dateStr = match.match_date ? new Date(match.match_date).toLocaleDateString('fr-FR') : '';
-                          return (
-                            <option key={match.id} value={match.id}>vs {oppName} {dateStr ? `(${dateStr})` : ''}</option>
-                          );
-                        })
-                      }
-                    </select>
+                          {/* Face à face Domicile (gauche) - Extérieur (droite) & Score exact */}
+                          <div className="flex items-center justify-between py-3 px-1 gap-2">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {lastMatchData.homeLogo ? (
+                                <img src={lastMatchData.homeLogo} alt={lastMatchData.homeAbbr} className="w-8 h-8 object-contain shrink-0" />
+                              ) : (
+                                <div className={`w-8 h-8 rounded-full font-black text-[10px] flex items-center justify-center shrink-0 ${lastMatchData.isHome ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700'}`}>
+                                  {lastMatchData.homeAbbr}
+                                </div>
+                              )}
+                              <span className={`text-xs font-black truncate ${lastMatchData.isHome ? 'text-slate-900' : 'text-slate-700'}`}>
+                                {lastMatchData.homeName}
+                              </span>
+                            </div>
 
-                    {/* Reset Button */}
-                    {(selectedSeasonFilter !== 'ALL' || selectedLeagueFilter !== 'ALL' || selectedMatchFilter !== 'ALL') && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => { setSelectedSeasonFilter('ALL'); setSelectedLeagueFilter('ALL'); setSelectedMatchFilter('ALL'); }}
-                        className="h-10 px-3 rounded-xl text-xs font-black text-primary hover:bg-primary/10 gap-1.5 transition-all"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Réinitialiser</span>
-                      </Button>
+                            <div className="px-2 text-center shrink-0">
+                              <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                                {lastMatchData.hasScore ? `${lastMatchData.sHome} - ${lastMatchData.sAway}` : '— : —'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                              <span className={`text-xs font-black truncate text-right ${!lastMatchData.isHome ? 'text-slate-900' : 'text-slate-700'}`}>
+                                {lastMatchData.awayName}
+                              </span>
+                              {lastMatchData.awayLogo ? (
+                                <img src={lastMatchData.awayLogo} alt={lastMatchData.awayAbbr} className="w-8 h-8 object-contain shrink-0" />
+                              ) : (
+                                <div className={`w-8 h-8 rounded-full font-black text-[10px] flex items-center justify-center shrink-0 ${!lastMatchData.isHome ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700'}`}>
+                                  {lastMatchData.awayAbbr}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Timeline réelle de participation du joueur */}
+                          {(() => {
+                            const total = Math.max(1, lastMatchData.totalMinutes || 90);
+                            const startPct = lastMatchData.subInMinute != null
+                              ? Math.min(95, Math.max(0, (lastMatchData.subInMinute / total) * 100))
+                              : 0;
+                            const endMin = lastMatchData.subOutMinute != null
+                              ? lastMatchData.subOutMinute
+                              : (lastMatchData.subInMinute != null ? Math.min(total, lastMatchData.subInMinute + lastMatchData.playedMinutes) : lastMatchData.playedMinutes);
+                            const endPct = Math.min(100, Math.max(startPct + 3, (endMin / total) * 100));
+
+                            return (
+                              <div className="mt-5 pt-2">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-[10px] font-black uppercase text-slate-400">Timeline du Match</span>
+                                  <div className="flex items-center gap-1 text-slate-600 text-xs font-black">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>{lastMatchData.totalMinutes}&apos;</span>
+                                  </div>
+                                </div>
+
+                                <div className="relative w-full h-2.5 bg-slate-100 rounded-full overflow-visible">
+                                  <div
+                                    className="absolute top-0 bottom-0 bg-[#2e7d32] rounded-full"
+                                    style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
+                                  />
+                                  {lastMatchData.goalMinutes.map((gMin, idx) => (
+                                    <div
+                                      key={`${gMin}-${idx}`}
+                                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex flex-col items-center"
+                                      style={{ left: `${Math.min(94, Math.max(6, (gMin / total) * 100))}%` }}
+                                    >
+                                      <div className="w-1 h-4 bg-white border border-slate-300 rounded-full -mt-0.5 shadow-xs" />
+                                      <div className="flex flex-col items-center mt-1">
+                                        <span className="text-xs leading-none">⚽</span>
+                                        <span className="text-[9px] font-black text-[#2e7d32]">{gMin}&apos;</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <span className="font-semibold text-slate-700 truncate">{lastMatchData.roleLabel}</span>
+                          {lastMatchData.rating != null ? (
+                            <span className="text-[10px] font-black text-emerald-700 uppercase shrink-0">
+                              Note : {lastMatchData.rating.toFixed(1)}/10
+                            </span>
+                          ) : lastMatchData.hasScore ? (
+                            <span className={`text-[10px] font-black uppercase shrink-0 ${
+                              lastMatchData.isWin ? 'text-emerald-600' : lastMatchData.isDraw ? 'text-amber-600' : 'text-rose-600'
+                            }`}>
+                              {lastMatchData.isWin ? 'Victoire' : lastMatchData.isDraw ? 'Match nul' : 'Défaite'}
+                            </span>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex-1 flex flex-col justify-between">
+                        <div className="border-b border-secondary/60 pb-3 mb-3 flex items-center justify-between">
+                          <div>
+                            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                              Dernier Match
+                            </h3>
+                            <p className="text-[11px] font-medium text-muted-foreground">
+                              Aucune rencontre disputée
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="border-slate-200 text-slate-400 text-[10px] font-bold">
+                            En attente
+                          </Badge>
+                        </div>
+
+                        <div className="my-4 p-5 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-1.5">
+                          <Calendar className="w-6 h-6 text-slate-400 mx-auto" />
+                          <p className="text-xs font-bold text-slate-700">
+                            Aucun match joué pour le moment
+                          </p>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            Le dernier match de {selectedPlayer.full_name} s&apos;affichera ici dès sa participation à une rencontre terminée.
+                          </p>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Statut : 0 match joué</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">—</span>
+                        </div>
+                      </div>
                     )}
                   </div>
-                </div>
 
-                {/* ── 6 Core Football KPI Cards ── */}
-                {loadingStats ? (
-                  <div className="flex items-center justify-center h-64 bg-white rounded-3xl border border-secondary/60 shadow-sm">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-                      <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Chargement des analytiques...</p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-                      {/* 1. MATCHS JOUÉS */}
-                      <div className="relative p-6 rounded-[2rem] bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/20 shadow-sm hover:shadow-md transition-all group hover:z-30 focus-within:z-30">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 transition-transform group-hover:scale-110">
-                              <Trophy className="w-6 h-6" />
-                            </div>
-                            <IndicatorHelpTooltip
-                              title="Matchs Disputés"
-                              metric="Volume & Présence"
-                              role="Mesure la récurrence des apparitions sur la feuille de match. Permet d'évaluer l'intégration sportive du joueur, sa disponibilité et son taux de titularisation dans le XI de départ."
-                            />
-                          </div>
-                          <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 text-[10px] font-black uppercase tracking-widest">
-                            Taux départ : {displayStats?.starterRate || 0}%
-                          </Badge>
-                        </div>
-                        <p className="text-xs font-black text-emerald-900/60 uppercase tracking-widest mb-1">Matchs Disputés</p>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-4xl sm:text-5xl font-black text-emerald-950 tracking-tight">{displayStats?.matches || 0}</span>
-                          <span className="text-xs font-bold text-emerald-700 uppercase">rencontres</span>
-                        </div>
-                        <div className="mt-4 pt-3 border-t border-emerald-500/15 flex items-center justify-between text-[11px] font-bold text-emerald-800/80">
-                          <span>{displayStats?.starts || 0} Titulaire(s)</span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                          <span>{displayStats?.subs || 0} Remplaçant(s)</span>
-                        </div>
-                      </div>
+                  {/* BLOC 3/3 (Droite) : FUSTV / Média Vidéo Joueur (Image 5 BeSoccer) */}
+                  <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 relative overflow-hidden flex flex-col items-center justify-between text-center min-h-[300px]">
+                    {/* Motif Polka Dot BeSoccer */}
+                    <div
+                      className="absolute inset-0 pointer-events-none opacity-35"
+                      style={{
+                        backgroundImage: 'radial-gradient(#94a3b8 1.5px, transparent 1.5px)',
+                        backgroundSize: '16px 16px',
+                      }}
+                    />
 
-                      {/* 2. TEMPS DE JEU (MINUTES) */}
-                      <div className="relative p-6 rounded-[2rem] bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent border border-blue-500/20 shadow-sm hover:shadow-md transition-all group hover:z-30 focus-within:z-30">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-600 transition-transform group-hover:scale-110">
-                              <Clock className="w-6 h-6" />
-                            </div>
-                            <IndicatorHelpTooltip
-                              title="Temps de Jeu"
-                              metric="Charge athlétique"
-                              role="Cumule les minutes réelles jouées en match. Permet au staff technique de doser la charge de travail athlétique, de prévenir le surentraînement et de valider la régularité physique."
-                            />
-                          </div>
-                          <Badge className="bg-blue-500/15 text-blue-700 border-blue-500/30 text-[10px] font-black uppercase tracking-widest">
-                            Moy. {displayStats?.avgMinutes || 0} min/m
-                          </Badge>
-                        </div>
-                        <p className="text-xs font-black text-blue-900/60 uppercase tracking-widest mb-1">Temps de Jeu Total</p>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-4xl sm:text-5xl font-black text-blue-950 tracking-tight">{displayStats?.minutes || 0}</span>
-                          <span className="text-xs font-bold text-blue-700 uppercase">minutes</span>
-                        </div>
-                        <div className="mt-4 pt-3 border-t border-blue-500/15 flex items-center justify-between text-[11px] font-bold text-blue-800/80">
-                          <span>Présence active terrain</span>
-                          <span className="font-black text-blue-900">{displayStats?.matches ? Math.round(((displayStats?.minutes || 0) / (displayStats.matches * 90)) * 100) : 0}% du temps total</span>
-                        </div>
-                      </div>
-
-                      {/* 3. BUTS MARQUÉS */}
-                      <div className="relative p-6 rounded-[2rem] bg-gradient-to-br from-primary/15 via-primary/5 to-transparent border border-primary/30 shadow-sm hover:shadow-md transition-all group hover:z-30 focus-within:z-30">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-12 h-12 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary transition-transform group-hover:scale-110">
-                              <Flame className="w-6 h-6" />
-                            </div>
-                            <IndicatorHelpTooltip
-                              title="Buts Marqués"
-                              metric="Finition offensive"
-                              role="Comptabilise les réalisations officielles et amicales du joueur. Évalue le réalisme devant le but adverse, le ratio d'efficacité offensive et l'impact direct au score."
-                            />
-                          </div>
-                          <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px] font-black uppercase tracking-widest">
-                            {displayStats?.matches ? ((displayStats.goals || 0) / displayStats.matches).toFixed(2) : '0.00'} but/match
-                          </Badge>
-                        </div>
-                        <p className="text-xs font-black text-primary/70 uppercase tracking-widest mb-1">Buts Marqués</p>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-4xl sm:text-5xl font-black text-slate-950 tracking-tight">{displayStats?.goals || 0}</span>
-                          <span className="text-xs font-bold text-primary uppercase">but(s) officiel(s)</span>
-                        </div>
-                        <div className="mt-4 pt-3 border-t border-primary/15 flex items-center justify-between text-[11px] font-bold text-slate-600">
-                          <span>Impact offensif</span>
-                          <span className="font-black text-primary">{displayStats?.goals ? `${Math.round((displayStats?.minutes || 0) / displayStats.goals)} min/but` : 'Aucun but'}</span>
-                        </div>
-                      </div>
-
-                      {/* 4. PASSES DÉCISIVES */}
-                      <div className="relative p-6 rounded-[2rem] bg-gradient-to-br from-indigo-500/10 via-indigo-500/5 to-transparent border border-indigo-500/20 shadow-sm hover:shadow-md transition-all group hover:z-30 focus-within:z-30">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-600 transition-transform group-hover:scale-110">
-                              <Zap className="w-6 h-6" />
-                            </div>
-                            <IndicatorHelpTooltip
-                              title="Passes Décisives"
-                              metric="Créativité & Vista"
-                              role="Mesure les passes directes converties en but par un coéquipier. Témoigne de la vision tactique, de l'altruisme et de la faculté à créer des opportunités de but."
-                            />
-                          </div>
-                          <Badge className="bg-indigo-500/15 text-indigo-700 border-indigo-500/30 text-[10px] font-black uppercase tracking-widest">
-                            {displayStats?.totalContributions || 0} G+A total
-                          </Badge>
-                        </div>
-                        <p className="text-xs font-black text-indigo-900/60 uppercase tracking-widest mb-1">Passes Décisives</p>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-4xl sm:text-5xl font-black text-indigo-950 tracking-tight">{displayStats?.assists || 0}</span>
-                          <span className="text-xs font-bold text-indigo-700 uppercase">assist(s)</span>
-                        </div>
-                        <div className="mt-4 pt-3 border-t border-indigo-500/15 flex items-center justify-between text-[11px] font-bold text-indigo-800/80">
-                          <span>Créativité & vista</span>
-                          <span className="font-black text-indigo-900">{((displayStats?.goals || 0) + (displayStats?.assists || 0))} actions décisives</span>
-                        </div>
-                      </div>
-
-                      {/* 5. DISCIPLINE & CARTONS */}
-                      <div className="relative p-6 rounded-[2rem] bg-gradient-to-br from-amber-500/10 via-rose-500/5 to-transparent border border-amber-500/20 shadow-sm hover:shadow-md transition-all group hover:z-30 focus-within:z-30">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 transition-transform group-hover:scale-110">
-                              <Shield className="w-6 h-6" />
-                            </div>
-                            <IndicatorHelpTooltip
-                              title="Discipline Arbitrale"
-                              metric="Maîtrise & Fair-play"
-                              role="Recense les cartons jaunes et rouges reçus. Indique la maîtrise de soi dans les duels disputés, le respect des décisions arbitrales et prévient les suspensions."
-                            />
-                          </div>
-                          <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30 text-[10px] font-black uppercase tracking-widest">
-                            {(displayStats?.yellowCards || 0) === 0 && (displayStats?.redCards || 0) === 0 ? 'Discipline ✅' : 'Averti'}
-                          </Badge>
-                        </div>
-                        <p className="text-xs font-black text-amber-900/60 uppercase tracking-widest mb-1">Discipline Arbitrale</p>
-                        <div className="flex items-center gap-4 py-1">
-                          <div className="flex items-center gap-2">
-                            <div className="w-5 h-7 bg-amber-400 rounded-[4px] shadow-sm border border-amber-500/40" />
-                            <span className="text-3xl font-black text-amber-950">{displayStats?.yellowCards || 0}</span>
-                          </div>
-                          <div className="w-px h-8 bg-border" />
-                          <div className="flex items-center gap-2">
-                            <div className="w-5 h-7 bg-red-500 rounded-[4px] shadow-sm border border-red-600/40" />
-                            <span className="text-3xl font-black text-red-950">{displayStats?.redCards || 0}</span>
-                          </div>
-                        </div>
-                        <div className="mt-4 pt-3 border-t border-amber-500/15 flex items-center justify-between text-[11px] font-bold text-amber-900/80">
-                          <span>{displayStats?.yellowCards || 0} Jaune(s)</span>
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                          <span>{displayStats?.redCards || 0} Rouge(s)</span>
-                        </div>
-                      </div>
-
-                      {/* 6. FRÉQUENCE DÉCISIVE / IMPACT */}
-                      <div className="relative p-6 rounded-[2rem] bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent border border-purple-500/20 shadow-sm hover:shadow-md transition-all group hover:z-30 focus-within:z-30">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-12 h-12 rounded-2xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-600 transition-transform group-hover:scale-110">
-                              <TrendingUp className="w-6 h-6" />
-                            </div>
-                            <IndicatorHelpTooltip
-                              title="Fréquence Décisive"
-                              metric="Rentabilité par minute"
-                              role="Définit le nombre moyen de minutes nécessaires au joueur pour réaliser une action décisive (but ou assist). Plus ce chiffre est bas, plus son impact par match est élevé."
-                            />
-                          </div>
-                          <Badge className="bg-purple-500/15 text-purple-700 border-purple-500/30 text-[10px] font-black uppercase tracking-widest">
-                            Impact Pro
-                          </Badge>
-                        </div>
-                        <p className="text-xs font-black text-purple-900/60 uppercase tracking-widest mb-1">Fréquence Décisive</p>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-4xl sm:text-5xl font-black text-purple-950 tracking-tight">
-                            {displayStats?.totalContributions > 0 && displayStats?.minutes > 0
-                              ? Math.round(displayStats.minutes / displayStats.totalContributions)
-                              : '-'
-                            }
-                          </span>
-                          <span className="text-xs font-bold text-purple-700 uppercase">{displayStats?.totalContributions > 0 ? 'min / geste décisif' : 'N/A'}</span>
-                        </div>
-                        <div className="mt-4 pt-3 border-t border-purple-500/15 flex items-center justify-between text-[11px] font-bold text-purple-800/80">
-                          <span>Régularité offensive</span>
-                          <span className="font-black text-purple-900">{displayStats?.totalContributions || 0} geste(s) clé(s)</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ── CARD: ÉVOLUTION DES ÉVALUATIONS EN MATCHS AMICAUX ── */}
-                    <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-secondary/60 shadow-sm space-y-6">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-secondary">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600">
-                              <Star className="w-4 h-4 fill-amber-500" />
-                            </div>
-                            <h4 className="text-base font-black uppercase tracking-tight text-slate-900 m-0">
-                              Évolution des Évaluations Staff
-                            </h4>
-                            <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] font-black uppercase">
-                              {evaluatedMatches.length} match{evaluatedMatches.length > 1 ? 's' : ''} noté{evaluatedMatches.length > 1 ? 's' : ''}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground font-medium">
-                            Suivi chronologique des notes (1 à 10) et observations attribuées par le staff (Matchs Amicaux & Compétitions Officielles).
-                          </p>
-                        </div>
-
-                        {/* Filtres Saison, Mois et Type */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          {/* Filtre Type de match */}
-                          <div className="flex items-center gap-1.5 bg-secondary/30 p-1 rounded-xl border border-secondary/60">
-                            <Shield className="w-3.5 h-3.5 text-muted-foreground ml-2" />
-                            <select
-                              value={evalTypeFilter}
-                              onChange={e => setEvalTypeFilter(e.target.value as any)}
-                              className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none pr-2 py-1 cursor-pointer"
-                            >
-                              <option value="ALL">Tous les types</option>
-                              <option value="FRIENDLY">🤝 Matchs amicaux</option>
-                              <option value="OFFICIAL">🏆 Compétitions officielles</option>
-                            </select>
-                          </div>
-
-                          {/* Filtre Saison */}
-                          <div className="flex items-center gap-1.5 bg-secondary/30 p-1 rounded-xl border border-secondary/60">
-                            <Calendar className="w-3.5 h-3.5 text-muted-foreground ml-2" />
-                            <select
-                              value={evalSeasonFilter}
-                              onChange={e => setEvalSeasonFilter(e.target.value)}
-                              className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none pr-2 py-1 cursor-pointer"
-                            >
-                              <option value="ALL">Toutes les saisons</option>
-                              {availableEvalSeasons.map(sz => (
-                                <option key={sz} value={sz}>{sz}</option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {/* Filtre Mois */}
-                          <div className="flex items-center gap-1.5 bg-secondary/30 p-1 rounded-xl border border-secondary/60">
-                            <Clock className="w-3.5 h-3.5 text-muted-foreground ml-2" />
-                            <select
-                              value={evalMonthFilter}
-                              onChange={e => setEvalMonthFilter(e.target.value)}
-                              className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none pr-2 py-1 cursor-pointer"
-                            >
-                              <option value="ALL">Tous les mois</option>
-                              {availableEvalMonths.map(mCode => (
-                                <option key={mCode} value={mCode}>{MONTH_LABELS[mCode] || `Mois ${mCode}`}</option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {(evalSeasonFilter !== 'ALL' || evalMonthFilter !== 'ALL' || evalTypeFilter !== 'ALL') && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => { setEvalSeasonFilter('ALL'); setEvalMonthFilter('ALL'); setEvalTypeFilter('ALL'); }}
-                              className="h-8 px-2 text-[10px] font-black uppercase text-primary hover:bg-primary/5"
-                            >
-                              Effacer
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* 4 KPIs de Performance */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-amber-800/70 mb-1">Note Moyenne</p>
-                          <p className="text-3xl font-black text-amber-950">{evalKPIs.avg} <span className="text-xs text-amber-700">/10</span></p>
-                        </div>
-                        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-500/20 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-800/70 mb-1">Meilleure Note</p>
-                          <p className="text-3xl font-black text-emerald-950">{evalKPIs.max} <span className="text-xs text-emerald-700">/10</span></p>
-                        </div>
-                        <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent border border-blue-500/20 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-800/70 mb-1">Note Minimale</p>
-                          <p className="text-3xl font-black text-blue-950">{evalKPIs.min} <span className="text-xs text-blue-700">/10</span></p>
-                        </div>
-                        <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent border border-purple-500/20 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-purple-800/70 mb-1">Matchs Notés</p>
-                          <p className="text-3xl font-black text-purple-950">{evalKPIs.count}</p>
-                        </div>
-                      </div>
-
-                      {/* Recharts AreaChart */}
-                      {evalChartData.length === 0 ? (
-                        <div className="py-12 flex flex-col items-center justify-center text-center bg-secondary/10 rounded-2xl border border-dashed border-secondary">
-                          <Star className="w-8 h-8 text-muted-foreground/30 mb-2" />
-                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                            Aucune évaluation disponible pour ces filtres
-                          </p>
-                          <p className="text-[11px] text-muted-foreground/60 max-w-sm mt-1">
-                            Les notes sont saisies par le staff technique dans la fiche de match (Amicaux et Compétitions).
-                          </p>
-                        </div>
+                    <div className="relative z-10 w-full flex items-center justify-between">
+                      {/* Statut lien Drive */}
+                      {getPlayerDriveUrl(selectedPlayer) ? (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                          <ExternalLink className="w-2.5 h-2.5" /> Drive actif
+                        </span>
                       ) : (
-                        <div className="h-64 w-full pt-2">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={evalChartData} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
-                              <defs>
-                                <linearGradient id="evalGradColor" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.35} />
-                                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.0} />
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.06)" />
-                              <XAxis
-                                dataKey="date"
-                                axisLine={false}
-                                tickLine={false}
-                                tick={{ fontSize: 11, fontWeight: 'bold', fill: '#64748b' }}
-                              />
-                              <YAxis
-                                domain={[0, 10]}
-                                ticks={[0, 2, 4, 6, 8, 10]}
-                                axisLine={false}
-                                tickLine={false}
-                                tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }}
-                              />
-                              <RechartsTooltip
-                                content={({ active, payload }) => {
-                                  if (active && payload && payload.length) {
-                                    const data = payload[0].payload;
-                                    return (
-                                      <div className="bg-slate-950 text-white p-3.5 rounded-2xl shadow-2xl border border-white/10 space-y-1.5 text-xs max-w-xs">
-                                        <div className="flex items-center justify-between gap-3">
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="font-bold text-slate-400 text-[11px]">{data.fullDate || data.date}</span>
-                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${data.isFriendly ? 'bg-amber-400/20 text-amber-300' : 'bg-emerald-400/20 text-emerald-300'}`}>
-                                              {data.isFriendly ? '🤝 Amical' : `🏆 ${data.leagueName || 'Officiel'}`}
-                                            </span>
-                                          </div>
-                                          <span className="font-black text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-md border border-amber-400/20 text-xs">
-                                            ★ {data.rating}/10
-                                          </span>
-                                        </div>
-                                        <p className="font-black text-white text-sm">vs {data.opponent}</p>
-                                        <p className="text-slate-300 text-[11px]">Score : <span className="font-bold">{data.score}</span></p>
-                                        {data.comment && (
-                                          <p className="text-amber-200/90 italic pt-1.5 border-t border-white/10 text-[11px] leading-relaxed">
-                                            « {data.comment} »
-                                          </p>
-                                        )}
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                }}
-                              />
-                              <Area
-                                type="monotone"
-                                dataKey="rating"
-                                stroke="#d97706"
-                                strokeWidth={3}
-                                fillOpacity={1}
-                                fill="url(#evalGradColor)"
-                                dot={{ r: 5, fill: '#f59e0b', stroke: '#fff', strokeWidth: 2 }}
-                                activeDot={{ r: 7, fill: '#b45309' }}
-                              />
-                            </AreaChart>
-                          </ResponsiveContainer>
-                        </div>
+                        <span className="text-[9px] font-bold text-slate-400">Aucun lien</span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDriveModal(selectedPlayer)}
+                        className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-1 rounded-xl bg-white/90 border border-slate-200 hover:border-emerald-500 hover:text-emerald-700 shadow-2xs transition-all"
+                        title="Configurer le lien Drive"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        <span>Gérer le lien</span>
+                      </button>
+                    </div>
+
+                    {/* Photo centrale du joueur et lien vidéo placé proprement AU-DESSOUS */}
+                    <div className="relative z-10 my-3 flex flex-col items-center gap-3.5">
+                      <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white p-1.5 shadow-xl border border-slate-200 overflow-hidden mx-auto">
+                        <img
+                          src={(selectedPlayer.photo_url && selectedPlayer.photo_url !== 'null') ? selectedPlayer.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedPlayer.full_name)}&background=1e293b&color=fff&size=256`}
+                          alt={selectedPlayer.full_name}
+                          className="w-full h-full object-cover rounded-full"
+                        />
+                      </div>
+
+                      {getPlayerDriveUrl(selectedPlayer) ? (
+                        <button
+                          type="button"
+                          onClick={() => window.open(getPlayerDriveUrl(selectedPlayer), '_blank', 'noopener,noreferrer')}
+                          className="bg-white/95 backdrop-blur-sm border border-emerald-300 hover:border-emerald-500 rounded-2xl shadow-sm px-4 py-2 flex items-center gap-2 hover:scale-105 transition-all cursor-pointer group"
+                          title="Ouvrir la vidéo / le lien Google Drive"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-[#2e7d32] text-white flex items-center justify-center shadow-xs group-hover:bg-emerald-700">
+                            <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+                          </div>
+                          <span className="text-[11px] font-black text-[#2e7d32] whitespace-nowrap">Lecture de la vidéo</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDriveModal(selectedPlayer)}
+                          className="bg-white/95 backdrop-blur-sm border-2 border-dashed border-emerald-400 hover:border-emerald-600 rounded-2xl shadow-sm px-4 py-1.5 flex items-center gap-2 hover:scale-105 transition-all cursor-pointer group"
+                          title="Cliquer pour associer un lien Google Drive"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs group-hover:bg-emerald-700">
+                            <LinkIcon className="w-3 h-3" />
+                          </div>
+                          <span className="text-[11px] font-black text-emerald-700 whitespace-nowrap">+ Ajouter lien Drive</span>
+                        </button>
                       )}
                     </div>
 
-                    {/* ── Two-Column Breakdown & Matches Feed ── */}
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                      {/* Left: Tactical Game Distribution (5 cols) */}
-                      <div className="lg:col-span-5 bg-white p-6 sm:p-7 rounded-[2.5rem] border border-secondary/60 shadow-sm space-y-6">
-                        <div className="flex items-center justify-between pb-4 border-b border-secondary">
-                          <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-2 m-0">
-                            <BarChart3 className="w-4 h-4 text-primary" />
-                            <span>Répartition & Ratios Tactiques</span>
-                          </h4>
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase">Saison en cours</span>
-                        </div>
+                    {/* Logo FUSTV en bas */}
+                    <div className="relative z-10 flex items-center justify-center gap-1.5 pt-1">
+                      <div className="w-5 h-5 rounded-md bg-[#2e7d32] text-white flex items-center justify-center text-[10px] font-black">
+                        ▶
+                      </div>
+                      <span className="font-black text-sm tracking-tight text-slate-900">
+                        FUS<span className="text-[#2e7d32]">TV</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-                        {/* Starter vs Substitute Bar */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs font-bold">
-                            <span className="text-emerald-700 flex items-center gap-1.5">
-                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                              Titulaire ({displayStats?.starts || 0})
-                            </span>
-                            <span className="text-amber-700 flex items-center gap-1.5">
-                              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                              Remplaçant ({displayStats?.subs || 0})
-                            </span>
-                          </div>
-                          <div className="h-4 bg-secondary/60 rounded-full overflow-hidden flex p-0.5 gap-0.5">
-                            <div
-                              style={{ width: `${displayStats?.matches > 0 ? Math.round(((displayStats.starts || 0) / displayStats.matches) * 100) : 50}%` }}
-                              className="h-full bg-emerald-500 rounded-full transition-all duration-700"
-                              title={`${displayStats?.starts || 0} Titularisations`}
-                            />
-                            <div
-                              style={{ width: `${displayStats?.matches > 0 ? Math.round(((displayStats.subs || 0) / displayStats.matches) * 100) : 50}%` }}
-                              className="h-full bg-amber-400 rounded-full transition-all duration-700"
-                              title={`${displayStats?.subs || 0} Remplacements`}
-                            />
-                          </div>
-                          <p className="text-[10px] text-muted-foreground text-right font-medium">
-                            {displayStats?.starterRate || 0}% de titularisation dans le XI
-                          </p>
+                {/* ── 4. RANGÉE 2 (3 BLOCS SUR 3) ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+                  {/* BLOC 1/3 (Gauche) : Données Personnelles (Tableau BeSoccer, Sauf Info Carrière) */}
+                  <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between border-b border-secondary/60 pb-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-4 bg-primary rounded-full" />
+                          <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                            Données Personnelles
+                          </h3>
                         </div>
-
-                        {/* Playing Time Gauge */}
-                        <div className="space-y-2 pt-2">
-                          <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-700">Volume de Temps de Jeu</span>
-                            <span className="text-primary font-black">{displayStats?.minutes || 0} / {(displayStats?.matches || 1) * 90} min</span>
-                          </div>
-                          <div className="h-3 bg-secondary rounded-full overflow-hidden">
-                            <div
-                              style={{ width: `${Math.min(100, Math.round(((displayStats?.minutes || 0) / Math.max(90, (displayStats?.matches || 1) * 90)) * 100))}%` }}
-                              className="h-full bg-gradient-to-r from-blue-500 to-primary rounded-full transition-all duration-700"
-                            />
-                          </div>
-                          <div className="flex justify-between text-[10px] text-muted-foreground font-medium">
-                            <span>0 min</span>
-                            <span>Temps maximal possible</span>
-                          </div>
-                        </div>
-
-                        {/* Offensive Breakdown (Goals vs Assists) */}
-                        <div className="space-y-2 pt-2">
-                          <div className="flex justify-between text-xs font-bold">
-                            <span className="text-slate-700">Actions Décisives (Buts / Assists)</span>
-                            <span className="text-indigo-700 font-black">{((displayStats?.goals || 0) + (displayStats?.assists || 0))} au total</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3 pt-1">
-                            <div className="p-3 rounded-xl bg-primary/5 border border-primary/15 text-center">
-                              <p className="text-[9px] font-black uppercase tracking-wider text-primary">Buts</p>
-                              <p className="text-xl font-black text-slate-900">{displayStats?.goals || 0}</p>
-                            </div>
-                            <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-150 text-center">
-                              <p className="text-[9px] font-black uppercase tracking-wider text-indigo-700">Passes D.</p>
-                              <p className="text-xl font-black text-indigo-950">{displayStats?.assists || 0}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Performance Note Card */}
-                        <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 text-white space-y-2 border border-slate-800">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
-                            <Award className="w-3.5 h-3.5 text-primary" /> Évaluation Technique Staff
-                          </p>
-                          <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                            {(displayStats?.matches || 0) > 0
-                              ? `Joueur actif avec ${displayStats?.matches} apparitions. Régularité physique confirmée (${displayStats?.avgMinutes} min/m en moyenne).`
-                              : 'Aucune donnée officielle enregistrée pour cette sélection de filtres.'
-                            }
-                          </p>
-                        </div>
+                        <Badge variant="outline" className="text-[10px] font-bold text-slate-600 border-slate-200">
+                          Fiche Civile
+                        </Badge>
                       </div>
 
-                      {/* Right: Match Log (7 cols) */}
-                      <div className="lg:col-span-7 bg-white p-6 sm:p-7 rounded-[2.5rem] border border-secondary/60 shadow-sm space-y-4 flex flex-col">
-                        <div className="flex items-center justify-between pb-4 border-b border-secondary shrink-0">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                              <Calendar className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-black uppercase tracking-widest text-slate-800 m-0">
-                                Historique des Matchs
-                              </h4>
-                              <p className="text-[10px] text-muted-foreground font-semibold">
-                                {filteredPlayerMatches.length} match(s) disputé(s)
-                              </p>
-                            </div>
-                          </div>
-                          <Badge variant="outline" className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1">
-                            FUS Rabat
+                      <div className="divide-y divide-slate-100 text-xs">
+                        <div className="py-2 flex items-center justify-between">
+                          <span className="text-muted-foreground font-semibold">Pays de naissance</span>
+                          <span className="font-black text-slate-900 flex items-center gap-1">
+                            🇲🇦 {selectedPlayer.nationality || 'Maroc'}
+                          </span>
+                        </div>
+
+                        <div className="py-2 flex items-center justify-between">
+                          <span className="text-muted-foreground font-semibold">Date de naissance</span>
+                          <span className="font-black text-slate-900">
+                            {formatBirthDateLong(selectedPlayer.birth_date)}
+                          </span>
+                        </div>
+
+                        <div className="py-2 flex items-center justify-between">
+                          <span className="text-muted-foreground font-semibold">Catégorie officielle</span>
+                          <Badge className="bg-primary/10 text-primary border border-primary/25 font-black text-[11px] px-2.5 py-0.5">
+                            {playerOfficialCategory || 'Non assignée'}
                           </Badge>
                         </div>
 
-                        {filteredPlayerMatches.length === 0 ? (
-                          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground space-y-3 min-h-[300px]">
-                            <div className="w-14 h-14 rounded-2xl bg-secondary/80 flex items-center justify-center text-muted-foreground">
-                              <Calendar className="w-6 h-6 opacity-40" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-black uppercase text-slate-700">Aucun match trouvé</p>
-                              <p className="text-xs text-muted-foreground max-w-xs mt-1">
-                                Aucun match ne correspond aux filtres de saison ou de ligue sélectionnés pour ce joueur.
-                              </p>
-                            </div>
-                            {(selectedSeasonFilter !== 'ALL' || selectedLeagueFilter !== 'ALL' || selectedMatchFilter !== 'ALL') && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => { setSelectedSeasonFilter('ALL'); setSelectedLeagueFilter('ALL'); setSelectedMatchFilter('ALL'); }}
-                                className="h-9 rounded-xl text-xs font-bold uppercase tracking-wider text-primary border-primary/30 hover:bg-primary/5"
-                              >
-                                Réinitialiser les filtres
-                              </Button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-                            {filteredPlayerMatches.map((m: any) => {
-                              const lineup = m.lineup as { startingXI?: string[]; substitutes?: string[] } | null;
-                              const mpRecord = m.match_players?.find((p: any) => p.player_id === selectedPlayer.id);
-                              const isStarter = mpRecord?.is_starting || lineup?.startingXI?.includes(selectedPlayer.id);
-                              const isSub = (mpRecord && !mpRecord.is_starting) || lineup?.substitutes?.includes(selectedPlayer.id);
-                              const matchEvents = (rawPlayerEvents || []).filter((e: any) => e.match_id === m.id);
+                        <div className="py-2 flex items-center justify-between">
+                          <span className="text-muted-foreground font-semibold">Pied préférentiel</span>
+                          <span className="font-black text-slate-900">
+                            {formatPreferredFootFrench(selectedPlayer.preferred_foot).label}
+                          </span>
+                        </div>
 
-                              const playerGoals = matchEvents.filter((e: any) => e.type === 'goal' && e.player_id === selectedPlayer.id).length;
-                              const playerAssists = matchEvents.filter((e: any) => e.type === 'assist' || (e.type === 'goal' && e.related_player_id === selectedPlayer.id)).length;
-                              const playerYellows = matchEvents.filter((e: any) => e.type === 'yellow_card' && e.player_id === selectedPlayer.id).length;
-                              const playerReds = matchEvents.filter((e: any) => e.type === 'red_card' && e.player_id === selectedPlayer.id).length;
+                        <div className="py-2 flex items-center justify-between">
+                          <span className="text-muted-foreground font-semibold">Poste de prédilection</span>
+                          <span className="font-black text-slate-900 truncate max-w-[160px] text-right">
+                            {selectedPlayer.position ? getPositionDetails(selectedPlayer.position).label : 'Non renseigné'}
+                          </span>
+                        </div>
 
-                              const opp = opponentClubs.find((c: any) => c.id === m.opponent_id);
-                              const oppName = opp?.name || 'Adversaire';
-                              const oppLogo = opp?.logo_url;
-                              const dateFormatted = m.match_date ? new Date(m.match_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date inconnue';
-                              const isFriendly = !m.league_id || m.category?.toLowerCase().includes('amical') || m.notes?.toLowerCase().includes('amical');
-                              const leagueName = isFriendly ? '🤝 Match Amical' : (leagues?.find((l: any) => l.id === m.league_id)?.name || 'Compétition');
+                        <div className="py-2 flex items-center justify-between">
+                          <span className="text-muted-foreground font-semibold">Poste secondaire</span>
+                          <span className="font-black text-slate-900 truncate max-w-[160px] text-right">
+                            {selectedPlayer.secondary_position ? getPositionDetails(selectedPlayer.secondary_position).label : 'Spécialisation unique'}
+                          </span>
+                        </div>
 
-                              // Score & Result
-                              const homeScore = m.score_home ?? 0;
-                              const awayScore = m.score_away ?? 0;
-                              const hasScore = m.score_home !== null && m.score_home !== undefined && m.score_away !== null && m.score_away !== undefined;
-                              let resultBadge = null;
-                              if (hasScore) {
-                                const fusScore = m.is_home ? homeScore : awayScore;
-                                const oppScore = m.is_home ? awayScore : homeScore;
-                                if (fusScore > oppScore) {
-                                  resultBadge = <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 text-[9px] font-black px-2 py-0.5 uppercase">Victoire</Badge>;
-                                } else if (fusScore < oppScore) {
-                                  resultBadge = <Badge className="bg-rose-500/15 text-rose-700 border-rose-500/30 text-[9px] font-black px-2 py-0.5 uppercase">Défaite</Badge>;
-                                } else {
-                                  resultBadge = <Badge className="bg-slate-500/15 text-slate-700 border-slate-500/30 text-[9px] font-black px-2 py-0.5 uppercase">Nul</Badge>;
+                        <div className="py-2 flex items-center justify-between">
+                          <span className="text-muted-foreground font-semibold">Statut au centre</span>
+                          <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                            Pensionnaire / Interne
+                          </span>
+                        </div>
+
+                        <div className="py-2 flex items-center justify-between">
+                          <span className="text-muted-foreground font-semibold">Matricule officiel</span>
+                          <span className="font-mono font-bold text-slate-600">
+                            {selectedPlayer.id ? `FUS-${selectedPlayer.id.slice(0, 8).toUpperCase()}` : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Académie Fath Union Sport</span>
+                      <span className="text-slate-500 font-bold">Rabat</span>
+                    </div>
+                  </div>
+
+                  {/* BLOC 2/3 (Centre) : Forme Lors des Derniers Matchs (Image 4 BeSoccer) */}
+                  <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
+                    <div>
+                      {/* En-tête avec barre verte/rouge BeSoccer */}
+                      <div className="flex items-center justify-between border-b border-secondary/60 pb-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-4 bg-emerald-500 rounded-full" />
+                          <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                            Forme lors des derniers matchs
+                          </h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => selectedPlayer && setCalendarModalPlayer(selectedPlayer)}
+                          className="text-[10px] font-black text-emerald-600 uppercase cursor-pointer hover:underline"
+                        >
+                          PLUS
+                        </button>
+                      </div>
+
+                      {/* Les 4 colonnes de matchs BeSoccer */}
+                      {recentFormMatches.length > 0 ? (
+                        <div className="grid grid-cols-4 divide-x divide-slate-100 -mx-2">
+                          {recentFormMatches.map((m: any) => (
+                            <div
+                              key={m.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleOpenMatchOverview(m.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleOpenMatchOverview(m.id);
                                 }
-                              }
-
-                              const ratingBadge = mpRecord?.rating != null ? (
-                                <Badge className={isFriendly ? "bg-amber-50 text-amber-700 border-amber-300 text-[9px] font-black px-2 py-0.5 gap-1 shadow-sm" : "bg-emerald-50 text-emerald-700 border-emerald-300 text-[9px] font-black px-2 py-0.5 gap-1 shadow-sm"}>
-                                  <Star className={`w-2.5 h-2.5 ${isFriendly ? 'text-amber-600 fill-amber-600' : 'text-emerald-600 fill-emerald-600'}`} />
-                                  {mpRecord.rating}/10
-                                </Badge>
-                              ) : null;
-
-                              return (
-                                <div
-                                  key={m.id}
-                                  className="p-4 rounded-2xl bg-secondary/20 hover:bg-secondary/40 border border-secondary/60 transition-all space-y-3"
-                                >
-                                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                                    {/* Opponent & Competition */}
-                                    <div className="flex items-center gap-3">
-                                      <div className="w-10 h-10 rounded-xl bg-white shadow-sm border border-secondary p-1.5 flex items-center justify-center shrink-0">
-                                        {oppLogo ? (
-                                          <img src={oppLogo} alt={oppName} className="w-full h-full object-contain" />
-                                        ) : (
-                                          <Shield className="w-5 h-5 text-slate-400" />
-                                        )}
-                                      </div>
-                                      <div>
-                                        <p className="text-xs font-black uppercase text-slate-900 flex items-center gap-2">
-                                          vs {oppName}
-                                        </p>
-                                        <p className="text-[10px] text-muted-foreground font-semibold flex items-center gap-2">
-                                          <span>{dateFormatted}</span>
-                                          <span>•</span>
-                                          <span>{leagueName}</span>
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    {/* Score and Status */}
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      {hasScore && (
-                                        <div className="text-right">
-                                          <p className="text-xs font-black text-slate-900">
-                                            {homeScore} - {awayScore}
-                                          </p>
-                                          {resultBadge}
-                                        </div>
-                                      )}
-
-                                      {ratingBadge}
-
-                                      {isStarter ? (
-                                        <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30 text-[10px] font-black uppercase">
-                                          Titulaire
-                                        </Badge>
-                                      ) : isSub ? (
-                                        <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30 text-[10px] font-black uppercase">
-                                          Remplaçant
-                                        </Badge>
-                                      ) : (
-                                        <Badge variant="outline" className="text-[10px] font-black uppercase">
-                                          Convoqué
-                                        </Badge>
-                                      )}
-                                    </div>
+                              }}
+                              title="Ouvrir la vue complète de ce match"
+                              className="px-2 py-1.5 text-center space-y-1.5 rounded-xl hover:bg-slate-50 active:scale-[0.98] transition-all cursor-pointer group focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            >
+                              {/* Logos face à face */}
+                              <div className="flex items-center justify-center gap-1">
+                                {m.fusLogo ? (
+                                  <img src={m.fusLogo} alt={m.fusAbbr} className="w-5 h-5 object-contain" />
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full bg-primary text-white text-[8px] font-black flex items-center justify-center">
+                                    {m.fusAbbr}
                                   </div>
+                                )}
+                                {m.oppLogo ? (
+                                  <img src={m.oppLogo} alt={m.oppAbbr} className="w-5 h-5 object-contain" />
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[8px] font-black flex items-center justify-center">
+                                    {m.oppAbbr}
+                                  </div>
+                                )}
+                              </div>
 
-                                  {/* Event & Evaluation Badges if any */}
-                                  {(playerGoals > 0 || playerAssists > 0 || playerYellows > 0 || playerReds > 0 || (mpRecord?.rating !== undefined && mpRecord?.rating !== null)) && (
-                                    <div className="pt-2 border-t border-secondary/60 flex items-center gap-2 flex-wrap text-[11px]">
-                                      {mpRecord?.rating !== undefined && mpRecord?.rating !== null && (
-                                        <Badge className={`font-black text-[10px] px-2.5 py-0.5 gap-1 shadow-sm ${isFriendly ? 'bg-amber-500/15 text-amber-800 border border-amber-500/30' : 'bg-emerald-500/15 text-emerald-800 border border-emerald-500/30'
-                                          }`} title={mpRecord.rating_comment || undefined}>
-                                          ⭐ Note {isFriendly ? 'amicale' : 'officielle'} : {Number(mpRecord.rating).toFixed(1)}/10
-                                          {mpRecord.rating_comment && (
-                                            <span className="font-normal italic text-slate-700 ml-1 truncate max-w-[150px]">
-                                              « {mpRecord.rating_comment} »
-                                            </span>
-                                          )}
-                                        </Badge>
-                                      )}
-                                      {playerGoals > 0 && (
-                                        <Badge className="bg-primary text-white font-black text-[10px] px-2 py-0.5 border-none gap-1">
-                                          ⚽ {playerGoals} But{playerGoals > 1 ? 's' : ''}
-                                        </Badge>
-                                      )}
-                                      {playerAssists > 0 && (
-                                        <Badge className="bg-indigo-600 text-white font-black text-[10px] px-2 py-0.5 border-none gap-1">
-                                          👟 {playerAssists} Passe{playerAssists > 1 ? 's' : ''} D.
-                                        </Badge>
-                                      )}
-                                      {playerYellows > 0 && (
-                                        <Badge className="bg-amber-400 text-amber-950 font-black text-[10px] px-2 py-0.5 border-none gap-1">
-                                          🟨 Carton Jaune
-                                        </Badge>
-                                      )}
-                                      {playerReds > 0 && (
-                                        <Badge className="bg-red-600 text-white font-black text-[10px] px-2 py-0.5 border-none gap-1">
-                                          🟥 Carton Rouge
-                                        </Badge>
-                                      )}
-                                    </div>
+                              {/* Abréviation match */}
+                              <p className="text-[10px] font-black text-slate-800 truncate" title={`${m.oppName} (${m.isHome ? 'Domicile' : 'Extérieur'})`}>
+                                {m.isHome ? `${m.fusAbbr} - ${m.oppAbbr}` : `${m.oppAbbr} - ${m.fusAbbr}`}
+                              </p>
+
+                              {/* Score réel du point de vue FUS */}
+                              <p className={`text-base font-black ${
+                                !m.hasScore ? 'text-slate-400' : m.isWin ? 'text-emerald-600' : m.isDraw ? 'text-amber-500' : 'text-rose-600'
+                              }`}>
+                                {m.hasScore ? `${m.fusScore} - ${m.oppScore}` : '- -'}
+                              </p>
+
+                              {/* Date */}
+                              <p className="text-[9px] font-bold text-muted-foreground leading-none">{m.dateStr}</p>
+
+                              {/* Badge Compétition réel */}
+                              <div className="pt-0.5">
+                                <span className="text-[8px] font-black uppercase text-slate-500 truncate block">
+                                  🏆 {m.compLabel}
+                                </span>
+                              </div>
+
+                              {/* Minutes en pill vert pastel BeSoccer */}
+                              <div className="pt-1">
+                                <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-100/70 text-emerald-800 text-[9px] font-black">
+                                  {m.minutes}&apos;
+                                </span>
+                              </div>
+
+                              {/* But ⚽ si marqué */}
+                              {m.goals > 0 && (
+                                <div className="flex items-center justify-center gap-0.5 text-xs">
+                                  <span>⚽</span>
+                                  {m.goals > 1 && (
+                                    <span className="w-3.5 h-3.5 rounded-full bg-primary text-white text-[8px] font-black flex items-center justify-center">
+                                      {m.goals}
+                                    </span>
                                   )}
                                 </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                              )}
 
-                    {/* ── Footer Navigation Actions ── */}
-                    <div className="flex justify-center items-center gap-4 pt-4">
-                      <Button
-                        variant="outline"
-                        onClick={() => setViewState('LIST')}
-                        className="h-12 px-8 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-secondary transition-all"
-                      >
-                        Fermer
-                      </Button>
-                      <Button
-                        onClick={() => handleViewPlayer(selectedPlayer)}
-                        className="h-12 px-8 rounded-2xl font-black uppercase tracking-widest text-xs bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20 transition-all"
-                      >
-                        Consulter Fiche Technique
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </motion.div>
-        ) : viewState === 'PLANNING' ? (
-          <motion.div
-            key="planning"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-8"
-          >
-            {/* ── Week Navigator ── */}
-            <div className="bg-white rounded-[2.5rem] shadow-xl border border-secondary/40 p-8 space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-2xl font-black uppercase italic tracking-tighter">Planning Entraînement</h3>
-                  <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mt-1">
-                    Glisse des jours sur chaque joueur pour saisir leur fiche
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => { setWeekOffset(w => w - 1); setSelectedDays([]); }}
-                    className="w-10 h-10 rounded-xl border-secondary"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </Button>
-                  <span className="text-[11px] font-black uppercase tracking-widest text-muted-foreground min-w-[130px] text-center">
-                    {fmtShort(weekDays[0])} — {fmtShort(weekDays[6])}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => { setWeekOffset(w => w + 1); setSelectedDays([]); }}
-                    className="w-10 h-10 rounded-xl border-secondary"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Day Chips */}
-              <div className="flex gap-3 flex-wrap">
-                {weekDays.map(day => {
-                  const isSelected = selectedDays.includes(day);
-                  const isToday = day === new Date().toISOString().split('T')[0];
-                  return (
-                    <div
-                      key={day}
-                      draggable
-                      onDragStart={(e) => {
-                        const toDrag = isSelected && selectedDays.length > 0 ? selectedDays : [day];
-                        e.dataTransfer.setData('planning-days', JSON.stringify(toDrag));
-                      }}
-                      onClick={() => toggleDay(day)}
-                      className={`
-                        relative flex flex-col items-center px-5 py-4 rounded-2xl border-2 cursor-grab active:cursor-grabbing
-                        select-none transition-all duration-200 group
-                        ${isSelected
-                          ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20 scale-105'
-                          : isToday
-                            ? 'bg-primary/5 border-primary/30 text-primary hover:bg-primary/10'
-                            : 'bg-secondary/20 border-secondary hover:border-primary/30 hover:bg-secondary/40'
-                        }
-                      `}
-                    >
-                      <GripHorizontal className={`w-3 h-3 mb-1 opacity-40 ${isSelected ? 'text-white' : 'text-muted-foreground'}`} />
-                      <span className="text-[11px] font-black uppercase tracking-widest leading-none">
-                        {FR_DAYS_SHORT[new Date(day + 'T00:00:00').getDay()]}
-                      </span>
-                      <span className={`text-[10px] font-bold mt-0.5 ${isSelected ? 'text-white/70' : 'text-muted-foreground'}`}>
-                        {new Date(day + 'T00:00:00').getDate()}
-                      </span>
-                      {isToday && !isSelected && (
-                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full border-2 border-white" />
-                      )}
-                      {isSelected && (
-                        <CheckCircle2 className="absolute -top-1 -right-1 w-4 h-4 text-white drop-shadow" />
+                              {/* Évolution : Flèche haut en vert (victoire), bas en rouge (défaite), tiret (nul) */}
+                              <div className="pt-1.5 flex items-center justify-center">
+                                {m.isWin ? (
+                                  <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 font-black text-[10px]" title="Victoire (+3 pts)">
+                                    <TrendingUp className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                                    <span>▲ +3</span>
+                                  </div>
+                                ) : m.isLoss ? (
+                                  <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/30 text-rose-700 font-black text-[10px]" title="Défaite (0 pt)">
+                                    <TrendingDown className="w-3 h-3 text-rose-600 stroke-[3]" />
+                                    <span>▼ 0</span>
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-700 font-black text-[10px]" title="Match Nul (1 pt)">
+                                    <span className="text-xs font-black leading-none">=</span>
+                                    <span>1 pt</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="py-8 text-center text-xs text-muted-foreground bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                          Aucun match officiel récent enregistré.
+                        </div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
 
-              {selectedDays.length > 0 && (
-                <div className="flex items-center gap-3 text-[11px] text-primary font-black uppercase tracking-widest">
-                  <CheckSquare className="w-4 h-4" />
-                  {selectedDays.length} jour{selectedDays.length > 1 ? 's' : ''} sélectionné{selectedDays.length > 1 ? 's' : ''}
-                  &nbsp;—&nbsp; glisse-les sur un joueur ci-dessous
-                  <button
-                    onClick={() => setSelectedDays([])}
-                    className="ml-4 text-muted-foreground hover:text-red-500 transition-colors font-bold normal-case tracking-normal"
-                  >
-                    Tout désélectionner
-                  </button>
-                </div>
-              )}
-            </div>
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Feuilles de match officielles</span>
+                      <span className="text-slate-500 font-bold">{recentFormMatches.length} disputés</span>
+                    </div>
+                  </div>
 
-            {/* ── Player Grid with Drop Zones ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {filteredPlayers.map((player, idx) => {
-                const playerDays = planningData[player.id] || {};
-                const weekAssigned = weekDays.filter(d => playerDays[d]);
-                return (
-                  <motion.div
-                    key={player.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.96 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="group"
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.querySelector('[data-dropzone]')?.classList.add('border-primary', 'bg-primary/5', 'scale-[1.02]');
-                    }}
-                    onDragLeave={(e) => {
-                      e.currentTarget.querySelector('[data-dropzone]')?.classList.remove('border-primary', 'bg-primary/5', 'scale-[1.02]');
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.querySelector('[data-dropzone]')?.classList.remove('border-primary', 'bg-primary/5', 'scale-[1.02]');
-                      const raw = e.dataTransfer.getData('planning-days');
-                      if (!raw) return;
-                      const days: string[] = JSON.parse(raw);
-                      const adjIdx = idx % 2 === 0 ? idx + 1 : idx - 1;
-                      const adjPlayer = filteredPlayers[adjIdx];
-                      openScheduleModal(player, adjPlayer, days);
-                    }}
-                  >
-                    <div className="bg-white rounded-[2.5rem] border-2 border-secondary/40 overflow-hidden shadow-sm hover:shadow-xl transition-all duration-500 hover:border-primary/20">
-                      {/* Player Info */}
-                      <div className="p-6 flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white shadow-lg shrink-0">
-                          <img
-                            src={(player.photo_url && player.photo_url !== 'null')
-                              ? player.photo_url
-                              : `https://ui-avatars.com/api/?name=${encodeURIComponent(player.full_name)}&background=random&color=fff&size=200`}
-                            className="w-full h-full object-cover"
-                          />
+                  {/* BLOC 3/3 (Droite) : Position sur le Terrain (Mini-Terrain Vert Tactique BeSoccer) */}
+                  <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between border-b border-secondary/60 pb-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-4 bg-emerald-600 rounded-full" />
+                          <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                            Position sur le terrain
+                          </h3>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-black text-sm uppercase truncate tracking-tight">{player.full_name}</p>
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase mt-0.5">
-                            #{player.jersey_number} • {player.position}
-                          </p>
-                        </div>
-                        {weekAssigned.length > 0 && (
-                          <Badge className="bg-primary/10 text-primary border-none text-[9px] font-black uppercase px-3 shrink-0">
-                            {weekAssigned.length}j planifié{weekAssigned.length > 1 ? 's' : ''}
-                          </Badge>
-                        )}
+                        <Badge className="bg-emerald-500/10 text-emerald-700 border-emerald-500/20 text-[10px] font-black uppercase">
+                          Disposition
+                        </Badge>
                       </div>
 
-                      {/* Assigned days pills */}
-                      {weekAssigned.length > 0 && (
-                        <div className="px-6 pb-3 flex flex-wrap gap-2">
-                          {weekAssigned.map(d => {
-                            const entry = playerDays[d];
-                            return (
-                              <span
-                                key={d}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[9px] font-black uppercase text-white ${ATTENDANCE_BG[entry?.attendance || 'present']}`}
+                      {/* Mini-Terrain Vert SVG et Pastilles */}
+                      <div className="relative w-full aspect-[1/1.25] max-w-[210px] mx-auto rounded-2xl overflow-hidden shadow-md border-2 border-emerald-800/40 bg-gradient-to-b from-[#1b6b2e] via-[#237a37] to-[#1b6b2e] select-none my-1">
+                        {/* Bandes de tonte horizontales */}
+                        <div className="absolute inset-0 flex flex-col pointer-events-none opacity-20">
+                          {[...Array(8)].map((_, i) => (
+                            <div key={i} className={`flex-1 ${i % 2 === 0 ? 'bg-black/15' : 'bg-white/10'}`} />
+                          ))}
+                        </div>
+
+                        {/* Lignes du terrain en SVG */}
+                        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 135" fill="none">
+                          {/* Contour extérieur */}
+                          <rect x="6" y="6" width="88" height="123" rx="2" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+                          {/* Ligne médiane */}
+                          <line x1="6" y1="67.5" x2="94" y2="67.5" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+                          {/* Cercle central */}
+                          <circle cx="50" cy="67.5" r="14" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+                          <circle cx="50" cy="67.5" r="1.5" fill="rgba(255,255,255,0.85)" />
+
+                          {/* Surface haute */}
+                          <rect x="25" y="6" width="50" height="22" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+                          <rect x="36" y="6" width="28" height="8" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+                          <path d="M 40 28 A 10 10 0 0 0 60 28" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+
+                          {/* Surface basse */}
+                          <rect x="25" y="107" width="50" height="22" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+                          <rect x="36" y="121" width="28" height="8" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+                          <path d="M 40 107 A 10 10 0 0 1 60 107" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" />
+
+                          {/* Flèche d'attaque BeSoccer */}
+                          <line x1="50" y1="80" x2="50" y2="45" stroke="rgba(255,255,255,0.3)" strokeWidth="1.2" strokeDasharray="3 3" />
+                          <polygon points="50,38 46,46 54,46" fill="rgba(255,255,255,0.4)" />
+                        </svg>
+
+                        {/* Pastilles tactiques */}
+                        {tacticalPositions && (
+                          <>
+                            {/* Position Secondaire */}
+                            {tacticalPositions.secondary && (
+                              <div
+                                className="absolute -translate-x-1/2 -translate-y-1/2 z-10"
+                                style={{ left: `${tacticalPositions.secondary.x}%`, top: `${tacticalPositions.secondary.y}%` }}
                               >
-                                {fmtShort(d)}
-                                {entry?.rating > 0 && <span className="opacity-80">• {entry.rating}/10</span>}
+                                <div
+                                  className="w-7 h-7 rounded-full bg-slate-900/85 text-white text-[9px] font-black flex items-center justify-center border-2 border-white/80 shadow-md cursor-pointer hover:scale-110 transition-transform"
+                                  title={`${tacticalPositions.secondary.label} (${tacticalPositions.secondary.percentage}%)`}
+                                >
+                                  {tacticalPositions.secondary.code}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Position Principale */}
+                            <div
+                              className="absolute -translate-x-1/2 -translate-y-1/2 z-20"
+                              style={{ left: `${tacticalPositions.primary.x}%`, top: `${tacticalPositions.primary.y}%` }}
+                            >
+                              <div className="relative">
+                                <div className="absolute -inset-1 rounded-full bg-amber-400/40 animate-ping" />
+                                <div
+                                  className="relative w-8 h-8 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black flex items-center justify-center border-2 border-white shadow-xl ring-2 ring-amber-400/50 cursor-pointer hover:scale-110 transition-transform"
+                                  title={`${tacticalPositions.primary.label} (${tacticalPositions.primary.percentage}%)`}
+                                >
+                                  {tacticalPositions.primary.code}
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Légende BeSoccer */}
+                      {tacticalPositions && (
+                        <div className="space-y-1.5 pt-2 text-xs">
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-amber-500/10 border border-amber-500/25">
+                            <span className="font-bold text-slate-800 text-[11px] truncate">
+                              {tacticalPositions.primary.label}
+                            </span>
+                            <Badge className="bg-amber-400 text-slate-950 font-black text-[9px] px-1.5 py-0.2 shrink-0">
+                              {tacticalPositions.primary.percentage}%
+                            </Badge>
+                          </div>
+
+                          {tacticalPositions.secondary && (
+                            <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200">
+                              <span className="font-medium text-slate-700 text-[11px] truncate">
+                                {tacticalPositions.secondary.label}
                               </span>
-                            );
-                          })}
+                              <Badge variant="outline" className="text-slate-700 border-slate-300 font-bold text-[9px] px-1.5 py-0.2 shrink-0">
+                                {tacticalPositions.secondary.percentage}%
+                              </Badge>
+                            </div>
+                          )}
                         </div>
                       )}
+                    </div>
 
-                      {/* Drop Zone */}
-                      <div
-                        data-dropzone
-                        className="mx-4 mb-4 border-2 border-dashed border-secondary/50 rounded-2xl px-4 py-5 flex flex-col items-center justify-center gap-2 transition-all duration-200"
-                      >
-                        <CalendarDays className="w-5 h-5 text-muted-foreground/30" />
-                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/30">
-                          Dépose des jours ici
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="text-[10px] italic">Feuilles de match & profil</span>
+                      <span className="text-[10px] font-black text-emerald-700">Pondéré</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── 4. COURBE D'ÉVOLUTION DES MENTIONS (SHORTLIST OFFICIELLE) ── */}
+                <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6">
+                  <PlayerMentionsChart
+                    mentions={selectedPlayerMentions}
+                    height={220}
+                    title="Courbe d'évolution des mentions (Shortlist Officielle)"
+                    emptyMessage={`Aucune mention enregistrée pour ${selectedPlayer.full_name}. Ajoutez une mention depuis la Shortlist Officielle pour tracer sa progression.`}
+                  />
+                </div>
+
+                {/* ── 5. RANGÉE 3 : POSITION DE L'ÉQUIPE DANS LA COMPÉTITION (CLASSEMENT CATÉGORIE & SURCLASSEMENT) ── */}
+                <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 space-y-5">
+                  {/* En-tête BeSoccer : Titre + Onglets Catégorie Officielle & Surclassement */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-secondary/60 pb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-2.5 h-5 bg-emerald-600 rounded-full" />
+                      <div>
+                        <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                          Position de l&apos;Équipe dans la Compétition
+                        </h3>
+                        <p className="text-[11px] font-medium text-muted-foreground">
+                          {activeStandingsResolution.source === 'frmf'
+                            ? `Source : Classement & Résultats FRMF${activeStandingsResolution.activeGroup ? ` • ${activeStandingsResolution.activeGroup}` : ''}`
+                            : activeStandingsResolution.source === 'supabase'
+                              ? 'Source : Matchs enregistrés (hors saisie FRMF)'
+                              : `En attente de résultats FRMF • Catégorie ${currentCategoryForStandings || 'Non assignée'}`}
                         </p>
                       </div>
                     </div>
-                  </motion.div>
-                );
-              })}
-            </div>
 
-            {filteredPlayers.length === 0 && (
-              <div className="py-32 text-center border-2 border-dashed border-secondary/30 rounded-[3rem]">
-                <p className="text-xl font-black uppercase text-muted-foreground/20">Aucun joueur trouvé</p>
-              </div>
-            )}
-          </motion.div>
-
-        ) : viewState === 'BULK_ADD' ? (
-          <motion.div key="bulk" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-black uppercase italic tracking-tighter">Ajout Multiple de Joueurs</h2>
-                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground mt-1">
-                  {bulkRows.filter(r => r.full_name.trim()).length} / {bulkRows.length} joueur{bulkRows.length > 1 ? 's' : ''} prêt{bulkRows.length > 1 ? 's' : ''} à enregistrer
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setViewState('LIST')}
-                  disabled={isBulkSaving}
-                  className="h-11 px-6 rounded-2xl font-black uppercase text-xs"
-                >
-                  Annuler
-                </Button>
-                <Button
-                  onClick={handleBulkSave}
-                  disabled={isBulkSaving || bulkRows.filter(r => r.full_name.trim()).length === 0}
-                  className="h-11 px-8 rounded-2xl font-black uppercase text-xs bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25 gap-2 transition-all min-w-[175px]"
-                >
-                  {isBulkSaving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Enregistrement ({bulkSaveProgress}%)</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4 text-white" />
-                      <span>Enregistrer {bulkRows.filter(r => r.full_name.trim()).length > 0 ? `(${bulkRows.filter(r => r.full_name.trim()).length})` : ''}</span>
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {/* Barre de Progression d'Enregistrement */}
-            {isBulkSaving && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="bg-white border-2 border-primary/20 rounded-[2rem] p-5 shadow-lg shadow-primary/5 space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-2">
-                        Enregistrement des joueurs en cours...
-                        <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full font-mono">
-                          {bulkSaveProgress}%
-                        </span>
-                      </p>
-                      <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
-                        {bulkSavedCount} sur {bulkTotalCount} joueur{bulkTotalCount > 1 ? 's' : ''} enregistré{bulkSavedCount > 1 ? 's' : ''} en base de données
-                      </p>
-                    </div>
-                  </div>
-                  <div className="hidden sm:flex items-center gap-2">
-                    <span className="text-xl font-black text-primary font-mono tracking-tight">{bulkSaveProgress}%</span>
-                  </div>
-                </div>
-
-                <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
-                  <motion.div
-                    className="h-full bg-gradient-to-r from-red-600 via-primary to-emerald-500 rounded-full shadow-sm"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${bulkSaveProgress}%` }}
-                    transition={{ duration: 0.25, ease: 'easeOut' }}
-                  />
-                </div>
-              </motion.div>
-            )}
-
-            {/* Sélecteurs communs */}
-            <div className="flex items-center gap-4 p-5 bg-white border rounded-[2rem] shadow-sm">
-              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground shrink-0">Appliquer à tous :</p>
-              <div className="flex items-center gap-3 flex-wrap">
-                {allowedCategories.filter(c => c !== 'PRO').map(cat => {
-                  const isActive = bulkRows.length > 0 && bulkRows.every(r => r.category === cat);
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => {
-                        const matchingTeam = teams.find(t => t.category === cat);
-                        setBulkRows(prev => prev.map(r => ({
-                          ...r,
-                          category: cat,
-                          team_id: matchingTeam?.id || r.team_id
-                        })));
-                      }}
-                      className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all ${
-                        isActive
-                          ? 'bg-primary text-white shadow-md shadow-primary/20 scale-105'
-                          : 'bg-secondary/30 hover:bg-primary/20 text-foreground'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  );
-                })}
-                <div className="h-6 w-px bg-slate-200" />
-                <select
-                  onChange={e => setBulkRows(prev => prev.map(r => ({ ...r, team_id: e.target.value })))}
-                  className="h-8 px-3 rounded-xl text-[11px] font-bold bg-secondary/30 border-transparent outline-none"
-                >
-                  <option value="">Équipe…</option>
-                  {allowedTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {/* Table */}
-            <div className="bg-white border rounded-[2rem] overflow-hidden shadow-sm">
-              <table className="w-full">
-                <thead className="bg-secondary/10 border-b">
-                  <tr>
-                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-10">#</th>
-                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-16">Photo</th>
-                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-left">Nom Complet *</th>
-                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-20">Maillot</th>
-                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-28">Poste</th>
-                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-32">Catégorie</th>
-                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-36">Équipe</th>
-                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-center w-36">Date Naiss.</th>
-                    <th className="px-4 py-3 text-center w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-secondary/30">
-                  {bulkRows.map((row, idx) => (
-                    <tr key={row.id} className={`transition-colors ${row.full_name.trim() ? 'bg-emerald-50/30' : 'hover:bg-secondary/5'}`}>
-                      <td className="px-4 py-2 text-center text-[11px] font-bold text-muted-foreground">{idx + 1}</td>
-
-                      {/* Photo */}
-                      <td className="px-4 py-2">
-                        <label className="cursor-pointer block w-11 h-11 mx-auto">
-                          <input
-                            type="file" accept="image/*" className="hidden"
-                            onChange={e => { const f = e.target.files?.[0]; if (f) handleBulkPhotoUpload(row.id, f); e.target.value = ''; }}
-                          />
-                          <div className={`w-11 h-11 rounded-xl overflow-hidden flex items-center justify-center transition-all border-2 ${row.photo_url ? 'border-emerald-300' : 'border-dashed border-slate-200 hover:border-primary'}`}>
-                            {row.uploading ? (
-                              <Loader2 className="w-4 h-4 text-primary animate-spin" />
-                            ) : row.photo_url ? (
-                              <img src={row.photo_url} className="w-full h-full object-cover" alt="" />
-                            ) : (
-                              <Camera className="w-4 h-4 text-slate-300" />
-                            )}
-                          </div>
-                        </label>
-                      </td>
-
-                      <td className="px-4 py-2">
-                        <Input
-                          value={row.full_name}
-                          onChange={e => updateBulkRow(row.id, 'full_name', e.target.value)}
-                          placeholder="Prénom Nom..."
-                          className="h-9 text-sm font-semibold border-transparent bg-secondary/20 focus:bg-white rounded-xl"
-                        />
-                      </td>
-                      <td className="px-4 py-2">
-                        <Input
-                          type="number" min={1} max={99}
-                          value={row.jersey_number}
-                          onChange={e => updateBulkRow(row.id, 'jersey_number', Number(e.target.value))}
-                          className="h-9 text-sm font-black text-center border-transparent bg-secondary/20 focus:bg-white rounded-xl"
-                        />
-                      </td>
-                      <td className="px-4 py-2">
-                        <select
-                          value={row.position}
-                          onChange={e => updateBulkRow(row.id, 'position', e.target.value)}
-                          className="h-9 w-full px-2 rounded-xl text-[11px] font-bold bg-secondary/20 border-transparent outline-none focus:bg-white"
-                        >
-                          {availablePositions.map(p => (
-                            <option key={p.code} value={p.code}>{p.code} — {p.label}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-4 py-2">
-                        <select
-                          value={row.category}
-                          onChange={e => updateBulkRow(row.id, 'category', e.target.value)}
-                          className="h-9 w-full px-2 rounded-xl text-[11px] font-bold bg-secondary/20 border-transparent outline-none focus:bg-white"
-                        >
-                          {allowedCategories.filter(c => c !== 'PRO').map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-4 py-2">
-                        <select
-                          value={row.team_id}
-                          onChange={e => updateBulkRow(row.id, 'team_id', e.target.value)}
-                          className="h-9 w-full px-2 rounded-xl text-[11px] font-bold bg-secondary/20 border-transparent outline-none focus:bg-white"
-                        >
-                          <option value="">—</option>
-                          {allowedTeams.filter(t => !row.category || t.category === row.category).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-4 py-2">
-                        <Input
-                          type="date" value={row.birth_date}
-                          onChange={e => updateBulkRow(row.id, 'birth_date', e.target.value)}
-                          className="h-9 text-xs border-transparent bg-secondary/20 focus:bg-white rounded-xl"
-                        />
-                      </td>
-                      <td className="px-4 py-2 text-center">
-                        {bulkRows.length > 1 && (
-                          <button onClick={() => removeBulkRow(row.id)} className="w-8 h-8 rounded-xl flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-all">
-                            <X className="w-4 h-4" />
-                          </button>
+                    {/* Sélecteur d'onglets (Catégorie Officielle / Surclassement) */}
+                    <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setStandingsTab('official')}
+                        className={`h-8 sm:h-9 px-3.5 rounded-xl font-black uppercase tracking-wider text-[10px] sm:text-[11px] flex items-center gap-1.5 transition-all ${
+                          standingsTab === 'official'
+                            ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <Trophy className="w-3.5 h-3.5 text-primary" />
+                        <span>Catégorie {playerOfficialCategory || 'Non assignée'}</span>
+                        {officialCategoryStandings.length === 0 && (
+                          <span className="text-[8px] font-bold text-slate-400 bg-slate-200/70 px-1.5 py-0.5 rounded-md ml-0.5">
+                            Pas encore
+                          </span>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </button>
 
-              {/* Actions bas de tableau */}
-              <div className="p-4 border-t border-secondary/30 flex flex-col sm:flex-row items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setBulkRows(prev => [...prev, newBulkRow(prev.length, prev[0]?.category)])}
-                  className="flex-1 w-full h-11 rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center gap-2 text-slate-500 hover:border-primary hover:text-primary transition-all text-[11px] font-black uppercase tracking-widest bg-slate-50/50 hover:bg-white"
-                >
-                  <UserPlus className="w-4 h-4" /> Ajouter une ligne
-                </button>
-                <Button
-                  type="button"
-                  onClick={handleBulkSave}
-                  disabled={isBulkSaving || bulkRows.filter(r => r.full_name.trim()).length === 0}
-                  className="w-full sm:w-auto h-11 px-8 rounded-2xl font-black uppercase text-xs bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20 gap-2 shrink-0 transition-all min-w-[175px]"
-                >
-                  {isBulkSaving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Enregistrement ({bulkSaveProgress}%)</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4 text-white" />
-                      <span>Enregistrer {bulkRows.filter(r => r.full_name.trim()).length > 0 ? `(${bulkRows.filter(r => r.full_name.trim()).length})` : ''}</span>
-                    </>
+                      {playerSurclassCategory ? (
+                        <button
+                          type="button"
+                          onClick={() => setStandingsTab('surclassement')}
+                          className={`h-8 sm:h-9 px-3.5 rounded-xl font-black uppercase tracking-wider text-[10px] sm:text-[11px] flex items-center gap-1.5 transition-all ${
+                            standingsTab === 'surclassement'
+                              ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Surclassé en {playerSurclassCategory}</span>
+                          {surclassCategoryStandings.length === 0 && (
+                            <span className="text-[8px] font-bold text-slate-300 bg-white/20 px-1.5 py-0.5 rounded-md ml-0.5">
+                              Pas encore
+                            </span>
+                          )}
+                        </button>
+                      ) : (
+                        <div
+                          className="h-8 sm:h-9 px-3 rounded-xl text-[10px] font-bold text-slate-400 flex items-center gap-1 cursor-not-allowed select-none"
+                          title="Le joueur n'est pas surclassé sur une catégorie supérieure"
+                        >
+                          <span className="text-xs">🔒</span>
+                          <span>Non surclassé</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sélecteur de poule FRMF lorsque plusieurs poules contiennent des matchs */}
+                  {activeStandingsResolution.source === 'frmf' && activeStandingsResolution.availableGroupsWithData.length > 1 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Poules disponibles ({currentCategoryForStandings})
+                      </span>
+                      <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/70">
+                        {activeStandingsResolution.availableGroupsWithData.map((grp) => {
+                          const isGrpActive = activeStandingsResolution.activeGroup === grp;
+                          return (
+                            <button
+                              key={grp}
+                              type="button"
+                              onClick={() => setSelectedStandingsGroup(grp)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition-all ${
+                                isGrpActive
+                                  ? 'bg-slate-900 text-white shadow-xs'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                            >
+                              {grp}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
-                </Button>
-              </div>
-            </div>
-          </motion.div>
 
-        ) : null}
-      </AnimatePresence>
-
-      {/* ── Schedule Modal (2 joueurs côte à côte) ── */}
-      <AnimatePresence>
-        {scheduleModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-4 md:p-8"
-            onClick={(e) => { if (e.target === e.currentTarget) setScheduleModal(null); }}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 40, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 40, scale: 0.96 }}
-              className="bg-white rounded-[3rem] shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto"
-            >
-              {/* Modal Header */}
-              <div className="sticky top-0 bg-white/90 backdrop-blur-md border-b border-secondary/30 px-10 py-7 flex items-center justify-between rounded-t-[3rem] z-10">
-                <div>
-                  <h3 className="text-2xl font-black uppercase italic tracking-tighter">Fiche Planning</h3>
-                  <p className="text-[11px] text-muted-foreground font-bold mt-1 flex items-center gap-2">
-                    <CalendarDays className="w-3.5 h-3.5 text-primary" />
-                    {scheduleModal.days.map(d => fmtFull(d)).join(' · ')}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setScheduleModal(null)}
-                  className="w-12 h-12 rounded-2xl bg-secondary/30 hover:bg-red-50 hover:text-red-500 transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </Button>
-              </div>
-
-              {/* Modal Body — 2 joueurs côte à côte */}
-              <div className={`p-10 grid gap-8 ${scheduleModal.players.length === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 max-w-lg mx-auto'}`}>
-                {scheduleModal.players.map(player => {
-                  const form = modalForms[player.id] || { attendance: 'present', rating: 0, notes: '' };
-                  return (
-                    <div key={player.id} className="space-y-6 bg-secondary/10 rounded-[2.5rem] p-8">
-                      {/* Player header */}
-                      <div className="flex items-center gap-4 pb-5 border-b border-secondary/30">
-                        <div className="w-16 h-16 rounded-2xl overflow-hidden border-4 border-white shadow-xl shrink-0">
-                          <img
-                            src={(player.photo_url && player.photo_url !== 'null')
-                              ? player.photo_url
-                              : `https://ui-avatars.com/api/?name=${encodeURIComponent(player.full_name)}&background=random&color=fff&size=200`}
-                            className="w-full h-full object-cover"
-                          />
+                  {/* Mini-Bannière Résumé FUS Rabat */}
+                  {fusStandingRow && fusStandingRow.played > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary font-black text-base flex items-center justify-center border border-primary/20 shrink-0">
+                          {fusStandingRow.position}
+                          <span className="text-[10px] align-super">e</span>
                         </div>
                         <div>
-                          <h4 className="font-black text-lg uppercase italic tracking-tighter leading-none">{player.full_name}</h4>
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase mt-1">#{player.jersey_number} · {player.position}</p>
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Rang FUS Rabat</p>
+                          <p className="text-sm font-black text-slate-900">
+                            {fusStandingRow.position === 1 ? 'Leader 🏆' : `${fusStandingRow.position}e position`}
+                          </p>
                         </div>
                       </div>
 
-                      {/* Présence */}
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Présence</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {ATTENDANCE_OPTS.map(opt => (
-                            <button
-                              key={opt.value}
-                              onClick={() => updateModalForm(player.id, 'attendance', opt.value)}
-                              className={`h-11 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all border-2 ${form.attendance === opt.value
-                                ? `${ATTENDANCE_BG[opt.value]} text-white border-transparent shadow-lg scale-[1.03]`
-                                : 'bg-white border-secondary hover:border-primary/20 text-muted-foreground'
-                                }`}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-700 font-black text-base flex items-center justify-center border border-emerald-500/20 shrink-0">
+                          {fusStandingRow.points}
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Points</p>
+                          <p className="text-sm font-black text-slate-900">{fusStandingRow.points} pts au total</p>
                         </div>
                       </div>
 
-                      {/* Note de performance */}
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                          <Star className="w-3.5 h-3.5 text-primary" /> Note de performance
-                        </label>
-                        <div className="flex gap-1.5">
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                            <button
-                              key={n}
-                              onClick={() => updateModalForm(player.id, 'rating', n === form.rating ? 0 : n)}
-                              className={`flex-1 h-10 rounded-xl text-[11px] font-black transition-all border-2 ${n <= form.rating
-                                ? 'bg-primary text-white border-primary shadow-md'
-                                : 'bg-white border-secondary text-muted-foreground hover:border-primary/30'
-                                }`}
-                            >
-                              {n}
-                            </button>
-                          ))}
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-slate-200/70 text-slate-800 font-black text-xs flex items-center justify-center shrink-0">
+                          {fusStandingRow.played}
                         </div>
-                        {form.rating > 0 && (
-                          <p className="text-[10px] font-black text-primary text-right">{form.rating}/10</p>
-                        )}
+                        <div>
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Bilan Matchs</p>
+                          <p className="text-xs font-black text-slate-800">
+                            <span className="text-emerald-700">{fusStandingRow.won}V</span>{' '}
+                            <span className="text-slate-500">{fusStandingRow.drawn}N</span>{' '}
+                            <span className="text-rose-600">{fusStandingRow.lost}D</span>
+                          </p>
+                        </div>
                       </div>
 
-                      {/* Observations */}
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                          <NotebookPen className="w-3.5 h-3.5 text-primary" /> Observations
-                        </label>
-                        <textarea
-                          value={form.notes}
-                          onChange={(e) => updateModalForm(player.id, 'notes', e.target.value)}
-                          placeholder="Notes du coach pour cette session..."
-                          rows={3}
-                          className="w-full rounded-2xl bg-white border-2 border-secondary focus:border-primary px-5 py-4 text-sm font-medium resize-none outline-none transition-all"
-                        />
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-slate-200/70 text-slate-800 font-black text-xs flex items-center justify-center shrink-0">
+                          {fusStandingRow.goal_difference > 0 ? `+${fusStandingRow.goal_difference}` : fusStandingRow.goal_difference}
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Différence Buts</p>
+                          <p className="text-xs font-black text-slate-800">
+                            {fusStandingRow.goals_for} BM - {fusStandingRow.goals_against} BC
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  )}
 
-              {/* Modal Footer */}
-              <div className="sticky bottom-0 bg-white/90 backdrop-blur-md border-t border-secondary/30 px-10 py-7 flex items-center justify-between rounded-b-[3rem]">
-                <Button
-                  variant="ghost"
-                  onClick={() => setScheduleModal(null)}
-                  className="h-14 px-10 rounded-2xl font-black uppercase tracking-widest text-xs"
-                >
-                  Annuler
-                </Button>
-                <Button
-                  onClick={handleSavePlanning}
-                  className="h-14 px-14 rounded-2xl bg-primary font-black uppercase tracking-widest text-xs gap-3 shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
-                >
-                  <Save className="w-5 h-5" /> Enregistrer le Planning
-                </Button>
+                  {/* Tableau BeSoccer exact du classement */}
+                  {activeStandings.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="overflow-x-auto rounded-2xl border border-slate-200/90 shadow-2xs">
+                        <table className="w-full text-left text-xs whitespace-nowrap">
+                          <thead>
+                            {isU21Standings ? (
+                              <tr className="bg-[#DC2626] text-white text-[10px] font-black uppercase tracking-wider border-b border-red-700">
+                                <th className="py-2.5 px-3 text-center w-12">#</th>
+                                <th className="py-2.5 px-4">Club</th>
+                                <th className="py-2.5 px-4 text-right font-black">Pts</th>
+                                <th className="py-2.5 px-4 text-right">Jo</th>
+                                <th className="py-2.5 px-4 text-right">G</th>
+                                <th className="py-2.5 px-4 text-right">N</th>
+                                <th className="py-2.5 px-4 text-right">P</th>
+                                <th className="py-2.5 px-4 text-right">Diff</th>
+                              </tr>
+                            ) : (
+                              <tr className="bg-slate-50 text-[10px] font-black uppercase text-slate-600 border-b border-slate-200">
+                                <th className="py-2.5 px-3 text-center w-10">#</th>
+                                <th className="py-2.5 px-4">Club</th>
+                                <th className="py-2.5 px-3 text-center font-black text-slate-900 bg-slate-100/70">Pts</th>
+                                <th className="py-2.5 px-3 text-center">MJ</th>
+                                <th className="py-2.5 px-3 text-center text-emerald-700">G</th>
+                                <th className="py-2.5 px-3 text-center text-slate-500">N</th>
+                                <th className="py-2.5 px-3 text-center text-rose-600">P</th>
+                                <th className="py-2.5 px-3 text-center">BM</th>
+                                <th className="py-2.5 px-3 text-center">BC</th>
+                                <th className="py-2.5 px-3 text-center">DB</th>
+                              </tr>
+                            )}
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(showAllStandings ? activeStandings : activeStandings.slice(0, 5)).map((row) => {
+                              const isFus = row.is_fus;
+                              const hasPlayed = row.played > 0;
+                              const tieBadge = hasPlayed ? getTieRuleBadgeLabel(row.tie_breaker_rule) : null;
+                              const clubInitials = row.short_name || row.team_name.slice(0, 3).toUpperCase();
+
+                              if (isU21Standings) {
+                                return (
+                                  <tr
+                                    key={row.team_key || row.club_id}
+                                    className={`transition-colors ${
+                                      isFus
+                                        ? 'bg-red-50/80 font-bold hover:bg-red-100/70 border-l-4 border-l-[#DC2626]'
+                                        : 'hover:bg-slate-50/80'
+                                    }`}
+                                  >
+                                    <td className="py-2 px-3 text-center">
+                                      <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-[#DC2626] text-white font-black italic text-[11px] min-w-[28px] shadow-2xs">
+                                        {String(row.position).padStart(2, '0')}
+                                      </span>
+                                    </td>
+                                    <td className="py-2 px-4">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center p-0.5 overflow-hidden shrink-0 shadow-2xs">
+                                          {row.club_logo ? (
+                                            <img src={row.club_logo} alt="" className="w-full h-full object-contain rounded-full" />
+                                          ) : (
+                                            <span className="font-black text-[9px] text-slate-600">
+                                              {clubInitials}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span className={`truncate text-xs ${isFus ? 'font-black text-[#DC2626]' : 'font-semibold text-slate-800'}`}>
+                                          {row.team_name}
+                                        </span>
+                                        {isFus && (
+                                          <Badge className="bg-[#DC2626] text-white text-[9px] font-black px-1.5 py-0">
+                                            FUS
+                                          </Badge>
+                                        )}
+                                        {tieBadge && (
+                                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200/80">
+                                            {tieBadge}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="py-2 px-4 text-right font-black text-xs text-slate-900">
+                                      {hasPlayed ? row.points : '-'}
+                                    </td>
+                                    <td className="py-2 px-4 text-right text-slate-700 font-semibold">{hasPlayed ? row.played : '-'}</td>
+                                    <td className="py-2 px-4 text-right text-slate-700 font-semibold">{hasPlayed ? row.won : '-'}</td>
+                                    <td className="py-2 px-4 text-right text-slate-700 font-semibold">{hasPlayed ? row.drawn : '-'}</td>
+                                    <td className="py-2 px-4 text-right text-slate-700 font-semibold">{hasPlayed ? row.lost : '-'}</td>
+                                    <td className="py-2 px-4 text-right font-bold">
+                                      {hasPlayed ? (
+                                        <span
+                                          className={
+                                            row.goal_difference > 0
+                                              ? 'text-emerald-700'
+                                              : row.goal_difference < 0
+                                                ? 'text-rose-600'
+                                                : 'text-slate-600'
+                                          }
+                                        >
+                                          {row.goal_difference > 0 ? `+${row.goal_difference}` : row.goal_difference}
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400">-</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              }
+
+                              return (
+                                <tr
+                                  key={row.team_key || row.club_id}
+                                  className={`transition-colors ${
+                                    isFus
+                                      ? 'bg-primary/5 font-bold hover:bg-primary/10 border-l-4 border-l-primary'
+                                      : 'hover:bg-slate-50/80'
+                                  }`}
+                                >
+                                  <td className="py-2 px-3 text-center">
+                                    <span
+                                      className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-black ${
+                                        row.position === 1
+                                          ? 'bg-amber-400 text-slate-950 shadow-xs'
+                                          : row.position <= 3
+                                            ? 'bg-slate-200 text-slate-800'
+                                            : 'text-slate-500'
+                                      }`}
+                                    >
+                                      {row.position}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-4">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center p-0.5 overflow-hidden shrink-0 shadow-2xs">
+                                        {row.club_logo ? (
+                                          <img src={row.club_logo} alt="" className="w-full h-full object-contain rounded-full" />
+                                        ) : (
+                                          <span className="font-black text-[9px] text-slate-600">
+                                            {clubInitials}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className={`truncate text-xs ${isFus ? 'font-black text-primary' : 'font-semibold text-slate-800'}`}>
+                                        {row.team_name}
+                                      </span>
+                                      {isFus && (
+                                        <Badge className="bg-primary text-white text-[9px] font-black px-1.5 py-0">
+                                          FUS
+                                        </Badge>
+                                      )}
+                                      {tieBadge && (
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200/80">
+                                          {tieBadge}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-2 px-3 text-center font-black text-xs text-slate-900 bg-slate-100/50">
+                                    {hasPlayed ? row.points : '-'}
+                                  </td>
+                                  <td className="py-2 px-3 text-center text-slate-700">{hasPlayed ? row.played : '-'}</td>
+                                  <td className="py-2 px-3 text-center text-emerald-700 font-bold">{hasPlayed ? row.won : '-'}</td>
+                                  <td className="py-2 px-3 text-center text-slate-500">{hasPlayed ? row.drawn : '-'}</td>
+                                  <td className="py-2 px-3 text-center text-rose-600 font-bold">{hasPlayed ? row.lost : '-'}</td>
+                                  <td className="py-2 px-3 text-center text-slate-700">{hasPlayed ? row.goals_for : '-'}</td>
+                                  <td className="py-2 px-3 text-center text-slate-500">{hasPlayed ? row.goals_against : '-'}</td>
+                                  <td className="py-2 px-3 text-center font-bold">
+                                    {hasPlayed ? (
+                                      <span
+                                        className={`px-1 py-0.5 rounded text-[10px] ${
+                                          row.goal_difference > 0
+                                            ? 'text-emerald-700 bg-emerald-50'
+                                            : row.goal_difference < 0
+                                              ? 'text-rose-700 bg-rose-50'
+                                              : 'text-slate-600 bg-slate-100'
+                                        }`}
+                                      >
+                                        {row.goal_difference > 0 ? `+${row.goal_difference}` : row.goal_difference}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400">-</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {(activeStandingsResolution.hasAnyH2HActivated || activeStandingsResolution.hasAnyProvisionalTie) && (
+                        <p className="text-[10px] font-medium text-slate-500 px-1">
+                          {activeStandingsResolution.hasAnyH2HActivated
+                            ? 'Règle FRMF active : confrontations directes appliquées entre clubs à égalité ayant disputé leurs matchs aller/retour.'
+                            : 'Classement provisoire : différence de buts générale puis meilleure attaque appliquées en attendant les matchs retours.'}
+                        </p>
+                      )}
+
+                      {activeStandings.length > 5 && (
+                        <div className="flex justify-center pt-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowAllStandings(!showAllStandings)}
+                            className="text-xs font-black uppercase tracking-wider text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 h-8 gap-1.5"
+                          >
+                            <span>{showAllStandings ? 'Afficher le Top 5' : `Voir les ${activeStandings.length} clubs (PLUS)`}</span>
+                            <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showAllStandings ? '-rotate-90' : 'rotate-90'}`} />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="py-12 px-4 text-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 flex flex-col items-center justify-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 shadow-2xs">
+                        <Clock className="w-6 h-6" />
+                      </div>
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-200/80 border border-slate-300 text-slate-700 text-xs font-black uppercase tracking-wider">
+                        <span>Pas encore disponible</span>
+                      </div>
+                      <div className="max-w-md space-y-1">
+                        <h4 className="text-sm font-black text-slate-800">
+                          Classement officiel {currentCategoryForStandings || 'de la catégorie'} non publié
+                        </h4>
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Aucun résultat enregistré dans <span className="font-bold text-slate-700">Classement &amp; Résultats FRMF</span> ni en base pour la catégorie <span className="font-bold text-slate-700">{currentCategoryForStandings || 'sélectionnée'}</span>.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            )}
+          </div>
+        ) : null}
 
       {/* Cropper Modal */}
       <ImageCropperModal
@@ -4224,138 +3433,6 @@ const PlayerManagement: React.FC = () => {
         title={mediaPickerTarget === 'celebration_photo_url' ? "Affecter la photo de célébration (But / Arrêt)" : "Affecter la photo officielle depuis la Médiathèque"}
       />
 
-      {/* Generate 22 Fake Players Modal */}
-      <AnimatePresence>
-        {genModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={(e) => { if (e.target === e.currentTarget && !genRunning) setGenModal(false); }}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
-            >
-              {/* Modal Header */}
-              <div className="bg-gradient-to-r from-violet-600 to-violet-500 px-8 py-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-white font-black text-lg uppercase tracking-widest">Générer 22 Joueurs</h3>
-                    <p className="text-white/70 text-xs font-medium">Données fictives réalistes (noms marocains)</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Body */}
-              <div className="px-8 py-6 space-y-5">
-                {/* Category */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                    1. Choisir la catégorie
-                  </label>
-                  <select
-                    value={genCategory}
-                    disabled={genRunning}
-                    onChange={(e) => { setGenCategory(e.target.value); setGenTeamId(''); }}
-                    className="w-full h-12 rounded-2xl border-2 border-secondary bg-secondary/20 px-4 text-sm font-semibold focus:outline-none focus:border-violet-400 transition-all"
-                  >
-                    <option value="">— Choisir une catégorie —</option>
-                    {allowedCategories.filter(c => c !== 'PRO').map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Team (conditionally shown) */}
-                {genCategory && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="space-y-2"
-                  >
-                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                      2. Choisir l'équipe
-                    </label>
-                    {genTeams.length === 0 ? (
-                      <div className="h-12 flex items-center justify-center rounded-2xl bg-orange-50 border-2 border-orange-200 text-orange-600 text-xs font-semibold">
-                        Aucune équipe trouvée pour la catégorie {genCategory}
-                      </div>
-                    ) : (
-                      <select
-                        value={genTeamId}
-                        disabled={genRunning}
-                        onChange={(e) => setGenTeamId(e.target.value)}
-                        className="w-full h-12 rounded-2xl border-2 border-secondary bg-secondary/20 px-4 text-sm font-semibold focus:outline-none focus:border-violet-400 transition-all"
-                      >
-                        <option value="">— Choisir une équipe —</option>
-                        {genTeams.map(t => (
-                          <option key={t.id} value={t.id}>{t.name}</option>
-                        ))}
-                      </select>
-                    )}
-                  </motion.div>
-                )}
-
-                {/* Progress Bar */}
-                {genRunning && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="space-y-3 pt-2"
-                  >
-                    <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-                      <span>Création en cours...</span>
-                      <span className="text-violet-600 font-black text-sm">{genProgress} / 22</span>
-                    </div>
-                    <div className="h-3 bg-secondary/40 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-gradient-to-r from-violet-600 to-violet-400 rounded-full"
-                        animate={{ width: `${(genProgress / 22) * 100}%` }}
-                        transition={{ ease: 'easeOut', duration: 0.25 }}
-                      />
-                    </div>
-                    <p className="text-center text-[11px] text-muted-foreground font-medium">
-                      {genProgress < 22
-                        ? `Joueur ${genProgress + 1} en cours d'ajout...`
-                        : 'Finalisation...'}
-                    </p>
-                  </motion.div>
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="px-8 py-5 border-t border-secondary/30 flex items-center justify-between">
-                <Button
-                  variant="ghost"
-                  disabled={genRunning}
-                  onClick={() => setGenModal(false)}
-                  className="h-11 px-6 rounded-2xl font-black uppercase tracking-widest text-xs"
-                >
-                  Annuler
-                </Button>
-                <Button
-                  onClick={handleGenerateFakePlayers}
-                  disabled={!genTeamId || genRunning}
-                  className="h-11 px-8 rounded-2xl bg-violet-600 hover:bg-violet-700 font-black uppercase tracking-widest text-xs gap-2 shadow-lg shadow-violet-500/25 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed"
-                >
-                  {genRunning
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Génération...</>
-                    : <><Sparkles className="w-4 h-4" /> Générer 22 Joueurs</>
-                  }
-                </Button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Surclassement Modal */}
       <AnimatePresence>
         {surclassementPlayer && (
@@ -4372,16 +3449,6 @@ const PlayerManagement: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Departure / Transfer Modal */}
-      <PlayerDepartureModal
-        isOpen={departureModalOpen}
-        onClose={() => setDepartureModalOpen(false)}
-        player={departurePlayer}
-        opponentClubs={opponentClubs}
-        onConfirmTransfer={handleConfirmTransfer}
-        onConfirmArchive={handleConfirmArchive}
-      />
-
       {/* Dedicated Player Match Calendar Modal */}
       {calendarModalPlayer && (
         <PlayerMatchCalendarModal
@@ -4390,6 +3457,135 @@ const PlayerManagement: React.FC = () => {
           initialPlayer={calendarModalPlayer}
         />
       )}
+
+      {/* ── Modal Gestion Lien Vidéo / Google Drive ── */}
+      <AnimatePresence>
+        {driveModalOpen && selectedPlayer && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget && !driveUrlSaving) setDriveModalOpen(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100"
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-emerald-700 to-emerald-600 px-6 py-5 text-white">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shadow-xs">
+                      <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-base uppercase tracking-wider text-white">
+                        Lien Vidéo / Google Drive
+                      </h3>
+                      <p className="text-white/80 text-xs font-semibold">
+                        {selectedPlayer.full_name} (#{selectedPlayer.jersey_number || '•'})
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDriveModalOpen(false)}
+                    className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-black transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                    <LinkIcon className="w-3.5 h-3.5 text-emerald-600" />
+                    URL Google Drive, Vidéo ou Dossier
+                  </label>
+                  <Input
+                    type="url"
+                    placeholder="https://drive.google.com/file/d/... ou https://..."
+                    value={driveUrlInput}
+                    onChange={(e) => setDriveUrlInput(e.target.value)}
+                    className="h-12 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-emerald-600 text-xs font-medium px-4"
+                  />
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    💡 Vous pouvez coller un lien de fichier vidéo Google Drive, un dossier partagé de matchs, YouTube ou tout autre lien de diffusion.
+                  </p>
+                </div>
+
+                {driveUrlInput.trim() && (
+                  <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ExternalLink className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="text-xs text-emerald-800 font-bold truncate">
+                        {driveUrlInput}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(driveUrlInput.trim(), '_blank', 'noopener,noreferrer')}
+                      className="h-8 px-3 rounded-xl border-emerald-300 text-emerald-700 hover:bg-emerald-100 text-[10px] font-black uppercase shrink-0 gap-1"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>Tester</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                <div>
+                  {getPlayerDriveUrl(selectedPlayer) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setDriveUrlInput('')}
+                      className="h-10 px-3 rounded-xl text-rose-600 hover:bg-rose-50 text-xs font-bold gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Effacer</span>
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setDriveModalOpen(false)}
+                    disabled={driveUrlSaving}
+                    className="h-10 px-4 rounded-xl text-xs font-bold"
+                  >
+                    Annuler
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSaveDriveUrl}
+                    disabled={driveUrlSaving}
+                    className="h-10 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider shadow-md shadow-emerald-600/20 gap-2"
+                  >
+                    {driveUrlSaving ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    <span>Enregistrer</span>
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Modal Confirmation de Suppression Définitive (US-DASH-57) */}
       <AnimatePresence>

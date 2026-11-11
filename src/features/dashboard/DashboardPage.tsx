@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMatches } from '../../hooks/useMatches';
 import { usePlayers } from '../../hooks/usePlayers';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 
 import MiniStatRow from '../../components/MiniStatRow';
 import PlayerTickerCarousel from '../../components/PlayerTickerCarousel';
@@ -34,16 +34,7 @@ const DashboardPage: React.FC = () => {
   const isError = matchesError || playersError;
 
   if (isLoading) {
-    return (
-      <div className="space-y-8 animate-pulse">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32 rounded-3xl" />)}
-        </div>
-        <Skeleton className="h-36 rounded-3xl" />
-        <Skeleton className="h-[380px] rounded-3xl" />
-        <Skeleton className="h-[400px] rounded-3xl" />
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement du tableau de bord…" />;
   }
 
   if (isError) {

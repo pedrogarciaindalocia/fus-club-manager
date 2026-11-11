@@ -31,9 +31,9 @@ import {
   FileEdit,
   LayoutList,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import type { BlogPost } from '../../types/blog';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { toast } from 'sonner';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
 
@@ -224,31 +224,14 @@ const BlogManagement: React.FC = () => {
   };
 
   if (isLoading) {
-    return (
-      <div className="space-y-8 animate-in fade-in duration-700">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-11 w-40 rounded-xl" />
-        </div>
-        <Skeleton className="h-16 w-full rounded-2xl" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="h-64 w-full rounded-3xl" />
-          ))}
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement des articles du blog…" />;
   }
 
   return (
     <div className="space-y-8 pb-20 overflow-visible">
-      <AnimatePresence mode="wait">
         {!showForm ? (
-          <motion.div
+          <div
             key="list"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
             className="space-y-8"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -352,14 +335,9 @@ const BlogManagement: React.FC = () => {
 
             {displayMode === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <AnimatePresence mode="popLayout">
                   {paginatedPosts.map((post) => (
-                    <motion.div
+                    <div
                       key={post.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
                       className="group"
                     >
                       <Card className="h-full rounded-[2rem] border bg-white overflow-hidden hover:shadow-xl hover:shadow-primary/5 transition-all duration-300 hover:-translate-y-1">
@@ -434,9 +412,8 @@ const BlogManagement: React.FC = () => {
                           </div>
                         </CardContent>
                       </Card>
-                    </motion.div>
+                    </div>
                   ))}
-                </AnimatePresence>
               </div>
             ) : (
               <div className="space-y-3">
@@ -526,13 +503,10 @@ const BlogManagement: React.FC = () => {
                 </Button>
               </div>
             )}
-          </motion.div>
+          </div>
         ) : (
-          <motion.div
+          <div
             key="form"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
             className="max-w-4xl mx-auto"
           >
             <Card className="rounded-[2.5rem] border shadow-lg overflow-hidden bg-white">
@@ -722,9 +696,8 @@ const BlogManagement: React.FC = () => {
                 </div>
               </div>
             </Card>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
       {showCategoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">

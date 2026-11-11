@@ -5,7 +5,7 @@ import { Card, CardContent } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Settings, Plus, MapPin, Globe, History, LayoutPanelLeft } from 'lucide-react';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 
 const ClubManagement: React.FC = () => {
   const { mainClub, opponentClubs, isLoading: clubLoading } = useClubData();
@@ -14,22 +14,7 @@ const ClubManagement: React.FC = () => {
   const isLoading = clubLoading || competitionsLoading;
 
   if (isLoading) {
-    return (
-      <div className="space-y-8 animate-in fade-in duration-700">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-48" />
-          <div className="flex gap-2">
-            <Skeleton className="h-10 w-32 rounded-lg" />
-            <Skeleton className="h-10 w-32 rounded-lg" />
-          </div>
-        </div>
-        <Skeleton className="h-64 w-full rounded-[2.5rem]" />
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-           <Skeleton className="lg:col-span-8 h-96 rounded-[2.5rem]" />
-           <Skeleton className="lg:col-span-4 h-96 rounded-[2.5rem]" />
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement du club…" />;
   }
 
   return (

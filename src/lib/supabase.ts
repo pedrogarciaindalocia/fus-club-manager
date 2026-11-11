@@ -8,13 +8,27 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn("Supabase environment variables are missing! Registration will fail.");
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Bypasse le Web Locks API natif (navigator.locks) pour éliminer les erreurs
+// NavigatorLockAcquireTimeoutError et les blocages lors de la déconnexion ou des rafraîchissements
+const noopLock = async (_name: string, _acquireTimeout: number, fn: () => Promise<any>) => {
+  return await fn();
+};
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    lock: noopLock,
+  },
+});
 
 export const supabaseAdmin = (supabaseServiceRoleKey && supabaseUrl)
   ? createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
-      }
+        lock: noopLock,
+      },
     })
   : supabase;

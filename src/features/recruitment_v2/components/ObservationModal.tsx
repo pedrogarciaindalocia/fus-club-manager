@@ -29,7 +29,7 @@ export const ObservationModal: React.FC<ObservationModalProps> = ({
   const [generalImpression, setGeneralImpression] = useState('');
   const [strengths, setStrengths] = useState('');
   const [weaknesses, setWeaknesses] = useState('');
-  const [potentialRating, setPotentialRating] = useState(8);
+  const [potentialRating, setPotentialRating] = useState(0);
   const [recommendationVerdict, setRecommendationVerdict] = useState('Convocation Immédiate pour Test Académie');
   const [comments, setComments] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -157,11 +157,12 @@ export const ObservationModal: React.FC<ObservationModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Potentiel (1 à 10)</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Potentiel (0 à 10)</label>
               <input
                 type="number"
-                min="1"
+                min="0"
                 max="10"
+                step="0.5"
                 value={potentialRating}
                 onChange={(e) => setPotentialRating(Number(e.target.value))}
                 className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-primary"

@@ -12,7 +12,6 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
-import { motion } from 'framer-motion';
 
 
 const revenueData = {
@@ -71,11 +70,7 @@ const RevenueChart: React.FC = () => {
   const data = revenueData[period];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5, delay: 0.3 }}
-    >
+    <div>
       <Card className="hover:shadow-md transition-shadow border">
         <CardHeader className="flex-row items-center justify-between pb-8">
           <div className="space-y-1">
@@ -151,7 +146,7 @@ const RevenueChart: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 };
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Trophy, Clock, MapPin, Shield, Target } from 'lucide-react';
 import { Badge } from './ui/badge';
@@ -9,6 +10,7 @@ import { useCompetitions } from '../hooks/useCompetitions';
 import type { Match } from '../types';
 
 const LastMatchResult: React.FC = () => {
+  const navigate = useNavigate();
   const { matches } = useMatches();
   const { opponentClubs, mainClub } = useClubData();
   const { stadiums } = useCompetitions();
@@ -41,7 +43,19 @@ const LastMatchResult: React.FC = () => {
   const isDraw = (lastMatch.score_home || 0) === (lastMatch.score_away || 0);
 
   return (
-    <Card className="h-full border shadow-sm hover:shadow-md transition-shadow">
+    <Card
+      role="button"
+      tabIndex={0}
+      onClick={() => navigate(`/matches?matchId=${encodeURIComponent(lastMatch.id)}&tab=overview`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          navigate(`/matches?matchId=${encodeURIComponent(lastMatch.id)}&tab=overview`);
+        }
+      }}
+      title="Ouvrir la vue détaillée du match"
+      className="h-full border shadow-sm hover:shadow-md hover:border-primary/40 transition-all cursor-pointer"
+    >
       <CardHeader className="flex flex-row items-center justify-between pb-8">
         <CardTitle className="text-lg font-bold tracking-tight">Dernier Match</CardTitle>
         <Badge 

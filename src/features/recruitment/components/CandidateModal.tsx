@@ -11,6 +11,7 @@ import { cn } from '../../../lib/utils';
 import { NATIONALITIES, normalizeAgeCategory } from '../../../constants';
 import { UNIFIED_POSITION_OPTIONS, formatUnifiedPosition } from '../../../constants/positions';
 import { useMetrics } from '../../../hooks/useMetrics';
+import { getMetricCategoryFrenchLabel, getMetricPositionFrenchName } from '../../../utils/metricSetsHelpers';
 import { GEOGRAPHY_DATA, getContinentForCountry, getCountryForNationality, getCountryFlag, getCountryNationality } from '../../../constants/geography';
 import { PlayerGeographyFields } from '../../../components/PlayerGeographyFields';
 import { usePermissions } from '../../../context/PermissionsContext';
@@ -173,7 +174,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         (criteria[pillar] || []).forEach(c => {
           const lbl = typeof c === 'string' ? c : (c as any)?.label;
           if (lbl && next[`${pillar}-${lbl}`] === undefined) {
-            next[`${pillar}-${lbl}`] = 5.0;
+            next[`${pillar}-${lbl}`] = 0;
             hasChanges = true;
           }
         });
@@ -249,7 +250,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   
   const [discoveryMatch, setDiscoveryMatch] = useState('');
   const [priority, setPriority] = useState<RecommendationPriority>('high');
-  const [initialScore, setInitialScore] = useState<number>(8.0);
+  const [initialScore, setInitialScore] = useState<number | null>(null);
   const [scoutNotes, setScoutNotes] = useState('');
   const [preferredLocations, setPreferredLocations] = useState<string[]>([]);
   // LocationPicker state pour zones préférées
@@ -376,7 +377,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
       setDiscoveryMatch(candidate.discovery_match || '');
       setPriority(candidate.recommendation_priority || 'high');
-      setInitialScore(candidate.initial_scout_score || 8.0);
+      setInitialScore(candidate.initial_scout_score != null && Number(candidate.initial_scout_score) > 0 ? Number(candidate.initial_scout_score) : null);
       setScoutNotes(candidate.scout_recommendation_notes || '');
       setStatus(candidate.status || 'registered');
       // Zones préférées
@@ -470,7 +471,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     const success = addScoutCriterion(positionConfig.code, inlineAddingPillar, trimmed);
     if (success) {
       const key = `${inlineAddingPillar}-${trimmed}`;
-      setCriterionScores((prev) => ({ ...prev, [key]: 5.0 }));
+      setCriterionScores((prev) => ({ ...prev, [key]: 0 }));
       setCriterionEnabled((prev) => ({ ...prev, [key]: true }));
       setInlineAddingPillar(null);
       setInlineNewCriterionName('');
@@ -548,10 +549,10 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const renderCriterionSlider = (pillar: ScoutPillarKey, label: string) => {
     const key = `${pillar}-${label}`;
     const isEnabled = criterionEnabled[key] ?? true;
-    const value = criterionScores[key] ?? 5.0;
+    const value = criterionScores[key] ?? 0;
     const isEditing = editingCriterion?.pillar === pillar && editingCriterion?.oldName === label;
 
-    let scoreBadgeColor = 'bg-slate-100 text-slate-700';
+    let scoreBadgeColor = value === 0 ? 'bg-slate-100 text-slate-400' : 'bg-slate-100 text-slate-700';
     if (value >= 9) scoreBadgeColor = 'bg-red-50 text-primary font-black';
     else if (value >= 7.5) scoreBadgeColor = 'bg-emerald-50 text-emerald-700 font-bold';
     else if (value >= 6) scoreBadgeColor = 'bg-blue-50 text-blue-700';
@@ -653,7 +654,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         </div>
         <input
           type="range"
-          min="1"
+          min="0"
           max="10"
           step="0.5"
           disabled={!isEnabled}
@@ -674,10 +675,10 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       const lbl = typeof c === 'string' ? c : (c as any)?.label;
       return criterionEnabled[`${pillar}-${lbl}`] !== false;
     });
-    if (active.length === 0) return 7.0;
+    if (active.length === 0) return 0;
     const sum = active.reduce((acc, c) => {
       const lbl = typeof c === 'string' ? c : (c as any)?.label;
-      return acc + (criterionScores[`${pillar}-${lbl}`] || 5.0);
+      return acc + (criterionScores[`${pillar}-${lbl}`] ?? 0);
     }, 0);
     return Math.round((sum / active.length) * 10) / 10;
   };
@@ -870,7 +871,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         discovery_location: discoveryLocation || undefined,
         discovery_match: discoveryMatch || undefined,
         recommendation_priority: priority,
-        initial_scout_score: Number(initialScore),
+        initial_scout_score: initialScore != null && initialScore > 0 ? Number(initialScore) : undefined,
         scout_recommendation_notes: scoutNotes || undefined,
 
         video_type: videoType,
@@ -1219,7 +1220,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     <option value="" disabled>Sélectionner le poste principal</option>
                     {positions.map(p => (
                       <option key={p.id} value={p.code}>
-                        {p.name} ({p.code})
+                        {getMetricPositionFrenchName(p)}
                       </option>
                     ))}
                   </select>
@@ -1234,7 +1235,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     <option value="">Aucun</option>
                     {positions.map(p => (
                       <option key={p.id} value={p.code}>
-                        {p.name} ({p.code})
+                        {getMetricPositionFrenchName(p)}
                       </option>
                     ))}
                   </select>
@@ -1581,7 +1582,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   >
                     {positions.map(p => (
                       <option key={p.id || p.code} value={p.code}>
-                        {p.name} ({p.code})
+                        {getMetricPositionFrenchName(p)}
                       </option>
                     ))}
                   </select>
@@ -1602,9 +1603,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     <span className="text-xl">{positionConfig.emoji}</span>
                     <div>
                       <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                        <span>Métriques configurées pour le poste {positionConfig.name} ({positionConfig.code})</span>
+                        <span>Métriques configurées pour le poste {getMetricPositionFrenchName(positionConfig)}</span>
                         <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
-                          {positionConfig.category || 'Poste'}
+                          {positionConfig.category ? getMetricCategoryFrenchLabel(positionConfig.category) : 'Poste'}
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500">Critères dynamiques configurés dans Paramétrage &gt; Configuration des métriques</p>

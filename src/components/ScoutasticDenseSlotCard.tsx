@@ -10,6 +10,8 @@ export interface DenseSlotPlayerItem {
   photoUrl?: string | null;
   initials: string;
   rating?: number | null;
+  badgeLabel?: string | null;
+  badgeClassName?: string;
   hasEvaluation?: boolean;
   isTrial?: boolean;
   clubOrTeam?: string | null;
@@ -46,15 +48,15 @@ export const ScoutasticDenseSlotCard: React.FC<ScoutasticDenseSlotCardProps> = (
     <div
       className={cn(
         "scoutastic-dense-card w-60 sm:w-68 bg-white/95 backdrop-blur-md rounded-2xl border-2 shadow-2xl overflow-hidden text-slate-900 transition-all z-30 select-none",
-        isSelected 
-          ? "border-amber-400 ring-4 ring-amber-400/35 shadow-amber-500/20" 
+        isSelected
+          ? "border-amber-400 ring-4 ring-amber-400/35 shadow-amber-500/20"
           : "border-slate-300 hover:border-emerald-400",
         className
       )}
       style={{ filter: 'drop-shadow(0 15px 30px rgba(0,0,0,0.45))' }}
     >
       {/* ── CARD HEADER (Position Label + Count + Bouton Tiroir) ── */}
-      <div 
+      <div
         onClick={(e) => {
           if (onOpenSlotDrawer) {
             e.stopPropagation();
@@ -99,11 +101,11 @@ export const ScoutasticDenseSlotCard: React.FC<ScoutasticDenseSlotCardProps> = (
             </button>
           )}
           {onOpenSlotDrawer && (
-            <span 
+            <span
               className={cn(
                 "p-1 rounded-md transition-colors",
-                isSelected 
-                  ? "bg-amber-400 text-slate-950 font-black shadow-xs" 
+                isSelected
+                  ? "bg-amber-400 text-slate-950 font-black shadow-xs"
                   : "bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white"
               )}
               title={isSelected ? "Fermer la liste à droite" : "Afficher la liste à droite du terrain"}
@@ -184,15 +186,24 @@ export const ScoutasticDenseSlotCard: React.FC<ScoutasticDenseSlotCardProps> = (
                     <X className="h-3 w-3" />
                   </button>
                 )}
-                {score !== null ? (
+                {p.badgeLabel ? (
+                  <span
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[9.5px] font-black shadow-xs",
+                      p.badgeClassName || "bg-slate-700 text-white border-slate-500"
+                    )}
+                  >
+                    {p.badgeLabel}
+                  </span>
+                ) : score !== null ? (
                   <div
                     className={cn(
                       "min-w-[26px] h-5 px-1.5 rounded-full text-[9.5px] font-black flex items-center justify-center gap-0.5 border shadow-xs",
                       score >= 8.0
                         ? "bg-amber-400 text-slate-950 border-amber-300"
                         : score >= 7.0
-                        ? "bg-emerald-500 text-white border-emerald-400"
-                        : "bg-slate-700 text-white border-slate-600"
+                          ? "bg-emerald-500 text-white border-emerald-400"
+                          : "bg-slate-700 text-white border-slate-600"
                     )}
                   >
                     {p.hasEvaluation && <Star className="w-2.5 h-2.5 fill-amber-300 text-amber-200 shrink-0" />}

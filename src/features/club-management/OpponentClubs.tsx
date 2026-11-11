@@ -22,9 +22,8 @@ import {
   Sparkles,
   ImageIcon
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import type { Club } from '../../types';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { storageService } from '../../services/storageService';
 import { opponentPlayerService } from '../../services/opponentPlayerService';
 import { build22FakeOpponentPlayers } from '../../utils/generateFakeOpponentPlayers';
@@ -35,9 +34,12 @@ import { useMemo } from 'react';
 import { OpponentSquadModal } from './components/OpponentSquadModal';
 import { GEOGRAPHY_DATA } from '../../constants/geography';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
+import { usePermissions } from '../../context/PermissionsContext';
 
 const OpponentClubs: React.FC = () => {
   const { opponentClubs, mainClub, isLoading: clubsLoading, addOpponent, updateOpponent, deleteOpponent } = useClubData();
+  const { can, hasSubModuleAccess } = usePermissions();
+  const canManageClubs = can('manage_standings') || hasSubModuleAccess('matches', 'manage_standings') || can('create_opponent') || hasSubModuleAccess('opponents', 'create') || hasSubModuleAccess('opponents', 'update');
   const isLoading = clubsLoading;
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -173,29 +175,14 @@ const OpponentClubs: React.FC = () => {
 
 
   if (isLoading) {
-    return (
-      <div className="space-y-8 animate-in fade-in duration-700">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-11 w-40 rounded-xl" />
-        </div>
-        <Skeleton className="h-16 w-full rounded-2xl" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1,2,3].map(i => <Skeleton key={i} className="h-48 rounded-2xl" />)}
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement des clubs adversaires…" />;
   }
 
   return (
     <div className="space-y-8 pb-20 overflow-visible">
-      <AnimatePresence mode="wait">
         {!showForm ? (
-          <motion.div
+          <div
             key="list"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
             className="space-y-8"
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -223,10 +210,12 @@ const OpponentClubs: React.FC = () => {
                       <LayoutGrid className="w-4 h-4" />
                     </Button>
                   </div>
-                  <Button onClick={() => handleOpenForm()} className="gap-3 shadow-xl shadow-primary/20 h-12 px-6 font-black uppercase tracking-widest text-[10px] bg-primary transition-all active:scale-95">
-                    <Plus className="w-4 h-4" />
-                    Add Opponent
-                  </Button>
+                  {canManageClubs && (
+                    <Button onClick={() => handleOpenForm()} className="gap-3 shadow-xl shadow-primary/20 h-12 px-6 font-black uppercase tracking-widest text-[10px] bg-primary transition-all active:scale-95">
+                      <Plus className="w-4 h-4" />
+                      Add Opponent
+                    </Button>
+                  )}
               </div>
             </div>
 
@@ -273,16 +262,8 @@ const OpponentClubs: React.FC = () => {
             {/* Content Area */}
             {displayMode === 'grid' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <AnimatePresence mode="popLayout">
                   {paginatedClubs.map((club) => (
-                    <motion.div
-                      key={club.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      transition={{ duration: 0.2 }}
-                    >
+                    <div key={club.id}>
                       <Card className="group relative overflow-hidden border-secondary hover:border-primary/20 hover:shadow-2xl transition-all duration-500 bg-white rounded-[2rem]">
                         <CardContent className="p-6">
                           <div className="flex items-start justify-between mb-6">
@@ -297,14 +278,16 @@ const OpponentClubs: React.FC = () => {
                                 }}
                               />
                             </div>
-                            <div className="flex gap-1.5">
-                              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => handleOpenForm(club)}>
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-red-50 transition-all" onClick={() => deleteOpponent(club.id)}>
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
+                            {canManageClubs && (
+                              <div className="flex gap-1.5">
+                                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => handleOpenForm(club)}>
+                                  <Edit2 className="w-4 h-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-red-50 transition-all" onClick={() => deleteOpponent(club.id)}>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            )}
                           </div>
 
                           <div className="space-y-1 mb-6">
@@ -336,9 +319,8 @@ const OpponentClubs: React.FC = () => {
                           </div>
                         </CardContent>
                       </Card>
-                    </motion.div>
+                    </div>
                   ))}
-                </AnimatePresence>
               </div>
             ) : (
               <div className="bg-white border rounded-[2rem] overflow-hidden shadow-sm">
@@ -378,12 +360,16 @@ const OpponentClubs: React.FC = () => {
                                  <Users className="w-3.5 h-3.5" />
                                  Effectif
                                </Button>
-                               <Button variant="ghost" size="icon" onClick={() => handleOpenForm(club)} className="h-9 w-9 rounded-xl hover:bg-white hover:shadow-md transition-all">
-                                  <Edit2 className="w-4 h-4" />
-                               </Button>
-                               <Button variant="ghost" size="icon" onClick={() => deleteOpponent(club.id)} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-red-50 transition-all">
-                                  <Trash2 className="w-4 h-4" />
-                               </Button>
+                                {canManageClubs && (
+                                  <>
+                                    <Button variant="ghost" size="icon" onClick={() => handleOpenForm(club)} className="h-9 w-9 rounded-xl hover:bg-white hover:shadow-md transition-all">
+                                      <Edit2 className="w-4 h-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" onClick={() => deleteOpponent(club.id)} className="h-9 w-9 rounded-xl text-muted-foreground hover:text-destructive hover:bg-red-50 transition-all">
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </>
+                                )}
                              </div>
                           </td>
                         </tr>
@@ -415,13 +401,10 @@ const OpponentClubs: React.FC = () => {
                  </div>
               </div>
             )}
-          </motion.div>
+          </div>
         ) : (
-          <motion.div
+          <div
             key="form"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
             className="max-w-4xl mx-auto"
           >
             <div className="flex items-center gap-6 mb-10">
@@ -606,9 +589,8 @@ const OpponentClubs: React.FC = () => {
                 </div>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
       {!isLoading && filteredClubs.length === 0 && !showForm && (
         <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">

@@ -3,7 +3,7 @@ import { useMatches } from '../../../hooks/useMatches';
 import { useAdvancedDashboardStats } from '../../../hooks/useAdvancedDashboardStats';
 import { usePlayers } from '../../../hooks/usePlayers';
 import { useTeams } from '../../../hooks/useTeams';
-import { Skeleton } from '../../../components/ui/skeleton';
+import { FusLogoLoader } from '../../../components/ui/FusLogoLoader';
 
 export default function ScoreBasedStats() {
   const { matches: allMatches, isLoading: matchesLoading } = useMatches();
@@ -282,7 +282,7 @@ export default function ScoreBasedStats() {
 
 
   if (isLoading) {
-    return <Skeleton className="h-[600px] w-full rounded-[2rem]" />;
+    return <FusLogoLoader fullPage size="lg" label="Chargement des statistiques…" />;
   }
 
   return (
@@ -331,7 +331,7 @@ export default function ScoreBasedStats() {
 
       <div className="flex-1 min-h-[400px] overflow-auto">
         {activeTab === 1 && (
-          <div className="animate-in fade-in slide-in-from-bottom-2">
+          <div>
             {selectedMatchId === 'ALL' ? (
               <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                 <span className="text-4xl mb-4">📊</span>
@@ -374,7 +374,7 @@ export default function ScoreBasedStats() {
         )}
 
         {activeTab === 2 && (
-          <div className="animate-in fade-in slide-in-from-bottom-2">
+          <div>
             {selectedMatchId === 'ALL' ? (
               <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                 <span className="text-4xl mb-4">📈</span>
@@ -415,7 +415,7 @@ export default function ScoreBasedStats() {
         )}
 
         {activeTab === 3 && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 overflow-x-auto pb-4">
+          <div className="overflow-x-auto pb-4">
              <table className="w-full text-left border-collapse whitespace-nowrap">
                 <thead>
                   <tr className="border-b-2 border-gray-100">
@@ -453,7 +453,7 @@ export default function ScoreBasedStats() {
         )}
 
         {activeTab === 4 && teamStats && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[
                 { title: 'Global', metrics: [
                   { label: 'Matchs Joués', val: teamStats.MJ },

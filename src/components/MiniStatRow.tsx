@@ -46,9 +46,6 @@ const MiniStatRow: React.FC = () => {
         return (
           <motion.div
             key={s.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: idx * 0.1 }}
             whileHover={{ y: -5 }}
           >
             <Card className="hover:shadow-lg shadow-sm border overflow-hidden relative group rounded-2xl sm:rounded-3xl">
@@ -74,12 +71,9 @@ const MiniStatRow: React.FC = () => {
                   <div className="flex items-center justify-between text-muted-foreground">
                     <p className="text-xs font-medium uppercase tracking-widest opacity-80">{s.label}</p>
                     <div className="w-full max-w-[60px] h-[2px] bg-muted relative rounded-full overflow-hidden">
-                      <motion.div 
+                      <div
                         className="absolute inset-y-0 left-0"
-                        initial={{ width: 0 }}
-                        animate={{ width: "65%" }}
-                        transition={{ duration: 1, delay: 0.5 + idx * 0.1 }}
-                        style={{ background: s.color }}
+                        style={{ width: "65%", background: s.color }}
                       />
                     </div>
                   </div>

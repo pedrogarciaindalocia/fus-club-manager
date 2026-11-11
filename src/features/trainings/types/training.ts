@@ -114,47 +114,54 @@ export interface PlayerTrainingEvaluation {
   player_id: string;
   player_name: string;
   player_photo?: string;
-  position: string;
-  category: string;
+  position?: string;
+  category?: string;
   evaluator_name: string;
 
-  // 1. Technique (1-10)
-  tech_control: number;
-  tech_passing: number;
-  tech_dribbling: number;
-  tech_shooting: number;
-  tech_driving: number;
-  tech_score: number;
-
-  // 2. Tactique (1-10)
-  tact_positioning: number;
-  tact_info_taking: number;
-  tact_decision: number;
-  tact_game_reading: number;
-  tact_placement: number;
-  tact_score: number;
-
-  // 3. Physique (1-10)
-  phys_speed: number;
-  phys_endurance: number;
-  phys_explosiveness: number;
-  phys_agility: number;
-  phys_intensity: number;
-  phys_score: number;
-
-  // 4. Mental (1-10)
-  ment_concentration: number;
-  ment_motivation: number;
-  ment_discipline: number;
-  ment_communication: number;
-  ment_attitude: number;
-  ment_score: number;
-
-  // Global (1-10)
+  // Scores DB normalisés 4 Piliers (1-10)
+  technical_score: number;
+  tactical_score: number;
+  physical_score: number;
+  mental_score: number;
   global_score: number;
+
+  // Contexte lot dynamique Performance Joueur (hors-scouts)
+  metric_set_id?: string | null;
+  metric_set_name?: string | null;
+  position_code?: string | null;
+  criteria_scores?: Record<string, number> | null;
+
+  notes?: string;
+  tags?: string[];
   coach_comment?: string;
   strengths: string[];
   improvements: string[];
+
+  // Champs historiques optionnels mockTrainingData
+  tech_control?: number;
+  tech_passing?: number;
+  tech_dribbling?: number;
+  tech_shooting?: number;
+  tech_driving?: number;
+  tech_score?: number;
+  tact_positioning?: number;
+  tact_info_taking?: number;
+  tact_decision?: number;
+  tact_game_reading?: number;
+  tact_placement?: number;
+  tact_score?: number;
+  phys_speed?: number;
+  phys_endurance?: number;
+  phys_explosiveness?: number;
+  phys_agility?: number;
+  phys_intensity?: number;
+  phys_score?: number;
+  ment_concentration?: number;
+  ment_motivation?: number;
+  ment_discipline?: number;
+  ment_communication?: number;
+  ment_attitude?: number;
+  ment_score?: number;
 }
 
 export interface PlayerTrainingLoad {

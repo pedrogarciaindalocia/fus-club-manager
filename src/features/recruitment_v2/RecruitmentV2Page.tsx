@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Users, Calendar, Swords, Plus, Search, Filter,
-  Sparkles, Award, Shield, Footprints, ChevronRight,
+  Award, Shield, ChevronRight,
   TrendingUp, Trash2, Edit3, CheckCircle2, Clock, AlertCircle,
-  Eye, UserCheck, LayoutList, Kanban, HeartHandshake, Briefcase, User, RotateCcw, X, Lock, MapPin, Trophy, Crown,
+  Eye, UserCheck, LayoutList, Kanban, HeartHandshake, Briefcase, User, RotateCcw, X, Lock, MapPin, Trophy,
   Sliders, LayoutGrid, List, ClipboardList, Archive, RefreshCw, FileText, UserPlus, Target, Compass, History, Loader2,
-  Globe, Play, Flame, Video, Bookmark, BookmarkCheck, ArrowRight, ChevronDown
+  Play, Video, Bookmark, BookmarkCheck
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -23,17 +23,17 @@ import type {
   ScoutMission,
   PlayerRecruitmentStatus
 } from './types/recruitment';
-import { RECRUITMENT_AGE_CATEGORIES, groupCategoriesByPole, PLAYER_RECRUITMENT_STATUS_OPTIONS, getAgeCategoryFromBirthDate, getPoleFromCategory } from './types/recruitment';
+import {
+  RECRUITMENT_AGE_CATEGORIES,
+  groupCategoriesByPole,
+  PLAYER_RECRUITMENT_STATUS_OPTIONS,
+  getAgeCategoryFromBirthDate,
+  calculateCandidateAge,
+  getPoleFromCategory,
+  resolveReportOrCandidateSurclassement
+} from './types/recruitment';
 import { PLAYER_POSITIONS, normalizeAgeCategory } from '../../constants';
-import { 
-  CONTINENTS, 
-  GEOGRAPHY_DATA, 
-  getCountryFlag, 
-  getContinentForCountry, 
-  getCountryNationality, 
-  getCountryForNationality, 
-  getAllCountriesOrdered 
-} from '../../constants/geography';
+import { getCountryFlag } from '../../constants/geography';
 
 // Subcomponents
 import CandidateModal from './components/CandidateModal';
@@ -57,6 +57,7 @@ import { CandidateDriveLinkModal } from './components/CandidateDriveLinkModal';
 import { AdministrativeProcedureModal } from './components/AdministrativeProcedureModal';
 import { getFrenchPositionLabel } from './constants/scoutCriteriaByPosition';
 import { CandidatePillarsScorecard } from './components/CandidatePillarsScorecard';
+import { PreferredFootIcon } from './components/PreferredFootIcon';
 import { cn } from '../../lib/utils';
 const FOOT_OPTIONS = [
   { id: 'ALL', label: 'Tous les pieds' },
@@ -316,8 +317,10 @@ export const RecruitmentV2Page: React.FC = () => {
     deleteCandidates,
     archiveCandidates,
     createTest,
+    createTestsBatch,
     updateTest,
     deleteTest,
+    deleteTests,
     saveEvaluation,
     deleteEvaluation,
     deleteEvaluations,
@@ -400,43 +403,6 @@ export const RecruitmentV2Page: React.FC = () => {
     return normalizeAgeCategory(c.age_category || 'U19');
   }, []);
 
-  // Gestion du changement direct de statut depuis la liste déroulante du tableau
-  const handleTableStatusChange = React.useCallback(async (candidate: TrialCandidate, nextStatus: PlayerRecruitmentStatus) => {
-    const isOwner = Boolean(
-      candidate.discovering_scout === currentUserId ||
-      candidate.discovering_scout_id === currentUserId ||
-      candidate.created_by === currentUserId ||
-      (candidate as any)?.scout_id === currentUserId
-    );
-
-    // Règle Métier US-DASH-121 : Un scout / Scout Manager ne peut modifier le statut QUE pour ses propres joueurs
-    if (!canProcessRecruitNow && !isOwner) {
-      toast.error("Vous pouvez modifier le statut uniquement pour vos propres joueurs.");
-      return;
-    }
-
-    const mappedDbStatus =
-      nextStatus === 'recruit_now' ? 'selected' :
-      nextStatus === 'invitation_test' ? 'in_trial' : 'registered';
-    const isValidated = nextStatus === 'recruit_now';
-
-    try {
-      await updateCandidate({
-        id: candidate.id,
-        updates: {
-          scout_state_decision: nextStatus,
-          status: mappedDbStatus as any,
-          is_recruit_now_validated: isValidated,
-        }
-      });
-      const opt = PLAYER_RECRUITMENT_STATUS_OPTIONS.find(o => o.value === nextStatus);
-      toast.success(`Statut de ${candidate.first_name} ${candidate.last_name} mis à jour : "${opt?.label || nextStatus}"`);
-    } catch (err) {
-      console.error('[RecruitmentV2Page] Erreur lors de la mise à jour du statut:', err);
-      toast.error("Impossible de mettre à jour le statut du joueur");
-    }
-  }, [updateCandidate, canProcessRecruitNow, isCandidateRecruitNow, isScoutManager, authState?.user?.id]);
-
   const todayStr = new Date().toLocaleDateString('en-CA');
 
   // Modals state
@@ -487,6 +453,117 @@ export const RecruitmentV2Page: React.FC = () => {
       return;
     }
     setCandidateForAdminProcedure(candidate);
+  };
+
+  // Résolution unifiée du potentiel du joueur :
+  // Règle métier : 0 rapport d'évaluation = potentiel strictement à 0.0
+  const resolveCandidatePotentialScore = (
+    c: TrialCandidate,
+    latestEval?: CandidateEvaluation,
+    reportsCount?: number
+  ): number => {
+    if (!latestEval || reportsCount === 0) return 0;
+    const rawPot = latestEval.potential_rating != null && !isNaN(Number(latestEval.potential_rating))
+      ? Number(latestEval.potential_rating)
+      : (c.potential_rating != null && !isNaN(Number(c.potential_rating)) ? Number(c.potential_rating) : 0);
+    return Math.round(rawPot * 10) / 10;
+  };
+
+  // Badge unifié de surclassement :
+  // - Si le joueur a 0 rapport (candReportsCount === 0), aucun surclassement n'est affiché
+  // - Sinon affiche la catégorie exacte du dernier rapport lorsque le joueur est surclassé
+  const renderCandidateSurclassementBadge = (
+    c: TrialCandidate,
+    latestEval: CandidateEvaluation | undefined,
+    candReportsCount: number,
+    roundedClass: 'rounded-md' | 'rounded-full' = 'rounded-md'
+  ) => {
+    const surclassInfo = resolveReportOrCandidateSurclassement({
+      candidate: { ...c, age_category: getCandidateEffectiveCategory(c) },
+      evaluation: latestEval,
+      totalReportsCount: candReportsCount,
+    });
+    if (!surclassInfo.isUpgraded) return null;
+    return (
+      <span
+        className={cn("inline-flex items-center px-1.5 py-0.5 text-[9px] font-black bg-amber-50 text-amber-800 border border-amber-200", roundedClass)}
+        title={
+          surclassInfo.targetCategory
+            ? `Surclassé : rapport effectué en ${surclassInfo.targetCategory} (catégorie principale : ${surclassInfo.baseCategory})`
+            : 'Joueur surclassé'
+        }
+      >
+        Surclassé {surclassInfo.shortBadgeText}
+      </span>
+    );
+  };
+
+  // Badge unifié d'âge (sans afficher la catégorie principale)
+  const renderCandidateAgeBadge = (
+    c: TrialCandidate,
+    roundedClass: 'rounded-md' | 'rounded-full' = 'rounded-md'
+  ) => {
+    const computedAge = calculateCandidateAge(c.birth_date) ?? ((c as any).age != null ? Number((c as any).age) : null);
+    if (computedAge === null || isNaN(computedAge)) return null;
+    return (
+      <span
+        className={cn("px-2 py-0.5 text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200/80 shadow-2xs", roundedClass)}
+        title={c.birth_date ? `Né le ${c.birth_date}` : undefined}
+      >
+        {computedAge} ans
+      </span>
+    );
+  };
+
+  // Rendu unifié de la cellule/ligne Statut :
+  // - Si "Recrutement immédiatement" et habilité -> afficher uniquement le bouton d'action à la place du statut (sans icône)
+  // - Sinon -> affichage purement informatif sans liste déroulante ni icône
+  const renderCandidateStatusControl = (c: TrialCandidate, fullWidthButton = false) => {
+    const candDecision = getCandidateLatestDecision(c);
+    const currentStatus: PlayerRecruitmentStatus =
+      (isCandidateRecruitNow(c) || candDecision === 'recruit_now' || c.scout_state_decision === 'recruit_now' || c.scout_state_decision === 'recruit_standby') ? 'recruit_now' :
+      (candDecision === 'invitation_test' || c.scout_state_decision === 'invitation_test' || c.status === 'in_trial') ? 'invitation_test' :
+      'to_follow';
+
+    if (currentStatus === 'recruit_now' && (canProcessRecruitNow || isOnlyRecruitNowUser)) {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleOpenAdminProcedure(c);
+          }}
+          className={cn(
+            "h-8 px-3.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs inline-flex items-center justify-center shadow-sm shadow-emerald-950/15 cursor-pointer active:scale-95 transition-all whitespace-nowrap",
+            fullWidthButton ? "w-full" : ""
+          )}
+          title="Ouvrir la procédure administrative pour ce recrutement immédiat"
+        >
+          À recruter immédiatement
+        </button>
+      );
+    }
+
+    const statusLabel =
+      currentStatus === 'recruit_now' ? 'Recrutement immédiat' :
+      currentStatus === 'invitation_test' ? 'Inviter à un test' :
+      'À suivre';
+
+    const statusBadgeClass =
+      currentStatus === 'recruit_now'
+        ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+        : currentStatus === 'invitation_test'
+        ? "bg-blue-50 text-blue-800 border-blue-200"
+        : "bg-indigo-50 text-indigo-800 border-indigo-200";
+
+    return (
+      <span className={cn(
+        "inline-flex items-center px-2.5 py-1 rounded-xl border text-[11px] font-black uppercase tracking-wider select-none whitespace-nowrap",
+        statusBadgeClass
+      )}>
+        {statusLabel}
+      </span>
+    );
   };
   // Scout Report Wizard state
   const [isReportWizardOpen, setIsReportWizardOpen] = useState(false);
@@ -807,7 +884,9 @@ export const RecruitmentV2Page: React.FC = () => {
             category: targetCandidate.age_category || 'SENIOR',
             match_id: targetCandidate.discovery_match || null,
             match_context: targetCandidate.origin_club ? { away_name: targetCandidate.origin_club, home_name: 'FUS CLUB' } : {},
-            rating: targetCandidate.performance_rating || targetCandidate.potential_rating || null,
+            rating: evaluations.some(e => e.candidate_id === targetCandidate.id)
+              ? (targetCandidate.performance_rating || targetCandidate.potential_rating || null)
+              : (targetCandidate.performance_rating || null),
             rating_comment: targetCandidate.notes || "Mission retirée du scout et remise au panier de détection.",
             added_by_name: assignerName,
             added_by_role: 'Direction Scouting',
@@ -1255,15 +1334,24 @@ export const RecruitmentV2Page: React.FC = () => {
   const [positionFilter, setPositionFilter] = useState('ALL');
   const [footFilter, setFootFilter] = useState('ALL');
   const [scoutFilter, setScoutFilter] = useState('ALL');
-  const [bestScorePerPositionFilter, setBestScorePerPositionFilter] = useState(false);
   const [myPlayersOnly, setMyPlayersOnly] = useState(false);
-  // Filtre Continent & Pays avec drapeau
-  const [continentFilter, setContinentFilter] = useState('ALL');
-  const [countryFilter, setCountryFilter] = useState('ALL');
-  // Aucun filtre de nationalité au chargement : la base doit afficher tous les joueurs.
-  const [nationalityTagFilter, setNationalityTagFilter] = useState<NationalityTag>('all');
+  // Filtre rapide Marocains / Africains (sans bouton Tous)
+  const [nationalityTagFilter, setNationalityTagFilter] = useState<'all' | 'marocains' | 'africains'>('all');
   // Filtre de statut / décision scout
   const [decisionFilter, setDecisionFilter] = useState<'ALL' | 'recruit_now' | 'invitation_test' | 'to_follow'>('ALL');
+
+  const nationalityCounts = React.useMemo(() => {
+    let morocCount = 0;
+    let afriCount = 0;
+
+    scopedCandidates.forEach(c => {
+      if (c.pipeline_stage === 'archived' || c.status === 'archived') return;
+      if (matchesCandidateNationality(c, 'marocains')) morocCount++;
+      if (matchesCandidateNationality(c, 'africains')) afriCount++;
+    });
+
+    return { morocCount, afriCount };
+  }, [scopedCandidates]);
 
   const visibleRecruitmentCategories = React.useMemo(() => {
     const allowed = RECRUITMENT_AGE_CATEGORIES.filter(cat => canManageCategory(cat));
@@ -1279,41 +1367,15 @@ export const RecruitmentV2Page: React.FC = () => {
     }
   }, [authState?.userCategories]);
 
-  // Calcul dynamique des effectifs par tag de nationalité
-  const nationalityCounts = React.useMemo(() => {
-    let morocCount = 0;
-    let afriCount = 0;
-    let otherCount = 0;
-
-    scopedCandidates.forEach(c => {
-      if (c.pipeline_stage === 'archived' || c.status === 'archived') return;
-      if (matchesCandidateNationality(c, 'marocains')) morocCount++;
-      if (matchesCandidateNationality(c, 'africains')) afriCount++;
-      if (matchesCandidateNationality(c, 'autres')) otherCount++;
-    });
-
-    const activeList = scopedCandidates.filter(c => c.pipeline_stage !== 'archived' && c.status !== 'archived');
-
-    return {
-      morocCount,
-      afriCount,
-      otherCount,
-      totalCount: activeList.length,
-    };
-  }, [scopedCandidates]);
-
   const isAnyFilterActive = Boolean(
     searchQuery.trim() ||
     categoryFilter !== 'ALL' ||
     positionFilter !== 'ALL' ||
     footFilter !== 'ALL' ||
     scoutFilter !== 'ALL' ||
-    continentFilter !== 'ALL' ||
-    countryFilter !== 'ALL' ||
-    bestScorePerPositionFilter ||
     myPlayersOnly ||
-    decisionFilter !== 'ALL' ||
-    nationalityTagFilter !== 'all'
+    nationalityTagFilter !== 'all' ||
+    decisionFilter !== 'ALL'
   );
 
   const handleResetAllFilters = () => {
@@ -1322,9 +1384,6 @@ export const RecruitmentV2Page: React.FC = () => {
     setPositionFilter('ALL');
     setFootFilter('ALL');
     setScoutFilter('ALL');
-    setContinentFilter('ALL');
-    setCountryFilter('ALL');
-    setBestScorePerPositionFilter(false);
     setMyPlayersOnly(false);
     setNationalityTagFilter('all');
     setDecisionFilter('ALL');
@@ -1406,31 +1465,9 @@ export const RecruitmentV2Page: React.FC = () => {
         if (!matches) return false;
       }
 
-      // Filtre Nationalité par tags (Marocains par défaut, Africains, Tous, Autres)
+      // Filtre Nationalité (Marocains ou Africains)
       if (nationalityTagFilter !== 'all') {
         if (!matchesCandidateNationality(c, nationalityTagFilter)) {
-          return false;
-        }
-      }
-
-      // Filtre Continent
-      if (continentFilter !== 'ALL') {
-        const candCountry = c.country || getCountryForNationality(c.nationality) || '';
-        const candContinent = getContinentForCountry(candCountry);
-        if (candContinent !== continentFilter) {
-          return false;
-        }
-      }
-
-      // Filtre Pays avec drapeau
-      if (countryFilter !== 'ALL') {
-        const cCountry = (c.country || '').toLowerCase().trim();
-        const cNat = (c.nationality || '').toLowerCase().trim();
-        const target = countryFilter.toLowerCase().trim();
-        const targetNat = getCountryNationality(countryFilter).toLowerCase().trim();
-        const matchesCountry = cCountry === target || cCountry.includes(target) || target.includes(cCountry);
-        const matchesNat = cNat.includes(target) || cNat.includes(targetNat) || targetNat.includes(cNat);
-        if (!matchesCountry && !matchesNat) {
           return false;
         }
       }
@@ -1457,42 +1494,18 @@ export const RecruitmentV2Page: React.FC = () => {
       return true;
     });
 
-    // Filtre Optionnel : Garder uniquement le meilleur score de la dernière évaluation par poste
-    if (bestScorePerPositionFilter) {
-      const bestMap = new Map<string, { candidate: TrialCandidate; score: number; evalDate: string }>();
-
-      list.forEach(c => {
-        const pos = (c.primary_position || 'AUTRE').toUpperCase().trim();
-        const candEvals = evaluations
-          .filter(e => e.candidate_id === c.id)
-          .sort((a, b) => new Date(b.evaluation_date).getTime() - new Date(a.evaluation_date).getTime());
-        const latestEval = candEvals[0];
-        const score = latestEval ? latestEval.overall_score : -1;
-        const evalDate = latestEval ? latestEval.evaluation_date : '';
-
-        const current = bestMap.get(pos);
-        if (!current || score > current.score || (score === current.score && evalDate > current.evalDate)) {
-          bestMap.set(pos, { candidate: c, score, evalDate });
-        }
-      });
-
-      return Array.from(bestMap.values())
-        .map(v => v.candidate)
-        .sort((a, b) => (isCandidateMoroccan(b) ? 1 : 0) - (isCandidateMoroccan(a) ? 1 : 0));
-    }
-
-    // Tri prioritaire : Afficher les profils marocains en premier lieu
+    // Tri prioritaire : Afficher les profils marocains en premier lieu puis par date de création
     const sorted = [...list].sort((a, b) => {
       const aMoroc = isCandidateMoroccan(a) ? 1 : 0;
       const bMoroc = isCandidateMoroccan(b) ? 1 : 0;
       if (bMoroc !== aMoroc) {
-        return bMoroc - aMoroc; // Les profils marocains apparaissent en tête
+        return bMoroc - aMoroc;
       }
       return new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime();
     });
 
     return sorted;
-  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, continentFilter, countryFilter, bestScorePerPositionFilter, myPlayersOnly, currentScout, authState?.user, nationalityTagFilter, decisionFilter, isOnlyRecruitNowUser, isCandidateRecruitNow, getCandidateLatestDecision]);
+  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, myPlayersOnly, nationalityTagFilter, currentScout, authState?.user, decisionFilter, isOnlyRecruitNowUser, isCandidateRecruitNow, getCandidateLatestDecision]);
 
   // 1b. Filtrage des candidats archivés pour l'onglet Archives
   const filteredArchivedCandidates = React.useMemo(() => {
@@ -1599,8 +1612,13 @@ export const RecruitmentV2Page: React.FC = () => {
         return false;
       }
 
-      if (t.candidate_id) {
-        if (!candidateIds.has(t.candidate_id)) return false;
+      const testCandIds = Array.from(new Set([
+        ...(t.candidate_ids || []),
+        ...(t.candidate_id ? [t.candidate_id] : []),
+      ]));
+
+      if (testCandIds.length > 0) {
+        if (!testCandIds.some(id => candidateIds.has(id))) return false;
       } else {
         if (positionFilter !== 'ALL' || footFilter !== 'ALL' || scoutFilter !== 'ALL') {
           return false;
@@ -1612,14 +1630,18 @@ export const RecruitmentV2Page: React.FC = () => {
         const testName = (t.test_name || '').toLowerCase();
         const location = (t.location || '').toLowerCase();
         const targetTeam = (t.target_team || '').toLowerCase();
-        const cand = candidates.find(c => c.id === t.candidate_id);
-        const candName = cand ? `${cand.first_name} ${cand.last_name}`.toLowerCase() : '';
+        const matchName = (t.match_name || '').toLowerCase();
+        const candNames = candidates
+          .filter(c => testCandIds.includes(c.id))
+          .map(c => `${c.first_name} ${c.last_name}`.toLowerCase())
+          .join(' ');
 
         const matches = (
           testName.includes(q) ||
           location.includes(q) ||
           targetTeam.includes(q) ||
-          candName.includes(q)
+          matchName.includes(q) ||
+          candNames.includes(q)
         );
         if (!matches) return false;
       }
@@ -1874,20 +1896,20 @@ export const RecruitmentV2Page: React.FC = () => {
               setSchedulingCandidate(null);
               setNewTestDefaultDate(undefined);
             }}
-            onSave={async (testData) => {
-              if (editingTest) {
-                await updateTest({ ...editingTest, ...testData });
-              } else {
-                await createTest(testData);
-              }
-              setIsSessionModalOpen(false);
-              setEditingTest(null);
-              setSchedulingCandidate(null);
-            }}
-            session={editingTest}
-            candidate={schedulingCandidate}
             candidates={scopedCandidates}
+            scouts={scopedScouts}
+            initialTest={editingTest}
             defaultDate={newTestDefaultDate}
+            defaultCandidateId={schedulingCandidate?.id}
+            onSave={async (testData) => {
+              await createTest(testData);
+            }}
+            onSaveBatch={async (testsPayload) => {
+              await createTestsBatch(testsPayload);
+            }}
+            onUpdate={async (id, updates) => {
+              await updateTest({ id, updates });
+            }}
           />
         )}
       </div>
@@ -2015,14 +2037,11 @@ export const RecruitmentV2Page: React.FC = () => {
 
           {/* Barre de Filtre Complet (Placée directement au-dessus du tableau) */}
           <div className="bg-white rounded-3xl p-4 md:p-5 border shadow-sm space-y-3">
-            {/* LIGNE 0 : Tags de Nationalité (Marocains par défaut, Africains, Tous) */}
+            {/* LIGNE 0 : Filtres Marocains / Africains (sans bouton Tous) + Filtres Rapides de Statut (sans icônes) */}
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 mr-1">
-                  Nationalité :
-                </span>
-                <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 gap-1 flex-wrap">
-                  {/* Tag 1 : Marocains */}
+                <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 gap-1 flex-wrap mr-1">
+                  {/* Filtre : Marocains */}
                   <button
                     type="button"
                     onClick={() => setNationalityTagFilter(prev => prev === 'marocains' ? 'all' : 'marocains')}
@@ -2032,7 +2051,7 @@ export const RecruitmentV2Page: React.FC = () => {
                         ? "bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-400/40"
                         : "text-slate-600 hover:text-slate-900 hover:bg-white"
                     )}
-                    title={nationalityTagFilter === 'marocains' ? "Cliquez pour supprimer le filtre Marocains" : "Afficher les joueurs de nationalité marocaine"}
+                    title={nationalityTagFilter === 'marocains' ? "Cliquez pour désactiver le filtre Marocains" : "Afficher les joueurs de nationalité marocaine"}
                   >
                     <span>Marocains</span>
                     <span className={cn(
@@ -2043,22 +2062,9 @@ export const RecruitmentV2Page: React.FC = () => {
                     )}>
                       {nationalityCounts.morocCount}
                     </span>
-                    {nationalityTagFilter === 'marocains' && (
-                      <span
-                        role="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setNationalityTagFilter('all');
-                        }}
-                        className="ml-0.5 hover:bg-white/20 rounded-full p-0.5 transition-colors"
-                        title="Supprimer le filtre Marocains"
-                      >
-                        <X className="w-3 h-3 text-white" />
-                      </span>
-                    )}
                   </button>
 
-                  {/* Tag 2 : Africains */}
+                  {/* Filtre : Africains */}
                   <button
                     type="button"
                     onClick={() => setNationalityTagFilter(prev => prev === 'africains' ? 'all' : 'africains')}
@@ -2068,7 +2074,7 @@ export const RecruitmentV2Page: React.FC = () => {
                         ? "bg-amber-500 text-slate-950 font-black shadow-xs ring-2 ring-amber-400/40"
                         : "text-slate-600 hover:text-slate-900 hover:bg-white"
                     )}
-                    title={nationalityTagFilter === 'africains' ? "Cliquez pour supprimer le filtre Africains" : "Afficher les joueurs et recrues d'origine ou nationalité africaine"}
+                    title={nationalityTagFilter === 'africains' ? "Cliquez pour désactiver le filtre Africains" : "Afficher les joueurs de nationalité africaine"}
                   >
                     <span>Africains</span>
                     <span className={cn(
@@ -2079,82 +2085,12 @@ export const RecruitmentV2Page: React.FC = () => {
                     )}>
                       {nationalityCounts.afriCount}
                     </span>
-                    {nationalityTagFilter === 'africains' && (
-                      <span
-                        role="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setNationalityTagFilter('all');
-                        }}
-                        className="ml-0.5 hover:bg-slate-950/20 rounded-full p-0.5 transition-colors"
-                        title="Supprimer le filtre Africains"
-                      >
-                        <X className="w-3 h-3 text-slate-950" />
-                      </span>
-                    )}
                   </button>
-
-                  {/* Tag 3 : Tous */}
-                  <button
-                    type="button"
-                    onClick={() => setNationalityTagFilter('all')}
-                    className={cn(
-                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                      nationalityTagFilter === 'all'
-                        ? "bg-slate-950 text-white font-black shadow-xs ring-2 ring-slate-700/40"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-white"
-                    )}
-                    title="Afficher l'intégralité des joueurs sans filtre de nationalité"
-                  >
-                    <span>Tous</span>
-                    <span className={cn(
-                      "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
-                      nationalityTagFilter === 'all'
-                        ? "bg-white/20 text-white"
-                        : "bg-slate-200 text-slate-700"
-                    )}>
-                      {nationalityCounts.totalCount}
-                    </span>
-                  </button>
-
-                  {/* Tag 4 : Autres */}
-                  {nationalityCounts.otherCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setNationalityTagFilter(prev => prev === 'autres' ? 'all' : 'autres')}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                        nationalityTagFilter === 'autres'
-                          ? "bg-indigo-600 text-white font-black shadow-xs ring-2 ring-indigo-400/40"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-white"
-                      )}
-                      title={nationalityTagFilter === 'autres' ? "Cliquez pour supprimer le filtre Autres" : "Afficher les autres nationalités internationales"}
-                    >
-                      <span>Autres</span>
-                      <span className={cn(
-                        "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
-                        nationalityTagFilter === 'autres'
-                          ? "bg-white/20 text-white"
-                          : "bg-slate-200 text-slate-700"
-                      )}>
-                        {nationalityCounts.otherCount}
-                      </span>
-                      {nationalityTagFilter === 'autres' && (
-                        <span
-                          role="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setNationalityTagFilter('all');
-                          }}
-                          className="ml-0.5 hover:bg-white/20 rounded-full p-0.5 transition-colors"
-                          title="Supprimer le filtre Autres"
-                        >
-                          <X className="w-3 h-3 text-white" />
-                        </span>
-                      )}
-                    </button>
-                  )}
                 </div>
+
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 mr-1">
+                  Statuts :
+                </span>
 
                 {/* Filtre Rapide : À suivre */}
                 <div className="inline-flex items-center p-1 bg-indigo-50 rounded-2xl border border-indigo-200/80">
@@ -2169,7 +2105,6 @@ export const RecruitmentV2Page: React.FC = () => {
                     )}
                     title="Filtrer les talents positionnés en veille active (À suivre)"
                   >
-                    <Eye className="w-3.5 h-3.5 text-current" />
                     <span>À suivre</span>
                     <span className={cn(
                       "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
@@ -2195,7 +2130,6 @@ export const RecruitmentV2Page: React.FC = () => {
                     )}
                     title="Filtrer les talents convoqués pour match d'essai ou détection"
                   >
-                    <Calendar className="w-3.5 h-3.5 text-current" />
                     <span>Inviter à un test</span>
                     <span className={cn(
                       "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
@@ -2207,7 +2141,6 @@ export const RecruitmentV2Page: React.FC = () => {
                     </span>
                   </button>
                 </div>
-
 
                 {/* Filtre Rapide : À recruter immédiatement */}
                 <div className="inline-flex items-center p-1 bg-emerald-50 rounded-2xl border border-emerald-200/80">
@@ -2222,7 +2155,6 @@ export const RecruitmentV2Page: React.FC = () => {
                     )}
                     title="Filtrer uniquement les talents validés à recruter immédiatement"
                   >
-                    <Flame className="w-3.5 h-3.5 fill-current text-current" />
                     <span>Recrutement immédiatement</span>
                     <span className={cn(
                       "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
@@ -2234,56 +2166,6 @@ export const RecruitmentV2Page: React.FC = () => {
                     </span>
                   </button>
                 </div>
-              </div>
-
-              {/* Indicateur de filtre actif avec bouton de suppression */}
-              <div className="text-[11px] text-slate-500 font-medium">
-                {nationalityTagFilter === 'marocains' && (
-                  <span className="inline-flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200/80 font-bold">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Filtre actif : Marocains</span>
-                    <button
-                      type="button"
-                      onClick={() => setNationalityTagFilter('all')}
-                      className="ml-1 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-200/60 rounded-full p-0.5 transition-colors cursor-pointer"
-                      title="Supprimer le filtre Marocains"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                )}
-                {nationalityTagFilter === 'africains' && (
-                  <span className="inline-flex items-center gap-1.5 text-amber-900 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200/80 font-bold">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                    <span>Filtre actif : Africains</span>
-                    <button
-                      type="button"
-                      onClick={() => setNationalityTagFilter('all')}
-                      className="ml-1 text-amber-800 hover:text-amber-950 hover:bg-amber-200/60 rounded-full p-0.5 transition-colors cursor-pointer"
-                      title="Supprimer le filtre Africains"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                )}
-                {nationalityTagFilter === 'all' && (
-                  <span className="inline-flex items-center gap-1.5 text-slate-600 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200 font-bold">
-                    Toutes nationalités confondues
-                  </span>
-                )}
-                {nationalityTagFilter === 'autres' && (
-                  <span className="inline-flex items-center gap-1.5 text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200/80 font-bold">
-                    <span>Autres nationalités</span>
-                    <button
-                      type="button"
-                      onClick={() => setNationalityTagFilter('all')}
-                      className="ml-1 text-indigo-700 hover:text-indigo-950 hover:bg-indigo-200/60 rounded-full p-0.5 transition-colors cursor-pointer"
-                      title="Supprimer le filtre Autres"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                )}
               </div>
             </div>
 
@@ -2327,22 +2209,6 @@ export const RecruitmentV2Page: React.FC = () => {
                   <span>Mes Joueurs Uniquement</span>
                 </button>
 
-                {/* Bouton filtre : Meilleur Score par Poste */}
-                <button
-                  type="button"
-                  onClick={() => setBestScorePerPositionFilter(!bestScorePerPositionFilter)}
-                  className={cn(
-                    "px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-xs",
-                    bestScorePerPositionFilter
-                      ? "bg-amber-400 text-slate-950 ring-2 ring-amber-300 shadow-amber-500/25 scale-105"
-                      : "bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80"
-                  )}
-                  title="Conserver uniquement le joueur avec le meilleur score à sa dernière évaluation pour chaque poste"
-                >
-                  <Crown className={cn("w-3.5 h-3.5", bestScorePerPositionFilter ? "text-slate-950 fill-slate-950" : "text-amber-600")} />
-                  <span>Meilleur Score par Poste</span>
-                </button>
-
                 <span className="font-bold text-slate-700 bg-slate-100/90 px-3 py-2 rounded-xl flex items-center gap-1.5 border border-slate-200/60">
                   <Users className="w-3.5 h-3.5 text-primary" />
                   <strong>{filteredCandidates.length}</strong> / {candidates.length} talents
@@ -2362,8 +2228,8 @@ export const RecruitmentV2Page: React.FC = () => {
               </div>
             </div>
 
-            {/* LIGNE 2 : Sélecteurs déroulants de filtrage complet (avec Continent et Pays/Drapeau) */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1 border-t border-slate-100">
+            {/* LIGNE 2 : Sélecteurs déroulants de filtrage complet */}
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1 border-t border-slate-100">
               {/* 1. Catégorie d'Âge */}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
@@ -2436,7 +2302,7 @@ export const RecruitmentV2Page: React.FC = () => {
                   <option value="ALL">Tous les postes</option>
                   {PLAYER_POSITIONS.map(pos => (
                     <option key={pos.code} value={pos.code}>
-                      {pos.code} — {pos.label}
+                      {pos.label}
                     </option>
                   ))}
                 </select>
@@ -2463,69 +2329,7 @@ export const RecruitmentV2Page: React.FC = () => {
                 </select>
               </div>
 
-              {/* 4. Continent */}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
-                  <Globe className="w-3 h-3 text-primary" />
-                  <span>Continent</span>
-                </label>
-                <select
-                  value={continentFilter}
-                  onChange={(e) => {
-                    const newCont = e.target.value;
-                    setContinentFilter(newCont);
-                    // Si le pays sélectionné ne fait pas partie du continent, réinitialiser
-                    if (newCont !== 'ALL' && countryFilter !== 'ALL') {
-                      const countriesInCont = Object.keys(GEOGRAPHY_DATA[newCont] || {});
-                      if (!countriesInCont.includes(countryFilter)) {
-                        setCountryFilter('ALL');
-                      }
-                    }
-                  }}
-                  className={cn(
-                    "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
-                    continentFilter !== 'ALL'
-                      ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
-                      : "border-slate-200 bg-white text-slate-700"
-                  )}
-                >
-                  <option value="ALL">Tous les continents</option>
-                  {CONTINENTS.map(c => (
-                    <option key={c} value={c}>
-                      {c === 'Afrique' ? '🌍 Afrique' : c === 'Europe' ? '🇪🇺 Europe' : c === 'Amérique' ? '🌎 Amérique' : '🌏 Asie/Océanie'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 5. Pays avec Drapeau (Maroc affiché en 1er) */}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1 flex items-center justify-between">
-                  <span>Pays</span>
-                  {countryFilter !== 'ALL' && (
-                    <span className="text-xs">{getCountryFlag(countryFilter)}</span>
-                  )}
-                </label>
-                <select
-                  value={countryFilter}
-                  onChange={(e) => setCountryFilter(e.target.value)}
-                  className={cn(
-                    "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
-                    countryFilter !== 'ALL'
-                      ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
-                      : "border-slate-200 bg-white text-slate-700"
-                  )}
-                >
-                  <option value="ALL">Tous les pays</option>
-                  {getAllCountriesOrdered(continentFilter).map(item => (
-                    <option key={item.name} value={item.name}>
-                      {item.flag} {item.name} {item.name === 'Maroc' ? '(National)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 6. Scout (Réservé à la Direction) */}
+              {/* 4. Scout (Réservé à la Direction) */}
               {isRecruitmentAdmin ? (
                 <div>
                   <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
@@ -2569,12 +2373,12 @@ export const RecruitmentV2Page: React.FC = () => {
 
                 {nationalityTagFilter !== 'all' && (
                   <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 font-semibold border border-emerald-200 flex items-center gap-1">
-                    Nationalité : {nationalityTagFilter === 'marocains' ? 'Marocains' : nationalityTagFilter === 'africains' ? 'Africains' : 'Autres'}
+                    Origine : {nationalityTagFilter === 'marocains' ? 'Marocains' : 'Africains'}
                     <button
                       type="button"
                       onClick={() => setNationalityTagFilter('all')}
                       className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer"
-                      title="Supprimer le filtre de nationalité"
+                      title="Désactiver ce filtre"
                     >
                       ×
                     </button>
@@ -2616,18 +2420,9 @@ export const RecruitmentV2Page: React.FC = () => {
                   </span>
                 )}
 
-                {bestScorePerPositionFilter && (
-                  <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 font-bold border border-amber-300 flex items-center gap-1">
-                    <Crown className="w-3 h-3 text-amber-600 fill-amber-600" />
-                    Top 1 par poste (Dernières Évaluations)
-                    <button onClick={() => setBestScorePerPositionFilter(false)} className="hover:text-rose-600 font-bold ml-0.5">×</button>
-                  </span>
-                )}
-
                 {decisionFilter !== 'ALL' && (
-                  <span className="px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 font-bold border border-rose-300 flex items-center gap-1">
-                    <Flame className="w-3 h-3 text-rose-600 fill-rose-600" />
-                    Statut : À recruter immédiatement
+                  <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-900 font-bold border border-slate-300 flex items-center gap-1">
+                    Statut : {decisionFilter === 'recruit_now' ? 'Recrutement immédiatement' : decisionFilter === 'invitation_test' ? 'Inviter à un test' : 'À suivre'}
                     <button onClick={() => setDecisionFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
                   </span>
                 )}
@@ -2684,14 +2479,9 @@ export const RecruitmentV2Page: React.FC = () => {
           {/* Bannière Dédiée : Directeur Administratif / Recrutement Immédiat Exclusif */}
           {isOnlyRecruitNowUser && (
             <div className="p-4 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-emerald-500/10 border border-rose-200/80 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-2xs">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <Flame className="w-5 h-5 fill-white text-white animate-pulse" />
-                </div>
-                <div>
-                  <p className="font-black text-slate-900">Espace Procédure Administrative de Recrutement Immédiat</p>
-                  <p className="text-slate-500 text-[11px]">Affichage exclusif des profils ayant le statut à recruter immédiatement.</p>
-                </div>
+              <div>
+                <p className="font-black text-slate-900">Espace Procédure Administrative de Recrutement Immédiat</p>
+                <p className="text-slate-500 text-[11px]">Affichage exclusif des profils ayant le statut à recruter immédiatement.</p>
               </div>
               <span className="px-3 py-1 rounded-xl bg-white border border-rose-200 text-rose-700 font-black text-xs shadow-2xs whitespace-nowrap">
                 {filteredCandidates.length} joueur{filteredCandidates.length > 1 ? 's' : ''} à traiter
@@ -2732,7 +2522,9 @@ export const RecruitmentV2Page: React.FC = () => {
                         <th className="py-3.5 px-3 text-center">Scores Détecteur (5 Piliers)</th>
                       )}
                       <th className="py-3.5 px-3">Statut</th>
-                      <th className={cn("py-3.5 px-4 text-right", isOnlyRecruitNowUser ? "min-w-[200px]" : "min-w-[360px]")}>Actions</th>
+                      {!isOnlyRecruitNowUser && (
+                        <th className="py-3.5 px-4 text-right min-w-[360px]">Actions</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
@@ -2763,16 +2555,10 @@ export const RecruitmentV2Page: React.FC = () => {
                       const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
                       const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
 
-                      // 2. Dernier potentiel du joueur (issu du dernier rapport, sinon note de profil)
-                      const potentialScore: number | null = (latestEval?.potential_rating != null && !isNaN(Number(latestEval.potential_rating)))
-                        ? Math.round(Number(latestEval.potential_rating) * 10) / 10
-                        : (c.potential_rating != null && !isNaN(Number(c.potential_rating)))
-                          ? Math.round(Number(c.potential_rating) * 10) / 10
-                          : (c.initial_scout_score != null && !isNaN(Number(c.initial_scout_score)))
-                            ? Math.round(Number(c.initial_scout_score) * 10) / 10
-                            : null;
+                      // 2. Dernier potentiel du joueur (0.0 strict si aucun rapport)
+                      const potentialScore = resolveCandidatePotentialScore(c, latestEval, candEvalsList.length);
 
-                      const candTests = tests.filter(t => t.candidate_id === c.id);
+                      const candTests = tests.filter(t => t.candidate_id === c.id || t.candidate_ids?.includes(c.id));
                       const isSelected = selectedCandidateIds.includes(c.id);
 
                       return (
@@ -2826,67 +2612,38 @@ export const RecruitmentV2Page: React.FC = () => {
                                   </span>
                                 )}
 
-                                {/* Ligne 1 : Catégorie + Poste principal en français sans abréviation + Statut */}
+                                {/* Ligne 1 : Âge + Surclassement + Poste principal en français sans abréviation */}
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200/80 shadow-2xs">
-                                    {getCandidateEffectiveCategory(c)}
-                                  </span>
-                                  {(() => {
-                                    const effCat = getCandidateEffectiveCategory(c);
-                                    const isUpgraded = c.is_upgraded_category || (c.age_category && normalizeAgeCategory(c.age_category) !== normalizeAgeCategory(effCat));
-                                    if (!isUpgraded) return null;
-                                    return (
-                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-amber-50 text-amber-800 border border-amber-200" title={`Surclassé : a évolué en ${c.age_category}`}>
-                                        ⬆️ {c.surclassement && c.surclassement !== '0C' ? c.surclassement : (c.age_category ? `en ${c.age_category}` : 'Surclassé')}
-                                      </span>
-                                    );
-                                  })()}
+                                  {renderCandidateAgeBadge(c, 'rounded-md')}
+                                  {renderCandidateSurclassementBadge(c, latestEval, candEvalsList.length, 'rounded-md')}
                                   <span className="font-bold text-slate-900 text-xs tracking-tight">
                                     {getFrenchPositionLabel(c.primary_position)}
                                   </span>
-                                  {isCandidateRecruitNow(c) && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
-                                      <Flame className="w-3 h-3 text-emerald-600" />
-                                      À recruter
-                                    </span>
-                                  )}
                                 </div>
 
-                                {/* Style de Jeu de Référence */}
-                                {c.reference_player_style && (
-                                  <div className="pt-0.5">
-                                    <span className="inline-flex items-center gap-1 font-bold text-indigo-700 bg-indigo-50/80 border border-indigo-200/80 px-2 py-0.5 rounded-md text-[10px]" title="Style de jeu de référence">
-                                      <Sparkles className="w-2.5 h-2.5 text-indigo-500" />
-                                      Style : {c.reference_player_style}
-                                    </span>
+                                {/* Ligne 2 : Icône pied fort uniquement • Taille / Poids */}
+                                {(c.preferred_foot || c.height_cm || c.weight_kg) && (
+                                  <div className="flex items-center gap-2 text-[11px] text-slate-600 flex-wrap pt-0.5">
+                                    {c.preferred_foot && (
+                                      <span
+                                        className="inline-flex items-center justify-center bg-slate-100/90 border border-slate-200/80 px-2 py-0.5 rounded-lg"
+                                        title={`Pied fort : ${c.preferred_foot}`}
+                                        aria-label={`Pied fort : ${c.preferred_foot}`}
+                                      >
+                                        <PreferredFootIcon foot={c.preferred_foot} className="w-[22px] h-[22px]" />
+                                      </span>
+                                    )}
+
+                                    {(c.height_cm || c.weight_kg) && (
+                                      <>
+                                        {c.preferred_foot && <span className="text-slate-300">•</span>}
+                                        <span className="font-semibold text-slate-600 text-[11px]" title="Taille & Poids">
+                                          {c.height_cm ? `${c.height_cm} cm` : '-'} / {c.weight_kg ? `${c.weight_kg} kg` : '-'}
+                                        </span>
+                                      </>
+                                    )}
                                   </div>
                                 )}
-
-                                {/* Ligne 2 : Pied • Taille / Poids • Nationalité */}
-                                <div className="flex items-center gap-1.5 text-[11px] text-slate-500 flex-wrap">
-                                  {c.preferred_foot && (
-                                    <span className="inline-flex items-center gap-1 font-semibold text-slate-700 bg-slate-100/90 px-1.5 py-0.5 rounded text-[10px]" title="Pied fort">
-                                      <Footprints className="w-2.5 h-2.5 text-slate-500" />
-                                      {c.preferred_foot}
-                                    </span>
-                                  )}
-
-                                  {(c.height_cm || c.weight_kg) && (
-                                    <>
-                                      {c.preferred_foot && <span className="text-slate-300">•</span>}
-                                      <span className="font-medium text-slate-600 text-[11px]" title="Taille & Poids">
-                                        {c.height_cm ? `${c.height_cm} cm` : '-'} / {c.weight_kg ? `${c.weight_kg} kg` : '-'}
-                                      </span>
-                                    </>
-                                  )}
-
-                                  {(c.preferred_foot || c.height_cm || c.weight_kg) && <span className="text-slate-300">•</span>}
-                                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md text-[10px] border border-emerald-200/80" title={`Nationalité: ${c.nationality || 'Marocaine'} - Pays: ${c.country || 'Maroc'}`}>
-                                    <span className="text-xs leading-none">{getCountryFlag(c.country || c.nationality)}</span>
-                                    <span>{c.nationality || 'Marocaine'}</span>
-                                    {c.city && <span className="text-slate-500 font-normal">• {c.city}</span>}
-                                  </span>
-                                </div>
                               </div>
                             </div>
                           </td>
@@ -2961,109 +2718,15 @@ export const RecruitmentV2Page: React.FC = () => {
                             </td>
                           )}
 
-                          {/* Colonne Statut du joueur : Liste déroulante interactive directe dans la table */}
+                          {/* Colonne Statut du joueur : Bouton action si 'Recrutement immédiatement', sinon information seule sans icône */}
                           <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
-                            {(() => {
-                              const candDecision = getCandidateLatestDecision(c);
-                              const currentStatus: PlayerRecruitmentStatus =
-                                (isCandidateRecruitNow(c) || candDecision === 'recruit_now' || c.scout_state_decision === 'recruit_now' || c.scout_state_decision === 'recruit_standby') ? 'recruit_now' :
-                                (candDecision === 'invitation_test' || c.scout_state_decision === 'invitation_test' || c.status === 'in_trial') ? 'invitation_test' :
-                                'to_follow';
-
-                              const getBadgeTheme = (st: PlayerRecruitmentStatus) => {
-                                switch (st) {
-                                  case 'recruit_now':
-                                    return "bg-gradient-to-r from-emerald-500/15 to-teal-500/15 border-emerald-500/40 text-emerald-900 focus:ring-emerald-400";
-                                  case 'invitation_test':
-                                    return "bg-blue-500/15 border-blue-500/35 text-blue-900 focus:ring-blue-400";
-                                  case 'to_follow':
-                                  default:
-                                    return "bg-indigo-500/15 border-indigo-500/35 text-indigo-900 focus:ring-indigo-400";
-                                }
-                              };
-
-                              const isOwner = Boolean(
-                                c.discovering_scout === currentUserId ||
-                                c.discovering_scout_id === currentUserId ||
-                                c.created_by === currentUserId ||
-                                (c as any)?.scout_id === currentUserId
-                              );
-                              const isStatusLocked = !canProcessRecruitNow && !isOwner;
-
-                              return (
-                                <div className="relative inline-block w-fit">
-                                  <select
-                                    value={currentStatus}
-                                    disabled={isStatusLocked}
-                                    onChange={async (e) => {
-                                      e.stopPropagation();
-                                      const nextVal = e.target.value as PlayerRecruitmentStatus;
-                                      await handleTableStatusChange(c, nextVal);
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className={cn(
-                                      "appearance-none text-[11px] font-black uppercase tracking-wider pl-2.5 pr-7 py-1.5 rounded-xl border transition-all shadow-2xs focus:outline-hidden focus:ring-2 select-none",
-                                      isStatusLocked ? "cursor-not-allowed opacity-80" : "cursor-pointer",
-                                      getBadgeTheme(currentStatus)
-                                    )}
-                                    title={
-                                      isStatusLocked
-                                        ? "Vous pouvez modifier le statut uniquement pour vos propres joueurs"
-                                        : "Changer le statut de recrutement de ce joueur"
-                                    }
-                                  >
-                                    <option value="to_follow" className="text-slate-900 bg-white font-bold py-1">
-                                      👁️ À suivre
-                                    </option>
-                                    <option value="invitation_test" className="text-slate-900 bg-white font-bold py-1">
-                                      📅 Inviter à un test
-                                    </option>
-                                    {(canProcessRecruitNow || isOwner) && (
-                                      <option value="recruit_now" className="text-slate-900 bg-white font-bold py-1">
-                                        🔥 Recrutement immédiatement
-                                      </option>
-                                    )}
-                                  </select>
-                                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-slate-500">
-                                    <ChevronDown className="w-3.5 h-3.5" />
-                                  </div>
-                                </div>
-                              );
-                            })()}
+                            {renderCandidateStatusControl(c)}
                           </td>
 
-                          {/* Actions : Si Directeur Administratif / utilisateur recrutement immédiat exclusif -> SEULEMENT le bouton 'À recruter immédiatement' */}
-                          {isOnlyRecruitNowUser ? (
-                            <td className="py-3 px-4 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenAdminProcedure(c)}
-                                  className="h-8.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95 transition-all shrink-0"
-                                  title="Ouvrir la procédure administrative pour ce recrutement immédiat"
-                                >
-                                  <Flame className="w-4 h-4 fill-white text-white animate-pulse" />
-                                  <span>À recruter immédiatement</span>
-                                  <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
-                                </button>
-                              </div>
-                            </td>
-                          ) : (
+                          {/* Actions : masqué si utilisateur recrutement immédiat exclusif (bouton déjà affiché à la place du statut) */}
+                          {!isOnlyRecruitNowUser && (
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-2.5">
-                                {/* Bouton 'À recruter immédiatement' si le statut est recruit_now et canProcessRecruitNow */}
-                                {isCandidateRecruitNow(c) && canProcessRecruitNow && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenAdminProcedure(c)}
-                                    className="h-8 px-3.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95 transition-all shrink-0 whitespace-nowrap"
-                                    title="Ouvrir la procédure administrative pour ce recrutement immédiat"
-                                  >
-                                    <Flame className="w-3.5 h-3.5 fill-white text-white animate-pulse" />
-                                    <span>À recruter immédiatement</span>
-                                    <ArrowRight className="w-3 h-3 ml-0.5" />
-                                  </button>
-                                )}
 
                                 {/* Bouton Vidéo Google Drive */}
                                 {c.video_url ? (
@@ -3202,15 +2865,6 @@ export const RecruitmentV2Page: React.FC = () => {
               const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
               const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
 
-              // 2. Dernier potentiel du joueur (issu du dernier rapport, sinon note de profil)
-              const potentialScore: number | null = (latestEval?.potential_rating != null && !isNaN(Number(latestEval.potential_rating)))
-                ? Math.round(Number(latestEval.potential_rating) * 10) / 10
-                : (c.potential_rating != null && !isNaN(Number(c.potential_rating)))
-                  ? Math.round(Number(c.potential_rating) * 10) / 10
-                  : (c.initial_scout_score != null && !isNaN(Number(c.initial_scout_score)))
-                    ? Math.round(Number(c.initial_scout_score) * 10) / 10
-                    : null;
-
               const isSelected = selectedCandidateIds.includes(c.id);
 
               return (
@@ -3252,34 +2906,9 @@ export const RecruitmentV2Page: React.FC = () => {
                           )}
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             <span className="text-xs text-muted-foreground font-medium">{c.primary_position}</span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              {getCandidateEffectiveCategory(c)}
-                            </span>
-                            {(() => {
-                              const effCat = getCandidateEffectiveCategory(c);
-                              const isUpgraded = c.is_upgraded_category || (c.age_category && normalizeAgeCategory(c.age_category) !== normalizeAgeCategory(effCat));
-                              if (!isUpgraded) return null;
-                              return (
-                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-amber-50 text-amber-800 border border-amber-200" title={`Surclassé : a évolué en ${c.age_category}`}>
-                                  ⬆️ {c.surclassement && c.surclassement !== '0C' ? c.surclassement : (c.age_category ? `en ${c.age_category}` : 'Surclassé')}
-                                </span>
-                              );
-                            })()}
-                            {(isCandidateRecruitNow(c) || getCandidateLatestDecision(c) === 'recruit_now') && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                <Flame className="w-3 h-3 text-emerald-600" />
-                                À recruter
-                              </span>
-                            )}
+                            {renderCandidateAgeBadge(c, 'rounded-full')}
+                            {renderCandidateSurclassementBadge(c, latestEval, candEvalsList.length, 'rounded-full')}
                           </div>
-                          {c.reference_player_style && (
-                            <div className="mt-1">
-                              <span className="inline-flex items-center gap-1 font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-md text-[10px]" title="Style de jeu de référence">
-                                <Sparkles className="w-2.5 h-2.5 text-indigo-500" />
-                                Style : {c.reference_player_style}
-                              </span>
-                            </div>
-                          )}
                         </div>
                       </div>
 
@@ -3297,7 +2926,13 @@ export const RecruitmentV2Page: React.FC = () => {
                     <div className="grid grid-cols-3 gap-2 mt-4 p-2.5 rounded-xl bg-slate-50 border text-center text-xs">
                       <div>
                         <span className="text-[10px] text-muted-foreground block">Pied</span>
-                        <span className="font-bold">{c.preferred_foot}</span>
+                        <span
+                          className="inline-flex items-center justify-center mt-0.5"
+                          title={`Pied fort : ${c.preferred_foot}`}
+                          aria-label={`Pied fort : ${c.preferred_foot}`}
+                        >
+                          <PreferredFootIcon foot={c.preferred_foot} className="w-[22px] h-[22px]" />
+                        </span>
                       </div>
                       <div>
                         <span className="text-[10px] text-muted-foreground block">Taille / Poids</span>
@@ -3407,78 +3042,15 @@ export const RecruitmentV2Page: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Statut du joueur */}
-                  <div className="pt-2 border-t flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider">Statut</span>
-                    {(() => {
-                      const candDecision = getCandidateLatestDecision(c);
-                      if (isCandidateRecruitNow(c) || candDecision === 'recruit_now') {
-                        return (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 text-emerald-800 shadow-2xs">
-                            <Flame className="w-3.5 h-3.5 text-emerald-600 animate-pulse shrink-0" />
-                            <span className="text-[11px] font-black uppercase tracking-wider">Recrutement Immédiat</span>
-                          </div>
-                        );
-                      }
-                      if (candDecision === 'invitation_test') {
-                        return (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-700 shadow-2xs">
-                            <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                            <span className="text-[11px] font-black uppercase tracking-wider">Convocation Test</span>
-                          </div>
-                        );
-                      }
-                      if (candDecision === 'to_follow') {
-                        return (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 shadow-2xs">
-                            <Eye className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            <span className="text-[11px] font-black uppercase tracking-wider">À suivre</span>
-                          </div>
-                        );
-                      }
-                      return (
-                        <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600">
-                          <span className="text-[10px] font-semibold capitalize">
-                            {c.pipeline_stage === 'shortlisted' ? 'Shortlisté' :
-                             c.pipeline_stage === 'signed' ? 'Signé' :
-                             c.pipeline_stage === 'trial' ? 'À l\'essai' :
-                             c.pipeline_stage === 'eliminated' ? 'Éliminé' : 'En observation'}
-                          </span>
-                        </div>
-                      );
-                    })()}
+                  {/* Statut du joueur : bouton action si recrutement immédiat, sinon information sans icône */}
+                  <div className="pt-2 border-t flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider shrink-0">Statut</span>
+                    {renderCandidateStatusControl(c)}
                   </div>
 
                   {/* Actions en mode Grid */}
+                  {!isOnlyRecruitNowUser && (
                   <div className="pt-2 border-t flex flex-col gap-2">
-                    {/* Si Directeur Administratif / utilisateur ciblé Recrutement Immédiat : UNIQUEMENT le bouton 'À recruter immédiatement' */}
-                    {isOnlyRecruitNowUser ? (
-                      <button
-                        type="button"
-                        onClick={() => handleOpenAdminProcedure(c)}
-                        className="w-full h-9 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95 transition-all"
-                        title="Ouvrir la procédure administrative pour ce recrutement immédiat"
-                      >
-                        <Flame className="w-4 h-4 fill-white text-white animate-pulse" />
-                        <span>À recruter immédiatement</span>
-                        <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
-                      </button>
-                    ) : (
-                      <>
-                        {/* Bouton À recruter immédiatement si le statut est recruit_now */}
-                        {isCandidateRecruitNow(c) && canProcessRecruitNow && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAdminProcedure(c)}
-                            className="w-full h-8.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 cursor-pointer active:scale-95 transition-all"
-                            title="Ouvrir la procédure administrative pour ce recrutement immédiat"
-                          >
-                            <Flame className="w-4 h-4 fill-white text-white animate-pulse" />
-                            <span>À recruter immédiatement</span>
-                            <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
-                          </button>
-                        )}
-
                         <div className="flex items-center justify-between gap-2.5">
                           {/* Bouton Vidéo Google Drive : Play uniquement si le lien est présent, sinon + Drive */}
                           {c.video_url ? (
@@ -3575,9 +3147,8 @@ export const RecruitmentV2Page: React.FC = () => {
                             </button>
                           )}
                         </div>
-                      </>
-                    )}
                   </div>
+                  )}
                 </div>
               );
             })}
@@ -3620,11 +3191,18 @@ export const RecruitmentV2Page: React.FC = () => {
           tests={filteredTests}
           candidates={filteredCandidates}
           evaluations={filteredEvaluations}
+          scouts={scopedScouts}
           isLoading={isLoadingTests}
           onOpenNewTest={(defaultDate) => {
             setEditingTest(null);
             setNewTestDefaultDate(defaultDate);
             setIsSessionModalOpen(true);
+          }}
+          onSaveBatchTests={async (testsPayload) => {
+            await createTestsBatch(testsPayload);
+          }}
+          onUpdateTest={async (id, updates) => {
+            await updateTest({ id, updates });
           }}
           onEditTest={(test) => {
             setEditingTest(test);
@@ -3633,6 +3211,9 @@ export const RecruitmentV2Page: React.FC = () => {
           }}
           onDeleteTest={async (testId) => {
             await deleteTest(testId);
+          }}
+          onDeleteTests={async (testIds) => {
+            await deleteTests(testIds);
           }}
           onMoveTest={async (testId, newDate) => {
             await updateTest({ id: testId, updates: { test_date: newDate } });
@@ -3893,6 +3474,9 @@ export const RecruitmentV2Page: React.FC = () => {
           defaultCandidateId={schedulingCandidate?.id}
           onSave={async (testData) => {
             await createTest(testData);
+          }}
+          onSaveBatch={async (testsPayload) => {
+            await createTestsBatch(testsPayload);
           }}
           onUpdate={async (id, updates) => {
             await updateTest({ id, updates });

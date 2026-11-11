@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { usePermissions } from '../../context/PermissionsContext';
 import { useRecruitment } from '../recruitment_v2/hooks/useRecruitment';
 import { getRoleConfig } from '../../constants/roles';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import UserProfileModal from '../../components/UserProfileModal';
 import {
   Compass,
@@ -145,29 +144,14 @@ const ScoutDashboardView: React.FC = () => {
   };
 
   if (isLoadingCandidates && isLoadingTests) {
-    return (
-      <div className="space-y-6 animate-pulse p-2">
-        <Skeleton className="h-44 w-full rounded-3xl" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => (
-            <Skeleton key={i} className="h-32 rounded-3xl" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Skeleton className="h-96 lg:col-span-2 rounded-3xl" />
-          <Skeleton className="h-96 rounded-3xl" />
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement de l'espace détection…" />;
   }
 
   return (
     <div className="space-y-8 pb-12">
       
       {/* 1. Hero Banner: Bienvenue & Espace Détection */}
-      <motion.div 
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
+      <div
         className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 border border-purple-500/20 p-6 sm:p-8 text-white shadow-2xl shadow-purple-950/30"
       >
         <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
@@ -226,7 +210,7 @@ const ScoutDashboardView: React.FC = () => {
             </Button>
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* 2. Key Performance Indicators (KPIs) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

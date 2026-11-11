@@ -13,7 +13,6 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { CheckCircle2, Clock, XCircle, Filter, MoreVertical } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 interface Transaction {
   id: string;
@@ -42,12 +41,7 @@ const statusStyles: Record<Transaction['status'], { variant: any, icon: any }> =
 
 const DataTable: React.FC = () => {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.6 }}
-      id="data-table-card"
-    >
+    <div id="data-table-card">
       <Card className="hover:shadow-md transition-shadow">
         <CardHeader className="flex-row items-center justify-between pb-8">
           <div className="space-y-1">
@@ -122,7 +116,7 @@ const DataTable: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 };
 

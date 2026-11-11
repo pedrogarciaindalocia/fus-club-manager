@@ -1,20 +1,73 @@
 import React, { useState, useEffect } from 'react';
 import { useClubData } from '../../hooks/useClubData';
+import { resolvePreferredViewMode } from '../../utils/viewModePreference';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
-import { Camera, Save, Globe, Building2, Palette, Sparkles, KeySquare, Target, ShieldCheck, ImageIcon, Trash2, Smartphone, Users } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Camera, Save, Globe, Building2, Palette, Sparkles, KeySquare, Target, ShieldCheck, ImageIcon, Trash2, Smartphone, Users, Bot, Eye, EyeOff, Key, CheckCircle2, AlertCircle, Zap, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { storageService } from '../../services/storageService';
-import { Skeleton } from '../../components/ui/skeleton';
+import { geminiVisionService, AVAILABLE_GEMINI_MODELS, type GeminiConnectionTestResult } from '../../services/geminiVisionService';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { MetricsManagement } from './components/MetricsManagement';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
 
 const ClubSettings: React.FC = () => {
   const { mainClub, updateMainClub, isLoading } = useClubData();
-  const [activeTab, setActiveTab] = useState<'registry' | 'metrics'>('registry');
+  const [activeTab, setActiveTab] = useState<'registry' | 'metrics' | 'ai'>('registry');
+
+  // État Configuration Gemini AI
+  const [geminiApiKey, setGeminiApiKey] = useState(() => geminiVisionService.getApiKey());
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [selectedGeminiModel, setSelectedGeminiModel] = useState(() => geminiVisionService.getSelectedModel());
+  const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [geminiTestResult, setGeminiTestResult] = useState<GeminiConnectionTestResult | null>(null);
+
+  useEffect(() => {
+    if (selectedGeminiModel.includes('2.0') || selectedGeminiModel.includes('1.5') || selectedGeminiModel.includes('2.5')) {
+      setSelectedGeminiModel('gemini-3.8-flash');
+      geminiVisionService.saveSelectedModel('gemini-3.8-flash');
+    }
+  }, [selectedGeminiModel]);
+
+  const handleSaveGeminiSettings = () => {
+    geminiVisionService.saveApiKey(geminiApiKey);
+    geminiVisionService.saveSelectedModel(selectedGeminiModel);
+    toast.success('Paramètres Google Gemini enregistrés avec succès !');
+  };
+
+  const handleTestGeminiConnection = async () => {
+    if (!geminiApiKey.trim()) {
+      toast.error('Veuillez d\'abord saisir votre clé API Gemini.');
+      return;
+    }
+    setIsTestingGemini(true);
+    setGeminiTestResult(null);
+    try {
+      const result = await geminiVisionService.testConnection(geminiApiKey, selectedGeminiModel);
+      setGeminiTestResult(result);
+      if (result.success) {
+        if (result.model && result.model !== selectedGeminiModel) {
+          setSelectedGeminiModel(result.model);
+        }
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch (err: any) {
+      const res: GeminiConnectionTestResult = {
+        success: false,
+        model: selectedGeminiModel,
+        latencyMs: 0,
+        message: err?.message || 'Erreur inconnue lors du test',
+      };
+      setGeminiTestResult(res);
+      toast.error(res.message);
+    } finally {
+      setIsTestingGemini(false);
+    }
+  };
 
   const [formData, setFormData] = useState({
     club_name: '',
@@ -24,7 +77,7 @@ const ClubSettings: React.FC = () => {
     primary_color: '#e03d3d',
     secondary_color: '#ffffff',
     pagination_limit: 10,
-    preferred_view_mode: 'list' as 'grid' | 'list',
+    preferred_view_mode: 'grid' as 'grid' | 'list',
     session_timeout_minutes: 30,
     show_fan_button: true,
   });
@@ -44,7 +97,7 @@ const ClubSettings: React.FC = () => {
         primary_color: mainClub.settings?.primary_color || '#e03d3d',
         secondary_color: mainClub.settings?.secondary_color || '#ffffff',
         pagination_limit: mainClub.settings?.pagination_limit || 10,
-        preferred_view_mode: (mainClub.settings?.preferred_view_mode as any) || 'list',
+        preferred_view_mode: resolvePreferredViewMode(mainClub, 'grid'),
         session_timeout_minutes: currentPlugins.session_timeout_minutes ?? (mainClub.settings as any)?.session_timeout_minutes ?? 30,
         show_fan_button: currentPlugins.show_fan_button !== false,
       });
@@ -142,26 +195,11 @@ const ClubSettings: React.FC = () => {
   };
 
   if (isLoading) {
-    return (
-      <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-700">
-         <div className="flex justify-between items-center">
-            <Skeleton className="h-10 w-48" />
-            <Skeleton className="h-12 w-48 rounded-2xl" />
-         </div>
-         <Skeleton className="h-14 w-64 rounded-2xl" />
-         <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-            <Skeleton className="md:col-span-4 h-64 rounded-[2.5rem]" />
-            <div className="md:col-span-8 space-y-8">
-               <Skeleton className="h-64 rounded-[2.5rem]" />
-               <Skeleton className="h-48 rounded-[2.5rem]" />
-            </div>
-         </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement des paramètres du club…" />;
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-20 animate-in fade-in duration-700">
+    <div className="max-w-4xl mx-auto space-y-8 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-2xl font-black tracking-tight text-foreground uppercase italic flex items-center gap-2">
@@ -195,15 +233,19 @@ const ClubSettings: React.FC = () => {
           <Target className="w-4 h-4 mr-2" />
           Gestion des Métriques
         </Button>
+        <Button 
+          variant={activeTab === 'ai' ? 'default' : 'ghost'} 
+          onClick={() => setActiveTab('ai')}
+          className="rounded-xl px-6 font-black uppercase tracking-widest text-[10px]"
+        >
+          <Bot className="w-4 h-4 mr-2 text-primary" />
+          IA & Scanner Gemini
+        </Button>
       </div>
 
-      <AnimatePresence mode="wait">
         {activeTab === 'registry' && (
-          <motion.div 
+          <div 
             key="registry"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
             className="grid grid-cols-1 lg:grid-cols-12 gap-8"
           >
             {/* Preview Card */}
@@ -419,21 +461,224 @@ const ClubSettings: React.FC = () => {
                 </CardContent>
               </Card>
             </div>
-          </motion.div>
+          </div>
         )}
 
         {activeTab === 'metrics' && (
-            <motion.div
-              key="metrics"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-            >
+            <div key="metrics">
               <MetricsManagement />
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+
+        {activeTab === 'ai' && (
+          <div
+            key="ai"
+            className="space-y-6"
+          >
+            <Card className="border shadow-lg rounded-[2.5rem] overflow-hidden bg-card">
+              <CardHeader className="border-b bg-gradient-to-r from-red-600/10 via-amber-600/10 to-primary/5 p-8">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-red-600 to-amber-600 flex items-center justify-center text-white shadow-xl shadow-red-500/20">
+                      <Bot className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-2">
+                        Google Gemini Vision & Multimodal
+                        <Badge className="bg-red-500/10 text-red-500 border-red-500/30 text-[10px] font-black uppercase tracking-widest">
+                          Scan Intelligent
+                        </Badge>
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Alimentez l'extraction automatique des Feuilles de Match FRMF (PDF/Images) grâce à l'IA Gemini.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleSaveGeminiSettings}
+                      className="gap-2 shadow-lg shadow-primary/20 px-6 h-11 rounded-xl font-black uppercase tracking-widest text-xs"
+                    >
+                      <Save className="w-4 h-4" />
+                      Enregistrer
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-8 space-y-8">
+                {/* Section Clé API */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black uppercase tracking-widest text-foreground flex items-center gap-2">
+                      <Key className="w-4 h-4 text-primary" />
+                      Clé d'API Google Gemini (AI Studio)
+                    </label>
+                    <a
+                      href="https://aistudio.google.com/app/apikey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1 opacity-90"
+                    >
+                      Obtenir une clé gratuite sur Google AI Studio
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+
+                  <div className="relative">
+                    <Input
+                      type={showGeminiKey ? 'text' : 'password'}
+                      value={geminiApiKey}
+                      onChange={(e) => setGeminiApiKey(e.target.value)}
+                      placeholder="AIzaSy..."
+                      className="h-12 rounded-xl bg-secondary/30 border-secondary font-mono text-sm pr-24 tracking-wider"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowGeminiKey(!showGeminiKey)}
+                        className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+                        title={showGeminiKey ? 'Masquer la clé' : 'Afficher la clé'}
+                      >
+                        {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    La clé est conservée de manière sécurisée dans votre session locale. Aucune donnée d'identification n'est partagée.
+                  </p>
+                </div>
+
+                {/* Section Choix du Modèle */}
+                <div className="space-y-3">
+                  <label className="text-xs font-black uppercase tracking-widest text-foreground flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-amber-500" />
+                    Modèle d'IA utilisé
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {AVAILABLE_GEMINI_MODELS.map((m) => {
+                      const isSelected = selectedGeminiModel === m.id;
+                      return (
+                        <div
+                          key={m.id}
+                          onClick={() => setSelectedGeminiModel(m.id)}
+                          className={`cursor-pointer p-4 rounded-2xl border transition-all duration-200 ${
+                            isSelected
+                              ? 'border-primary bg-primary/10 shadow-md ring-2 ring-primary/20'
+                              : 'border-secondary/60 bg-secondary/20 hover:border-secondary hover:bg-secondary/30'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-mono text-xs font-black tracking-tight">{m.id}</span>
+                            {isSelected && (
+                              <Badge className="bg-primary text-white text-[9px] px-2 py-0.5 uppercase tracking-widest">
+                                Actif
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground leading-snug">{m.label}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Section Test de Connexion */}
+                <div className="pt-4 border-t border-secondary/40 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-widest text-foreground flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        Test de Connectivité en Direct
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Vérifiez que votre clé est valide et que l'application communique sans encombre avec les serveurs Gemini.
+                      </p>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleTestGeminiConnection}
+                      disabled={isTestingGemini || !geminiApiKey.trim()}
+                      className="gap-2 h-11 px-6 rounded-xl border-secondary font-bold text-xs shrink-0"
+                    >
+                      {isTestingGemini ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                          Test en cours...
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-4 h-4 text-amber-500" />
+                          Tester la connexion
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Résultat du test */}
+                  {geminiTestResult && (
+                    <div
+                      className={`p-4 rounded-2xl border flex items-start gap-3 transition-all ${
+                        geminiTestResult.success
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : 'bg-red-500/10 border-red-500/30 text-red-300'
+                      }`}
+                    >
+                      {geminiTestResult.success ? (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                      )}
+                      <div className="space-y-1">
+                        <div className="font-bold text-xs flex items-center gap-2">
+                          <span>{geminiTestResult.success ? 'Connectivité validée' : 'Échec de connexion'}</span>
+                          {geminiTestResult.latencyMs ? (
+                            <Badge variant="outline" className="text-[10px] py-0 px-2 font-mono border-current">
+                              {geminiTestResult.latencyMs} ms
+                            </Badge>
+                          ) : null}
+                          {geminiTestResult.model && (
+                            <Badge variant="outline" className="text-[10px] py-0 px-2 font-mono border-current">
+                              {geminiTestResult.model}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs opacity-90 leading-relaxed">{geminiTestResult.message}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Explications & Capacités */}
+                <div className="p-4 rounded-2xl bg-secondary/20 border border-secondary/40 text-xs text-muted-foreground space-y-2">
+                  <div className="font-bold text-foreground flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    Capacités activées avec le Scanner Gemini :
+                  </div>
+                  <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] leading-relaxed">
+                    <li>
+                      <strong>Extraction OCR Multimodale complète :</strong> lit les PDFs natifs vectoriels ainsi que les scans scannés ou pris en photo.
+                    </li>
+                    <li>
+                      <strong>Détection automatique des surclassements :</strong> compare l'année de licence (ex: <code className="text-primary font-mono font-bold">152923M12</code> = 2012) avec la catégorie du match (ex: U16 = U15 surclassé).
+                    </li>
+                    <li>
+                      <strong>Réconciliation intelligente des scores & événements :</strong> contrôle croisé entre score global et buts individuels, cartons jaunes/rouges et remplacements.
+                    </li>
+                    <li>
+                      <strong>Création automatique d'adversaires :</strong> inscrit le club adverse et ses joueurs dans la base s'ils n'existent pas encore.
+                    </li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
       <MediaPickerModal
         isOpen={mediaPickerOpen}

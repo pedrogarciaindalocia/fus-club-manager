@@ -23,9 +23,6 @@ const StatCard: React.FC<StatCardProps> = ({ id, label, value, change, positive,
   return (
     <motion.div
       id={id}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: delay * 0.1 }}
       whileHover={{ y: -5 }}
       className="flex-1"
     >

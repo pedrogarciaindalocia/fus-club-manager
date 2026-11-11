@@ -4,15 +4,32 @@ import type { Inserts, Updates } from '../types/supabase';
 import { getMyClubId } from './_helpers';
 import { storageService } from './storageService';
 
-let hasCelebrationColumn: boolean | null = null;
+let knownMissingColumns = new Set<string>();
 
 function sanitizePlayerPayload<T extends Record<string, any>>(payload: T): T {
   const clean = { ...payload };
-  // If celebration_photo_url is empty, or if we know DB doesn't have the column yet, omit it to prevent Postgres 42703 / HTTP 400
-  if (!clean.celebration_photo_url || hasCelebrationColumn === false) {
+  // Supprimer automatiquement toute colonne identifiée comme inexistante dans la DB
+  knownMissingColumns.forEach((col) => {
+    delete clean[col];
+  });
+  if (knownMissingColumns.has('celebration_photo_url') || !clean.celebration_photo_url) {
     delete clean.celebration_photo_url;
   }
   return clean;
+}
+
+function detectAndRecordMissingColumn(error: any): string | null {
+  if (error?.code === '42703') {
+    const msg = (error.message || '') + ' ' + (error.details || '');
+    const candidates = ['celebration_photo_url', 'category_number', 'first_name', 'last_name', 'birth_year', 'secondary_position'];
+    for (const c of candidates) {
+      if (msg.includes(c)) {
+        knownMissingColumns.add(c);
+        return c;
+      }
+    }
+  }
+  return null;
 }
 
 export const playerService = {
@@ -40,7 +57,7 @@ export const playerService = {
 
   async addPlayer(player: Omit<Inserts<'players'>, 'id'>): Promise<Player> {
     const clubId = await getMyClubId();
-    const cleanPlayer = sanitizePlayerPayload(player);
+    let cleanPlayer = sanitizePlayerPayload(player);
 
     try {
       const { data, error } = await supabase
@@ -50,19 +67,31 @@ export const playerService = {
         .single();
 
       if (error) throw error;
-      if (player.celebration_photo_url) hasCelebrationColumn = true;
       return data;
     } catch (error: any) {
-      if (error.code === '42703' && (error.message?.includes('celebration_photo_url') || error.details?.includes('celebration_photo_url'))) {
-        hasCelebrationColumn = false;
-        console.warn('Colonne celebration_photo_url absente, repli automatique sans ce champ.');
-        const { celebration_photo_url, ...withoutCelebration } = cleanPlayer as any;
+      const missing = detectAndRecordMissingColumn(error);
+      if (missing) {
+        console.warn(`Colonne ${missing} absente dans la DB, repli automatique.`);
+        cleanPlayer = sanitizePlayerPayload(cleanPlayer);
         const { data: fallbackData, error: retryErr } = await supabase
           .from('players')
-          .insert([{ ...withoutCelebration, club_id: clubId }])
+          .insert([{ ...cleanPlayer, club_id: clubId }])
           .select()
           .single();
-        if (retryErr) throw retryErr;
+        if (retryErr) {
+          const secondMissing = detectAndRecordMissingColumn(retryErr);
+          if (secondMissing) {
+            cleanPlayer = sanitizePlayerPayload(cleanPlayer);
+            const { data: retry2Data, error: retry2Err } = await supabase
+              .from('players')
+              .insert([{ ...cleanPlayer, club_id: clubId }])
+              .select()
+              .single();
+            if (retry2Err) throw retry2Err;
+            return retry2Data;
+          }
+          throw retryErr;
+        }
         return fallbackData;
       }
       if (error.code === '23505' || (error as any).status === 409) {
@@ -73,7 +102,7 @@ export const playerService = {
   },
 
   async updatePlayer(id: string, updates: Updates<'players'>): Promise<Player> {
-    const cleanUpdates = sanitizePlayerPayload(updates);
+    let cleanUpdates = sanitizePlayerPayload(updates);
 
     try {
       const { data, error } = await supabase
@@ -84,20 +113,33 @@ export const playerService = {
         .single();
 
       if (error) throw error;
-      if (updates.celebration_photo_url) hasCelebrationColumn = true;
       return data;
     } catch (error: any) {
-      if (error.code === '42703' && (error.message?.includes('celebration_photo_url') || error.details?.includes('celebration_photo_url'))) {
-        hasCelebrationColumn = false;
-        console.warn('Colonne celebration_photo_url absente, repli automatique sans ce champ.');
-        const { celebration_photo_url, ...withoutCelebration } = cleanUpdates as any;
+      const missing = detectAndRecordMissingColumn(error);
+      if (missing) {
+        console.warn(`Colonne ${missing} absente dans la DB, repli automatique.`);
+        cleanUpdates = sanitizePlayerPayload(cleanUpdates);
         const { data: fallbackData, error: retryErr } = await supabase
           .from('players')
-          .update(withoutCelebration)
+          .update(cleanUpdates)
           .eq('id', id)
           .select()
           .single();
-        if (retryErr) throw retryErr;
+        if (retryErr) {
+          const secondMissing = detectAndRecordMissingColumn(retryErr);
+          if (secondMissing) {
+            cleanUpdates = sanitizePlayerPayload(cleanUpdates);
+            const { data: retry2Data, error: retry2Err } = await supabase
+              .from('players')
+              .update(cleanUpdates)
+              .eq('id', id)
+              .select()
+              .single();
+            if (retry2Err) throw retry2Err;
+            return retry2Data;
+          }
+          throw retryErr;
+        }
         return fallbackData;
       }
       if (error.code === '23505') {

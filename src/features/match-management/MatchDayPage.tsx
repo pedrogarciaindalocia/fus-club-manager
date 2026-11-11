@@ -5,7 +5,7 @@ import { usePlayers } from '../../hooks/usePlayers';
 import { useStaff } from '../../hooks/useStaff';
 import { useCompetitions } from '../../hooks/useCompetitions';
 import { useTouchDragAndDrop } from '../../hooks/useTouchDragAndDrop';
-import { Skeleton } from '../../components/ui/skeleton';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { usePermissions } from '../../context/PermissionsContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Badge } from '../../components/ui/badge';
@@ -290,22 +290,14 @@ const MatchDayPage: React.FC = () => {
   }, [matchPlayers]);
 
   if (isLoading) {
-    return (
-      <div className="space-y-8 pb-10">
-        <Skeleton className="h-40 rounded-[3rem] w-full" />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {[1, 2, 3].map(i => <Skeleton key={i} className="h-80 rounded-[4rem]" />)}
-        </div>
-      </div>
-    );
+    return <FusLogoLoader fullPage size="lg" label="Chargement du Match Day…" />;
   }
 
   return (
     <>
     <div className="space-y-8 pb-10 print:hidden">
-      <AnimatePresence mode="wait">
         {showLive && selectedMatchId ? (
-          <motion.div key="live" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+          <div key="live">
             <div className="flex items-center gap-4 mb-6">
               <Button variant="ghost" size="icon" onClick={() => setShowLive(false)} className="rounded-2xl bg-secondary/50">
                 <ChevronRight className="w-5 h-5 rotate-180" />
@@ -313,9 +305,9 @@ const MatchDayPage: React.FC = () => {
               <h3 className="text-xl font-black uppercase tracking-tight italic">Live Terminal</h3>
             </div>
             <LiveTracking matchId={selectedMatchId} />
-          </motion.div>
+          </div>
         ) : selectedMatchId && match ? (
-          <motion.div key="config" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} className="space-y-8">             <div className="relative bg-gradient-to-r from-slate-900 via-primary to-blue-900 rounded-[3rem] px-10 py-6 text-white overflow-hidden shadow-2xl border-b-[8px] border-primary/20 flex items-center justify-between">
+          <div key="config" className="space-y-8">             <div className="relative bg-gradient-to-r from-slate-900 via-primary to-blue-900 rounded-[3rem] px-10 py-6 text-white overflow-hidden shadow-2xl border-b-[8px] border-primary/20 flex items-center justify-between">
                 <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: 'repeating-linear-gradient(45deg,#fff 0,#fff 1px,transparent 0,transparent 50%)', backgroundSize: '15px 15px' }} />
                 
                 <div className="relative z-10 flex items-center gap-6">
@@ -361,9 +353,8 @@ const MatchDayPage: React.FC = () => {
 
 
              <div className="bg-white rounded-[3.5rem] border shadow-2xl overflow-hidden min-h-[700px] flex flex-col">
-                <AnimatePresence mode="wait">
                    {currentStep === 'setup' && (
-                     <motion.div key="setup" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-10 space-y-12">
+                     <div key="setup" className="p-10 space-y-12">
                         <SectionTitle icon={<Settings className="w-5 h-5 text-primary" />} title="Réglages de Match" subtitle="Ajustez les détails de la rencontre pour aujourd'hui" />
                         <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
                            <div className="space-y-6">
@@ -399,11 +390,11 @@ const MatchDayPage: React.FC = () => {
                               </div>
                            </div>
                         </div>
-                     </motion.div>
+                     </div>
                    )}
 
                    {currentStep === 'staff' && (
-                      <motion.div key="staff" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-10 space-y-8 flex-1">
+                      <div key="staff" className="p-10 space-y-8 flex-1">
                          <SectionTitle icon={<Briefcase className="w-5 h-5 text-primary" />} title="Gestion du Staff" subtitle="Désignez les membres du staff présents sur le banc" />
                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
                             {staff.map(s => {
@@ -420,11 +411,11 @@ const MatchDayPage: React.FC = () => {
                                );
                             })}
                          </div>
-                      </motion.div>
+                      </div>
                    )}
 
                    {currentStep === 'lineup' && (
-                      <motion.div key="lineup" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-8 flex-1">
+                      <div key="lineup" className="p-8 flex-1">
                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
                             <div className="lg:col-span-4 space-y-6 flex flex-col h-full">
                                <div className="bg-secondary/10 p-6 rounded-[2.5rem] border border-secondary/50 shadow-inner">
@@ -530,11 +521,11 @@ const MatchDayPage: React.FC = () => {
                                </div>
                             </div>
                          </div>
-                      </motion.div>
+                      </div>
                    )}
 
                    {currentStep === 'opponent' && (
-                     <motion.div key="opponent" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-10 space-y-8 flex-1">
+                     <div key="opponent" className="p-10 space-y-8 flex-1">
                         <SectionTitle icon={<Target className="w-5 h-5 text-primary" />} title="Tactique Adverse" subtitle="Modélisez le bloc adverse pour préparer la réponse tactique" />
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
                            <div className="lg:col-span-4 space-y-6">
@@ -558,9 +549,8 @@ const MatchDayPage: React.FC = () => {
                               <Pitch positions={getFormationPositions(formData.opponent_formation || '4-4-2')} isOpponent />
                            </div>
                         </div>
-                     </motion.div>
+                     </div>
                    )}
-                </AnimatePresence>
 
                 <div className="p-10 border-t bg-secondary/10 flex items-center justify-between mt-auto">
                    <Button variant="ghost" onClick={goPrev} className="h-16 px-10 rounded-[2rem] font-black uppercase tracking-widest text-[11px] gap-3 hover:bg-white transition-all shadow-sm">
@@ -593,9 +583,9 @@ const MatchDayPage: React.FC = () => {
                    </div>
                 </div>
              </div>
-          </motion.div>
+          </div>
         ) : (
-          <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-12">
+          <div key="dashboard" className="space-y-12">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div className="flex items-center gap-10">
                 <div className="w-24 h-24 bg-primary/10 rounded-[3rem] flex items-center justify-center p-6 border-2 border-primary/20 shadow-2xl ring-[12px] ring-primary/5">
@@ -733,9 +723,8 @@ const MatchDayPage: React.FC = () => {
                   })}
                </div>
             )}
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
     </div>
 
     {/* MATCH SHEET PRINTABLE VIEW */}

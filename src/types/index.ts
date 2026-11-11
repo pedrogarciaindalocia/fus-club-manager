@@ -101,3 +101,43 @@ export interface BackupStats {
   totalSizeMB: number;
   successRate: number;
 }
+
+// -------------------------------------------------------
+// MATCHS ADVERSAIRES & CLASSEMENT DE CHAMPIONNAT
+// -------------------------------------------------------
+
+export interface OpponentMatch {
+  id: string;
+  club_id?: string | null;
+  league_id: string;
+  category?: string | null;
+  home_club_id: string;
+  away_club_id: string;
+  match_date: string;
+  match_time?: string | null;
+  score_home: number;
+  score_away: number;
+  status: 'scheduled' | 'live' | 'finished';
+  round_name?: string | null;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StandingRow {
+  position: number;
+  club_id: string;
+  club_name: string;
+  club_logo?: string | null;
+  is_fus: boolean;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goals_for: number;
+  goals_against: number;
+  goal_difference: number;
+  points: number;
+  form: Array<'W' | 'D' | 'L'>;
+}
+

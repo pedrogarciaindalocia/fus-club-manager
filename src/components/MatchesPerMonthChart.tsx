@@ -11,7 +11,6 @@ import {
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
-import { motion } from 'framer-motion';
 import { useMatches } from '../hooks/useMatches';
 import type { Match } from '../types';
 
@@ -58,11 +57,7 @@ const MatchesPerMonthChart: React.FC = () => {
   }, [matchData, maxMatches]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5, delay: 0.3 }}
-    >
+    <div>
       <Card className="hover:shadow-md transition-shadow border">
         <CardHeader className="flex-row items-center justify-between pb-8">
           <div className="space-y-1">
@@ -119,7 +114,7 @@ const MatchesPerMonthChart: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 };
 

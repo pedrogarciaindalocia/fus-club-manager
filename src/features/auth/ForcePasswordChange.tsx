@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { usePermissions } from '../../context/PermissionsContext';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { toast } from 'sonner';
 
 const ForcePasswordChange: React.FC = () => {
@@ -78,11 +79,7 @@ const ForcePasswordChange: React.FC = () => {
   };
 
   if (authState.loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
+    return <FusLogoLoader fullScreen size="xl" label="Chargement de la session…" />;
   }
 
   return (

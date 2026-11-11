@@ -11,7 +11,6 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
-import { motion } from 'framer-motion';
 
 const activityFeed = [
   {
@@ -62,12 +61,7 @@ const activityFeed = [
 ];
 
 const ActivityFeed: React.FC = () => (
-  <motion.div
-    initial={{ opacity: 0, x: 20 }}
-    animate={{ opacity: 1, x: 0 }}
-    transition={{ duration: 0.5, delay: 0.5 }}
-    id="activity-feed-card"
-  >
+  <div id="activity-feed-card">
     <Card className="h-full hover:shadow-md transition-shadow border">
       <CardHeader className="flex-row items-center justify-between pb-6">
         <div className="space-y-1">
@@ -86,13 +80,10 @@ const ActivityFeed: React.FC = () => (
         {activityFeed.map((item, idx) => {
           const Icon = item.icon;
           return (
-            <motion.div 
+            <div 
               key={item.id} 
               id={item.id} 
               className="flex items-start gap-3 group relative cursor-pointer"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4, delay: 0.6 + idx * 0.1 }}
             >
               <div
                 className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 group-hover:scale-105 transition-transform shadow-md"
@@ -119,7 +110,7 @@ const ActivityFeed: React.FC = () => (
               {idx < activityFeed.length - 1 && (
                 <div className="absolute left-[17.5px] top-10 bottom-[-16px] w-[2px] bg-secondary/80 -z-10 group-last:hidden" />
               )}
-            </motion.div>
+            </div>
           );
         })}
         <Button variant="outline" size="sm" className="w-full mt-2 h-9 rounded-xl text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors ring-1 ring-black/5">
@@ -127,7 +118,7 @@ const ActivityFeed: React.FC = () => (
         </Button>
       </CardContent>
     </Card>
-  </motion.div>
+  </div>
 );
 
 export default ActivityFeed;
