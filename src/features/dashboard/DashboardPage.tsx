@@ -17,12 +17,26 @@ import { isScoutBranch } from '../../constants/roles';
 import type { Player } from '../../types';
 
 const DashboardPage: React.FC = () => {
-  const { authState } = usePermissions();
+  const { authState, hasSubModuleAccess } = usePermissions();
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
+  const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
   const isScout = isScoutBranch(currentRole, authState.user?.job_title);
 
   if (isScout) {
     return <ScoutDashboardView />;
+  }
+
+  const canViewDashboardMetrics = isSuperAdmin || hasSubModuleAccess('players', 'read') || hasSubModuleAccess('matches', 'read');
+  if (!canViewDashboardMetrics) {
+    return (
+      <div className="min-h-[420px] flex items-center justify-center">
+        <ErrorEmptyState
+          type="empty"
+          title="Espace Utilisateur"
+          message="Utilisez le menu latéral pour accéder uniquement aux rubriques qui vous ont été autorisées."
+        />
+      </div>
+    );
   }
 
   const { isLoading: matchesLoading, isError: matchesError, matches } = useMatches();
@@ -40,8 +54,8 @@ const DashboardPage: React.FC = () => {
   if (isError) {
     return (
       <div className="min-h-[600px] flex items-center justify-center">
-        <ErrorEmptyState 
-          title="Erreur de chargement" 
+        <ErrorEmptyState
+          title="Erreur de chargement"
           message="Une erreur est survenue lors du chargement des données de votre club. Veuillez vérifier votre connexion ou vos permissions Supabase."
           onRetry={() => window.location.reload()}
         />
@@ -53,9 +67,9 @@ const DashboardPage: React.FC = () => {
   if (hasNoData) {
     return (
       <div className="min-h-[600px] flex items-center justify-center">
-        <ErrorEmptyState 
+        <ErrorEmptyState
           type="empty"
-          title="Club sans données" 
+          title="Club sans données"
           message="Bienvenue dans votre tableau de bord ! Commencez par ajouter des joueurs ou planifier des matchs pour voir vos statistiques complètes."
         />
       </div>
@@ -64,7 +78,7 @@ const DashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12">
-      
+
       {/* Row 1: Key Performance Indicators Summary */}
       <MiniStatRow />
 

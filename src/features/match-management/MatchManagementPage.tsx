@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMatches } from '../../hooks/useMatches';
 import { useClubData } from '../../hooks/useClubData';
 import { useCompetitions } from '../../hooks/useCompetitions';
+import { useTeams } from '../../hooks/useTeams';
 import { usePermissions } from '../../context/PermissionsContext';
 import { useAutoMatchActivation } from '../../hooks/useAutoMatchActivation';
 import { Card, CardContent } from '../../components/ui/card';
@@ -44,7 +45,8 @@ import {
    GripVertical,
    UserCheck,
    Swords,
-   FileText
+   FileText,
+   RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '../../components/ui/input';
@@ -56,6 +58,8 @@ import MatchOverviewPanel from './MatchOverviewPanel';
 import { DeleteMatchModal } from './components/DeleteMatchModal';
 import { OpponentMatchesPanel } from './components/OpponentMatchesPanel';
 import { MatchSheetImportModal } from './components/MatchSheetImportModal';
+import { FrmfCalendarSyncModal } from './components/FrmfCalendarSyncModal';
+import { frmfCalendarSyncService } from '../../services/frmfCalendarSyncService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PLAYER_CATEGORIES, normalizeAgeCategory } from '../../constants';
 import type { Match } from '../../types';
@@ -419,6 +423,7 @@ const MatchManagementPage: React.FC = () => {
    const { matches, deleteMatch, updateMatch, isLoading: matchesLoading, refetch } = useMatches();
    const { mainClub, opponentClubs, isLoading: clubLoading } = useClubData();
    const { leagues } = useCompetitions();
+   const { teams } = useTeams();
    const { can, canManageCategory, authState } = usePermissions();
 
    const resolveRequestedTab = (
@@ -463,6 +468,66 @@ const MatchManagementPage: React.FC = () => {
    });
    const [categoryFilter, setCategoryFilter] = useState<string>('All');
    const [isPdfImportOpen, setIsPdfImportOpen] = useState(false);
+   const [isFrmfCalendarSyncOpen, setIsFrmfCalendarSyncOpen] = useState(false);
+   const [pendingFrmfSyncCount, setPendingFrmfSyncCount] = useState<number>(0);
+
+   const canCreateMatches = can('create_match');
+   const syncLatestRef = React.useRef({
+      mainClub,
+      opponentClubs,
+      matches,
+      leagues,
+      teams,
+      canManageCategory,
+   });
+   syncLatestRef.current = {
+      mainClub,
+      opponentClubs,
+      matches,
+      leagues,
+      teams,
+      canManageCategory,
+   };
+
+   const refreshPendingFrmfSyncCount = useCallback(async () => {
+      if (!canCreateMatches || matchesLoading || clubLoading) return;
+      const snap = syncLatestRef.current;
+      try {
+         const audit = await frmfCalendarSyncService.auditFromDatabase({
+            mainClub: snap.mainClub,
+            opponentClubs: snap.opponentClubs,
+            calendarMatches: snap.matches,
+            leagues: snap.leagues,
+            teams: snap.teams,
+            canManageCategory: snap.canManageCategory,
+         });
+         setPendingFrmfSyncCount(audit.missingMatches.length + audit.roundUpdates.length);
+      } catch {
+         // Audit silencieux en arrière-plan
+      }
+   }, [canCreateMatches, matchesLoading, clubLoading]);
+
+   useEffect(() => {
+      let active = true;
+      if (!canCreateMatches || matchesLoading || clubLoading) return;
+      const timer = setTimeout(() => {
+         if (active) void refreshPendingFrmfSyncCount();
+      }, 350);
+      return () => {
+         active = false;
+         clearTimeout(timer);
+      };
+   }, [
+      canCreateMatches,
+      matchesLoading,
+      clubLoading,
+      matches.length,
+      opponentClubs.length,
+      leagues.length,
+      teams.length,
+      mainClub?.id,
+      refreshPendingFrmfSyncCount,
+   ]);
 
    const availableCategoryFilters = useMemo(() => {
       const allowed = PLAYER_CATEGORIES.filter(cat => (canManageCategory ? canManageCategory(cat) : true));
@@ -1101,9 +1166,25 @@ const MatchManagementPage: React.FC = () => {
                                  </button>
                               </div>
 
-                              {/* Importer Feuille FRMF & Planifier un match Buttons */}
+                              {/* Synchroniser My Club, Importer Feuille FRMF & Planifier un match Buttons */}
                               {can('create_match') && (
                                  <>
+                                    <Button
+                                       onClick={() => setIsFrmfCalendarSyncOpen(true)}
+                                       variant="outline"
+                                       className="border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 h-10 sm:h-12 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-bold uppercase tracking-wider text-[10px] sm:text-[11px] gap-2 transition-all hover:scale-[1.02] active:scale-95 shrink-0"
+                                       title="Vérifier et synchroniser dans le calendrier les matchs joués de My Club issus de Classement & Résultats"
+                                    >
+                                       <RefreshCw className="w-4 h-4 text-emerald-600" />
+                                       <span className="hidden md:inline">Synchroniser My Club</span>
+                                       <span className="md:hidden">Synchro</span>
+                                       {pendingFrmfSyncCount > 0 && (
+                                          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-[#FF3737] text-white text-[10px] font-black shadow-xs">
+                                             {pendingFrmfSyncCount}
+                                          </span>
+                                       )}
+                                    </Button>
+
                                     <Button
                                        onClick={() => setIsPdfImportOpen(true)}
                                        variant="outline"
@@ -2468,6 +2549,22 @@ const MatchManagementPage: React.FC = () => {
             onClose={() => setIsPdfImportOpen(false)}
             onSuccess={() => {
                refetch();
+            }}
+         />
+
+         {/* Modal de synchronisation My Club (Classement & Résultats FRMF → Calendrier) */}
+         <FrmfCalendarSyncModal
+            isOpen={isFrmfCalendarSyncOpen}
+            onClose={() => setIsFrmfCalendarSyncOpen(false)}
+            mainClub={mainClub}
+            opponentClubs={opponentClubs}
+            calendarMatches={matches}
+            leagues={leagues}
+            teams={teams}
+            canManageCategory={canManageCategory}
+            onSynced={async () => {
+               await refetch();
+               await refreshPendingFrmfSyncCount();
             }}
          />
       </div >

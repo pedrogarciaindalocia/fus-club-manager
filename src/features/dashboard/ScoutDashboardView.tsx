@@ -33,7 +33,7 @@ import {
 
 const ScoutDashboardView: React.FC = () => {
   const navigate = useNavigate();
-  const { authState } = usePermissions();
+  const { authState, hasSubModuleAccess, hasModuleAccess } = usePermissions();
   const { candidates, tests, scouts, isLoadingCandidates, isLoadingTests } = useRecruitment();
   const [profileModalOpen, setProfileModalOpen] = useState(false);
 
@@ -43,19 +43,35 @@ const ScoutDashboardView: React.FC = () => {
   const avatarUrl = currentUser?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=8b5cf6&color=fff&size=120`;
 
   const userRole = currentUser?.system_role?.toLowerCase() || '';
-  const userRoles = (authState?.roles ?? []).map(r => r.toLowerCase());
-  const isAdmin = Boolean(
-    userRoles.includes('super_admin') ||
-    userRoles.includes('scout_admin') ||
-    userRole === 'super_admin' ||
-    userRole === 'admin' ||
-    userRole === 'scout_admin'
-  );
+  const isSuperAdmin = !authState.isImpersonating && userRole === 'super_admin';
+  const isAdmin = isSuperAdmin;
+  const canViewRecruitment = isSuperAdmin || hasModuleAccess('recruitment_v2', 'read');
+  const canViewCandidates = isSuperAdmin || hasSubModuleAccess('candidates', 'read', 'recruitment_v2');
+  const canCreateCandidate = isSuperAdmin || hasSubModuleAccess('candidates', 'create', 'recruitment_v2');
+  const canViewMissions = isSuperAdmin || hasSubModuleAccess('missions', 'read', 'recruitment_v2');
+  const canViewSessions = isSuperAdmin || hasSubModuleAccess('sessions', 'read', 'recruitment_v2');
+  const canViewShortlist = isSuperAdmin || hasSubModuleAccess('shortlist', 'read', 'recruitment_v2');
+
+  if (!canViewRecruitment) {
+    return (
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 p-12 text-center space-y-4 shadow-xs">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-100">
+          <ShieldCheck className="w-8 h-8" />
+        </div>
+        <div>
+          <h2 className="text-lg font-black text-slate-800 dark:text-white">Bonjour, {displayName}</h2>
+          <p className="text-sm text-slate-500 max-w-md mx-auto mt-1">
+            Aucune rubrique de détection n'est activée sur votre compte. Utilisez le menu latéral pour accéder à vos rubriques autorisées ou contactez un administrateur.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // Identifier le scout correspondant à l'utilisateur connecté
   const userEmail = currentUser?.email?.toLowerCase().trim();
   const userName = (currentUser?.full_name || '').toLowerCase().trim();
-  const matchedScout = scouts.find(s => 
+  const matchedScout = scouts.find(s =>
     (s.email && s.email.toLowerCase().trim() === userEmail) ||
     (s.id && s.id === currentUser?.id) ||
     (s.full_name && s.full_name.toLowerCase().trim() === userName)
@@ -99,19 +115,19 @@ const ScoutDashboardView: React.FC = () => {
 
   // Calcul des statistiques réelles de détection (sur le portefeuille cloisonné)
   const totalCandidates = scopedCandidates.length;
-  
+
   // Candidats sous test ou observation active
-  const underTrialCandidates = scopedCandidates.filter(c => 
-    c.decision_status === 'trial_assigned' || 
-    c.status === 'trial' || 
+  const underTrialCandidates = scopedCandidates.filter(c =>
+    c.decision_status === 'trial_assigned' ||
+    c.status === 'trial' ||
     c.status === 'observed' ||
     (c as any).decision_status === 'under_evaluation'
   ).length;
 
   // Candidats retenus ou en shortlist
-  const shortlistCandidates = scopedCandidates.filter(c => 
-    c.decision_status === 'retained' || 
-    c.decision_status === 'signed' || 
+  const shortlistCandidates = scopedCandidates.filter(c =>
+    c.decision_status === 'retained' ||
+    c.decision_status === 'signed' ||
     c.status === 'shortlist' ||
     c.recommendation_priority === 'high'
   ).length;
@@ -149,7 +165,7 @@ const ScoutDashboardView: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12">
-      
+
       {/* 1. Hero Banner: Bienvenue & Espace Détection */}
       <div
         className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 border border-purple-500/20 p-6 sm:p-8 text-white shadow-2xl shadow-purple-950/30"
@@ -182,23 +198,27 @@ const ScoutDashboardView: React.FC = () => {
             </div>
           </div>
 
-          {/* Raccourcis d'actions rapides */}
+          {/* Raccourcis d'actions rapides (filtrés par permissions cochées) */}
           <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-            <Button
-              onClick={() => navigate('/recruitment-v2?tab=candidates&action=new')}
-              className="rounded-2xl h-11 px-4 bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-purple-600/30 gap-2 flex-1 sm:flex-initial"
-            >
-              <UserPlus className="w-4 h-4" />
-              Nouveau Prospect
-            </Button>
-            <Button
-              onClick={() => navigate('/recruitment-v2?tab=sessions')}
-              variant="outline"
-              className="rounded-2xl h-11 px-4 bg-white/10 hover:bg-white/15 border-white/20 text-white font-bold text-xs gap-2 flex-1 sm:flex-initial"
-            >
-              <Calendar className="w-4 h-4 text-purple-300" />
-              Planifier Test
-            </Button>
+            {canCreateCandidate && (
+              <Button
+                onClick={() => navigate('/recruitment-v2?tab=candidates&action=new')}
+                className="rounded-2xl h-11 px-4 bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-purple-600/30 gap-2 flex-1 sm:flex-initial"
+              >
+                <UserPlus className="w-4 h-4" />
+                Nouveau Prospect
+              </Button>
+            )}
+            {canViewSessions && (
+              <Button
+                onClick={() => navigate('/recruitment-v2?tab=sessions')}
+                variant="outline"
+                className="rounded-2xl h-11 px-4 bg-white/10 hover:bg-white/15 border-white/20 text-white font-bold text-xs gap-2 flex-1 sm:flex-initial"
+              >
+                <Calendar className="w-4 h-4 text-purple-300" />
+                Planifier Test
+              </Button>
+            )}
             <Button
               onClick={() => navigate('/profile')}
               variant="outline"
@@ -212,348 +232,359 @@ const ScoutDashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Key Performance Indicators (KPIs) */}
+      {/* 2. Key Performance Indicators (KPIs filtrés selon rubriques cochées) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: Total Prospects */}
-        <Card className="rounded-3xl border border-border/70 shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-                Base Candidats
-              </span>
-              <div className="text-3xl font-black text-foreground tracking-tight">
-                {totalCandidates}
+        {canViewCandidates && (
+          <Card className="rounded-3xl border border-border/70 shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                  Base Candidats
+                </span>
+                <div className="text-3xl font-black text-foreground tracking-tight">
+                  {totalCandidates}
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-purple-600 dark:text-purple-400">
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Talents prospectés</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-purple-600 dark:text-purple-400">
-                <Compass className="w-3.5 h-3.5" />
-                <span>Talents prospectés</span>
+              <div className="w-12 h-12 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/50 flex items-center justify-center text-purple-600 dark:text-purple-400 shadow-xs">
+                <Users className="w-6 h-6" />
               </div>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/50 flex items-center justify-center text-purple-600 dark:text-purple-400 shadow-xs">
-              <Users className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* KPI 2: En Observation / Essai */}
-        <Card className="rounded-3xl border border-border/70 shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-                À l'Essai / Tests
-              </span>
-              <div className="text-3xl font-black text-amber-600 dark:text-amber-400 tracking-tight">
-                {underTrialCandidates}
+        {(canViewCandidates || canViewSessions) && (
+          <Card className="rounded-3xl border border-border/70 shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                  À l'Essai / Tests
+                </span>
+                <div className="text-3xl font-black text-amber-600 dark:text-amber-400 tracking-tight">
+                  {underTrialCandidates}
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Évaluations actives</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                <Clock className="w-3.5 h-3.5" />
-                <span>Évaluations actives</span>
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-xs">
+                <Sparkles className="w-6 h-6" />
               </div>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-xs">
-              <Sparkles className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* KPI 3: Retenus Shadow List */}
-        <Card className="rounded-3xl border border-border/70 shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-                Shadow List
-              </span>
-              <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">
-                {shortlistCandidates}
+        {canViewShortlist && (
+          <Card className="rounded-3xl border border-border/70 shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                  Shadow List
+                </span>
+                <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">
+                  {shortlistCandidates}
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Profils prioritaires</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Profils prioritaires</span>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-xs">
+                <Trophy className="w-6 h-6" />
               </div>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-xs">
-              <Trophy className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* KPI 4: Sessions de Tests Programmées */}
-        <Card className="rounded-3xl border border-border/70 shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-                Sessions à Venir
-              </span>
-              <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400 tracking-tight">
-                {upcomingTests.length}
+        {canViewSessions && (
+          <Card className="rounded-3xl border border-border/70 shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                  Sessions à Venir
+                </span>
+                <div className="text-3xl font-black text-indigo-600 dark:text-indigo-400 tracking-tight">
+                  {upcomingTests.length}
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Tests planifiés</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Tests planifiés</span>
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-xs">
+                <Target className="w-6 h-6" />
               </div>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-xs">
-              <Target className="w-6 h-6" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* 3. Section Centrale : Dernières Détections & Widgets Opérationnels */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         {/* Colonne Gauche (2/3) : Dernières Détections */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-black text-foreground uppercase tracking-wider flex items-center gap-2">
-                <Flame className="w-4 h-4 text-purple-600" />
-                Dernières Fiches Détections
-              </h2>
-              <p className="text-xs text-muted-foreground font-medium">Les talents les plus récents enregistrés par la cellule</p>
+        {canViewCandidates && (
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-black text-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Flame className="w-4 h-4 text-purple-600" />
+                  Dernières Fiches Détections
+                </h2>
+                <p className="text-xs text-muted-foreground font-medium">Les talents les plus récents enregistrés par la cellule</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/recruitment-v2?tab=candidates')}
+                className="text-xs font-black uppercase text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/30 gap-1 rounded-xl"
+              >
+                Voir la Database
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/recruitment-v2?tab=candidates')}
-              className="text-xs font-black uppercase text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950/30 gap-1 rounded-xl"
-            >
-              Voir la Database
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Button>
-          </div>
 
-          <div className="space-y-3">
-            {recentCandidates.length === 0 ? (
-              <Card className="rounded-3xl border border-dashed p-8 text-center bg-white dark:bg-slate-900">
-                <Compass className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
-                <p className="text-sm font-bold text-foreground">Aucun candidat enregistré pour le moment</p>
-                <p className="text-xs text-muted-foreground mt-1">Commencez par ajouter une première fiche de détection terrain.</p>
-                <Button 
-                  onClick={() => navigate('/recruitment-v2?tab=candidates&action=new')}
-                  className="mt-4 rounded-xl text-xs font-black uppercase bg-purple-600 hover:bg-purple-500 text-white"
-                >
-                  Ajouter un Prospect
-                </Button>
-              </Card>
-            ) : (
-              recentCandidates.map((cand) => {
-                const score = (cand as any).initial_scout_score || (cand as any).overall_rating || null;
-                return (
-                  <Card 
-                    key={cand.id} 
-                    onClick={() => navigate(`/recruitment-v2?tab=candidates&candidateId=${cand.id}`)}
-                    className="rounded-2xl border border-border/80 hover:border-purple-500/50 hover:shadow-md transition-all cursor-pointer bg-white dark:bg-slate-900 overflow-hidden group"
-                  >
-                    <CardContent className="p-4 flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <div className="w-12 h-12 rounded-xl bg-secondary overflow-hidden shrink-0 border border-border/60 flex items-center justify-center">
-                          {cand.photo_url ? (
-                            <img src={cand.photo_url} alt={cand.full_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                          ) : (
-                            <Users className="w-6 h-6 text-muted-foreground" />
+            <div className="space-y-3">
+              {recentCandidates.length === 0 ? (
+                <Card className="rounded-3xl border border-dashed p-8 text-center bg-white dark:bg-slate-900">
+                  <Compass className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
+                  <p className="text-sm font-bold text-foreground">Aucun candidat enregistré pour le moment</p>
+                  <p className="text-xs text-muted-foreground mt-1">Commencez par ajouter une première fiche de détection terrain.</p>
+                  {canCreateCandidate && (
+                    <Button
+                      onClick={() => navigate('/recruitment-v2?tab=candidates&action=new')}
+                      className="mt-4 rounded-xl text-xs font-black uppercase bg-purple-600 hover:bg-purple-500 text-white"
+                    >
+                      Ajouter un Prospect
+                    </Button>
+                  )}
+                </Card>
+              ) : (
+                recentCandidates.map((cand) => {
+                  const score = (cand as any).initial_scout_score || (cand as any).overall_rating || null;
+                  return (
+                    <Card
+                      key={cand.id}
+                      onClick={() => navigate(`/recruitment-v2?tab=candidates&candidateId=${cand.id}`)}
+                      className="rounded-2xl border border-border/80 hover:border-purple-500/50 hover:shadow-md transition-all cursor-pointer bg-white dark:bg-slate-900 overflow-hidden group"
+                    >
+                      <CardContent className="p-4 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className="w-12 h-12 rounded-xl bg-secondary overflow-hidden shrink-0 border border-border/60 flex items-center justify-center">
+                            {cand.photo_url ? (
+                              <img src={cand.photo_url} alt={cand.full_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            ) : (
+                              <Users className="w-6 h-6 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-black text-foreground truncate group-hover:text-purple-600 transition-colors">
+                                {cand.full_name}
+                              </span>
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-secondary text-secondary-foreground border">
+                                {cand.primary_position || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2.5 text-xs text-muted-foreground mt-0.5">
+                              {cand.current_club && (
+                                <span className="truncate max-w-[140px] font-medium">📍 {cand.current_club}</span>
+                              )}
+                              {cand.birth_date && (
+                                <span className="font-medium">• Né en {new Date(cand.birth_date).getFullYear()}</span>
+                              )}
+                              {cand.foot && (
+                                <span className="font-semibold text-purple-600 dark:text-purple-400">• Pied {cand.foot}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          {score && (
+                            <div className="text-right">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground block">Note Scout</span>
+                              <span className="text-sm font-black text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded-lg border border-purple-200 dark:border-purple-800">
+                                {score}/10
+                              </span>
+                            </div>
                           )}
+                          <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-purple-600 transition-colors" />
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-black text-foreground truncate group-hover:text-purple-600 transition-colors">
-                              {cand.full_name}
-                            </span>
-                            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-secondary text-secondary-foreground border">
-                              {cand.primary_position || 'N/A'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2.5 text-xs text-muted-foreground mt-0.5">
-                            {cand.current_club && (
-                              <span className="truncate max-w-[140px] font-medium">📍 {cand.current_club}</span>
-                            )}
-                            {cand.birth_date && (
-                              <span className="font-medium">• Né en {new Date(cand.birth_date).getFullYear()}</span>
-                            )}
-                            {cand.foot && (
-                              <span className="font-semibold text-purple-600 dark:text-purple-400">• Pied {cand.foot}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 shrink-0">
-                        {score && (
-                          <div className="text-right">
-                            <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground block">Note Scout</span>
-                            <span className="text-sm font-black text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded-lg border border-purple-200 dark:border-purple-800">
-                              {score}/10
-                            </span>
-                          </div>
-                        )}
-                        <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-purple-600 transition-colors" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
-            )}
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Colonne Droite (1/3) : Agenda Tests & Répartition Postes */}
         <div className="space-y-6">
-          
-          {/* Widget 1 : Répartition par Postes */}
-          <Card className="rounded-3xl border border-border/80 bg-white dark:bg-slate-900 overflow-hidden">
-            <CardContent className="p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <span className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                  <Target className="w-4 h-4 text-purple-600" /> Répartition par Poste
-                </span>
-                <span className="text-[10px] font-bold text-muted-foreground uppercase">{totalCandidates} Joueurs</span>
-              </div>
 
-              <div className="space-y-3 text-xs font-bold">
-                <div>
-                  <div className="flex justify-between text-[11px] mb-1">
-                    <span className="text-foreground">Attaquants (ATT / Ailier)</span>
-                    <span className="text-purple-600">{positionCounts.ATT} ({getPositionPercent(positionCounts.ATT)}%)</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
-                    <div className="h-full bg-purple-600 rounded-full transition-all" style={{ width: `${getPositionPercent(positionCounts.ATT)}%` }} />
-                  </div>
+          {canViewCandidates && (
+            <Card className="rounded-3xl border border-border/80 bg-white dark:bg-slate-900 overflow-hidden">
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between border-b border-border pb-3">
+                  <span className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                    <Target className="w-4 h-4 text-purple-600" /> Répartition par Poste
+                  </span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase">{totalCandidates} Joueurs</span>
                 </div>
 
-                <div>
-                  <div className="flex justify-between text-[11px] mb-1">
-                    <span className="text-foreground">Milieux (MID / MO / MDC)</span>
-                    <span className="text-indigo-600">{positionCounts.MID} ({getPositionPercent(positionCounts.MID)}%)</span>
+                <div className="space-y-3 text-xs font-bold">
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-foreground">Attaquants (ATT / Ailier)</span>
+                      <span className="text-purple-600">{positionCounts.ATT} ({getPositionPercent(positionCounts.ATT)}%)</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full bg-purple-600 rounded-full transition-all" style={{ width: `${getPositionPercent(positionCounts.ATT)}%` }} />
+                    </div>
                   </div>
-                  <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
-                    <div className="h-full bg-indigo-600 rounded-full transition-all" style={{ width: `${getPositionPercent(positionCounts.MID)}%` }} />
+
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-foreground">Milieux (MID / MO / MDC)</span>
+                      <span className="text-indigo-600">{positionCounts.MID} ({getPositionPercent(positionCounts.MID)}%)</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full bg-indigo-600 rounded-full transition-all" style={{ width: `${getPositionPercent(positionCounts.MID)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-foreground">Défenseurs (DEF / DC / Latéral)</span>
+                      <span className="text-emerald-600">{positionCounts.DEF} ({getPositionPercent(positionCounts.DEF)}%)</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full bg-emerald-600 rounded-full transition-all" style={{ width: `${getPositionPercent(positionCounts.DEF)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-foreground">Gardiens (GK)</span>
+                      <span className="text-amber-600">{positionCounts.GK} ({getPositionPercent(positionCounts.GK)}%)</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full bg-amber-600 rounded-full transition-all" style={{ width: `${getPositionPercent(positionCounts.GK)}%` }} />
+                    </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          )}
 
-                <div>
-                  <div className="flex justify-between text-[11px] mb-1">
-                    <span className="text-foreground">Défenseurs (DEF / DC / Latéral)</span>
-                    <span className="text-emerald-600">{positionCounts.DEF} ({getPositionPercent(positionCounts.DEF)}%)</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
-                    <div className="h-full bg-emerald-600 rounded-full transition-all" style={{ width: `${getPositionPercent(positionCounts.DEF)}%` }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-[11px] mb-1">
-                    <span className="text-foreground">Gardiens (GK)</span>
-                    <span className="text-amber-600">{positionCounts.GK} ({getPositionPercent(positionCounts.GK)}%)</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
-                    <div className="h-full bg-amber-600 rounded-full transition-all" style={{ width: `${getPositionPercent(positionCounts.GK)}%` }} />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Widget 2 : Prochaines Sessions de Tests */}
-          <Card className="rounded-3xl border border-border/80 bg-white dark:bg-slate-900 overflow-hidden">
-            <CardContent className="p-5 space-y-3.5">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <span className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-indigo-600" /> Agenda des Tests
-                </span>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => navigate('/recruitment-v2?tab=sessions')}
-                  className="text-[10px] font-black uppercase text-indigo-600 p-0 h-auto hover:bg-transparent"
-                >
-                  Planning
-                </Button>
-              </div>
-
-              {upcomingTests.length === 0 ? (
-                <div className="text-center py-4 text-xs font-medium text-muted-foreground">
-                  Aucune session de test à venir.
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+          {canViewSessions && (
+            <Card className="rounded-3xl border border-border/80 bg-white dark:bg-slate-900 overflow-hidden">
+              <CardContent className="p-5 space-y-3.5">
+                <div className="flex items-center justify-between border-b border-border pb-3">
+                  <span className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 text-indigo-600" /> Agenda des Tests
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => navigate('/recruitment-v2?tab=sessions')}
-                    className="mt-2.5 w-full rounded-xl text-[10px] font-black uppercase"
+                    className="text-[10px] font-black uppercase text-indigo-600 p-0 h-auto hover:bg-transparent"
                   >
-                    Programmer une Session
+                    Planning
                   </Button>
                 </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {upcomingTests.slice(0, 3).map(t => (
-                    <div key={t.id} className="p-3 rounded-2xl bg-secondary/40 border border-border/60 flex items-center justify-between text-xs">
-                      <div>
-                        <span className="font-black text-foreground block">{t.title || 'Séance de détection'}</span>
-                        <span className="text-[11px] text-muted-foreground">
-                          📅 {t.test_date} {t.location ? `• 📍 ${t.location}` : ''}
-                        </span>
-                      </div>
-                      <Badge variant="outline" className="text-[9px] font-black uppercase">
-                        {t.status || 'Planifié'}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
-          {/* Widget : Missions d'Observation Confiées */}
-          <Card className="rounded-3xl border border-purple-200 dark:border-purple-900/50 bg-white dark:bg-slate-900 overflow-hidden shadow-xs">
-            <CardContent className="p-5 space-y-3.5">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <span className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                  <Target className="w-4 h-4 text-purple-600" /> Missions d'Observation ({activeMissions.length})
-                </span>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => navigate('/recruitment-v2?tab=candidates')}
-                  className="text-[10px] font-black uppercase text-purple-600 p-0 h-auto hover:bg-transparent"
-                >
-                  Détails
-                </Button>
-              </div>
-
-              {activeMissions.length === 0 ? (
-                <div className="text-center py-4 text-xs font-medium text-muted-foreground">
-                  Aucune mission d'observation active assignée.
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {activeMissions.slice(0, 3).map(cand => (
-                    <div 
-                      key={cand.id}
-                      onClick={() => navigate(`/recruitment-v2?tab=candidates&candidateId=${cand.id}`)}
-                      className="p-3 rounded-2xl bg-purple-50/60 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/40 space-y-1.5 cursor-pointer hover:border-purple-300 transition-colors"
+                {upcomingTests.length === 0 ? (
+                  <div className="text-center py-4 text-xs font-medium text-muted-foreground">
+                    Aucune session de test à venir.
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate('/recruitment-v2?tab=sessions')}
+                      className="mt-2.5 w-full rounded-xl text-[10px] font-black uppercase"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-black text-slate-900 dark:text-white text-xs truncate">
-                          {cand.first_name} {cand.last_name}
-                        </span>
-                        <Badge variant="outline" className="text-[9px] font-black uppercase bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border-purple-200">
-                          {cand.active_mission?.priority || 'Mission'}
+                      Programmer une Session
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {upcomingTests.slice(0, 3).map(t => (
+                      <div key={t.id} className="p-3 rounded-2xl bg-secondary/40 border border-border/60 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-black text-foreground block">{t.title || 'Séance de détection'}</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            📅 {t.test_date} {t.location ? `• 📍 ${t.location}` : ''}
+                          </span>
+                        </div>
+                        <Badge variant="outline" className="text-[9px] font-black uppercase">
+                          {t.status || 'Planifié'}
                         </Badge>
                       </div>
-                      <div className="text-[11px] font-semibold text-purple-700 dark:text-purple-400 truncate">
-                        🎯 {cand.active_mission?.mission_title}
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-0.5">
-                        <span>Scout B : <strong>{cand.active_mission?.assigned_to_name}</strong></span>
-                        {cand.active_mission?.due_date && (
-                          <span>Échéance : {cand.active_mission.due_date}</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {canViewMissions && (
+            <Card className="rounded-3xl border border-purple-200 dark:border-purple-900/50 bg-white dark:bg-slate-900 overflow-hidden shadow-xs">
+              <CardContent className="p-5 space-y-3.5">
+                <div className="flex items-center justify-between border-b border-border pb-3">
+                  <span className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                    <Target className="w-4 h-4 text-purple-600" /> Missions d'Observation ({activeMissions.length})
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => navigate('/recruitment-v2?tab=missions')}
+                    className="text-[10px] font-black uppercase text-purple-600 p-0 h-auto hover:bg-transparent"
+                  >
+                    Détails
+                  </Button>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+
+                {activeMissions.length === 0 ? (
+                  <div className="text-center py-4 text-xs font-medium text-muted-foreground">
+                    Aucune mission d'observation active assignée.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {activeMissions.slice(0, 3).map(cand => (
+                      <div
+                        key={cand.id}
+                        onClick={() => navigate(`/recruitment-v2?tab=candidates&candidateId=${cand.id}`)}
+                        className="p-3 rounded-2xl bg-purple-50/60 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/40 space-y-1.5 cursor-pointer hover:border-purple-300 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-slate-900 dark:text-white text-xs truncate">
+                            {cand.first_name} {cand.last_name}
+                          </span>
+                          <Badge variant="outline" className="text-[9px] font-black uppercase bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border-purple-200">
+                            {cand.active_mission?.priority || 'Mission'}
+                          </Badge>
+                        </div>
+                        <div className="text-[11px] font-semibold text-purple-700 dark:text-purple-400 truncate">
+                          🎯 {cand.active_mission?.mission_title}
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-0.5">
+                          <span>Scout B : <strong>{cand.active_mission?.assigned_to_name}</strong></span>
+                          {cand.active_mission?.due_date && (
+                            <span>Échéance : {cand.active_mission.due_date}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Widget 3 : Mon Profil Scout Synthèse */}
           <Card className="rounded-3xl border border-purple-500/20 bg-purple-50/30 dark:bg-purple-950/20 p-5">
@@ -561,16 +592,16 @@ const ScoutDashboardView: React.FC = () => {
               <span className="text-xs font-black uppercase tracking-wider text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-purple-600" /> Mon Espace Scout
               </span>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => navigate('/profile')}
                 className="text-[10px] font-black uppercase text-purple-600 hover:text-purple-700 p-0 h-auto cursor-pointer"
               >
                 Modifier
               </Button>
             </div>
-            
+
             <div className="space-y-2 text-xs">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Mail className="w-3.5 h-3.5 text-purple-500 shrink-0" />

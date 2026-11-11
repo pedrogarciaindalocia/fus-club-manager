@@ -374,11 +374,11 @@ export const DevRoleSwitcher: React.FC = () => {
     // 1. Récupération des permissions explicites
     let userPerms: string[] = [];
     try {
-      const { data } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from('user_permissions_overrides')
         .select('permission_id')
         .eq('user_id', user.id);
-      if (data && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         userPerms = data.map(p => p.permission_id);
         try {
           localStorage.setItem(`fusc_user_perms_${user.id}`, JSON.stringify(userPerms));
@@ -459,7 +459,7 @@ export const DevRoleSwitcher: React.FC = () => {
   const activeRoleConfig = getRoleConfig(currentRole);
   const activeUser = authState?.user;
   const isImpersonatingActive = Boolean(authState?.isImpersonating && activeUser);
-  const explicitPermsCount = authState?.permissions?.length || 0;
+  const explicitPermsCount = (authState?.permissions || []).filter(p => p && p !== 'no_permissions').length;
   const categoriesCount = authState?.userCategories?.length || 0;
 
   return (

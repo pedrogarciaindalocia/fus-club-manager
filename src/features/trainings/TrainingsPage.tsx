@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { usePermissions } from '../../context/PermissionsContext';
 import {
   Calendar as CalendarIcon,
   FileText,
@@ -24,7 +25,29 @@ import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 
 export const TrainingsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentTab = searchParams.get('tab') || 'calendar';
+  const { authState, hasSubModuleAccess } = usePermissions();
+  const isSuperAdmin = !authState.isImpersonating && authState.user?.system_role?.toLowerCase() === 'super_admin';
+
+  const allowedTrainingTabs = useMemo(() => {
+    const defs = [
+      { id: 'calendar', subId: 'trainings_calendar' },
+      { id: 'sessions', subId: 'trainings_sessions' },
+      { id: 'exercises', subId: 'trainings_exercises' },
+      { id: 'evaluations', subId: 'trainings_evaluations' },
+      { id: 'load', subId: 'trainings_load' },
+    ];
+    return defs.filter(t => isSuperAdmin || hasSubModuleAccess(t.subId, 'read', 'trainings')).map(t => t.id);
+  }, [isSuperAdmin, hasSubModuleAccess]);
+
+  const rawTab = searchParams.get('tab');
+  const firstTrainingTab = allowedTrainingTabs[0] || '';
+  const currentTab = (rawTab && allowedTrainingTabs.includes(rawTab)) ? rawTab : firstTrainingTab;
+
+  useEffect(() => {
+    if (firstTrainingTab && rawTab && !allowedTrainingTabs.includes(rawTab)) {
+      setSearchParams({ tab: firstTrainingTab }, { replace: true });
+    }
+  }, [firstTrainingTab, rawTab, allowedTrainingTabs, setSearchParams]);
 
   const {
     sessions,
@@ -109,129 +132,134 @@ export const TrainingsPage: React.FC = () => {
         onOpenNewExerciseModal={handleOpenNewExercise}
       />
 
-      {/* 5 Main Tabs Navigation Bar */}
+      {/* Tabs Navigation Bar filtrée par sous-rubriques cochées */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl p-1.5 shadow-sm overflow-x-auto gap-1">
-        <button
-          onClick={() => handleTabChange('calendar')}
-          className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${
-            currentTab === 'calendar'
-              ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <CalendarIcon className="w-4 h-4 text-emerald-400" />
-          <span>1. 📅 Calendrier</span>
-        </button>
+        {allowedTrainingTabs.includes('calendar') && (
+          <button
+            onClick={() => handleTabChange('calendar')}
+            className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${currentTab === 'calendar'
+                ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+          >
+            <CalendarIcon className="w-4 h-4 text-emerald-400" />
+            <span>1. 📅 Calendrier</span>
+          </button>
+        )}
 
-        <button
-          onClick={() => handleTabChange('sessions')}
-          className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${
-            currentTab === 'sessions'
-              ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <FileText className="w-4 h-4 text-blue-400" />
-          <span>2. 📝 Séances</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 dark:bg-slate-700 text-white font-bold">
-            {sessions.length}
-          </span>
-        </button>
+        {allowedTrainingTabs.includes('sessions') && (
+          <button
+            onClick={() => handleTabChange('sessions')}
+            className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${currentTab === 'sessions'
+                ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+          >
+            <FileText className="w-4 h-4 text-blue-400" />
+            <span>2. 📝 Séances</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 dark:bg-slate-700 text-white font-bold">
+              {sessions.length}
+            </span>
+          </button>
+        )}
 
-        <button
-          onClick={() => handleTabChange('exercises')}
-          className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${
-            currentTab === 'exercises'
-              ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Dumbbell className="w-4 h-4 text-amber-400" />
-          <span>3. 🧩 Exercices</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 dark:bg-slate-700 text-white font-bold">
-            {exercises.length}
-          </span>
-        </button>
+        {allowedTrainingTabs.includes('exercises') && (
+          <button
+            onClick={() => handleTabChange('exercises')}
+            className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${currentTab === 'exercises'
+                ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+          >
+            <Dumbbell className="w-4 h-4 text-amber-400" />
+            <span>3. 🧩 Exercices</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 dark:bg-slate-700 text-white font-bold">
+              {exercises.length}
+            </span>
+          </button>
+        )}
 
-        <button
-          onClick={() => handleTabChange('evaluations')}
-          className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${
-            currentTab === 'evaluations'
-              ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Award className="w-4 h-4 text-purple-400" />
-          <span>4. ⭐ Évaluations (4 Piliers)</span>
-        </button>
+        {allowedTrainingTabs.includes('evaluations') && (
+          <button
+            onClick={() => handleTabChange('evaluations')}
+            className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${currentTab === 'evaluations'
+                ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+          >
+            <Award className="w-4 h-4 text-purple-400" />
+            <span>4. ⭐ Évaluations (4 Piliers)</span>
+          </button>
+        )}
 
-        <button
-          onClick={() => handleTabChange('load')}
-          className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${
-            currentTab === 'load'
-              ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Activity className="w-4 h-4 text-rose-400" />
-          <span>5. ⚡ Charge d'entraînement</span>
-        </button>
+        {allowedTrainingTabs.includes('load') && (
+          <button
+            onClick={() => handleTabChange('load')}
+            className={`flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-black transition-all whitespace-nowrap ${currentTab === 'load'
+                ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+          >
+            <Activity className="w-4 h-4 text-rose-400" />
+            <span>5. ⚡ Charge d'entraînement</span>
+          </button>
+        )}
       </div>
 
       {/* Main Tab Views */}
       {isLoading && sessions.length === 0 && exercises.length === 0 && loads.length === 0 ? (
         <FusLogoLoader fullPage size="lg" label="Chargement des entraînements…" />
       ) : (
-      <div>
-        {currentTab === 'calendar' && (
-          <TrainingCalendarView
-            sessions={sessions}
-            onSelectSession={session => setSelectedSessionForDetail(session)}
-            onOpenNewSessionModal={handleOpenNewSession}
-            onOpenEditModal={handleOpenEditSession}
-            onDeleteSession={deleteSession}
-          />
-        )}
+        <div>
+          {currentTab === 'calendar' && (
+            <TrainingCalendarView
+              sessions={sessions}
+              onSelectSession={session => setSelectedSessionForDetail(session)}
+              onOpenNewSessionModal={handleOpenNewSession}
+              onOpenEditModal={handleOpenEditSession}
+              onDeleteSession={deleteSession}
+            />
+          )}
 
-        {currentTab === 'sessions' && (
-          <TrainingSessionsView
-            sessions={sessions}
-            onSelectSession={session => setSelectedSessionForDetail(session)}
-            onOpenNewSessionModal={handleOpenNewSession}
-            onOpenEditModal={handleOpenEditSession}
-            onDuplicateSession={duplicateSession}
-            onDeleteSession={deleteSession}
-            onStartSession={handleStartSession}
-          />
-        )}
+          {currentTab === 'sessions' && (
+            <TrainingSessionsView
+              sessions={sessions}
+              onSelectSession={session => setSelectedSessionForDetail(session)}
+              onOpenNewSessionModal={handleOpenNewSession}
+              onOpenEditModal={handleOpenEditSession}
+              onDuplicateSession={duplicateSession}
+              onDeleteSession={deleteSession}
+              onStartSession={handleStartSession}
+            />
+          )}
 
-        {currentTab === 'exercises' && (
-          <TrainingExercisesView
-            exercises={exercises}
-            onOpenNewExerciseModal={handleOpenNewExercise}
-            onOpenEditExerciseModal={handleOpenEditExercise}
-            onDeleteExercise={deleteExercise}
-            onToggleFavorite={toggleFavoriteExercise}
-          />
-        )}
+          {currentTab === 'exercises' && (
+            <TrainingExercisesView
+              exercises={exercises}
+              onOpenNewExerciseModal={handleOpenNewExercise}
+              onOpenEditExerciseModal={handleOpenEditExercise}
+              onDeleteExercise={deleteExercise}
+              onToggleFavorite={toggleFavoriteExercise}
+            />
+          )}
 
-        {currentTab === 'evaluations' && (
-          <TrainingEvaluationsView
-            evaluations={evaluations}
-            sessions={sessions}
-            onSaveEvaluation={saveEvaluation}
-            onDeleteEvaluation={deleteEvaluation}
-          />
-        )}
+          {currentTab === 'evaluations' && (
+            <TrainingEvaluationsView
+              evaluations={evaluations}
+              sessions={sessions}
+              onSaveEvaluation={saveEvaluation}
+              onDeleteEvaluation={deleteEvaluation}
+            />
+          )}
 
-        {currentTab === 'load' && (
-          <TrainingLoadView
-            loads={loads}
-            sessions={sessions}
-            onSaveLoad={saveLoad}
-          />
-        )}
-      </div>
+          {currentTab === 'load' && (
+            <TrainingLoadView
+              loads={loads}
+              sessions={sessions}
+              onSaveLoad={saveLoad}
+            />
+          )}
+        </div>
       )}
 
       {/* MODALS */}

@@ -99,7 +99,7 @@ const pageTitles: Record<string, string> = {
 
 const AppContent: React.FC = () => {
   const location = useLocation();
-  const currentTitle = 
+  const currentTitle =
     location.pathname.startsWith('/matches/edit') || location.pathname.includes('/prepare')
       ? 'Modifier le Match (Stepper)'
       : (pageTitles[location.pathname] || 'Tableau de Bord');
@@ -111,16 +111,17 @@ const AppContent: React.FC = () => {
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
   const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
   const isScout = isScoutBranch(currentRole, authState.user?.job_title);
+  const canAccessRecruitmentV2 = isSuperAdmin || hasModuleAccess('recruitment_v2', 'read');
 
-  // 1. Redirection de la racine et dashboard vers Détection & Recrutements pour la branche Scout
-  if (isScout && (location.pathname === '/' || location.pathname === '/dashboard')) {
+  // 1. Redirection de la racine et dashboard vers Détection & Recrutements uniquement si habilité sur au moins une sous-rubrique V2
+  if (isScout && canAccessRecruitmentV2 && (location.pathname === '/' || location.pathname === '/dashboard')) {
     return <Navigate to="/recruitment-v2" replace />;
   }
 
-  // Cloisonnement des routes pour le rôle Scout (redirection vers /recruitment-v2 si non habilité)
-  const isAllowedScoutPath = 
+  // Cloisonnement des routes pour le rôle Scout (uniquement les rubriques explicitement cochées)
+  const isAllowedScoutPath =
     location.pathname === '/tickets' ||
-    location.pathname.startsWith('/recruitment-v2') ||
+    (location.pathname.startsWith('/recruitment-v2') && canAccessRecruitmentV2) ||
     location.pathname === '/profile' ||
     (location.pathname === '/media' && hasSubModuleAccess('media', 'read')) ||
     ((location.pathname === '/players' || location.pathname === '/club') && hasSubModuleAccess('players', 'read')) ||
@@ -132,14 +133,15 @@ const AppContent: React.FC = () => {
     (location.pathname === '/arbitres' && hasSubModuleAccess('arbitres', 'read')) ||
     (location.pathname === '/opponents' && hasSubModuleAccess('opponents', 'read')) ||
     (location.pathname === '/stadiums' && hasSubModuleAccess('stadiums', 'read')) ||
-    (location.pathname === '/leagues' && hasSubModuleAccess('leagues', 'read'));
+    (location.pathname === '/leagues' && hasSubModuleAccess('leagues', 'read')) ||
+    (!canAccessRecruitmentV2 && (location.pathname === '/' || location.pathname === '/dashboard'));
 
   if (isScout && !isAllowedScoutPath) {
-    return <Navigate to="/recruitment-v2" replace />;
+    return <Navigate to={canAccessRecruitmentV2 ? '/recruitment-v2' : '/'} replace />;
   }
 
   // 2. Protection stricte des routes Système & Contenu : RÉSERVÉES AU SUPER ADMIN
-  const isSystemPath = 
+  const isSystemPath =
     location.pathname.startsWith('/plugins') ||
     location.pathname.startsWith('/users') ||
     location.pathname.startsWith('/logs') ||
@@ -196,6 +198,12 @@ const AppContent: React.FC = () => {
     if ((location.pathname.startsWith('/recruitment') || location.pathname.startsWith('/recruitment-v2')) && !hasModuleAccess('recruitment_v2', 'read')) {
       return <Navigate to="/" replace />;
     }
+    if (location.pathname === '/recruitment-v2/add-player' && !(hasSubModuleAccess('candidates', 'create') || hasSubModuleAccess('candidates', 'edit_player') || hasSubModuleAccess('candidates', 'update'))) {
+      return <Navigate to="/recruitment-v2" replace />;
+    }
+    if (location.pathname === '/recruitment-v2/add-report' && !(hasSubModuleAccess('candidates', 'manage_reports') || hasSubModuleAccess('candidates', 'reports'))) {
+      return <Navigate to="/recruitment-v2" replace />;
+    }
 
     // Médiathèque (Espace Média)
     if (location.pathname === '/media' && !hasSubModuleAccess('media', 'read')) {
@@ -207,24 +215,24 @@ const AppContent: React.FC = () => {
     <div className="min-h-screen bg-slate-50/50">
       <LiveCursorsOverlay />
       <LiveTargetHUD />
-      <Sidebar 
-        mobileOpen={mobileSidebarOpen} 
-        onMobileClose={() => setMobileSidebarOpen(false)} 
+      <Sidebar
+        mobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
-      <Header 
-        title={isScout ? 'Cellule Détection & Scouting' : currentTitle} 
-        onMobileMenuClick={() => setMobileSidebarOpen(true)} 
+      <Header
+        title={isScout ? 'Cellule Détection & Scouting' : currentTitle}
+        onMobileMenuClick={() => setMobileSidebarOpen(true)}
         sidebarCollapsed={sidebarCollapsed}
       />
 
       <main className={cn("pt-20 transition-all duration-300 md:pl-20 w-full min-w-0 overflow-x-hidden", sidebarCollapsed ? "lg:pl-20" : "lg:pl-72")}>
         <div className="p-3 sm:p-5 md:p-8 xl:p-10 max-w-[1750px] mx-auto w-full min-w-0">
           <Routes location={location}>
-            <Route path="/"          element={<DashboardPage />} />
+            <Route path="/" element={<DashboardPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/matches"   element={<MatchManagementPage />} />
+            <Route path="/matches" element={<MatchManagementPage />} />
             <Route path="/matches/new" element={
               <ProtectedRoute requiredPermission="create_match">
                 <ScheduleMatchPage />
@@ -240,39 +248,39 @@ const AppContent: React.FC = () => {
                 <ScheduleMatchPage />
               </ProtectedRoute>
             } />
-            <Route path="/matchday"  element={
+            <Route path="/matchday" element={
               <ProtectedRoute requiredPermission="track_live_match">
                 <MatchDayPage />
               </ProtectedRoute>
             } />
-            <Route path="/players"   element={<PlayerManagement />} />
-            <Route path="/club"      element={<Navigate to="/players" replace />} />
-            <Route path="/teams"     element={
+            <Route path="/players" element={<PlayerManagement />} />
+            <Route path="/club" element={<Navigate to="/players" replace />} />
+            <Route path="/teams" element={
               <ProtectedRoute requiredPermission="manage_teams">
                 <TeamManagement />
               </ProtectedRoute>
             } />
-            <Route path="/staff"     element={
+            <Route path="/staff" element={
               <ProtectedRoute requiredPermission="manage_roles">
                 <StaffManagement />
               </ProtectedRoute>
             } />
-            <Route path="/arbitres"           element={<ArbitresPage />} />
+            <Route path="/arbitres" element={<ArbitresPage />} />
             <Route path="/official-shortlist" element={<OfficialShortlistPage />} />
             <Route path="/championship-performances" element={<ChampionshipPerformancesPage />} />
             <Route path="/championnat-performances" element={<Navigate to="/championship-performances" replace />} />
             <Route path="/classement-resultats" element={<ClassementResultatsPage />} />
             <Route path="/classements-resultats" element={<Navigate to="/classement-resultats" replace />} />
-            <Route path="/trainings"          element={<TrainingsPage />} />
-            <Route path="/trainings/*"   element={<TrainingsPage />} />
-            <Route path="/recruitment"   element={
-              isPluginActive('recruitment_v1') 
-                ? <RecruitmentPage /> 
+            <Route path="/trainings" element={<TrainingsPage />} />
+            <Route path="/trainings/*" element={<TrainingsPage />} />
+            <Route path="/recruitment" element={
+              isPluginActive('recruitment_v1')
+                ? <RecruitmentPage />
                 : <PluginDisabledView pluginId="recruitment_v1" pluginName="Recrutement & Détection v1" />
             } />
             <Route path="/recruitment/*" element={
-              isPluginActive('recruitment_v1') 
-                ? <RecruitmentPage /> 
+              isPluginActive('recruitment_v1')
+                ? <RecruitmentPage />
                 : <PluginDisabledView pluginId="recruitment_v1" pluginName="Recrutement & Détection v1" />
             } />
             <Route path="/recruitment-v2" element={
@@ -296,25 +304,25 @@ const AppContent: React.FC = () => {
                 : <PluginDisabledView pluginId="recruitment_v2" pluginName="Recrutement & Détection V2" />
             } />
             <Route path="/plugins" element={<PluginsPage />} />
-            <Route path="/leagues"       element={<LeagueManagement />} />
-            <Route path="/opponents"     element={<OpponentClubs />} />
-            <Route path="/stadiums"      element={<StadiumManagement />} />
-            <Route path="/settings"  element={
+            <Route path="/leagues" element={<LeagueManagement />} />
+            <Route path="/opponents" element={<OpponentClubs />} />
+            <Route path="/stadiums" element={<StadiumManagement />} />
+            <Route path="/settings" element={
               <ProtectedRoute requiredPermission="manage_roles">
                 <ClubSettings />
               </ProtectedRoute>
             } />
-            <Route path="/blog"      element={<BlogManagement />} />
-            <Route path="/store"     element={<StoreManagement />} />
-            <Route path="/users"     element={
+            <Route path="/blog" element={<BlogManagement />} />
+            <Route path="/store" element={<StoreManagement />} />
+            <Route path="/users" element={
               <ProtectedRoute requiredPermission="manage_users">
                 <UserManagement />
               </ProtectedRoute>
             } />
-            <Route path="/logs"      element={<AuditLogsPage />} />
-            <Route path="/tickets"   element={<TicketsPage />} />
-            <Route path="/profile"   element={<ProfilePage />} />
-            <Route path="/media"     element={<MediaManagementPage />} />
+            <Route path="/logs" element={<AuditLogsPage />} />
+            <Route path="/tickets" element={<TicketsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/media" element={<MediaManagementPage />} />
 
             {/* 404 */}
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -354,9 +362,9 @@ function App() {
         <BrowserRouter>
           <Routes>
             {/* Routes publiques — accessibles sans session */}
-            <Route path="/login"            element={<LoginPage />} />
-            <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
-            <Route path="/reset-password"   element={<ResetPasswordPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/force-password-change" element={<ForcePasswordChange />} />
 
             {/* Toutes les autres routes sont protégées */}

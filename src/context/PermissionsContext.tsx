@@ -84,10 +84,10 @@ export const DEFAULT_PERMISSIONS_CONTEXT: PermissionsContextType = {
   canManageCategory: () => true,
   hasCategoryRestriction: false,
   allowedCategories: [],
-  logout: async () => {},
-  loginAs: () => {},
-  impersonateUser: async () => {},
-  resetImpersonation: () => {},
+  logout: async () => { },
+  loginAs: () => { },
+  impersonateUser: async () => { },
+  resetImpersonation: () => { },
 };
 
 const PermissionsContext = createContext<PermissionsContextType>(DEFAULT_PERMISSIONS_CONTEXT);
@@ -186,7 +186,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
         if (localProfile) {
           try {
             profile = JSON.parse(localProfile);
-          } catch {}
+          } catch { }
         }
       }
 
@@ -235,7 +235,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
           .select('permission_id')
           .eq('user_id', userId);
         const permRes = await Promise.race([permPromise, timeoutPromise]);
-        if (!('timeout' in permRes) && permRes?.data && permRes.data.length > 0) {
+        if (!('timeout' in permRes) && !permRes?.error && Array.isArray(permRes?.data)) {
           userPerms = permRes.data.map((p: any) => p.permission_id);
           localStorage.setItem(`fusc_user_perms_${userId}`, JSON.stringify(userPerms));
         } else {
@@ -337,7 +337,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       await Promise.race([
         supabase.auth.signOut(),
         new Promise((resolve) => setTimeout(resolve, 1500)),
-      ]).catch(() => {});
+      ]).catch(() => { });
     } catch (e) {
       console.warn('[PermissionsContext] Erreur signOut Supabase, déconnexion locale appliquée:', e);
     } finally {
@@ -345,102 +345,51 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   };
 
+  const isEffectiveSuperAdmin = (): boolean => {
+    const role = authState.user?.system_role?.toLowerCase() || '';
+    if (authState.isImpersonating) {
+      return authState.impersonatedUser?.system_role?.toLowerCase() === 'super_admin' || role === 'super_admin';
+    }
+    return role === 'super_admin' || authState.isRealSuperAdmin;
+  };
+
   /**
    * Vérifie l'accès granulaire CRUD à une SOUS-RUBRIQUE :
    * Ex: 'matches', 'official_shortlist', 'arbitres', 'leagues', 'stadiums',
    * 'trainings_calendar', 'trainings_sessions', 'trainings_exercises', 'trainings_evaluations', 'trainings_load',
    * 'players', 'teams', 'opponents', 'staff',
-   * 'scouts', 'candidates', 'missions', 'shortlist', 'sessions', 'compare', 'archives'
+   * 'scouts', 'candidates', 'missions', 'shortlist', 'sessions', 'compare', 'archives', 'media'
    */
   const hasSubModuleAccess = (
     subModule: string,
     action: 'create' | 'read' | 'update' | 'delete' | 'stats' | 'surclasser' | 'departure' | 'drive_link' | string = 'read',
-    parentModule?: string
+    _parentModule?: string
   ): boolean => {
-    const role = authState.user?.system_role?.toLowerCase() || '';
-    const isScoutAdmin = role === 'scout_admin' || authState.user?.role?.toLowerCase() === 'scout_admin' || authState.roles.some(r => r.toLowerCase() === 'scout_admin');
-    if (isScoutAdmin && (parentModule === 'recruitment_v2' || SUBMODULE_TO_PARENT_MAP[subModule] === 'recruitment_v2')) return true;
-    const isSuperAdmin = role === 'super_admin';
-    if (isSuperAdmin) return true;
+    // Seul le Super Admin dispose d'un accès total sans configuration explicite
+    if (isEffectiveSuperAdmin()) return true;
 
-    const perms = authState.permissions || [];
+    const perms = (authState.permissions || []).filter(p => p && p !== 'no_permissions');
+    if (perms.length === 0) return false;
 
     // 1. Clé sous-module explicite : "sub:<subModule>:<action>"
-    const directKey = `sub:${subModule}:${action}`;
-    if (perms.includes(directKey)) return true;
+    if (perms.includes(`sub:${subModule}:${action}`)) return true;
 
-    // Support des alias spécifiques pour la gestion des rapports
+    // Alias spécifiques pour la gestion des rapports sur les candidats
     if (subModule === 'candidates' && (action === 'manage_reports' || action === 'reports')) {
-      if (perms.includes('sub:candidates:manage_reports') || perms.includes('sub:candidates:reports')) {
-        return true;
-      }
+      return perms.includes('sub:candidates:manage_reports') || perms.includes('sub:candidates:reports');
     }
 
-    // Support de l'action métier spécifique Calendrier des Matchs : Planifier un match
-    // RÈGLE STRICTE : dépend impérativement d'être coché explicitement dans UserManagement.
+    // Alias Planifier un match <-> Create sur le calendrier des matchs
     if (subModule === 'matches' && (action === 'plan_match' || action === 'create')) {
-      if (perms.includes('sub:matches:plan_match')) return true;
-      if (perms.length > 0) return false;
-      // Fallback rôle historique UNIQUEMENT si aucune permission explicite n'a jamais été configurée
-      if (role === 'admin' || role === 'direction' || role === 'coach') return true;
-      return false;
+      return perms.includes('sub:matches:plan_match') || perms.includes('sub:matches:create');
     }
 
-    // Support de l'action métier spécifique Calendrier des Matchs : Gestion de classement & Résultats adverses
-    // RÈGLE STRICTE : permet d'ajouter des clubs adverses et enregistrer leurs résultats pour le classement officiel.
+    // Alias Classement sur les matchs
     if (subModule === 'matches' && (action === 'manage_standings' || action === 'standings')) {
-      if (perms.includes('sub:matches:manage_standings')) return true;
-      if (perms.length > 0) return false;
-      // Fallback rôle historique UNIQUEMENT si aucune permission explicite n'a jamais été configurée
-      if (role === 'admin' || role === 'direction') return true;
-      return false;
+      return perms.includes('sub:matches:manage_standings');
     }
 
-    // 1.b Actions métier spécifiques joueur (Statistiques / Surclasser / Sortie-Transfert)
-    // et Détection V2 Database (Lien Vidéo Drive, Assigner mission, Recruter immédiatement, Gestion de rapport) : STRICT — visibles uniquement si cochées explicitement.
-    if (subModule === 'players' && ['stats', 'surclasser', 'departure'].includes(action)) {
-      return false;
-    }
-    // Specific candidate actions including newly added edit_player
-    if (subModule === 'candidates' && ['drive_link', 'assign_mission', 'recruit_now', 'manage_reports', 'reports', 'edit_player'].includes(action)) {
-      // Priorité absolue aux permissions explicites si définies
-      if (perms.includes(`sub:candidates:${action}`)) return true;
-      // Si des permissions explicites existent mais que l'action n'est pas cochée, refus strict
-      if (perms.length > 0) return false;
-
-      // Fallback rôle si aucune configuration individuelle n'existe
-      if (role === 'admin' || role === 'scout_admin') {
-        if (action === 'drive_link') return false; // Exige d'être coché explicitement
-        return true;
-      }
-      if (action === 'recruit_now' && (role === 'direction' || authState.user?.job_title === 'Directeur Administratif')) return true;
-      if ((action === 'manage_reports' || action === 'reports') && role.startsWith('scout_')) return true;
-      return false;
-    }
-
-    // 2. RÈGLE STRICTE DE GOUVERNANCE : Si l'utilisateur possède des permissions explicites (perms.length > 0)
-    // Si la sous-rubrique n'a pas été cochée dans UserManagement (directKey absente), NE PAS L'AFFICHER !
-    if (perms.length > 0) {
-      return false;
-    }
-
-    // 3. Fallback rôles historiques UNIQUEMENT si AUCUNE permission n'a jamais été configurée
-    if (perms.length === 0) {
-      if (role === 'admin' || role === 'direction') return true;
-      if (role === 'coach' || authState.user?.job_title?.toLowerCase().includes('coach')) {
-        if (subModule.startsWith('trainings_') || subModule === 'matches' || subModule === 'official_shortlist' || subModule === 'championship_performances' || subModule === 'players' || subModule === 'teams' || subModule === 'opponents' || subModule === 'media') return true;
-      }
-      if (role.startsWith('scout_') || authState.user?.job_title?.toLowerCase().includes('scout')) {
-        if (['candidates', 'missions', 'shortlist', 'sessions', 'compare', 'archives'].includes(subModule)) return true;
-        if ((role === 'scout_admin' || role === 'scout_manager' || authState.user?.job_title?.toLowerCase().includes('manager')) && subModule === 'scouts') return true;
-        if (['players', 'opponents', 'matches', 'official_shortlist', 'championship_performances', 'media'].includes(subModule)) return true;
-      }
-      if (role.includes('analyst') || authState.user?.job_title?.toLowerCase().includes('analyst')) {
-        if (['matches', 'official_shortlist', 'championship_performances', 'arbitres', 'leagues', 'stadiums', 'players', 'teams', 'opponents', 'staff', 'media'].includes(subModule)) return true;
-      }
-      if (subModule === 'media') return true;
-    }
-
+    // Toute sous-rubrique ou action non explicitement cochée est strictement masquée
     return false;
   };
 
@@ -450,57 +399,29 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
    * Action : 'create' | 'read' | 'update' | 'delete' (par défaut : 'read')
    */
   const hasModuleAccess = (module: string, action: 'create' | 'read' | 'update' | 'delete' = 'read'): boolean => {
-    const role = authState.user?.system_role?.toLowerCase() || '';
-    const isScoutAdmin = role === 'scout_admin' || authState.user?.role?.toLowerCase() === 'scout_admin' || authState.roles.some(r => r.toLowerCase() === 'scout_admin');
-    if (isScoutAdmin && module === 'recruitment_v2') return true;
-    const isSuperAdmin = role === 'super_admin';
-    if (isSuperAdmin) return true;
+    if (isEffectiveSuperAdmin()) return true;
 
-    const perms = authState.permissions || [];
+    const perms = (authState.permissions || []).filter(p => p && p !== 'no_permissions');
+    if (perms.length === 0) return false;
 
-    // 1. Si au moins une sous-rubrique de ce module possède la permission requise
-    const hasAnySubAction = perms.some(p => {
-      if (!p.startsWith('sub:') || !p.endsWith(`:${action}`)) return false;
-      const subKey = p.split(':')[1];
-      return SUBMODULE_TO_PARENT_MAP[subKey] === module;
-    });
-    if (hasAnySubAction) return true;
+    // Vérifier qu'au moins une sous-rubrique de cette grande rubrique possède la permission requise
+    const moduleSubKeys = Object.entries(SUBMODULE_TO_PARENT_MAP)
+      .filter(([, parent]) => parent === module)
+      .map(([subKey]) => subKey);
 
-    // 2. Vérification clé granulaire directe
-    const directKey = `${module}:${action}`;
-    if (perms.includes(directKey)) {
-      return true;
+    if (moduleSubKeys.length > 0) {
+      return moduleSubKeys.some(subKey => hasSubModuleAccess(subKey, action, module));
     }
 
-    // 3. Si l'utilisateur possède des permissions explicites, ne pas accorder par défaut
-    if (perms.length > 0) {
-      return false;
-    }
-
-    // 4. Fallback rôles historiques si AUCUNE permission n'a jamais été configurée
-    if (perms.length === 0) {
-      if (role === 'admin' || role === 'direction') return true;
-      if (role === 'coach' || authState.user?.job_title?.toLowerCase().includes('coach')) {
-        if (module === 'trainings' || module === 'competition' || module === 'effectif' || module === 'media') return true;
-      }
-      if (role.startsWith('scout_') || authState.user?.job_title?.toLowerCase().includes('scout')) {
-        if (module === 'recruitment_v2' || module === 'effectif' || module === 'competition' || module === 'media') return true;
-      }
-      if (role.includes('analyst') || authState.user?.job_title?.toLowerCase().includes('analyst')) {
-        if (module === 'competition' || module === 'effectif' || module === 'media') return true;
-      }
-      if (module === 'media') return true;
-    }
-
-    return false;
+    // Fallback uniquement pour des modules sans sous-rubrique dans SUBMODULE_TO_PARENT_MAP
+    return perms.includes(`${module}:${action}`);
   };
 
   /**
    * Vérifie une permission globale ou d'action
    */
   const can = (action: string) => {
-    const role = authState.user?.system_role?.toLowerCase() || '';
-    const isSuperAdmin = !authState.isImpersonating && (role === 'super_admin' || authState.isRealSuperAdmin);
+    const isSuperAdmin = isEffectiveSuperAdmin();
     if (isSuperAdmin) return true;
 
     // Actions système (Gestion Utilisateurs, Plugins, Audit Logs) STRICTEMENT RÉSERVÉES AU SUPER ADMIN
@@ -508,61 +429,42 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return isSuperAdmin;
     }
 
-    const perms = authState.permissions || [];
+    const perms = (authState.permissions || []).filter(p => p && p !== 'no_permissions');
     if (perms.includes(action)) return true;
 
     if (action === 'manage_teams') {
-      return (
-        hasModuleAccess('effectif', 'read') ||
-        hasModuleAccess('competition', 'read') ||
-        hasSubModuleAccess('teams', 'read') ||
-        hasSubModuleAccess('opponents', 'read') ||
-        hasSubModuleAccess('leagues', 'read') ||
-        hasSubModuleAccess('stadiums', 'read') ||
-        hasModuleAccess('effectif', 'update') ||
-        hasModuleAccess('competition', 'update')
-      );
+      return hasSubModuleAccess('teams', 'read') || hasSubModuleAccess('teams', 'update');
     }
+
     if (action === 'create_match' || action === 'plan_match' || action === 'schedule_match') {
-      if (perms.length > 0) {
-        return perms.includes('sub:matches:plan_match') || perms.includes('schedule_match');
-      }
-      if (role === 'admin' || role === 'direction' || role === 'coach') {
-        return true;
-      }
-      return false;
+      return (
+        perms.includes('sub:matches:plan_match') ||
+        perms.includes('sub:matches:create') ||
+        perms.includes('schedule_match')
+      );
     }
 
     if (action === 'manage_matches') {
       return (
         hasSubModuleAccess('matches', 'update') ||
         hasSubModuleAccess('matches', 'create') ||
-        hasSubModuleAccess('matches', 'plan_match') ||
-        hasModuleAccess('competition', 'update')
+        hasSubModuleAccess('matches', 'plan_match')
       );
     }
 
     if (action === 'manage_standings' || action === 'manage_ranking' || action === 'standings') {
-      if (perms.length > 0) {
-        return perms.includes('sub:matches:manage_standings');
-      }
-      if (role === 'admin' || role === 'direction') {
-        return true;
-      }
-      return false;
+      return perms.includes('sub:matches:manage_standings');
     }
 
     if (action === 'create_opponent' || action === 'manage_opponents') {
-      if (perms.length > 0) {
-        return perms.includes('sub:matches:manage_standings') || perms.includes('sub:opponents:create') || perms.includes('sub:opponents:update');
-      }
-      if (role === 'admin' || role === 'direction') {
-        return true;
-      }
-      return false;
+      return (
+        perms.includes('sub:matches:manage_standings') ||
+        perms.includes('sub:opponents:create') ||
+        perms.includes('sub:opponents:update')
+      );
     }
 
-    return false; 
+    return false;
   };
 
   // Écoute en temps réel des mises à jour de catégories depuis UserManagement
@@ -638,15 +540,15 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (!perms) {
       perms = [];
       try {
-        const { data } = await supabaseAdmin
+        const { data, error } = await supabaseAdmin
           .from('user_permissions_overrides')
           .select('permission_id')
           .eq('user_id', targetUser.id);
-        if (data && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           perms = data.map(p => p.permission_id);
           try {
             localStorage.setItem(`fusc_user_perms_${targetUser.id}`, JSON.stringify(perms));
-          } catch {}
+          } catch { }
         } else {
           const cached = localStorage.getItem(`fusc_user_perms_${targetUser.id}`);
           if (cached) perms = JSON.parse(cached);
@@ -668,7 +570,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
           cats = data.map(c => c.category);
           try {
             localStorage.setItem(`fusc_user_categories_${targetUser.id}`, JSON.stringify(cats));
-          } catch {}
+          } catch { }
         } else {
           const cached = localStorage.getItem(`fusc_user_categories_${targetUser.id}`);
           if (cached) cats = JSON.parse(cached);
@@ -729,21 +631,21 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ...prev,
       roles: [role],
       userCategories: categories !== undefined ? categories : prev.userCategories,
-      user: prev.user 
-        ? { 
-            ...prev.user, 
-            system_role: role, 
-            ...(jobTitle !== undefined ? { job_title: jobTitle } : {}) 
-          } 
+      user: prev.user
+        ? {
+          ...prev.user,
+          system_role: role,
+          ...(jobTitle !== undefined ? { job_title: jobTitle } : {})
+        }
         : {
-            id: 'dev-user-id',
-            email: 'dev@fusc.ma',
-            full_name: 'Dev Session',
-            system_role: role,
-            job_title: jobTitle || null,
-            is_active: true,
-            created_at: new Date().toISOString()
-          },
+          id: 'dev-user-id',
+          email: 'dev@fusc.ma',
+          full_name: 'Dev Session',
+          system_role: role,
+          job_title: jobTitle || null,
+          is_active: true,
+          created_at: new Date().toISOString()
+        },
       permissions: isSuper ? prev.originalPermissions || [] : [],
       isImpersonating: !isSuper,
       impersonatedUser: isSuper ? null : {

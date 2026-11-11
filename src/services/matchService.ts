@@ -88,15 +88,17 @@ export const matchService = {
       opponent_lineup, 
       opponent_subs, 
       match_type, 
-      match_format, 
+      match_format,
+      round_name,
       ...payload 
     } = match as any;
 
     const mergedLineup = lineup ? {
       ...lineup,
+      ...(round_name && !(lineup as any).round_name ? { round_name } : {}),
       match_type: match_type || (lineup as any).match_type,
       match_format: match_format || (lineup as any).match_format,
-    } : (match_type || match_format ? { match_type, match_format } : undefined);
+    } : (match_type || match_format || round_name ? { match_type, match_format, ...(round_name ? { round_name } : {}) } : undefined);
 
     // Build the DB payload — only include opponent scouting if we have data
     const dbPayload: any = { ...payload, club_id: clubId, status: payload.status ?? 'scheduled' };
@@ -105,6 +107,7 @@ export const matchService = {
     // Clean non-column or virtual fields
     ([
       'pitch_number',
+      'round_name',
       'match_type',
       'match_format',
       'internal_opposition_type',
@@ -115,6 +118,9 @@ export const matchService = {
       'match_players',
       'match_staff',
     ] as const).forEach(f => delete dbPayload[f]);
+    if (dbPayload.live_operator_permissions == null) {
+      delete dbPayload.live_operator_permissions;
+    }
 
     (['opponent_id', 'league_id', 'stadium_id', 'team_id'] as const).forEach(f => {
       if (dbPayload[f] === '') dbPayload[f] = null;
@@ -140,6 +146,7 @@ export const matchService = {
       if (isColumnError) {
         const safePayload = { ...dbPayload };
         delete safePayload.pitch_number;
+        delete safePayload.round_name;
         delete safePayload.match_type;
         delete safePayload.match_format;
         delete safePayload.internal_opposition_type;
@@ -186,12 +193,13 @@ export const matchService = {
   },
 
   async updateMatch(id: string, updates: Updates<'matches'> & { lineup?: MatchLineup; staff_ids?: string[] }): Promise<Match> {
-    const { lineup, staff_ids, match_type, match_format, ...payload } = updates as any;
+    const { lineup, staff_ids, match_type, match_format, round_name, ...payload } = updates as any;
 
     const sanitized = { ...payload } as any;
     if (lineup) {
       sanitized.lineup = {
         ...lineup,
+        ...(round_name && !(lineup as any).round_name ? { round_name } : {}),
         match_type: match_type || (lineup as any).match_type,
         match_format: match_format || (lineup as any).match_format,
       };
@@ -199,11 +207,15 @@ export const matchService = {
     delete sanitized.match_type;
     delete sanitized.match_format;
     delete sanitized.pitch_number;
+    delete sanitized.round_name;
     delete sanitized.internal_opposition_type;
     delete sanitized.internal_target_category;
     delete sanitized.internal_opponent_team_id;
     delete sanitized.qualif_status;
     delete sanitized.staff_ids;
+    if (sanitized.live_operator_permissions == null) {
+      delete sanitized.live_operator_permissions;
+    }
     (['id', 'created_at', 'updated_at', 'match_players', 'match_staff'] as const).forEach(f => delete sanitized[f]);
     (['opponent_id', 'league_id', 'stadium_id', 'team_id'] as const).forEach(f => {
       if (sanitized[f] === '') sanitized[f] = null;
@@ -223,6 +235,7 @@ export const matchService = {
 
       if (isColumnError) {
         delete sanitized.pitch_number;
+        delete sanitized.round_name;
         delete sanitized.match_type;
         delete sanitized.match_format;
         delete sanitized.internal_opposition_type;

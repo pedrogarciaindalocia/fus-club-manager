@@ -9,6 +9,7 @@ import {
   Image as ImageIcon, LifeBuoy, Eye
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { supabaseAdmin } from '../lib/supabase';
 import { usePermissions } from '../context/PermissionsContext';
 import { useClubData } from '../hooks/useClubData';
 import { usePlugins } from '../context/PluginsContext';
@@ -23,7 +24,7 @@ import { isScoutBranch } from '../constants/roles';
 function isItemAllowedInMirror(path: string, subId?: string, role: string = '', jobTitle: string = ''): boolean {
   const normRole = role.toLowerCase();
   const normJob = jobTitle.toLowerCase();
-  
+
   // Seul le super_admin absolu a accès aux rubriques d'administration
   const isSuper = normRole === 'super_admin';
   if (isSuper) return true;
@@ -169,13 +170,62 @@ const Sidebar: React.FC<SidebarProps> = ({
     ? (allOnlineUsers.find(u => u.userId === selectedUserId) || null)
     : null;
   const isMirrorMode = Boolean(targetedUser);
+  const [mirrorPermissions, setMirrorPermissions] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const targetId = targetedUser?.userId;
+    if (!targetId || targetedUser?.role?.toLowerCase() === 'super_admin') {
+      setMirrorPermissions(null);
+      return;
+    }
+
+    const loadMirrorPerms = async () => {
+      try {
+        const { data, error } = await supabaseAdmin
+          .from('user_permissions_overrides')
+          .select('permission_id')
+          .eq('user_id', targetId);
+        if (!active) return;
+        if (!error && Array.isArray(data)) {
+          setMirrorPermissions(data.map((p: any) => p.permission_id));
+        } else {
+          const cached = localStorage.getItem(`fusc_user_perms_${targetId}`);
+          setMirrorPermissions(cached ? JSON.parse(cached) : []);
+        }
+      } catch {
+        if (!active) return;
+        const cached = localStorage.getItem(`fusc_user_perms_${targetId}`);
+        setMirrorPermissions(cached ? JSON.parse(cached) : []);
+      }
+    };
+    loadMirrorPerms();
+    return () => {
+      active = false;
+    };
+  }, [targetedUser?.userId, targetedUser?.role]);
+
+  const hasMirrorSubAccess = (subId?: string, path?: string): boolean => {
+    const normRole = effectiveRole.toLowerCase();
+    if (normRole === 'super_admin') return true;
+    if (path && ['/plugins', '/blog', '/store', '/users', '/logs', '/settings'].some(p => path.startsWith(p))) {
+      return false;
+    }
+    if (!subId) return false;
+    if (mirrorPermissions !== null) {
+      const clean = mirrorPermissions.filter(p => p && p !== 'no_permissions');
+      if (clean.includes(`sub:${subId}:read`)) return true;
+      return false;
+    }
+    return isItemAllowedInMirror(path || '', subId, effectiveRole, effectiveJob);
+  };
 
   // En mode miroir ou simulation, les habilitations de navigation et rubriques deviennent celles de l'utilisateur ciblé
   // et toutes les rubriques exclusives Super Admin disparaissent !
   const effectiveRole = targetedUser ? targetedUser.role.toLowerCase() : currentRole;
   const effectiveJob = targetedUser ? (targetedUser.jobTitle || '') : (authState.user?.job_title || '');
-  const isSuperAdmin = isImpersonating 
-    ? (effectiveRole === 'super_admin') 
+  const isSuperAdmin = isImpersonating
+    ? (effectiveRole === 'super_admin')
     : (currentRole === 'super_admin');
   const isScout = isScoutBranch(effectiveRole, effectiveJob);
   const isScoutAdmin = isImpersonating
@@ -195,15 +245,15 @@ const Sidebar: React.FC<SidebarProps> = ({
       title: 'Compétition & Matchs',
       icon: Trophy,
       items: [
-        { path: '/matches',                                      label: 'Calendrier',                  icon: Calendar,  subId: 'matches' },
-        { path: '/classement-resultats',                         label: 'Classement & Résultats',      icon: Award,     subId: 'matches' },
-        { path: '/players',                                      label: 'Joueurs',                     icon: Users,     subId: 'players' },
-        { path: '/championship-performances',                    label: 'Championnat & Performances',  icon: Activity,  subId: 'championship_performances' },
-        { path: '/championship-performances?tab=attack_defense', label: 'Adversaires vs Attaque',     icon: Swords,    subId: 'championship_performances' },
-        { path: '/official-shortlist',                           label: 'Shortlist Officielle',        icon: Trophy,    subId: 'official_shortlist' },
-        { path: '/arbitres',                                     label: 'Arbitres',                    icon: UserCheck, subId: 'arbitres' },
-        { path: '/leagues',                                      label: 'Compétitions',                icon: Trophy,    subId: 'leagues' },
-        { path: '/stadiums',                                     label: 'Stades',                      icon: Building2, subId: 'stadiums' },
+        { path: '/matches', label: 'Calendrier', icon: Calendar, subId: 'matches' },
+        { path: '/classement-resultats', label: 'Classement & Résultats', icon: Award, subId: 'matches' },
+        { path: '/players', label: 'Joueurs', icon: Users, subId: 'players' },
+        { path: '/championship-performances', label: 'Championnat & Performances', icon: Activity, subId: 'championship_performances' },
+        { path: '/championship-performances?tab=attack_defense', label: 'Adversaires vs Attaque', icon: Swords, subId: 'championship_performances' },
+        { path: '/official-shortlist', label: 'Shortlist Officielle', icon: Trophy, subId: 'official_shortlist' },
+        { path: '/arbitres', label: 'Arbitres', icon: UserCheck, subId: 'arbitres' },
+        { path: '/leagues', label: 'Compétitions', icon: Trophy, subId: 'leagues' },
+        { path: '/stadiums', label: 'Stades', icon: Building2, subId: 'stadiums' },
       ],
     },
     {
@@ -211,11 +261,11 @@ const Sidebar: React.FC<SidebarProps> = ({
       title: 'Entraînements',
       icon: Dumbbell,
       items: [
-        { path: '/trainings?tab=calendar',    label: 'Calendrier',             icon: Calendar, subId: 'trainings_calendar' },
-        { path: '/trainings?tab=sessions',    label: 'Séances',                icon: FileText, subId: 'trainings_sessions' },
-        { path: '/trainings?tab=exercises',   label: 'Exercices',              icon: Dumbbell, subId: 'trainings_exercises' },
-        { path: '/trainings?tab=evaluations', label: 'Évaluations',            icon: Award, subId: 'trainings_evaluations' },
-        { path: '/trainings?tab=load',        label: 'Charge d\'entraînement', icon: Zap, subId: 'trainings_load' },
+        { path: '/trainings?tab=calendar', label: 'Calendrier', icon: Calendar, subId: 'trainings_calendar' },
+        { path: '/trainings?tab=sessions', label: 'Séances', icon: FileText, subId: 'trainings_sessions' },
+        { path: '/trainings?tab=exercises', label: 'Exercices', icon: Dumbbell, subId: 'trainings_exercises' },
+        { path: '/trainings?tab=evaluations', label: 'Évaluations', icon: Award, subId: 'trainings_evaluations' },
+        { path: '/trainings?tab=load', label: 'Charge d\'entraînement', icon: Zap, subId: 'trainings_load' },
       ],
     },
     {
@@ -229,11 +279,11 @@ const Sidebar: React.FC<SidebarProps> = ({
           icon: Shield,
           children: [
             { path: '/players', label: 'Joueurs', icon: Users, subId: 'players' },
-            { path: '/teams',   label: 'Équipes', icon: Shield, subId: 'teams' },
+            { path: '/teams', label: 'Équipes', icon: Shield, subId: 'teams' },
           ],
         },
-        { path: '/opponents', label: 'Adversaires',     icon: Target, subId: 'opponents' },
-        { path: '/staff',     label: 'Staff Technique', icon: UserCog, subId: 'staff' },
+        { path: '/opponents', label: 'Adversaires', icon: Target, subId: 'opponents' },
+        { path: '/staff', label: 'Staff Technique', icon: UserCog, subId: 'staff' },
       ],
     },
     ...(isPluginActive('recruitment_v1') ? [
@@ -243,14 +293,14 @@ const Sidebar: React.FC<SidebarProps> = ({
         badge: 'v1.0',
         icon: Compass,
         items: [
-          { path: '/recruitment?tab=scouts',       label: 'Cellule Scouts',          icon: UserCheck, subId: 'scouts' },
-          { path: '/recruitment?tab=kanban',       label: 'Pipeline Kanban',         icon: LayoutTemplate, subId: 'missions' },
-          { path: '/recruitment?tab=candidates',   label: 'Fiches & Tuteurs',        icon: UserPlus, subId: 'candidates' },
-          { path: '/recruitment?tab=shortlist',    label: 'Shortlist & Onze Idéal',  icon: Trophy, subId: 'shortlist' },
-          { path: '/recruitment?tab=observations', label: 'Observations Matchs',     icon: FileText, subId: 'missions' },
-          { path: '/recruitment?tab=sessions',     label: 'Planning des Tests',      icon: Calendar, subId: 'sessions' },
-          { path: '/recruitment?tab=evaluations',  label: 'Évaluations (1–10)',      icon: Sparkles, subId: 'compare' },
-          { path: '/recruitment?tab=compare',      label: 'Comparateur Radar',       icon: Swords, subId: 'compare' },
+          { path: '/recruitment?tab=scouts', label: 'Cellule Scouts', icon: UserCheck, subId: 'scouts' },
+          { path: '/recruitment?tab=kanban', label: 'Pipeline Kanban', icon: LayoutTemplate, subId: 'missions' },
+          { path: '/recruitment?tab=candidates', label: 'Fiches & Tuteurs', icon: UserPlus, subId: 'candidates' },
+          { path: '/recruitment?tab=shortlist', label: 'Shortlist & Onze Idéal', icon: Trophy, subId: 'shortlist' },
+          { path: '/recruitment?tab=observations', label: 'Observations Matchs', icon: FileText, subId: 'missions' },
+          { path: '/recruitment?tab=sessions', label: 'Planning des Tests', icon: Calendar, subId: 'sessions' },
+          { path: '/recruitment?tab=evaluations', label: 'Évaluations (1–10)', icon: Sparkles, subId: 'compare' },
+          { path: '/recruitment?tab=compare', label: 'Comparateur Radar', icon: Swords, subId: 'compare' },
         ],
       }
     ] : []),
@@ -261,13 +311,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         badge: 'v2.0',
         icon: Compass,
         items: [
-          { path: '/recruitment-v2?tab=scouts',       label: 'Personnel',               icon: UserCheck, subId: 'scouts' },
-          { path: '/recruitment-v2?tab=candidates',   label: 'Database',                icon: UserPlus, subId: 'candidates' },
-          { path: '/recruitment-v2?tab=missions',     label: 'Missions',                icon: ClipboardCheck, subId: 'missions' },
-          { path: '/recruitment-v2?tab=shortlist',    label: 'Shadow list',             icon: Trophy, subId: 'shortlist' },
-          { path: '/recruitment-v2?tab=sessions',     label: 'Planning des Tests',      icon: Calendar, subId: 'sessions' },
-          { path: '/recruitment-v2?tab=compare',      label: 'Comparateur Radar',       icon: Swords, subId: 'compare' },
-          { path: '/recruitment-v2?tab=archives',     label: 'Archives',                icon: Archive, subId: 'archives' },
+          { path: '/recruitment-v2?tab=scouts', label: 'Personnel', icon: UserCheck, subId: 'scouts' },
+          { path: '/recruitment-v2?tab=candidates', label: 'Database', icon: UserPlus, subId: 'candidates' },
+          { path: '/recruitment-v2?tab=missions', label: 'Missions', icon: ClipboardCheck, subId: 'missions' },
+          { path: '/recruitment-v2?tab=shortlist', label: 'Shadow list', icon: Trophy, subId: 'shortlist' },
+          { path: '/recruitment-v2?tab=sessions', label: 'Planning des Tests', icon: Calendar, subId: 'sessions' },
+          { path: '/recruitment-v2?tab=compare', label: 'Comparateur Radar', icon: Swords, subId: 'compare' },
+          { path: '/recruitment-v2?tab=archives', label: 'Archives', icon: Archive, subId: 'archives' },
         ],
       }
     ] : []),
@@ -285,16 +335,16 @@ const Sidebar: React.FC<SidebarProps> = ({
         title: 'Système & Contenu',
         icon: LayoutTemplate,
         items: [
-          { path: '/plugins',  label: 'Plugins',       icon: Blocks },
-          { path: '/blog',     label: 'Blog',          icon: FileText },
-          { path: '/store',    label: 'Store',         icon: LayoutTemplate },
-          { path: '/users',    label: 'Utilisateurs',  icon: Shield },
-          { path: '/logs',     label: 'Logs & Audit',  icon: Activity },
-          { 
-            path: '/tickets', 
-            label: 'Tickets Fus-App', 
-            icon: LifeBuoy, 
-            count: openTicketsCount > 0 ? openTicketsCount : undefined 
+          { path: '/plugins', label: 'Plugins', icon: Blocks },
+          { path: '/blog', label: 'Blog', icon: FileText },
+          { path: '/store', label: 'Store', icon: LayoutTemplate },
+          { path: '/users', label: 'Utilisateurs', icon: Shield },
+          { path: '/logs', label: 'Logs & Audit', icon: Activity },
+          {
+            path: '/tickets',
+            label: 'Tickets Fus-App',
+            icon: LifeBuoy,
+            count: openTicketsCount > 0 ? openTicketsCount : undefined
           },
         ],
       }
@@ -318,10 +368,10 @@ const Sidebar: React.FC<SidebarProps> = ({
           // Gestion des items avec sous-enfants (ex: Mon Club -> Joueurs, Équipes)
           if (item.children && item.children.length > 0) {
             const filteredChildren = item.children.filter(child => {
-              if (isMirrorMode) {
-                return isItemAllowedInMirror(child.path, child.subId, effectiveRole, effectiveJob);
-              }
               const childSubId = child.subId || (child.path === '/players' ? 'players' : 'teams');
+              if (isMirrorMode) {
+                return hasMirrorSubAccess(childSubId, child.path);
+              }
               return hasSubModuleAccess(childSubId, 'read', cat.id);
             });
             if (filteredChildren.length === 0) return null;
@@ -333,7 +383,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           }
 
           if (isMirrorMode) {
-            return isItemAllowedInMirror(item.path, item.subId, effectiveRole, effectiveJob) ? item : null;
+            return hasMirrorSubAccess(item.subId, item.path) ? item : null;
           }
 
           if (!item.subId) return item;
@@ -426,12 +476,18 @@ const Sidebar: React.FC<SidebarProps> = ({
     navigate('/login');
   };
 
+  const firstAllowedRecruitmentTab = React.useMemo(() => {
+    const v2Order = ['scouts', 'candidates', 'missions', 'shortlist', 'sessions', 'compare', 'archives'];
+    if (isSuperAdmin) return 'tab=scouts';
+    const first = v2Order.find(sub => hasSubModuleAccess(sub, 'read', 'recruitment_v2'));
+    return first ? `tab=${first}` : '';
+  }, [isSuperAdmin, hasSubModuleAccess, authState.permissions]);
+
   const isItemActive = (itemPath: string) => {
     if (itemPath.includes('?')) {
       const [path, search] = itemPath.split('?');
       if (location.pathname === path) {
-        const defaultSearch = isScoutAdmin ? 'tab=scouts' : 'tab=candidates';
-        if (!location.search && (search === defaultSearch || search === 'tab=calendar')) return true;
+        if (!location.search && (search === firstAllowedRecruitmentTab || search === 'tab=calendar')) return true;
         return location.search === `?${search}`;
       }
       return false;
@@ -650,7 +706,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         "w-4.5 h-4.5 shrink-0 transition-transform",
                         !active && "group-hover:scale-110"
                       )} />
-                      
+
                       {!isCollapsedMode && (
                         <span className="truncate flex-1 text-left">{item.label}</span>
                       )}
@@ -844,7 +900,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           )} />
         </button>
       </div>
-      
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto py-5 px-3.5 custom-scrollbar">
         {renderNavList(collapsed)}
@@ -913,7 +969,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       {mobileOpen && (
         <div className="fixed inset-0 z-[60] lg:hidden">
-          <div 
+          <div
             className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
             onClick={onMobileClose}
           />

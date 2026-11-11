@@ -107,6 +107,8 @@ const StatBar: React.FC<{ label: string; home: number; away: number; icon?: stri
   );
 };
 
+let isAuditLogsReadBlocked = false;
+
 export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   match,
   allMatches = [],
@@ -234,14 +236,20 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
         return;
       }
 
-      if (match.id && isMounted) {
+      if (match.id && isMounted && !isAuditLogsReadBlocked) {
         try {
-          const { data: logs } = await supabase
+          const { data: logs, error: logsErr } = await supabase
             .from('audit_logs')
             .select('user_id, metadata')
             .or(`entity_id.eq.${match.id},metadata->>match_id.eq.${match.id}`)
             .not('user_id', 'is', null)
             .limit(1);
+          if (logsErr) {
+            const errCode = String((logsErr as any).code || '');
+            if (errCode === '42501' || (logsErr as any).status === 401) {
+              isAuditLogsReadBlocked = true;
+            }
+          }
           if (logs && logs.length > 0 && logs[0].user_id) {
             const uid = logs[0].user_id;
             const { data: prof } = await supabase
