@@ -202,18 +202,16 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
         key={item.syncKey}
         type="button"
         onClick={() => toggleKey(item.syncKey)}
-        className={`w-full text-left p-3.5 rounded-2xl border-2 transition-all flex items-start gap-3 ${
-          isChecked
+        className={`w-full text-left p-3.5 rounded-2xl border-2 transition-all flex items-start gap-3 ${isChecked
             ? 'border-[#FF3737] bg-red-50/40 dark:bg-red-950/20 shadow-sm'
             : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
-        }`}
+          }`}
       >
         <div
-          className={`mt-1 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-            isChecked
+          className={`mt-1 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${isChecked
               ? 'bg-[#FF3737] border-[#FF3737] text-white'
               : 'border-slate-300 bg-white dark:bg-slate-800 text-transparent'
-          }`}
+            }`}
         >
           <Check className="w-3.5 h-3.5" />
         </div>
@@ -230,11 +228,10 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
               <span className="text-[10px] font-bold text-slate-500">{item.group}</span>
             </div>
             <span
-              className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                item.isHome
+              className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${item.isHome
                   ? 'bg-emerald-100 text-emerald-800'
                   : 'bg-blue-100 text-blue-800'
-              }`}
+                }`}
             >
               {item.isHome ? 'Domicile' : 'Extérieur'}
             </span>
@@ -243,9 +240,8 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
           <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2">
             <div className="flex items-center gap-2 min-w-0 flex-1 justify-end text-right">
               <span
-                className={`text-xs sm:text-sm font-black truncate ${
-                  item.isHome ? 'text-[#FF3737]' : 'text-slate-900 dark:text-white'
-                }`}
+                className={`text-xs sm:text-sm font-black truncate ${item.isHome ? 'text-[#FF3737]' : 'text-slate-900 dark:text-white'
+                  }`}
               >
                 {homeName}
               </span>
@@ -267,9 +263,8 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
                 className="w-6 h-6 rounded-full object-contain bg-white border border-slate-200 p-0.5 shrink-0"
               />
               <span
-                className={`text-xs sm:text-sm font-black truncate ${
-                  !item.isHome ? 'text-[#FF3737]' : 'text-slate-900 dark:text-white'
-                }`}
+                className={`text-xs sm:text-sm font-black truncate ${!item.isHome ? 'text-[#FF3737]' : 'text-slate-900 dark:text-white'
+                  }`}
               >
                 {awayName}
               </span>
@@ -308,18 +303,16 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
         key={item.syncKey}
         type="button"
         onClick={() => toggleKey(item.syncKey)}
-        className={`w-full text-left p-3.5 rounded-2xl border-2 transition-all flex items-start gap-3 ${
-          isChecked
+        className={`w-full text-left p-3.5 rounded-2xl border-2 transition-all flex items-start gap-3 ${isChecked
             ? 'border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 shadow-sm'
             : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
-        }`}
+          }`}
       >
         <div
-          className={`mt-1 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-            isChecked
+          className={`mt-1 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${isChecked
               ? 'bg-blue-600 border-blue-600 text-white'
               : 'border-slate-300 bg-white dark:bg-slate-800 text-transparent'
-          }`}
+            }`}
         >
           <Check className="w-3.5 h-3.5" />
         </div>
@@ -338,11 +331,10 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
               </span>
             </div>
             <span
-              className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                item.isHome
+              className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${item.isHome
                   ? 'bg-emerald-100 text-emerald-800'
                   : 'bg-blue-100 text-blue-800'
-              }`}
+                }`}
             >
               {item.isHome ? 'Domicile' : 'Extérieur'}
             </span>
@@ -351,9 +343,8 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
           <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2">
             <div className="flex items-center gap-2 min-w-0 flex-1 justify-end text-right">
               <span
-                className={`text-xs sm:text-sm font-black truncate ${
-                  item.isHome ? 'text-[#FF3737]' : 'text-slate-900 dark:text-white'
-                }`}
+                className={`text-xs sm:text-sm font-black truncate ${item.isHome ? 'text-[#FF3737]' : 'text-slate-900 dark:text-white'
+                  }`}
               >
                 {homeName}
               </span>
@@ -375,9 +366,8 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
                 className="w-6 h-6 rounded-full object-contain bg-white border border-slate-200 p-0.5 shrink-0"
               />
               <span
-                className={`text-xs sm:text-sm font-black truncate ${
-                  !item.isHome ? 'text-[#FF3737]' : 'text-slate-900 dark:text-white'
-                }`}
+                className={`text-xs sm:text-sm font-black truncate ${!item.isHome ? 'text-[#FF3737]' : 'text-slate-900 dark:text-white'
+                  }`}
               >
                 {awayName}
               </span>

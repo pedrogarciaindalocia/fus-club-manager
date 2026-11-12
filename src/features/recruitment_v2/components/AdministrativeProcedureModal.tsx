@@ -113,10 +113,10 @@ export const AdministrativeProcedureModal: React.FC<AdministrativeProcedureModal
               <img
                 src={candidate.photo_url}
                 alt={`${candidate.first_name} ${candidate.last_name}`}
-                className="w-12 h-12 rounded-xl object-cover ring-2 ring-emerald-500/30 shadow-xs bg-slate-200 shrink-0"
+                className="w-16 h-16 rounded-2xl object-cover ring-2 ring-emerald-500/30 shadow-xs bg-slate-200 shrink-0"
               />
             ) : (
-              <div className="w-12 h-12 rounded-xl bg-slate-800 text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0">
+              <div className="w-16 h-16 rounded-2xl bg-slate-800 text-white font-black text-base flex items-center justify-center shadow-xs shrink-0">
                 {candidate.first_name?.[0]}{candidate.last_name?.[0]}
               </div>
             )}

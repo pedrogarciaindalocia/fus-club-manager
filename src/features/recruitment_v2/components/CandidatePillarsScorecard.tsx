@@ -546,7 +546,7 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
           {/* EN-TÊTE : JOUEUR & DERNIÈRE ÉVALUATION */}
           <div className="pb-3 flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 overflow-hidden border border-slate-200 shadow-2xs shrink-0">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 shadow-2xs shrink-0">
                 <img
                   src={candidate.photo_url || '/assets/avatar.svg'}
                   alt={`${candidate.first_name} ${candidate.last_name}`}

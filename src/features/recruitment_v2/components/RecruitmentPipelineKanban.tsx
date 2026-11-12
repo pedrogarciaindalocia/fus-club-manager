@@ -186,9 +186,9 @@ export const RecruitmentPipelineKanban: React.FC<RecruitmentPipelineKanbanProps>
                         <div className="flex items-start justify-between gap-2">
                           <div
                             onClick={() => onOpenCandidateDetail(c)}
-                            className="cursor-pointer flex-1 flex items-center gap-2 min-w-0"
+                            className="cursor-pointer flex-1 flex items-center gap-2.5 min-w-0"
                           >
-                            <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-[11px] shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                            <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
                               {c.photo_url ? (
                                 <img
                                   src={c.photo_url}

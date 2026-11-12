@@ -1014,8 +1014,8 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
           {/* Corps de la Fiche Détaillée */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
             {/* Colonne 1 : Avatar & Identité (md:col-span-4) */}
-            <div className="md:col-span-4 flex items-center gap-3">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/10 border-2 border-white/20 overflow-hidden flex items-center justify-center font-black text-white text-lg shrink-0 shadow-md">
+            <div className="md:col-span-4 flex items-center gap-3.5">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-white/10 border-2 border-white/20 overflow-hidden flex items-center justify-center font-black text-white text-xl shrink-0 shadow-md">
                 {candidate.photo_url ? (
                   <img
                     src={candidate.photo_url}

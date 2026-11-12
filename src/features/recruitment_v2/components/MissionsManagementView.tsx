@@ -806,10 +806,10 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
                         <img
                           src={cand.photo_url}
                           alt={`${cand.first_name} ${cand.last_name}`}
-                          className="w-12 h-12 rounded-xl object-cover border border-slate-200 shadow-2xs"
+                          className="w-16 h-16 rounded-2xl object-cover border border-slate-200 shadow-2xs"
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm border border-purple-200 shadow-2xs">
+                        <div className="w-16 h-16 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-base border border-purple-200 shadow-2xs">
                           {cand.first_name?.[0]}{cand.last_name?.[0]}
                         </div>
                       )}
@@ -1168,7 +1168,7 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
               {selectedCandidateForAssign ? (
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3 shadow-2xs">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-slate-200 shadow-2xs bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-sm">
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 border border-slate-200 shadow-2xs bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-base">
                       {selectedCandidateForAssign.photo_url ? (
                         <img
                           src={selectedCandidateForAssign.photo_url}
@@ -1233,7 +1233,7 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
                           onClick={() => setSelectedCandidateForAssign(cand)}
                           className="p-2.5 hover:bg-purple-50/80 cursor-pointer transition-colors flex items-center gap-3 group"
                         >
-                          <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 border border-slate-200 bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs shadow-2xs">
+                          <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-slate-200 bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs shadow-2xs">
                             {cand.photo_url ? (
                               <img src={cand.photo_url} alt="" className="w-full h-full object-cover" />
                             ) : (

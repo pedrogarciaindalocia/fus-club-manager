@@ -533,7 +533,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               <img
                 src={candidate.photo_url}
                 alt={`${candidate.first_name} ${candidate.last_name}`}
-                className="w-14 h-14 sm:w-15 sm:h-15 rounded-2xl object-cover ring-2 ring-white/15 shadow-md bg-slate-800"
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover ring-2 ring-white/15 shadow-md bg-slate-800"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
                   const fb = (e.target as HTMLElement).nextElementSibling;
@@ -543,7 +543,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
             ) : null}
             <div
               className={cn(
-                "w-14 h-14 sm:w-15 sm:h-15 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 text-white font-black text-lg sm:text-xl flex items-center justify-center ring-2 ring-white/15 shadow-md",
+                "w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 text-white font-black text-xl sm:text-2xl flex items-center justify-center ring-2 ring-white/15 shadow-md",
                 candidate.photo_url ? "hidden" : "flex"
               )}
             >
@@ -2313,7 +2313,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
 
                 <div className="flex flex-col md:flex-row gap-6 items-start">
                   {/* Photo officielle avec avatar */}
-                  <div className="w-24 h-24 rounded-2xl border-2 border-slate-300 bg-white overflow-hidden shadow-xs flex items-center justify-center shrink-0">
+                  <div className="w-32 h-32 sm:w-36 sm:h-36 rounded-2xl border-2 border-slate-300 bg-white overflow-hidden shadow-xs flex items-center justify-center shrink-0">
                     {candidate.photo_url ? (
                       <img
                         src={candidate.photo_url}
@@ -2324,7 +2324,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                         }}
                       />
                     ) : (
-                      <User className="w-10 h-10 text-slate-300" />
+                      <User className="w-12 h-12 text-slate-300" />
                     )}
                   </div>
 

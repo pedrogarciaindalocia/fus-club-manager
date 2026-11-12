@@ -1795,7 +1795,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   {/* Photo Officielle du Joueur */}
                   <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 flex flex-col sm:flex-row items-center gap-4">
                     <div className="relative group shrink-0">
-                      <div className="w-20 h-20 rounded-2xl border-2 border-slate-300 bg-white overflow-hidden shadow-xs flex items-center justify-center">
+                      <div className="w-28 h-28 rounded-2xl border-2 border-slate-300 bg-white overflow-hidden shadow-xs flex items-center justify-center">
                         {photoUrl ? (
                           <img
                             src={photoUrl}
@@ -1806,7 +1806,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                             }}
                           />
                         ) : (
-                          <User className="w-9 h-9 text-slate-300" />
+                          <User className="w-11 h-11 text-slate-300" />
                         )}
                       </div>
                       {photoUrl && (

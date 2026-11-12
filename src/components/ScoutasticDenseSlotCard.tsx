@@ -117,7 +117,7 @@ export const ScoutasticDenseSlotCard: React.FC<ScoutasticDenseSlotCardProps> = (
       </div>
 
       {/* ── VERTICAL STACKED LIST (Ascenseur actif si > 3 joueurs) ── */}
-      <div className="card-scroll-area max-h-[148px] overflow-y-auto custom-scrollbar scrollbar-thin divide-y divide-slate-100 bg-white/95">
+      <div className="card-scroll-area max-h-[168px] overflow-y-auto custom-scrollbar scrollbar-thin divide-y divide-slate-100 bg-white/95">
         {players.map((p, idx) => {
           const isTop = idx === 0 && p.rating !== undefined && p.rating !== null;
           const score = typeof p.rating === 'number' ? p.rating : null;
@@ -151,7 +151,7 @@ export const ScoutasticDenseSlotCard: React.FC<ScoutasticDenseSlotCardProps> = (
                 )}
 
                 {/* Avatar */}
-                <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-200 shrink-0 bg-slate-900 text-white flex items-center justify-center text-[10px] font-black shadow-xs">
+                <div className="w-12 h-12 rounded-full overflow-hidden border border-slate-200 shrink-0 bg-slate-900 text-white flex items-center justify-center text-xs font-black shadow-xs">
                   {p.photoUrl ? (
                     <img
                       src={p.photoUrl}

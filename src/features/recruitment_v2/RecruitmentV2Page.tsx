@@ -2545,8 +2545,8 @@ export const RecruitmentV2Page: React.FC = () => {
 
                             {/* Joueur (avec l'intégralité du profil, poste en français et caractéristiques) */}
                             <td className="py-3 px-4">
-                              <div className="flex items-start gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs mt-0.5">
+                              <div className="flex items-center gap-3.5">
+                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
                                   <img
                                     src={c.photo_url || '/assets/avatar.svg'}
                                     alt={`${c.first_name} ${c.last_name}`}
@@ -2838,8 +2838,8 @@ export const RecruitmentV2Page: React.FC = () => {
                     >
                       <div>
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                          <div className="flex items-center gap-3.5">
+                            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
                               <img
                                 src={c.photo_url || '/assets/avatar.svg'}
                                 alt={`${c.first_name} ${c.last_name}`}
@@ -3265,7 +3265,7 @@ export const RecruitmentV2Page: React.FC = () => {
                         <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-600 text-xs overflow-hidden shrink-0 border">
+                              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center font-bold text-slate-600 text-sm overflow-hidden shrink-0 border">
                                 {c.photo_url ? (
                                   <img src={c.photo_url} alt={c.first_name} className="w-full h-full object-cover" />
                                 ) : (
@@ -3958,7 +3958,7 @@ export const RecruitmentV2Page: React.FC = () => {
 
             {/* Profil du joueur sélectionné & Scout A */}
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+              <div className="w-16 h-16 rounded-2xl bg-slate-900 text-white font-black text-base flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
                 {candidateToAssign.photo_url ? (
                   <img src={candidateToAssign.photo_url} alt="" className="w-full h-full object-cover" />
                 ) : (

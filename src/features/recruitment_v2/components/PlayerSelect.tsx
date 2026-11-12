@@ -137,7 +137,7 @@ export const PlayerSelect: React.FC<PlayerSelectProps> = ({
         ) : selectedCandidate ? (
           <div className="flex items-center gap-3 min-w-0 flex-1">
             {/* Avatar Joueur */}
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden shadow-2xs border border-white">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden shadow-2xs border border-white">
               {selectedCandidate.photo_url ? (
                 <img
                   src={selectedCandidate.photo_url}
@@ -262,7 +262,7 @@ export const PlayerSelect: React.FC<PlayerSelectProps> = ({
                     <div className="flex items-center gap-3 min-w-0">
                       {/* Avatar */}
                       <div className={cn(
-                        "w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden shadow-2xs",
+                        "w-12 h-12 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden shadow-2xs",
                         isSelected
                           ? "bg-indigo-600 text-white"
                           : "bg-slate-100 text-slate-600"

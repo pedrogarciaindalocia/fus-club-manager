@@ -695,14 +695,14 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
                             <img
                               src={player.photo_url}
                               alt={player.full_name}
-                              className="w-14 h-14 rounded-2xl object-cover border-2 border-slate-200 shadow-xs"
+                              className="w-20 h-20 rounded-2xl object-cover border-2 border-slate-200 shadow-xs"
                               onError={(e) => {
                                 (e.target as HTMLElement).style.display = 'none';
                               }}
                             />
                           ) : (
-                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#722F37] to-slate-700 flex items-center justify-center text-white border-2 border-slate-200 shadow-xs">
-                              <User className="w-7 h-7 text-white/80" />
+                            <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-[#722F37] to-slate-700 flex items-center justify-center text-white border-2 border-slate-200 shadow-xs">
+                              <User className="w-9 h-9 text-white/80" />
                             </div>
                           )}
                           {player.jersey_number != null && (
@@ -844,12 +844,12 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-3">
                         {player.photo_url ? (
-                          <img src={player.photo_url} alt={player.full_name} className="w-10 h-10 rounded-xl object-cover border border-slate-200" />
+                          <img src={player.photo_url} alt={player.full_name} className="w-14 h-14 rounded-xl object-cover border border-slate-200" />
                         ) : (
-                          <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-white">
-                            <User className="w-5 h-5 text-white/80" />
+                          <div className="w-14 h-14 rounded-xl bg-slate-700 flex items-center justify-center text-white">
+                            <User className="w-7 h-7 text-white/80" />
                           </div>
                         )}
                         <div>

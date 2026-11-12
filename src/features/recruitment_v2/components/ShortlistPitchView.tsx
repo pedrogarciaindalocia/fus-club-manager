@@ -2808,10 +2808,10 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                           <img
                             src={cand.photo_url}
                             alt={`${cand.first_name} ${cand.last_name}`}
-                            className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                            className="w-14 h-14 rounded-full object-cover border border-slate-200"
                           />
                         ) : (
-                          <div className="w-10 h-10 rounded-full bg-slate-800 text-white font-black text-xs flex items-center justify-center">
+                          <div className="w-14 h-14 rounded-full bg-slate-800 text-white font-black text-sm flex items-center justify-center">
                             {cand.first_name[0]}{cand.last_name[0]}
                           </div>
                         )}
@@ -2962,7 +2962,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
               <div className="p-5 sm:p-6 bg-slate-900 text-white flex items-center justify-between border-b-2 border-slate-800 shrink-0">
                 <div className="flex items-center gap-4">
                   {/* Photo / Avatar avec initiales */}
-                  <div className="w-14 h-14 rounded-2xl bg-slate-800 border-2 border-slate-700 overflow-hidden flex items-center justify-center font-black text-xl text-white shrink-0 shadow-md">
+                  <div className="w-20 h-20 rounded-2xl bg-slate-800 border-2 border-slate-700 overflow-hidden flex items-center justify-center font-black text-2xl text-white shrink-0 shadow-md">
                     {inspectedCandidate.photo_url ? (
                       <img src={inspectedCandidate.photo_url} alt="" className="w-full h-full object-cover" />
                     ) : (
@@ -3429,7 +3429,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                         {/* Info Joueur */}
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           {/* Avatar / Photo */}
-                          <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-200 shrink-0 bg-slate-900 text-white font-black text-xs flex items-center justify-center">
+                          <div className="w-14 h-14 rounded-full overflow-hidden border border-slate-200 shrink-0 bg-slate-900 text-white font-black text-sm flex items-center justify-center">
                             {cand.photo_url ? (
                               <img src={cand.photo_url} alt="" className="w-full h-full object-cover" />
                             ) : (

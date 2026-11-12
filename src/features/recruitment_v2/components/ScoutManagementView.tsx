@@ -1795,7 +1795,7 @@ Cellule Détection & Scouting — FUS Rabat`;
                                 className="p-3.5 bg-slate-50/85 hover:bg-white transition-all rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                               >
                                 <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
                                     <img
                                       src={c.photo_url || '/assets/avatar.svg'}
                                       alt={`${c.first_name} ${c.last_name}`}
@@ -2771,7 +2771,7 @@ Cellule Détection & Scouting — FUS Rabat`;
                     className="p-3 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200/80 transition-all flex items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center text-xs font-black shrink-0 overflow-hidden border border-slate-200">
+                      <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center text-xs font-black shrink-0 overflow-hidden border border-slate-200">
                         {cand.photo_url ? (
                           <img src={cand.photo_url} alt="" className="w-full h-full object-cover" />
                         ) : (

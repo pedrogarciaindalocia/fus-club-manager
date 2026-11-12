@@ -155,7 +155,7 @@ export const ScoutReportWizard: React.FC<ScoutReportWizardProps> = ({
         <div className="p-5 border-b bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center font-black text-white text-sm shrink-0 overflow-hidden">
+              <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center font-black text-white text-base shrink-0 overflow-hidden">
                 {candidate.photo_url ? (
                   <img
                     src={candidate.photo_url}
