@@ -483,25 +483,25 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
       toast.error("Veuillez saisir un nom de critère.");
       return;
     }
-    
+
     // Convert to database update
     try {
       const posId = (positionConfig as any).id;
       if (!posId) throw new Error("ID du poste introuvable");
-      
+
       const currentList = positionConfig.criteria[pillar] || [];
       if (currentList.some((c: string) => c.toLowerCase() === trimmed.toLowerCase())) {
         toast.error("Ce critère existe déjà pour ce profil.");
         return;
       }
-      
+
       const updatedCriteria = {
         ...positionConfig.criteria,
         [pillar]: [...currentList, trimmed]
       };
-      
+
       await updatePosition({ id: posId, data: { criteria: updatedCriteria } });
-      
+
       const key = `${pillar}-${trimmed}`;
       setCriterionScores((prev) => ({ ...prev, [key]: 0 }));
       setCriterionEnabled((prev) => ({ ...prev, [key]: true }));
@@ -528,7 +528,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
     try {
       const posId = (positionConfig as any).id;
       if (!posId) throw new Error("ID du poste introuvable");
-      
+
       const currentList = positionConfig.criteria[editingCriterion.pillar] || [];
       if (currentList.some((c: string) => c.toLowerCase() === trimmed.toLowerCase() && c !== editingCriterion.oldName)) {
         toast.error("Un critère portant ce nom existe déjà.");
@@ -859,9 +859,9 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
             rows={3}
             value={
               pillar === 'technique' ? techReport :
-              pillar === 'tactique' ? tactReport :
-              pillar === 'physique' ? physReport :
-              mentReport
+                pillar === 'tactique' ? tactReport :
+                  pillar === 'physique' ? physReport :
+                    mentReport
             }
             onChange={(e) => {
               const val = e.target.value;

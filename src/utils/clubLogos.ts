@@ -33,8 +33,8 @@ export const DEFAULT_CLUB_LOGOS: Record<string, string> = {
   DHJ: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1794221787756-vvit3mfjo1.png',
   JADIDA: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1794221787756-vvit3mfjo1.png',
   AMF: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/logos/clubs/u21-amf.png',
-  AAMF: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/logos/clubs/u21-amf.png',
   ACADEMIE: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/logos/clubs/u21-amf.png',
+  AAMF: '', // Association AMF (distinct de AMF / Académie Mohammed VI — ne doit jamais hériter du logo AMF)
   CFBG: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1792102487210-3fqnzhgw045.jpg',
   USAT: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1794222043143-luvb16ri8ws.png',
   RCAZ: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1793488379247-wj8mwtcz0wq.png',
@@ -53,7 +53,7 @@ export const DEFAULT_CLUB_LOGOS: Record<string, string> = {
   KHOURIBGA: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1792061673283-hp4ktnbrl6.png',
   IZK: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1791630271201-zjrxja5427a.png',
   KHEMISSET: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1791630271201-zjrxja5427a.png',
-  RAC: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/logos/clubs/u21-amf.png',
+  RAC: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1794221891908-el020f0tpnm.png',
   RCOZ: 'https://fuhrxfhszttvpkmjydca.supabase.co/storage/v1/object/public/medias/default/1793488379247-wj8mwtcz0wq.png',
 };
 
@@ -91,11 +91,21 @@ export function getClubLogoUrl(
   // 3. Fallback dictionnaire statique (via abréviation canonique puis nom)
   const norm = clubName.trim().toUpperCase();
   const abbrKey = resolveClubAbbreviation(clubName);
-  if (DEFAULT_CLUB_LOGOS[abbrKey]) {
-    return DEFAULT_CLUB_LOGOS[abbrKey];
+  if (DEFAULT_CLUB_LOGOS[abbrKey] !== undefined) {
+    if (DEFAULT_CLUB_LOGOS[abbrKey]) {
+      return DEFAULT_CLUB_LOGOS[abbrKey];
+    }
   }
   for (const [key, url] of Object.entries(DEFAULT_CLUB_LOGOS)) {
-    if (norm.includes(key) || key.includes(norm)) {
+    if (!url) continue;
+    // Empêcher qu'un sigle court comme 'AMF' ou 'ACADEMIE' soit matché pour 'AAMF' / 'Association AMF'
+    if (
+      (key === 'AMF' || key === 'ACADEMIE') &&
+      (norm.includes('AAMF') || abbrKey === 'AAMF' || norm.includes('ASSOCIATION ACADEMIE') || norm.includes('ASSOCIATION AMF'))
+    ) {
+      continue;
+    }
+    if (norm === key || (key.length >= 4 && (norm.includes(key) || key.includes(norm)))) {
       return url;
     }
   }

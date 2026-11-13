@@ -79,6 +79,15 @@ export interface FrmfCalendarRoundUpdateItem {
   hasPlayedScore: boolean;
   scoreHome: number | null;
   scoreAway: number | null;
+  // US-DASH-146 : Rectification intelligente si match vierge (score vide & 0 événement)
+  isBlankMatch?: boolean;
+  hasRecordedEvents?: boolean;
+  needsDateRectification?: boolean;
+  currentDate?: string | null;
+  targetDate?: string;
+  currentTime?: string | null;
+  targetTime?: string;
+  willUpdateScore?: boolean;
 }
 
 export interface FrmfCalendarExistingMatchItem {
@@ -121,6 +130,7 @@ export interface FrmfCalendarAuditParams {
   teams: Team[];
   leagues: League[];
   canManageCategory?: (category: string | null | undefined) => boolean;
+  matchesWithEventsSet?: Set<string>;
 }
 
 /**
@@ -530,6 +540,25 @@ export function auditFrmfMyClubMatchesForCalendar(
         currentRoundRaw === null ||
         (currentRoundDay !== null ? currentRoundDay !== day : currentRoundRaw !== targetRoundName);
 
+      // US-DASH-146 : Détection de match vierge (score vide & 0 événement enregistré)
+      const targetMatchDate = (match.match_date ? normalizeFrmfDateToIso(match.match_date) : '') || inferIsoDateFromFrmfMatch(match, datasetSeason) || '';
+      const targetMatchTime = normalizeTimeHHMM(match.match_time) || '15:00';
+      const currentMatchDate = (existing.match.match_date || '').trim().slice(0, 10);
+      const currentMatchTime = normalizeTimeHHMM(existing.match.match_time) || '';
+
+      const hasRecordedEvents = Boolean(params.matchesWithEventsSet && params.matchesWithEventsSet.has(existing.match.id));
+      const isScoreEmpty =
+        (existing.match.score_home === null || existing.match.score_home === undefined) &&
+        (existing.match.score_away === null || existing.match.score_away === undefined) ||
+        existing.match.status !== 'finished';
+      const isBlankMatch = isScoreEmpty && !hasRecordedEvents;
+
+      const needsDateSync = isBlankMatch && Boolean(targetMatchDate && currentMatchDate !== targetMatchDate);
+      const needsTimeSync = isBlankMatch && Boolean(targetMatchTime && currentMatchTime && currentMatchTime !== targetMatchTime);
+      const needsScoreSync = isBlankMatch && isFinished;
+
+      const needsRectification = needsRoundSync || needsDateSync || needsTimeSync || needsScoreSync;
+
       const calScoreHome =
         typeof existing.match.score_home === 'number'
           ? existing.match.score_home
@@ -543,7 +572,7 @@ export function auditFrmfMyClubMatchesForCalendar(
             ? Number(match.score_away ?? 0)
             : null;
 
-      if (needsRoundSync && !seenRoundUpdateMatchIds.has(existing.match.id)) {
+      if (needsRectification && !seenRoundUpdateMatchIds.has(existing.match.id)) {
         seenRoundUpdateMatchIds.add(existing.match.id);
         roundUpdates.push({
           syncKey: `round__${existing.match.id}__${dedupKey}`,
@@ -565,6 +594,14 @@ export function auditFrmfMyClubMatchesForCalendar(
           hasPlayedScore: calScoreHome !== null && calScoreAway !== null,
           scoreHome: calScoreHome,
           scoreAway: calScoreAway,
+          isBlankMatch,
+          hasRecordedEvents,
+          needsDateRectification: needsDateSync || needsTimeSync,
+          currentDate: currentMatchDate || null,
+          targetDate: targetMatchDate || undefined,
+          currentTime: currentMatchTime || null,
+          targetTime: targetMatchTime || undefined,
+          willUpdateScore: needsScoreSync,
         });
       } else {
         alreadyInCalendar.push({

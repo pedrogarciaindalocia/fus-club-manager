@@ -74,7 +74,7 @@ const pageTitles: Record<string, string> = {
   '/matchday': 'Match Day',
   '/official-shortlist': 'Shortlist Officielle — Placement Tactique',
   '/club': 'Mon Club — Effectif FUS',
-  '/players': 'Gestion de l\'Effectif',
+  '/players': 'Joueurs — Effectif FUS',
   '/teams': 'Unités d\'Équipe',
   '/staff': 'Staff Technique',
   '/arbitres': 'Rubrique Arbitres',
@@ -234,22 +234,22 @@ const AppContent: React.FC = () => {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/matches" element={<MatchManagementPage />} />
             <Route path="/matches/new" element={
-              <ProtectedRoute requiredPermission="create_match">
+              <ProtectedRoute requiredPermission="plan_match">
                 <ScheduleMatchPage />
               </ProtectedRoute>
             } />
             <Route path="/matches/edit/:id" element={
-              <ProtectedRoute requiredPermission="manage_matches">
+              <ProtectedRoute requiredPermission="manage_match_played">
                 <ScheduleMatchPage />
               </ProtectedRoute>
             } />
             <Route path="/matches/:id/prepare" element={
-              <ProtectedRoute requiredPermission="manage_matches">
+              <ProtectedRoute requiredPermission="manage_match_played">
                 <ScheduleMatchPage />
               </ProtectedRoute>
             } />
             <Route path="/matchday" element={
-              <ProtectedRoute requiredPermission="track_live_match">
+              <ProtectedRoute requiredPermission="live_tracking">
                 <MatchDayPage />
               </ProtectedRoute>
             } />

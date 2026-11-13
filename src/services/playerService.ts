@@ -56,13 +56,14 @@ export const playerService = {
   },
 
   async addPlayer(player: Omit<Inserts<'players'>, 'id'>): Promise<Player> {
-    const clubId = await getMyClubId();
+    const clubId = (await getMyClubId()) || '45642829-a3d7-48de-afdd-3c45a1ced474';
     let cleanPlayer = sanitizePlayerPayload(player);
+    const targetClubId = (cleanPlayer as any).club_id || clubId || '45642829-a3d7-48de-afdd-3c45a1ced474';
 
     try {
       const { data, error } = await supabase
         .from('players')
-        .insert([{ ...cleanPlayer, club_id: clubId }])
+        .insert([{ ...cleanPlayer, club_id: targetClubId }])
         .select()
         .single();
 

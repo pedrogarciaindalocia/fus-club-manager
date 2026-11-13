@@ -1,22 +1,22 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  Zap, 
-  Target, 
-  Flame, 
-  Brain, 
-  Sparkles, 
-  ExternalLink, 
-  UserCheck, 
-  Calendar, 
+import {
+  Zap,
+  Target,
+  Flame,
+  Brain,
+  Sparkles,
+  ExternalLink,
+  UserCheck,
+  Calendar,
   Info,
   ChevronRight
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { 
-  getScoutPositionConfig, 
-  getFrenchPositionLabel, 
-  type ScoutPillarKey 
+import {
+  getScoutPositionConfig,
+  getFrenchPositionLabel,
+  type ScoutPillarKey
 } from '../constants/scoutCriteriaByPosition';
 import type { TrialCandidate, CandidateEvaluation } from '../types/recruitment';
 
@@ -96,7 +96,7 @@ const SvgRadarChart: React.FC<SvgRadarProps> = ({
 }) => {
   if (!data || data.length < 3) {
     return (
-      <div 
+      <div
         className="flex items-center justify-center text-xs text-slate-400 italic bg-slate-50/50 rounded-xl border border-slate-200"
         style={{ width: size, height: size }}
       >
@@ -356,8 +356,8 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
     const spaceBelow = windowHeight - rect.bottom;
     const placeAbove = spaceBelow < popoverHeight + 20 && rect.top > popoverHeight + 20;
 
-    const top = placeAbove 
-      ? rect.top - popoverHeight - 8 
+    const top = placeAbove
+      ? rect.top - popoverHeight - 8
       : rect.bottom + 8;
 
     // Centrage horizontal avec contraintes écran
@@ -407,7 +407,7 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
 
   // Détermination des critères pour l'onglet actif
   const currentPillarMeta = pillarsConfig.find(p => p.id === activeTab) || pillarsConfig[0];
-  
+
   // Données des critères pour le pilier sélectionné
   const currentCriteriaList = useMemo(() => {
     if (activeTab === 'summary' || activeTab === 'pot' || !currentPillarMeta.scoutKey) {
@@ -495,8 +495,8 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
                 className={cn(
                   "px-1.5 py-0.5 rounded flex flex-col items-center cursor-pointer transition-all duration-150 select-none",
                   isPot ? "bg-emerald-50 border border-emerald-200/80 rounded-md" : "",
-                  isPillarHovered 
-                    ? cn(p.badgeBg, "scale-105 shadow-2xs font-extrabold") 
+                  isPillarHovered
+                    ? cn(p.badgeBg, "scale-105 shadow-2xs font-extrabold")
                     : "hover:bg-slate-100 hover:scale-105"
                 )}
                 title={`Survoler pour afficher le radar & critères détaillés : ${p.label} (${p.score != null ? `${p.score.toFixed(1)}/10` : isPot ? '0.0/10' : 'En attente'})`}
@@ -509,7 +509,7 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
                 </span>
                 <span className={cn(
                   "text-xs font-black transition-colors",
-                  isPot 
+                  isPot
                     ? (p.score != null && p.score > 0 ? "text-emerald-700" : "text-slate-600")
                     : isPillarHovered
                       ? p.textColor
@@ -714,7 +714,7 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
                     const percent = Math.min(100, Math.max(0, val * 10));
 
                     return (
-                      <div 
+                      <div
                         key={pillar.id}
                         onClick={() => setActiveTab(pillar.id)}
                         className="group/crit p-1.5 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer border border-transparent hover:border-slate-200/80"

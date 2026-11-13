@@ -49,9 +49,15 @@ export const ScheduleMatchPage: React.FC = () => {
   // Contrôle de permission : planifier un match ou gérer un match
   useEffect(() => {
     if (!isEditing) {
-      const hasPlanPermission = can('plan_match') || can('create_match') || hasSubModuleAccess('matches', 'plan_match') || hasSubModuleAccess('matches', 'create');
+      const hasPlanPermission = can('plan_match') || hasSubModuleAccess('matches', 'plan_match');
       if (!hasPlanPermission) {
         toast.error("Accès refusé : vous n'avez pas la permission de planifier un match.");
+        navigate('/matches', { replace: true });
+      }
+    } else {
+      const hasEditPermission = can('manage_match_played') || hasSubModuleAccess('matches', 'manage_match_played');
+      if (!hasEditPermission) {
+        toast.error("Accès refusé : vous n'avez pas la permission d'éditer ou de préparer ce match.");
         navigate('/matches', { replace: true });
       }
     }

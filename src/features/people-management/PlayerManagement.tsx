@@ -329,50 +329,195 @@ const PlayerManagement: React.FC = () => {
   const { playerMentions: selectedPlayerMentions } = usePlayerMentions(selectedPlayer?.id);
   const [profileCategoryFilter, setProfileCategoryFilter] = useState<string>('');
 
-  // ── Gestion du lien Drive / Vidéo Joueur ──
+  // ── Gestion du lien Drive / Vidéos de Matchs Joueur ──
   const [driveModalOpen, setDriveModalOpen] = useState(false);
   const [driveUrlInput, setDriveUrlInput] = useState('');
+  const [driveVideoTitleInput, setDriveVideoTitleInput] = useState('');
+  const [driveSelectedMatchId, setDriveSelectedMatchId] = useState<string>('general');
   const [driveUrlSaving, setDriveUrlSaving] = useState(false);
+  const [playerPlayedMatches, setPlayerPlayedMatches] = useState<any[]>([]);
+  const [playerMatchVideos, setPlayerMatchVideos] = useState<any[]>([]);
+  const [loadingPlayedMatches, setLoadingPlayedMatches] = useState(false);
 
   const getPlayerDriveUrl = (player: Player | null | undefined): string => {
     if (!player) return '';
     return (player as any).drive_url || (player as any).video_url || localStorage.getItem(`fus_player_drive_${player.id}`) || '';
   };
 
-  const handleOpenDriveModal = (player: Player) => {
+  const handleOpenDriveModal = async (player: Player) => {
     const current = getPlayerDriveUrl(player);
     setDriveUrlInput(current);
+    setDriveVideoTitleInput('');
+    setDriveSelectedMatchId('general');
     setDriveModalOpen(true);
+    setLoadingPlayedMatches(true);
+
+    try {
+      // 1. Récupérer les matchs où ce joueur a effectivement joué
+      const { data: mpData } = await supabase
+        .from('match_players')
+        .select(`
+          id, match_id, is_starting, position_index, rating, rating_comment,
+          match:matches!match_id(
+            id, match_date, match_time, category, is_home, score_home, score_away, status, location,
+            opponent_id, opponent:clubs!opponent_id(name, logo_url)
+          )
+        `)
+        .eq('player_id', player.id);
+
+      const mappedMatches = (mpData || [])
+        .filter((mp: any) => mp.match)
+        .map((mp: any) => {
+          const m = mp.match;
+          const isHome = m.is_home !== false;
+          const oppName = m.opponent?.name || 'Adversaire';
+          const oppLogo = m.opponent?.logo_url || null;
+          const homeName = isHome ? 'FUS Rabat' : oppName;
+          const awayName = isHome ? oppName : 'FUS Rabat';
+          return {
+            matchId: m.id,
+            date: m.match_date,
+            time: m.match_time,
+            category: m.category,
+            isHome,
+            opponent: oppName,
+            opponentLogo: oppLogo,
+            scoreHome: m.score_home ?? 0,
+            scoreAway: m.score_away ?? 0,
+            status: m.status,
+            isStarting: mp.is_starting,
+            label: `${m.match_date || ''} • [${m.category || 'FUS'}] ${homeName} ${m.score_home ?? 0} - ${m.score_away ?? 0} ${awayName} (${mp.is_starting ? 'Titulaire' : 'Remplaçant'})`
+          };
+        })
+        .sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''));
+
+      setPlayerPlayedMatches(mappedMatches);
+      if (mappedMatches.length > 0) {
+        setDriveSelectedMatchId(mappedMatches[0].matchId);
+      } else {
+        setDriveSelectedMatchId('general');
+      }
+
+      // 2. Charger les vidéos déjà associées à ce joueur
+      const { data: vData } = await supabase
+        .from('match_video_analysis')
+        .select('*')
+        .contains('tags', [`player_${player.id}`])
+        .order('created_at', { ascending: false });
+
+      const remoteVideos = (vData || []).map((row: any) => {
+        let meta: any = {};
+        try { meta = JSON.parse(row.notes || '{}'); } catch {}
+        return {
+          id: row.id,
+          matchId: row.match_id,
+          videoUrl: row.video_url,
+          title: meta.title || 'Vidéo de match',
+          opponent: meta.opponent || 'Adversaire',
+          opponentLogo: meta.opponentLogo || null,
+          scoreHome: meta.scoreHome,
+          scoreAway: meta.scoreAway,
+          date: meta.date || row.created_at,
+        };
+      });
+
+      const localRaw = localStorage.getItem(`@fus_player_match_videos_${player.id}`);
+      let localList: any[] = [];
+      if (localRaw) {
+        try { localList = JSON.parse(localRaw); } catch {}
+      }
+      const remoteIds = new Set(remoteVideos.map(v => v.id));
+      const merged = [
+        ...remoteVideos,
+        ...localList.filter((l: any) => !remoteIds.has(l.id) && l.videoUrl)
+      ];
+      setPlayerMatchVideos(merged);
+      localStorage.setItem(`@fus_player_match_videos_${player.id}`, JSON.stringify(merged));
+    } catch (e) {
+      console.warn('Error loading player matches/videos:', e);
+    } finally {
+      setLoadingPlayedMatches(false);
+    }
   };
 
   const handleSaveDriveUrl = async () => {
     if (!selectedPlayer) return;
-    setDriveUrlSaving(true);
     const cleanUrl = driveUrlInput.trim();
+    if (!cleanUrl) {
+      toast.error('Veuillez saisir ou coller une URL Google Drive valide.');
+      return;
+    }
+
+    setDriveUrlSaving(true);
     try {
-      if (cleanUrl) {
-        localStorage.setItem(`fus_player_drive_${selectedPlayer.id}`, cleanUrl);
-      } else {
-        localStorage.removeItem(`fus_player_drive_${selectedPlayer.id}`);
+      if (driveSelectedMatchId && driveSelectedMatchId !== 'general') {
+        const targetMatch = playerPlayedMatches.find(m => m.matchId === driveSelectedMatchId);
+        const title = driveVideoTitleInput.trim() || `Match vs ${targetMatch?.opponent || 'Adversaire'}`;
+
+        const newVideoItem = {
+          id: `v_${Date.now()}`,
+          matchId: driveSelectedMatchId,
+          videoUrl: cleanUrl,
+          title,
+          opponent: targetMatch?.opponent || 'Adversaire',
+          opponentLogo: targetMatch?.opponentLogo || null,
+          scoreHome: targetMatch?.scoreHome,
+          scoreAway: targetMatch?.scoreAway,
+          date: targetMatch?.date,
+          createdAt: new Date().toISOString(),
+        };
+
+        try {
+          const { data } = await supabase
+            .from('match_video_analysis')
+            .insert([{
+              match_id: driveSelectedMatchId,
+              video_url: cleanUrl,
+              analysis_type: 'player_focus',
+              notes: JSON.stringify({
+                title,
+                opponent: targetMatch?.opponent,
+                opponentLogo: targetMatch?.opponentLogo,
+                scoreHome: targetMatch?.scoreHome,
+                scoreAway: targetMatch?.scoreAway,
+                date: targetMatch?.date,
+                playerId: selectedPlayer.id,
+              }),
+              tags: [`player_${selectedPlayer.id}`],
+            }])
+            .select()
+            .single();
+
+          if (data?.id) {
+            newVideoItem.id = data.id;
+          }
+        } catch (dbErr) {
+          console.warn('Supabase match_video_analysis insert note:', dbErr);
+        }
+
+        const updatedList = [newVideoItem, ...playerMatchVideos.filter(v => v.videoUrl !== cleanUrl)];
+        setPlayerMatchVideos(updatedList);
+        localStorage.setItem(`@fus_player_match_videos_${selectedPlayer.id}`, JSON.stringify(updatedList));
       }
 
+      localStorage.setItem(`fus_player_drive_${selectedPlayer.id}`, cleanUrl);
       const updated = {
         ...selectedPlayer,
-        drive_url: cleanUrl || null,
-        video_url: cleanUrl || null,
+        drive_url: cleanUrl,
+        video_url: cleanUrl,
       } as Player;
       setSelectedPlayer(updated);
 
       try {
         await supabase
           .from('players')
-          .update({ drive_url: cleanUrl || null, video_url: cleanUrl || null } as any)
+          .update({ drive_url: cleanUrl, video_url: cleanUrl } as any)
           .eq('id', selectedPlayer.id);
       } catch (dbErr) {
         console.warn('DB drive_url update note:', dbErr);
       }
 
-      toast.success(cleanUrl ? 'Lien Drive vidéo enregistré avec succès !' : 'Lien Drive supprimé.');
+      toast.success('Lien vidéo Drive enregistré avec succès !');
       setDriveModalOpen(false);
     } catch (err: any) {
       console.error('Error saving drive url:', err);
@@ -380,6 +525,17 @@ const PlayerManagement: React.FC = () => {
     } finally {
       setDriveUrlSaving(false);
     }
+  };
+
+  const handleDeleteMatchVideo = async (videoId: string) => {
+    if (!selectedPlayer) return;
+    try {
+      await supabase.from('match_video_analysis').delete().eq('id', videoId);
+    } catch {}
+    const filtered = playerMatchVideos.filter(v => v.id !== videoId);
+    setPlayerMatchVideos(filtered);
+    localStorage.setItem(`@fus_player_match_videos_${selectedPlayer.id}`, JSON.stringify(filtered));
+    toast.success('Vidéo retirée avec succès.');
   };
   // Multi-sélection
   const [selectionMode, setSelectionMode] = useState(false);
@@ -3501,7 +3657,53 @@ const PlayerManagement: React.FC = () => {
               </div>
 
               {/* Body */}
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                {/* 1. Sélecteur de match joué ou dossier global */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Trophy className="w-3.5 h-3.5 text-emerald-600" />
+                      Associer à un Match Joué ou Dossier Global
+                    </span>
+                    {loadingPlayedMatches && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+                  </label>
+                  <select
+                    value={driveSelectedMatchId}
+                    onChange={(e) => setDriveSelectedMatchId(e.target.value)}
+                    className="w-full h-11 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-emerald-600 text-xs font-semibold px-3 text-slate-800"
+                  >
+                    <option value="general">📁 Dossier Drive Général du Joueur (Tous matchs)</option>
+                    {playerPlayedMatches.map(m => (
+                      <option key={m.matchId} value={m.matchId}>
+                        ⚽ {m.date} • vs {m.opponent} ({m.scoreHome}-{m.scoreAway}) [{m.isStarting ? 'Titulaire' : 'Remplaçant'}]
+                      </option>
+                    ))}
+                  </select>
+                  {playerPlayedMatches.length === 0 && !loadingPlayedMatches && (
+                    <p className="text-[10px] text-amber-600 font-medium">
+                      ℹ️ Aucun match officiel répertorié pour ce joueur. Vous pouvez enregistrer un dossier Drive global.
+                    </p>
+                  )}
+                </div>
+
+                {/* 2. Titre / Note de la vidéo */}
+                {driveSelectedMatchId !== 'general' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                      <Video className="w-3.5 h-3.5 text-emerald-600" />
+                      Titre / Note de la vidéo (facultatif)
+                    </label>
+                    <Input
+                      type="text"
+                      placeholder="Ex: Résumé buts, Première mi-temps, Actions individuelles..."
+                      value={driveVideoTitleInput}
+                      onChange={(e) => setDriveVideoTitleInput(e.target.value)}
+                      className="h-10 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-emerald-600 text-xs font-medium px-4"
+                    />
+                  </div>
+                )}
+
+                {/* 3. URL Google Drive */}
                 <div className="space-y-2">
                   <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
                     <LinkIcon className="w-3.5 h-3.5 text-emerald-600" />
@@ -3509,13 +3711,13 @@ const PlayerManagement: React.FC = () => {
                   </label>
                   <Input
                     type="url"
-                    placeholder="https://drive.google.com/file/d/... ou https://..."
+                    placeholder="https://drive.google.com/file/d/... ou lien YouTube"
                     value={driveUrlInput}
                     onChange={(e) => setDriveUrlInput(e.target.value)}
                     className="h-12 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-emerald-600 text-xs font-medium px-4"
                   />
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
-                    💡 Vous pouvez coller un lien de fichier vidéo Google Drive, un dossier partagé de matchs, YouTube ou tout autre lien de diffusion.
+                    💡 Collez le lien de partage Google Drive ou YouTube du match où le joueur a évolué.
                   </p>
                 </div>
 
@@ -3537,6 +3739,50 @@ const PlayerManagement: React.FC = () => {
                       <ExternalLink className="w-3 h-3" />
                       <span>Tester</span>
                     </Button>
+                  </div>
+                )}
+
+                {/* 4. Liste des vidéos déjà enregistrées pour ce joueur */}
+                {playerMatchVideos.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <label className="text-[11px] font-black uppercase tracking-wider text-slate-600 flex items-center justify-between">
+                      <span>Vidéos de match enregistrées ({playerMatchVideos.length})</span>
+                    </label>
+                    <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                      {playerMatchVideos.map(v => (
+                        <div key={v.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex items-center gap-2">
+                            {v.opponentLogo ? (
+                              <img src={v.opponentLogo} alt="" className="w-6 h-6 rounded-full object-contain bg-white border border-slate-200 shrink-0" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-black shrink-0">⚽</div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-800 truncate">{v.title}</p>
+                              <p className="text-[10px] text-slate-500 font-medium truncate">{v.date ? new Date(v.date).toLocaleDateString('fr-FR') : ''} • vs {v.opponent || 'Adversaire'}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => window.open(v.videoUrl, '_blank', 'noopener,noreferrer')}
+                              className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>Voir</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMatchVideo(v.id)}
+                              className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center"
+                              title="Supprimer cette vidéo"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

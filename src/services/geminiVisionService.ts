@@ -34,7 +34,7 @@ Analyse l'intégralité du document PDF/Image joint (Feuille de match officielle
 IDENTITÉ DÉFINITIVE DE NOTRE CLUB ("My Club") vs ADVERSAIRE :
 - NOTRE CLUB ("My Club") s'appelle : "${ctx.myClubName}" — abréviation : "${ctx.myClubAbbreviation}" (alias possibles : ${aliasesStr}).
 - L'autre équipe présente sur la feuille de match est obligatoirement le "Club Adversaire".
-- Extrais impérativement l'ABRÉVIATION (sigle court ex: "FUS", "OCK", "WAC", "RCA", "FAR", "RSB", "MAS", "IRT", "CODM", "DHJ", "AAMF", "CFBG", etc.) pour les deux équipes dans "homeTeamAbbreviation" et "awayTeamAbbreviation".
+- Extrais impérativement l'ABRÉVIATION (sigle court ex: "FUS", "OCK", "WAC", "RCA", "FAR", "RSB", "MAS", "IRT", "CODM", "DHJ", "AMF", "AAMF", "CFBG", etc.) pour les deux équipes dans "homeTeamAbbreviation" et "awayTeamAbbreviation". Attention à bien distinguer "AMF" (Académie Mohammed VI) et "AAMF" (Association AMF).
 - ATTENTION DOMICILE / EXTÉRIEUR :
   * L'équipe receveuse (Home, première colonne / colonne gauche) va dans "homeTeamName", "homeTeamAbbreviation", "scoreHome" et "homePlayers".
   * L'équipe visiteuse (Away, seconde colonne / colonne droite) va dans "awayTeamName", "awayTeamAbbreviation", "scoreAway" et "awayPlayers".

@@ -141,21 +141,29 @@ const OpponentClubs: React.FC = () => {
       toast.error('Ce club est identique au club principal — impossible de l\'ajouter comme adversaire.');
       return;
     }
-    if (editingClub) {
-      await updateOpponent({ id: editingClub.id, data: formData });
-    } else {
-      const createdClub = await addOpponent(formData as Omit<Club, 'id'>);
-      if (autoGenerate22 && createdClub?.id) {
-        try {
-          const fakeSquad = build22FakeOpponentPlayers(createdClub.id, 'SENIOR');
-          await opponentPlayerService.addManyOpponentPlayers(fakeSquad);
-          toast.success(`Club créé et 22 joueurs fictifs générés avec succès !`);
-        } catch (e: any) {
-          console.error(e);
+    try {
+      if (editingClub) {
+        await updateOpponent({ id: editingClub.id, data: formData });
+        toast.success('Club mis à jour avec succès');
+      } else {
+        const createdClub = await addOpponent(formData as Omit<Club, 'id'>);
+        if (autoGenerate22 && createdClub?.id) {
+          try {
+            const fakeSquad = build22FakeOpponentPlayers(createdClub.id, 'SENIOR');
+            await opponentPlayerService.addManyOpponentPlayers(fakeSquad);
+            toast.success(`Club créé et 22 joueurs fictifs générés avec succès !`);
+          } catch (e: any) {
+            console.error(e);
+          }
+        } else {
+          toast.success('Club créé avec succès');
         }
       }
+      setShowForm(false);
+    } catch (err: any) {
+      console.error('Failed to save opponent club:', err);
+      toast.error(err?.message || 'Erreur lors de l\'enregistrement du club.');
     }
-    setShowForm(false);
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

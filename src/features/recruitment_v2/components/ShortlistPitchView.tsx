@@ -1,14 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { 
-  Trophy, 
-  Sparkles, 
-  Users, 
-  Filter, 
-  CheckCircle2, 
-  X, 
-  Eye, 
-  Shield, 
+import {
+  Trophy,
+  Sparkles,
+  Users,
+  Filter,
+  CheckCircle2,
+  X,
+  Eye,
+  Shield,
   Footprints,
   BarChart3,
   Activity,
@@ -279,7 +279,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
   // US-DASH-37 : Objet scout complet sélectionné (pour photo, nom et rôle dans l'export PDF et l'en-tête officiel)
   const selectedScout = useMemo(() => {
     if (!scoutFilter || scoutFilter === 'ALL') return null;
-    return scouts?.find(s => 
+    return scouts?.find(s =>
       s.full_name?.toLowerCase().trim() === scoutFilter.toLowerCase().trim() ||
       s.id === scoutFilter
     ) || null;
@@ -429,10 +429,10 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
       }
     });
 
-    return { 
-      myShortlists: mine, 
-      otherShortlists: isScoutManager ? [] : others, 
-      scoutSpecificShortlists: forSelectedScout 
+    return {
+      myShortlists: mine,
+      otherShortlists: isScoutManager ? [] : others,
+      scoutSpecificShortlists: forSelectedScout
     };
   }, [scopedSavedShortlists, isAdmin, isScoutManager, scoutFilter, selectedScout, currentUserId, currentUserEmail, currentUserName]);
 
@@ -462,7 +462,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
 
     // 2. Si aucune shortlist sauvegardée n'est active :
     if (scoutFilter && scoutFilter !== 'ALL') {
-      const myScout = scouts?.find(s => 
+      const myScout = scouts?.find(s =>
         (currentUserId && s.id === currentUserId) ||
         (currentUserEmail && s.email?.toLowerCase().trim() === currentUserEmail.toLowerCase().trim()) ||
         (currentUserName && s.full_name?.toLowerCase().trim() === currentUserName.toLowerCase().trim())
@@ -681,7 +681,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
   const filteredManagerShortlists = useMemo(() => {
     if (!managerSearchQuery.trim()) return scopedSavedShortlists;
     const q = managerSearchQuery.toLowerCase();
-    return scopedSavedShortlists.filter(s => 
+    return scopedSavedShortlists.filter(s =>
       s.title.toLowerCase().includes(q) ||
       (s.description && s.description.toLowerCase().includes(q)) ||
       (s.category_filter && s.category_filter.toLowerCase().includes(q)) ||
@@ -786,9 +786,9 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
   // Vérifie si un candidat appartient au Scout Manager connecté (découvert, créé ou assigné à son compte)
   const isCandidateBelongingToCurrentScoutManager = (cand: TrialCandidate): boolean => {
     if (!cand) return false;
-    
+
     // Correspondance directe avec le scout de l'utilisateur connecté
-    const myScout = scouts?.find(s => 
+    const myScout = scouts?.find(s =>
       (currentUserId && s.id === currentUserId) ||
       (currentUserEmail && s.email?.toLowerCase().trim() === currentUserEmail.toLowerCase().trim()) ||
       (currentUserName && s.full_name?.toLowerCase().trim() === currentUserName.toLowerCase().trim())
@@ -807,9 +807,9 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
     if (cand.assigned_scouts && cand.assigned_scouts.some(s => {
       const sNorm = s.toLowerCase().trim();
       return (currentUserId && s === currentUserId) ||
-             (currentUserEmail && sNorm === currentUserEmail.toLowerCase().trim()) ||
-             (currentUserName && sNorm === currentUserName.toLowerCase().trim()) ||
-             (myScout && (s === myScout.id || (myScout.full_name && sNorm === myScout.full_name.toLowerCase().trim())));
+        (currentUserEmail && sNorm === currentUserEmail.toLowerCase().trim()) ||
+        (currentUserName && sNorm === currentUserName.toLowerCase().trim()) ||
+        (myScout && (s === myScout.id || (myScout.full_name && sNorm === myScout.full_name.toLowerCase().trim())));
     })) {
       return true;
     }
@@ -1334,7 +1334,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
 
     // Avant-Centre / Buteur / Attaquant de pointe
     if (rCode === 'ST' || rCode === 'CF' || sLabel.includes('BU')) {
-      const isForward = 
+      const isForward =
         exactMatch(pos, 'ST') || exactMatch(pos, 'CF') || exactMatch(pos, 'BU') ||
         pos.includes('BUTEUR') || pos.includes('AVANT-CENTRE') || pos.includes('AVANT CENTRE') ||
         pos.includes('CENTRE-AVANT') || pos.includes('ATTAQUANT') || pos.includes('POINTE') ||
@@ -1707,10 +1707,10 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
   };
 
   return (
-    <div 
-      ref={containerRef} 
+    <div
+      ref={containerRef}
       className={cn(
-        "space-y-6 animate-in fade-in duration-200", 
+        "space-y-6 animate-in fade-in duration-200",
         isFullscreen && "bg-slate-50 p-6 overflow-y-auto h-screen"
       )}
     >
@@ -1724,11 +1724,11 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm sm:text-base font-black text-white tracking-tight">
-                  {isScoutManager 
-                    ? "Mes Shortlists Enregistrées (Shadow Teams)" 
-                    : (scoutFilter && scoutFilter !== 'ALL' 
-                        ? `Shortlists Enregistrées — Scout ${selectedScout?.full_name || scoutFilter}` 
-                        : "Configurations de Shortlist Enregistrées")}
+                  {isScoutManager
+                    ? "Mes Shortlists Enregistrées (Shadow Teams)"
+                    : (scoutFilter && scoutFilter !== 'ALL'
+                      ? `Shortlists Enregistrées — Scout ${selectedScout?.full_name || scoutFilter}`
+                      : "Configurations de Shortlist Enregistrées")}
                 </h3>
                 {scopedSavedShortlists.length > 0 && (
                   <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
@@ -1737,11 +1737,11 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-300 font-medium">
-                {isScoutManager 
-                  ? "Accédez à vos propres compositions tactiques et configurations de détection." 
+                {isScoutManager
+                  ? "Accédez à vos propres compositions tactiques et configurations de détection."
                   : (scoutFilter && scoutFilter !== 'ALL'
-                      ? `Visualisez et chargez les compositions tactiques enregistrées pour ${selectedScout?.full_name || scoutFilter}.`
-                      : "Enregistrez vos shortlists avec un intitulé pour y accéder à tout moment.")}
+                    ? `Visualisez et chargez les compositions tactiques enregistrées pour ${selectedScout?.full_name || scoutFilter}.`
+                    : "Enregistrez vos shortlists avec un intitulé pour y accéder à tout moment.")}
               </p>
             </div>
           </div>
@@ -1759,14 +1759,14 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                   {scopedSavedShortlists.length === 0 ? "Aucune shortlist enregistrée" : "-- Choisir une shortlist --"}
                 </option>
                 {myShortlists.length > 0 && (
-                  <optgroup 
+                  <optgroup
                     label={
                       isAdmin && !isScoutManager
                         ? (scoutFilter && scoutFilter !== 'ALL'
-                            ? `📋 Shortlists de ${selectedScout?.full_name || scoutFilter} (${myShortlists.length})`
-                            : `🌟 Toutes les shortlists du club (${myShortlists.length})`)
+                          ? `📋 Shortlists de ${selectedScout?.full_name || scoutFilter} (${myShortlists.length})`
+                          : `🌟 Toutes les shortlists du club (${myShortlists.length})`)
                         : `⭐ Mes Shortlists (${myShortlists.length})`
-                    } 
+                    }
                     className="text-slate-900 bg-white font-bold"
                   >
                     {myShortlists.map(s => (
@@ -1777,12 +1777,12 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                   </optgroup>
                 )}
                 {otherShortlists.length > 0 && (
-                  <optgroup 
+                  <optgroup
                     label={
                       isAdmin && !isScoutManager
                         ? `🌐 Autres shortlists du club (${otherShortlists.length})`
                         : "👥 Shortlists des autres scouts (Visualisation seule)"
-                    } 
+                    }
                     className="text-slate-900 bg-white font-bold"
                   >
                     {otherShortlists.map(s => (
@@ -1895,8 +1895,8 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
               {activeSavedShortlist.author_name && (
                 <span className={cn(
                   "px-2 py-0.5 rounded-md font-bold text-[11px] border",
-                  canEditCurrentShortlist 
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" 
+                  canEditCurrentShortlist
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                     : "bg-amber-500/20 text-amber-300 border-amber-500/40"
                 )}>
                   {canEditCurrentShortlist ? "👤 Ma shortlist" : `👤 Scout : ${activeSavedShortlist.author_name}`}
@@ -2091,8 +2091,8 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                     {scoutFilter && (
                       <span className={cn(
                         "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                        isSelected 
-                          ? "bg-white/25 text-white" 
+                        isSelected
+                          ? "bg-white/25 text-white"
                           : count > 0 ? "bg-amber-200 text-amber-900" : "bg-slate-200 text-slate-500"
                       )}>
                         {count}
@@ -2400,277 +2400,341 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
               </div>
             )}
 
-            <div 
+            <div
               className="pitch-container-printable rounded-2xl sm:rounded-3xl relative overflow-hidden bg-gradient-to-b from-emerald-800 via-emerald-700 to-emerald-900 border-4 border-emerald-950 shadow-2xl select-none transition-all duration-300 w-full"
               style={pitchStyle}
             >
-          {/* Pelouse Réaliste : Bandes de tonte alternées */}
-          <div className="absolute inset-0 flex flex-col pointer-events-none opacity-25">
-            {[...Array(18)].map((_, i) => (
-              <div 
-                key={i} 
-                className={cn(
-                  "flex-1 w-full",
-                  i % 2 === 0 ? "bg-black/15" : "bg-white/10"
-                )} 
-              />
-            ))}
-          </div>
-
-          {/* Lignes Blanches Officielles FUS */}
-          <div className="absolute inset-3 sm:inset-5 border-2 border-white/75 rounded-2xl pointer-events-none">
-            {/* Ligne médiane & Rond Central */}
-            <div className="absolute top-1/2 left-0 right-0 h-[2px] bg-white/75 -translate-y-1/2" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 sm:w-44 sm:h-44 md:w-52 md:h-52 border-2 border-white/75 rounded-full" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow-xs" />
-
-            {/* Surface de réparation NORD (Adversaire / Attaque) */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 sm:w-80 md:w-96 h-32 sm:h-40 md:h-48 border-2 border-t-0 border-white/75 rounded-b-2xl" />
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 sm:w-36 md:w-44 h-12 sm:h-16 md:h-20 border-2 border-t-0 border-white/75 rounded-b-xl" />
-            <div className="absolute top-24 sm:top-32 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rounded-full" />
-            {/* Arc de cercle surface Nord */}
-            <div className="absolute top-32 sm:top-40 left-1/2 -translate-x-1/2 w-24 sm:w-28 md:w-32 h-12 sm:h-14 md:h-16 border-2 border-t-0 border-white/75 rounded-b-full" />
-
-            {/* Surface de réparation SUD (FUS / Gardien) */}
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-64 sm:w-80 md:w-96 h-32 sm:h-40 md:h-48 border-2 border-b-0 border-white/75 rounded-t-2xl" />
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-28 sm:w-36 md:w-44 h-12 sm:h-16 md:h-20 border-2 border-b-0 border-white/75 rounded-t-xl" />
-            <div className="absolute bottom-24 sm:bottom-32 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rounded-full" />
-            {/* Arc de cercle surface Sud */}
-            <div className="absolute bottom-32 sm:bottom-40 left-1/2 -translate-x-1/2 w-24 sm:w-28 md:w-32 h-12 sm:h-14 md:h-16 border-2 border-b-0 border-white/75 rounded-t-full" />
-          </div>
-
-          {/* ── OVERLAY QUAND LA SHORTLIST EST VIDE (SÉLECTION NON EFFECTUÉE) ── */}
-          {(!scoutFilter || !categoryFilter) && (
-            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center bg-black/60 backdrop-blur-xs select-none animate-in fade-in duration-200">
-              <div className="max-w-md p-6 sm:p-8 bg-slate-900/95 border-2 border-amber-400/50 rounded-3xl shadow-2xl space-y-4">
-                <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-400 shadow-inner">
-                  <UserCheck className="w-8 h-8" />
-                </div>
-                <div>
-                  <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
-                    Terrain Shortlist Vide
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
-                    Veuillez sélectionner un <strong>Scout</strong> et une <strong>Catégorie</strong> ci-dessus pour afficher sur le terrain les joueurs détectés.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-xs font-bold">
-                  <span className={cn(
-                    "px-3 py-1.5 rounded-xl border flex items-center gap-1.5",
-                    scoutFilter ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                  )}>
-                    {scoutFilter ? `✓ Scout : ${scoutFilter}` : '① Choisir un Scout'}
-                  </span>
-                  <span className={cn(
-                    "px-3 py-1.5 rounded-xl border flex items-center gap-1.5",
-                    categoryFilter ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                  )}>
-                    {categoryFilter ? `✓ Catégorie : ${categoryFilter}` : '② Choisir une Catégorie'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── OVERLAY QUAND AUCUN JOUEUR N'EST DÉTECTÉ POUR CE DUO SCOUT + CATÉGORIE ── */}
-          {scoutFilter && categoryFilter && categoryCandidates.length === 0 && (
-            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center bg-black/50 backdrop-blur-xs select-none animate-in fade-in duration-200">
-              <div className="max-w-md p-6 sm:p-7 bg-slate-900/95 border border-white/20 rounded-3xl shadow-2xl space-y-3">
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
-                  <Users className="w-7 h-7" />
-                </div>
-                <h3 className="text-base font-bold text-white">
-                  Aucun joueur détecté
-                </h3>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  {scoutFilter === 'ALL'
-                    ? `Aucun joueur n'est répertorié dans la catégorie ${categoryFilter} pour l'ensemble du club.`
-                    : `Le scout ${scoutFilter} n'a aucun joueur répertorié dans la catégorie ${categoryFilter}.`
-                  }
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* ── EMPLACEMENTS TACTIQUES AVEC JUXTAPOSITION DES JOUEURS ── */}
-          {activeFormation.slots.map((slot, slotIdx) => {
-            const slotPlayers = playersBySlot[slotIdx] || [];
-
-            return (
-              <div
-                key={slotIdx}
-                style={{ top: slot.top, left: slot.left }}
-                className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-20"
-              >
-                {/* Badge du rôle / poste tactique - Cliquable pour ouvrir ou fermer la liste latérale droite */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedSlotForDrawer(prev => 
-                    prev?.slotIndex === slotIdx ? null : { slotIndex: slotIdx, label: slot.label, roleCode: slot.roleCode }
-                  )}
-                  className="duplicate-slot-badge mb-1.5 flex items-center gap-1 cursor-pointer group hover:scale-105 transition-transform"
-                  title={`Cliquer pour afficher la liste complète de ce poste (${slot.label}) à droite du terrain`}
-                >
-                  <span 
+              {/* Pelouse Réaliste : Bandes de tonte alternées */}
+              <div className="absolute inset-0 flex flex-col pointer-events-none opacity-25">
+                {[...Array(18)].map((_, i) => (
+                  <div
+                    key={i}
                     className={cn(
-                      "text-[10px] sm:text-[11px] font-black uppercase px-2 py-0.5 rounded-md backdrop-blur-xs border shadow-md transition-colors",
-                      selectedSlotForDrawer?.slotIndex === slotIdx
-                        ? "bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/40"
-                        : "text-white bg-black/75 border-white/30 group-hover:border-amber-400 group-hover:bg-black/90"
+                      "flex-1 w-full",
+                      i % 2 === 0 ? "bg-black/15" : "bg-white/10"
                     )}
-                  >
-                    {slot.label}
-                  </span>
-                </button>
+                  />
+                ))}
+              </div>
 
-                {/* S'il n'y a pas de joueur à ce poste dans la catégorie */}
-                {slotPlayers.length === 0 ? (
-                  canEditCurrentShortlist ? (
+              {/* Lignes Blanches Officielles FUS */}
+              <div className="absolute inset-3 sm:inset-5 border-2 border-white/75 rounded-2xl pointer-events-none">
+                {/* Ligne médiane & Rond Central */}
+                <div className="absolute top-1/2 left-0 right-0 h-[2px] bg-white/75 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 sm:w-44 sm:h-44 md:w-52 md:h-52 border-2 border-white/75 rounded-full" />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full shadow-xs" />
+
+                {/* Surface de réparation NORD (Adversaire / Attaque) */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 sm:w-80 md:w-96 h-32 sm:h-40 md:h-48 border-2 border-t-0 border-white/75 rounded-b-2xl" />
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 sm:w-36 md:w-44 h-12 sm:h-16 md:h-20 border-2 border-t-0 border-white/75 rounded-b-xl" />
+                <div className="absolute top-24 sm:top-32 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rounded-full" />
+                {/* Arc de cercle surface Nord */}
+                <div className="absolute top-32 sm:top-40 left-1/2 -translate-x-1/2 w-24 sm:w-28 md:w-32 h-12 sm:h-14 md:h-16 border-2 border-t-0 border-white/75 rounded-b-full" />
+
+                {/* Surface de réparation SUD (FUS / Gardien) */}
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-64 sm:w-80 md:w-96 h-32 sm:h-40 md:h-48 border-2 border-b-0 border-white/75 rounded-t-2xl" />
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-28 sm:w-36 md:w-44 h-12 sm:h-16 md:h-20 border-2 border-b-0 border-white/75 rounded-t-xl" />
+                <div className="absolute bottom-24 sm:bottom-32 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rounded-full" />
+                {/* Arc de cercle surface Sud */}
+                <div className="absolute bottom-32 sm:bottom-40 left-1/2 -translate-x-1/2 w-24 sm:w-28 md:w-32 h-12 sm:h-14 md:h-16 border-2 border-b-0 border-white/75 rounded-t-full" />
+              </div>
+
+              {/* ── OVERLAY QUAND LA SHORTLIST EST VIDE (SÉLECTION NON EFFECTUÉE) ── */}
+              {(!scoutFilter || !categoryFilter) && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center bg-black/60 backdrop-blur-xs select-none animate-in fade-in duration-200">
+                  <div className="max-w-md p-6 sm:p-8 bg-slate-900/95 border-2 border-amber-400/50 rounded-3xl shadow-2xl space-y-4">
+                    <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-400 shadow-inner">
+                      <UserCheck className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                        Terrain Shortlist Vide
+                      </h3>
+                      <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
+                        Veuillez sélectionner un <strong>Scout</strong> et une <strong>Catégorie</strong> ci-dessus pour afficher sur le terrain les joueurs détectés.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-xs font-bold">
+                      <span className={cn(
+                        "px-3 py-1.5 rounded-xl border flex items-center gap-1.5",
+                        scoutFilter ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                      )}>
+                        {scoutFilter ? `✓ Scout : ${scoutFilter}` : '① Choisir un Scout'}
+                      </span>
+                      <span className={cn(
+                        "px-3 py-1.5 rounded-xl border flex items-center gap-1.5",
+                        categoryFilter ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                      )}>
+                        {categoryFilter ? `✓ Catégorie : ${categoryFilter}` : '② Choisir une Catégorie'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── OVERLAY QUAND AUCUN JOUEUR N'EST DÉTECTÉ POUR CE DUO SCOUT + CATÉGORIE ── */}
+              {scoutFilter && categoryFilter && categoryCandidates.length === 0 && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center bg-black/50 backdrop-blur-xs select-none animate-in fade-in duration-200">
+                  <div className="max-w-md p-6 sm:p-7 bg-slate-900/95 border border-white/20 rounded-3xl shadow-2xl space-y-3">
+                    <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
+                      <Users className="w-7 h-7" />
+                    </div>
+                    <h3 className="text-base font-bold text-white">
+                      Aucun joueur détecté
+                    </h3>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      {scoutFilter === 'ALL'
+                        ? `Aucun joueur n'est répertorié dans la catégorie ${categoryFilter} pour l'ensemble du club.`
+                        : `Le scout ${scoutFilter} n'a aucun joueur répertorié dans la catégorie ${categoryFilter}.`
+                      }
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── EMPLACEMENTS TACTIQUES AVEC JUXTAPOSITION DES JOUEURS ── */}
+              {activeFormation.slots.map((slot, slotIdx) => {
+                const slotPlayers = playersBySlot[slotIdx] || [];
+
+                return (
+                  <div
+                    key={slotIdx}
+                    style={{ top: slot.top, left: slot.left }}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-20"
+                  >
+                    {/* Badge du rôle / poste tactique - Cliquable pour ouvrir ou fermer la liste latérale droite */}
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!scoutFilter || !categoryFilter) {
-                          toast.info("Veuillez sélectionner un Scout et une Catégorie avant d'ajouter un joueur");
-                          return;
-                        }
-                        setSlotForAddingPlayer({ slotIndex: slotIdx, label: slot.label, roleCode: slot.roleCode, category: slot.category });
-                        setPositionFilterMode('matching');
-                        setPlayerModalSearch('');
-                      }}
-                      className="group/empty flex flex-col items-center cursor-pointer transition-all hover:scale-110 active:scale-95"
-                      title={`Ajouter un joueur de la base de données au poste ${slot.label} (${slot.roleCode})`}
+                      onClick={() => setSelectedSlotForDrawer(prev =>
+                        prev?.slotIndex === slotIdx ? null : { slotIndex: slotIdx, label: slot.label, roleCode: slot.roleCode }
+                      )}
+                      className="duplicate-slot-badge mb-1.5 flex items-center gap-1 cursor-pointer group hover:scale-105 transition-transform"
+                      title={`Cliquer pour afficher la liste complète de ce poste (${slot.label}) à droite du terrain`}
                     >
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-dashed border-white/60 group-hover/empty:border-amber-400 bg-black/35 group-hover/empty:bg-amber-400/20 flex items-center justify-center text-white/70 group-hover/empty:text-amber-300 backdrop-blur-xs shadow-lg transition-colors relative">
-                        <span className="text-[9px] font-bold uppercase">{slot.roleCode}</span>
-                        <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-amber-400 group-hover/empty:bg-amber-300 text-slate-950 flex items-center justify-center shadow-md font-black">
-                          <Plus className="w-3 h-3 stroke-[3]" />
-                        </span>
-                      </div>
+                      <span
+                        className={cn(
+                          "text-[10px] sm:text-[11px] font-black uppercase px-2 py-0.5 rounded-md backdrop-blur-xs border shadow-md transition-colors",
+                          selectedSlotForDrawer?.slotIndex === slotIdx
+                            ? "bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/40"
+                            : "text-white bg-black/75 border-white/30 group-hover:border-amber-400 group-hover:bg-black/90"
+                        )}
+                      >
+                        {slot.label}
+                      </span>
                     </button>
-                  ) : (
-                    <div
-                      className="flex flex-col items-center opacity-45 cursor-not-allowed select-none"
-                      title={`Poste ${slot.label} (${slot.roleCode}) - Non modifiable en mode Visualisation`}
-                    >
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-dashed border-white/40 bg-black/25 flex items-center justify-center text-white/50 backdrop-blur-xs shadow-xs">
-                        <span className="text-[9px] font-bold uppercase">{slot.roleCode}</span>
-                      </div>
-                    </div>
-                  )
-                ) : (
-                  /* Carte Dense Multi-Joueurs */
-                  <ScoutasticDenseSlotCard
-                    slotLabel={slot.label}
-                    roleCode={slot.roleCode}
-                    players={slotPlayers.map(cand => {
-                      const ev = playerEvaluationsMap.get(cand.id);
-                      return {
-                        raw: cand,
-                        id: cand.id,
-                        shortName: `${cand.first_name[0]}. ${cand.last_name}`,
-                        fullName: `${cand.first_name} ${cand.last_name}`,
-                        photoUrl: cand.photo_url,
-                        initials: `${cand.first_name[0]}${cand.last_name[0]}`.toUpperCase(),
-                        rating: ev?.overall_score ?? null,
-                        hasEvaluation: !!ev,
-                        isTrial: cand.pipeline_stage === 'trial',
-                        clubOrTeam: cand.current_club || 'Sans club',
-                      };
-                    })}
-                    isSelected={selectedSlotForDrawer?.slotIndex === slotIdx}
-                    onSelectPlayer={(cand) => setInspectedCandidate(cand)}
-                    onOpenSlotDrawer={() => setSelectedSlotForDrawer(prev => 
-                      prev?.slotIndex === slotIdx ? null : { slotIndex: slotIdx, label: slot.label, roleCode: slot.roleCode }
-                    )}
-                    onAddPlayer={canEditCurrentShortlist ? () => {
-                      if (!scoutFilter || !categoryFilter) {
-                        toast.info("Veuillez sélectionner un Scout et une Catégorie avant d'ajouter un joueur");
-                        return;
-                      }
-                      setSlotForAddingPlayer({ slotIndex: slotIdx, label: slot.label, roleCode: slot.roleCode, category: slot.category });
-                      setPositionFilterMode('matching');
-                      setPlayerModalSearch('');
-                    } : undefined}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
 
-        {/* Footer officiel d'authentification FUS (US-DASH-37) */}
-        {scoutFilter && categoryFilter && (
-          <div className="w-full flex flex-col sm:flex-row items-center justify-between text-[10px] text-slate-400 px-3 pt-2 border-t border-slate-800/80 gap-1.5">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shrink-0 animate-pulse" />
-              <span className="font-black text-slate-300">FATH UNION SPORT DE RABAT</span>
-              <span className="text-slate-500">• Cellule Détection & Recrutement V2</span>
-            </div>
-            <div className="font-mono text-[9px] text-slate-400">
-              Document Officiel • Généré le {new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} • Confidentiel
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-
-      {/* Colonne DROITE : Panneau détaillé du poste affiché directement dans la page (NON EN SLIDE) */}
-      {selectedSlotForDrawer && (() => {
-        const slotPlayers = playersBySlot[selectedSlotForDrawer.slotIndex] || [];
-        const fullRoleName = ROLE_FULL_NAMES[selectedSlotForDrawer.label] || selectedSlotForDrawer.label;
-
-        return (
-          <aside 
-            className="w-full xl:w-[420px] 2xl:w-[460px] bg-white rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xl flex flex-col shrink-0 overflow-hidden xl:sticky xl:top-4 self-start max-h-[960px] animate-in fade-in zoom-in-95 duration-200"
-            aria-label={`Gestion des joueurs du poste ${selectedSlotForDrawer.label}`}
-          >
-            {/* Entête du Panneau */}
-            <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center font-black text-sm shadow-xs">
-                  {selectedSlotForDrawer.roleCode}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-black text-slate-900 tracking-tight">
-                      {fullRoleName}
-                    </h3>
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      {selectedSlotForDrawer.label}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    {slotPlayers.length} joueur{slotPlayers.length > 1 ? 's' : ''} présélectionné{slotPlayers.length > 1 ? 's' : ''} à ce poste
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedSlotForDrawer(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
-                title="Fermer la liste et recentrer le terrain"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Barre d'outils / Actions rapides */}
-            <div className="p-3.5 bg-slate-50 border-b border-slate-200 space-y-2.5 shrink-0">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                  Hiérarchie des choix
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {canEditCurrentShortlist ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
+                    {/* S'il n'y a pas de joueur à ce poste dans la catégorie */}
+                    {slotPlayers.length === 0 ? (
+                      canEditCurrentShortlist ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!scoutFilter || !categoryFilter) {
+                              toast.info("Veuillez sélectionner un Scout et une Catégorie avant d'ajouter un joueur");
+                              return;
+                            }
+                            setSlotForAddingPlayer({ slotIndex: slotIdx, label: slot.label, roleCode: slot.roleCode, category: slot.category });
+                            setPositionFilterMode('matching');
+                            setPlayerModalSearch('');
+                          }}
+                          className="group/empty flex flex-col items-center cursor-pointer transition-all hover:scale-110 active:scale-95"
+                          title={`Ajouter un joueur de la base de données au poste ${slot.label} (${slot.roleCode})`}
+                        >
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-dashed border-white/60 group-hover/empty:border-amber-400 bg-black/35 group-hover/empty:bg-amber-400/20 flex items-center justify-center text-white/70 group-hover/empty:text-amber-300 backdrop-blur-xs shadow-lg transition-colors relative">
+                            <span className="text-[9px] font-bold uppercase">{slot.roleCode}</span>
+                            <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-amber-400 group-hover/empty:bg-amber-300 text-slate-950 flex items-center justify-center shadow-md font-black">
+                              <Plus className="w-3 h-3 stroke-[3]" />
+                            </span>
+                          </div>
+                        </button>
+                      ) : (
+                        <div
+                          className="flex flex-col items-center opacity-45 cursor-not-allowed select-none"
+                          title={`Poste ${slot.label} (${slot.roleCode}) - Non modifiable en mode Visualisation`}
+                        >
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-dashed border-white/40 bg-black/25 flex items-center justify-center text-white/50 backdrop-blur-xs shadow-xs">
+                            <span className="text-[9px] font-bold uppercase">{slot.roleCode}</span>
+                          </div>
+                        </div>
+                      )
+                    ) : (
+                      /* Carte Dense Multi-Joueurs */
+                      <ScoutasticDenseSlotCard
+                        slotLabel={slot.label}
+                        roleCode={slot.roleCode}
+                        players={slotPlayers.map(cand => {
+                          const ev = playerEvaluationsMap.get(cand.id);
+                          return {
+                            raw: cand,
+                            id: cand.id,
+                            shortName: `${cand.first_name[0]}. ${cand.last_name}`,
+                            fullName: `${cand.first_name} ${cand.last_name}`,
+                            photoUrl: cand.photo_url,
+                            initials: `${cand.first_name[0]}${cand.last_name[0]}`.toUpperCase(),
+                            rating: ev?.overall_score ?? null,
+                            hasEvaluation: !!ev,
+                            isTrial: cand.pipeline_stage === 'trial',
+                            clubOrTeam: cand.current_club || 'Sans club',
+                          };
+                        })}
+                        isSelected={selectedSlotForDrawer?.slotIndex === slotIdx}
+                        onSelectPlayer={(cand) => setInspectedCandidate(cand)}
+                        onOpenSlotDrawer={() => setSelectedSlotForDrawer(prev =>
+                          prev?.slotIndex === slotIdx ? null : { slotIndex: slotIdx, label: slot.label, roleCode: slot.roleCode }
+                        )}
+                        onAddPlayer={canEditCurrentShortlist ? () => {
                           if (!scoutFilter || !categoryFilter) {
                             toast.info("Veuillez sélectionner un Scout et une Catégorie avant d'ajouter un joueur");
                             return;
                           }
+                          setSlotForAddingPlayer({ slotIndex: slotIdx, label: slot.label, roleCode: slot.roleCode, category: slot.category });
+                          setPositionFilterMode('matching');
+                          setPlayerModalSearch('');
+                        } : undefined}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer officiel d'authentification FUS (US-DASH-37) */}
+            {scoutFilter && categoryFilter && (
+              <div className="w-full flex flex-col sm:flex-row items-center justify-between text-[10px] text-slate-400 px-3 pt-2 border-t border-slate-800/80 gap-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shrink-0 animate-pulse" />
+                  <span className="font-black text-slate-300">FATH UNION SPORT DE RABAT</span>
+                  <span className="text-slate-500">• Cellule Détection & Recrutement V2</span>
+                </div>
+                <div className="font-mono text-[9px] text-slate-400">
+                  Document Officiel • Généré le {new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} • Confidentiel
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Colonne DROITE : Panneau détaillé du poste affiché directement dans la page (NON EN SLIDE) */}
+        {selectedSlotForDrawer && (() => {
+          const slotPlayers = playersBySlot[selectedSlotForDrawer.slotIndex] || [];
+          const fullRoleName = ROLE_FULL_NAMES[selectedSlotForDrawer.label] || selectedSlotForDrawer.label;
+
+          return (
+            <aside
+              className="w-full xl:w-[420px] 2xl:w-[460px] bg-white rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xl flex flex-col shrink-0 overflow-hidden xl:sticky xl:top-4 self-start max-h-[960px] animate-in fade-in zoom-in-95 duration-200"
+              aria-label={`Gestion des joueurs du poste ${selectedSlotForDrawer.label}`}
+            >
+              {/* Entête du Panneau */}
+              <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center font-black text-sm shadow-xs">
+                    {selectedSlotForDrawer.roleCode}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-slate-900 tracking-tight">
+                        {fullRoleName}
+                      </h3>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        {selectedSlotForDrawer.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      {slotPlayers.length} joueur{slotPlayers.length > 1 ? 's' : ''} présélectionné{slotPlayers.length > 1 ? 's' : ''} à ce poste
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSlotForDrawer(null)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+                  title="Fermer la liste et recentrer le terrain"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Barre d'outils / Actions rapides */}
+              <div className="p-3.5 bg-slate-50 border-b border-slate-200 space-y-2.5 shrink-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                    Hiérarchie des choix
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {canEditCurrentShortlist ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!scoutFilter || !categoryFilter) {
+                              toast.info("Veuillez sélectionner un Scout et une Catégorie avant d'ajouter un joueur");
+                              return;
+                            }
+                            const slotCfg = activeFormation.slots[selectedSlotForDrawer.slotIndex];
+                            setSlotForAddingPlayer({
+                              slotIndex: selectedSlotForDrawer.slotIndex,
+                              label: selectedSlotForDrawer.label,
+                              roleCode: selectedSlotForDrawer.roleCode,
+                              category: slotCfg?.category || 'MID',
+                            });
+                            setPositionFilterMode('matching');
+                            setPlayerModalSearch('');
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition-colors shadow-2xs cursor-pointer"
+                          title="Ajouter un joueur existant de la base de données à ce poste"
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>Ajouter joueur</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleSortByLastScore}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:border-amber-400 hover:bg-amber-50/40 text-slate-700 hover:text-amber-900 text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                          title="Classer les joueurs selon leur note d'évaluation la plus récente"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Trier score</span>
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                        <Eye className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Visualisation seule</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  {canEditCurrentShortlist ? (
+                    <>Glissez-déposez les cartes (Drag & Drop) pour définir l’ordre de priorité. Le joueur en <strong>#1</strong> hérite de la couronne 👑 sur le terrain à gauche.</>
+                  ) : (
+                    <>Mode lecture seule : Cliquez sur l'icône 👁️ pour inspecter la fiche détaillée et les évaluations du joueur.</>
+                  )}
+                </p>
+              </div>
+
+              {/* Liste des Joueurs Réordonnables */}
+              <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5 custom-scrollbar bg-slate-100/50 max-h-[640px]">
+                {slotPlayers.length === 0 ? (
+                  <div className="py-12 text-center text-slate-500 text-sm space-y-3">
+                    <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                      <UserPlus className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800">Aucun joueur assigné à ce poste</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {canEditCurrentShortlist
+                          ? "Choisissez un joueur existant créé dans la base de données."
+                          : "Ce poste est vide dans cette shortlist."}
+                      </p>
+                    </div>
+                    {canEditCurrentShortlist && (
+                      <button
+                        type="button"
+                        onClick={() => {
                           const slotCfg = activeFormation.slots[selectedSlotForDrawer.slotIndex];
                           setSlotForAddingPlayer({
                             slotIndex: selectedSlotForDrawer.slotIndex,
@@ -2681,280 +2745,216 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                           setPositionFilterMode('matching');
                           setPlayerModalSearch('');
                         }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition-colors shadow-2xs cursor-pointer"
-                        title="Ajouter un joueur existant de la base de données à ce poste"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition-all shadow-sm cursor-pointer hover:scale-105"
                       >
-                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                        <span>Ajouter joueur</span>
+                        <Plus className="w-4 h-4 stroke-[3]" />
+                        <span>Ajouter un joueur de la base de données</span>
                       </button>
-
-                      <button
-                        type="button"
-                        onClick={handleSortByLastScore}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:border-amber-400 hover:bg-amber-50/40 text-slate-700 hover:text-amber-900 text-xs font-bold transition-colors shadow-2xs cursor-pointer"
-                        title="Classer les joueurs selon leur note d'évaluation la plus récente"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Trier score</span>
-                      </button>
-                    </>
-                  ) : (
-                    <span className="text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                      <Eye className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Visualisation seule</span>
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <p className="text-[11px] text-slate-500 leading-snug">
-                {canEditCurrentShortlist ? (
-                  <>Glissez-déposez les cartes (Drag & Drop) pour définir l’ordre de priorité. Le joueur en <strong>#1</strong> hérite de la couronne 👑 sur le terrain à gauche.</>
+                    )}
+                  </div>
                 ) : (
-                  <>Mode lecture seule : Cliquez sur l'icône 👁️ pour inspecter la fiche détaillée et les évaluations du joueur.</>
-                )}
-              </p>
-            </div>
+                  slotPlayers.map((cand, idx) => {
+                    const ev = playerEvaluationsMap.get(cand.id);
+                    const isFirst = idx === 0;
+                    const isDragging = draggedCandidateId === cand.id;
+                    const isOver = dragOverCandidateId === cand.id;
+                    const score = ev?.overall_score;
 
-            {/* Liste des Joueurs Réordonnables */}
-            <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5 custom-scrollbar bg-slate-100/50 max-h-[640px]">
-              {slotPlayers.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 text-sm space-y-3">
-                  <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
-                    <UserPlus className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-800">Aucun joueur assigné à ce poste</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {canEditCurrentShortlist 
-                        ? "Choisissez un joueur existant créé dans la base de données." 
-                        : "Ce poste est vide dans cette shortlist."}
-                    </p>
-                  </div>
-                  {canEditCurrentShortlist && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const slotCfg = activeFormation.slots[selectedSlotForDrawer.slotIndex];
-                        setSlotForAddingPlayer({
-                          slotIndex: selectedSlotForDrawer.slotIndex,
-                          label: selectedSlotForDrawer.label,
-                          roleCode: selectedSlotForDrawer.roleCode,
-                          category: slotCfg?.category || 'MID',
-                        });
-                        setPositionFilterMode('matching');
-                        setPlayerModalSearch('');
-                      }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition-all shadow-sm cursor-pointer hover:scale-105"
-                    >
-                      <Plus className="w-4 h-4 stroke-[3]" />
-                      <span>Ajouter un joueur de la base de données</span>
-                    </button>
-                  )}
-                </div>
-              ) : (
-                slotPlayers.map((cand, idx) => {
-                  const ev = playerEvaluationsMap.get(cand.id);
-                  const isFirst = idx === 0;
-                  const isDragging = draggedCandidateId === cand.id;
-                  const isOver = dragOverCandidateId === cand.id;
-                  const score = ev?.overall_score;
+                    return (
+                      <div
+                        key={cand.id}
+                        draggable={canEditCurrentShortlist}
+                        onDragStart={(e) => canEditCurrentShortlist && handleDragStart(e, cand.id)}
+                        onDragOver={(e) => canEditCurrentShortlist && handleDragOver(e, cand.id)}
+                        onDrop={(e) => canEditCurrentShortlist && handleDrop(e, cand.id)}
+                        onDragEnd={() => {
+                          setDraggedCandidateId(null);
+                          setDragOverCandidateId(null);
+                        }}
+                        className={cn(
+                          "group relative flex items-center gap-2.5 p-3 rounded-2xl border transition-all duration-150 bg-white select-none shadow-2xs",
+                          canEditCurrentShortlist ? "cursor-grab active:cursor-grabbing" : "cursor-default",
+                          isDragging && "opacity-40 border-dashed border-amber-400 scale-[0.98]",
+                          isOver && "border-amber-400 ring-2 ring-amber-400/20 bg-amber-50/40",
+                          !isDragging && !isOver && (isFirst ? "border-amber-300 ring-1 ring-amber-200/50 bg-gradient-to-r from-amber-50/20 to-white" : "border-slate-200 hover:border-slate-300")
+                        )}
+                      >
+                        {/* Poignée de drag */}
+                        {canEditCurrentShortlist && (
+                          <div className="text-slate-300 group-hover:text-slate-500 transition-colors shrink-0">
+                            <GripVertical className="w-4 h-4" />
+                          </div>
+                        )}
 
-                  return (
-                    <div
-                      key={cand.id}
-                      draggable={canEditCurrentShortlist}
-                      onDragStart={(e) => canEditCurrentShortlist && handleDragStart(e, cand.id)}
-                      onDragOver={(e) => canEditCurrentShortlist && handleDragOver(e, cand.id)}
-                      onDrop={(e) => canEditCurrentShortlist && handleDrop(e, cand.id)}
-                      onDragEnd={() => {
-                        setDraggedCandidateId(null);
-                        setDragOverCandidateId(null);
-                      }}
-                      className={cn(
-                        "group relative flex items-center gap-2.5 p-3 rounded-2xl border transition-all duration-150 bg-white select-none shadow-2xs",
-                        canEditCurrentShortlist ? "cursor-grab active:cursor-grabbing" : "cursor-default",
-                        isDragging && "opacity-40 border-dashed border-amber-400 scale-[0.98]",
-                        isOver && "border-amber-400 ring-2 ring-amber-400/20 bg-amber-50/40",
-                        !isDragging && !isOver && (isFirst ? "border-amber-300 ring-1 ring-amber-200/50 bg-gradient-to-r from-amber-50/20 to-white" : "border-slate-200 hover:border-slate-300")
-                      )}
-                    >
-                      {/* Poignée de drag */}
-                      {canEditCurrentShortlist && (
-                        <div className="text-slate-300 group-hover:text-slate-500 transition-colors shrink-0">
-                          <GripVertical className="w-4 h-4" />
+                        {/* Badge de Rang */}
+                        <div className="shrink-0">
+                          {isFirst ? (
+                            <div
+                              className="w-7 h-7 rounded-xl bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-xs"
+                              title="Choix #1 Titulaire shortlist"
+                            >
+                              <Crown className="w-4 h-4 fill-slate-950" />
+                            </div>
+                          ) : (
+                            <div className="w-7 h-7 rounded-xl bg-slate-100 text-slate-600 font-black text-xs flex items-center justify-center border border-slate-200">
+                              #{idx + 1}
+                            </div>
+                          )}
                         </div>
-                      )}
 
-                      {/* Badge de Rang */}
-                      <div className="shrink-0">
-                        {isFirst ? (
-                          <div 
-                            className="w-7 h-7 rounded-xl bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-xs"
-                            title="Choix #1 Titulaire shortlist"
-                          >
-                            <Crown className="w-4 h-4 fill-slate-950" />
-                          </div>
-                        ) : (
-                          <div className="w-7 h-7 rounded-xl bg-slate-100 text-slate-600 font-black text-xs flex items-center justify-center border border-slate-200">
-                            #{idx + 1}
-                          </div>
-                        )}
-                      </div>
+                        {/* Photo / Initials */}
+                        <div className="relative shrink-0">
+                          {cand.photo_url ? (
+                            <img
+                              src={cand.photo_url}
+                              alt={`${cand.first_name} ${cand.last_name}`}
+                              className="w-14 h-14 rounded-full object-cover border border-slate-200"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-full bg-slate-800 text-white font-black text-sm flex items-center justify-center">
+                              {cand.first_name[0]}{cand.last_name[0]}
+                            </div>
+                          )}
+                          {isFirst && (
+                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-white flex items-center justify-center" />
+                          )}
+                        </div>
 
-                      {/* Photo / Initials */}
-                      <div className="relative shrink-0">
-                        {cand.photo_url ? (
-                          <img
-                            src={cand.photo_url}
-                            alt={`${cand.first_name} ${cand.last_name}`}
-                            className="w-14 h-14 rounded-full object-cover border border-slate-200"
-                          />
-                        ) : (
-                          <div className="w-14 h-14 rounded-full bg-slate-800 text-white font-black text-sm flex items-center justify-center">
-                            {cand.first_name[0]}{cand.last_name[0]}
+                        {/* Identité Joueur */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-black text-slate-800 text-xs truncate">
+                              {cand.first_name} {cand.last_name}
+                            </span>
+                            {cand.pipeline_stage === 'trial' && (
+                              <span className="text-[9px] font-bold px-1 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                                Test
+                              </span>
+                            )}
                           </div>
-                        )}
-                        {isFirst && (
-                          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-white flex items-center justify-center" />
-                        )}
-                      </div>
+                          <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
+                            <span>{cand.current_club || 'Sans club'}</span>
+                            <span>•</span>
+                            <span className="font-semibold text-slate-600">{cand.age_category}</span>
+                            {cand.preferred_foot && (
+                              <>
+                                <span>•</span>
+                                <span className="text-[10px] text-slate-400">{cand.preferred_foot}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
 
-                      {/* Identité Joueur */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-black text-slate-800 text-xs truncate">
-                            {cand.first_name} {cand.last_name}
-                          </span>
-                          {cand.pipeline_stage === 'trial' && (
-                            <span className="text-[9px] font-bold px-1 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
-                              Test
+                        {/* Note ou Score */}
+                        <div className="shrink-0 text-right">
+                          {score !== undefined ? (
+                            <div className={cn(
+                              "px-2 py-1 rounded-lg font-black text-xs inline-flex items-center gap-1 border",
+                              score >= 7.5 ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
+                                score >= 6 ? "bg-blue-50 text-blue-800 border-blue-200" :
+                                  score >= 4 ? "bg-amber-50 text-amber-800 border-amber-200" :
+                                    "bg-rose-50 text-rose-800 border-rose-200"
+                            )}>
+                              <span>{score.toFixed(1)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-medium text-slate-400 bg-slate-50 px-2 py-1 rounded-md border border-slate-200">
+                              Non noté
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
-                          <span>{cand.current_club || 'Sans club'}</span>
-                          <span>•</span>
-                          <span className="font-semibold text-slate-600">{cand.age_category}</span>
-                          {cand.preferred_foot && (
+
+                        {/* Contrôles de déplacement accessible & ouverture profil */}
+                        <div className="flex items-center gap-0.5 shrink-0 pl-1 border-l border-slate-100">
+                          {canEditCurrentShortlist && (
                             <>
-                              <span>•</span>
-                              <span className="text-[10px] text-slate-400">{cand.preferred_foot}</span>
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMovePlayer(cand.id, 'up');
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-20 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                                title="Monter le joueur (# plus prioritaire)"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === slotPlayers.length - 1}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMovePlayer(cand.id, 'down');
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-20 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                                title="Descendre le joueur"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
                             </>
                           )}
-                        </div>
-                      </div>
-
-                      {/* Note ou Score */}
-                      <div className="shrink-0 text-right">
-                        {score !== undefined ? (
-                          <div className={cn(
-                            "px-2 py-1 rounded-lg font-black text-xs inline-flex items-center gap-1 border",
-                            score >= 7.5 ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
-                            score >= 6 ? "bg-blue-50 text-blue-800 border-blue-200" :
-                            score >= 4 ? "bg-amber-50 text-amber-800 border-amber-200" :
-                            "bg-rose-50 text-rose-800 border-rose-200"
-                          )}>
-                            <span>{score.toFixed(1)}</span>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-medium text-slate-400 bg-slate-50 px-2 py-1 rounded-md border border-slate-200">
-                            Non noté
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Contrôles de déplacement accessible & ouverture profil */}
-                      <div className="flex items-center gap-0.5 shrink-0 pl-1 border-l border-slate-100">
-                        {canEditCurrentShortlist && (
-                          <>
-                            <button
-                              type="button"
-                              disabled={idx === 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMovePlayer(cand.id, 'up');
-                              }}
-                              className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-20 disabled:hover:bg-transparent transition-colors cursor-pointer"
-                              title="Monter le joueur (# plus prioritaire)"
-                            >
-                              <ArrowUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={idx === slotPlayers.length - 1}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMovePlayer(cand.id, 'down');
-                              }}
-                              className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-20 disabled:hover:bg-transparent transition-colors cursor-pointer"
-                              title="Descendre le joueur"
-                            >
-                              <ArrowDown className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setInspectedCandidate(cand);
-                          }}
-                          className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors ml-0.5 cursor-pointer"
-                          title="Inspecter le joueur"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        {canEditCurrentShortlist && (!isScoutManager || isCandidateBelongingToCurrentScoutManager(cand)) && (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleRemoveCandidateFromShortlist(cand, selectedSlotForDrawer.slotIndex);
+                              setInspectedCandidate(cand);
                             }}
-                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ml-0.5 cursor-pointer"
-                            title="Retirer ce joueur de la shortlist"
+                            className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors ml-0.5 cursor-pointer"
+                            title="Inspecter le joueur"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
-                        )}
+                          {canEditCurrentShortlist && (!isScoutManager || isCandidateBelongingToCurrentScoutManager(cand)) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveCandidateFromShortlist(cand, selectedSlotForDrawer.slotIndex);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ml-0.5 cursor-pointer"
+                              title="Retirer ce joueur de la shortlist"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Pied de Page du Panneau */}
-            <div className="p-3.5 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
-                <span>Synchronisé Supabase</span>
+                    );
+                  })
+                )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedSlotForDrawer(null)}
-                className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors shadow-2xs cursor-pointer"
-              >
-                Fermer la liste
-              </button>
-            </div>
-          </aside>
-        );
-      })()}
-    </div>
+              {/* Pied de Page du Panneau */}
+              <div className="p-3.5 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                  <span>Synchronisé Supabase</span>
+                </div>
 
-    {/* ── GRAND PANNEAU MODAL DE PERFORMANCE (REPRODUISANT LA PHOTO UTILISATEUR) ── */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedSlotForDrawer(null)}
+                  className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                >
+                  Fermer la liste
+                </button>
+              </div>
+            </aside>
+          );
+        })()}
+      </div>
+
+      {/* ── GRAND PANNEAU MODAL DE PERFORMANCE (REPRODUISANT LA PHOTO UTILISATEUR) ── */}
       {inspectedCandidate && (() => {
         const ev = playerEvaluationsMap.get(inspectedCandidate.id);
 
         return (
-          <div 
+          <div
             className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 animate-in fade-in duration-200"
             onClick={() => setInspectedCandidate(null)}
           >
-            <div 
+            <div
               className="bg-white w-full max-w-4xl max-h-[92vh] rounded-3xl shadow-2xl border-2 border-slate-300 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 opacity-100"
               onClick={(e) => e.stopPropagation()}
             >
@@ -3230,7 +3230,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
         );
 
         return (
-          <div 
+          <div
             className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-200"
             onClick={() => {
               if (!isAssigningPlayer) {
@@ -3239,7 +3239,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
               }
             }}
           >
-            <div 
+            <div
               className="bg-white w-full max-w-2xl max-h-[88vh] rounded-3xl shadow-2xl border-2 border-slate-300 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
               onClick={(e) => e.stopPropagation()}
             >
@@ -3314,8 +3314,8 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                   >
                     <span>Poste {slotForAddingPlayer.label} ({slotForAddingPlayer.roleCode})</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-900/10 font-bold">
-                      {scopedCandidates.filter(c => 
-                        c.pipeline_stage !== 'archived' && 
+                      {scopedCandidates.filter(c =>
+                        c.pipeline_stage !== 'archived' &&
                         c.status !== 'archived' &&
                         (scoutFilter === 'ALL' || !scoutFilter || isCandidateDetectedBySelectedScout(c, scoutFilter)) &&
                         categoryFilter && c.age_category === categoryFilter &&
@@ -3337,7 +3337,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                   >
                     <span>Catégorie {categoryFilter}</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-bold">
-                      {scopedCandidates.filter(c => 
+                      {scopedCandidates.filter(c =>
                         c.pipeline_stage !== 'archived' &&
                         c.status !== 'archived' &&
                         (scoutFilter === 'ALL' || !scoutFilter || isCandidateDetectedBySelectedScout(c, scoutFilter)) &&
@@ -3368,7 +3368,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                 </div>
 
                 <span className="text-[11px] text-slate-500 font-medium">
-                  {positionFilterMode === 'matching' 
+                  {positionFilterMode === 'matching'
                     ? `Spécialistes du poste ${slotForAddingPlayer.label} (${categoryFilter})`
                     : positionFilterMode === 'all'
                       ? `Tous les profils de la catégorie ${categoryFilter}`
@@ -3421,8 +3421,8 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                         key={cand.id}
                         className={cn(
                           "p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 bg-white",
-                          isAlreadyOnThisSlot 
-                            ? "border-emerald-300 bg-emerald-50/40 opacity-75" 
+                          isAlreadyOnThisSlot
+                            ? "border-emerald-300 bg-emerald-50/40 opacity-75"
                             : "border-slate-200 hover:border-amber-400 hover:shadow-md"
                         )}
                       >
@@ -3447,8 +3447,8 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                               </span>
                               <span className={cn(
                                 "px-2 py-0.5 rounded-full text-[10px] font-bold border",
-                                isSameCategory 
-                                  ? "bg-amber-50 text-amber-900 border-amber-300 font-black" 
+                                isSameCategory
+                                  ? "bg-amber-50 text-amber-900 border-amber-300 font-black"
                                   : "bg-slate-100 text-slate-600 border-slate-200"
                               )}>
                                 {cand.age_category || 'Cat. inconnue'}
@@ -3530,7 +3530,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
       {/* ── MODAL D'ENREGISTREMENT DE SHORTLIST AVEC INTITULÉ (US-DASH-33) ── */}
       {isSaveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
-          <div 
+          <div
             className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
@@ -3680,7 +3680,7 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-300">
-                    {isScoutManager 
+                    {isScoutManager
                       ? "Modifiez vos intitulés, chargez vos compositions ou supprimez vos configurations."
                       : "Modifiez les intitulés, chargez les compositions ou supprimez les configurations."}
                   </p>
@@ -3748,8 +3748,8 @@ export const ShortlistPitchView: React.FC<ShortlistPitchViewProps> = ({
                       key={sl.id}
                       className={cn(
                         "p-4 rounded-2xl border transition-all space-y-3",
-                        isActive 
-                          ? "bg-amber-50/50 border-amber-300 shadow-xs ring-1 ring-amber-300/50" 
+                        isActive
+                          ? "bg-amber-50/50 border-amber-300 shadow-xs ring-1 ring-amber-300/50"
                           : "bg-slate-50/70 hover:bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs"
                       )}
                     >

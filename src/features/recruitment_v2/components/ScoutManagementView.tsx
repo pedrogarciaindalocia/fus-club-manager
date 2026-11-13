@@ -1102,876 +1102,876 @@ Cellule Détection & Scouting — FUS Rabat`;
         <div className="lg:col-span-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-                  {isAdmin && filteredScouts.length > 0 && (
-                    <label className="flex items-center cursor-pointer select-none" title={allFilteredSelected ? "Tout désélectionner" : "Tout sélectionner"}>
-                      <input
-                        ref={masterCheckboxRef}
-                        type="checkbox"
-                        checked={allFilteredSelected}
-                        onChange={handleToggleSelectAll}
-                        className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
-                      />
-                    </label>
-                  )}
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      {isAdmin ? `Cellule Scouts • Effectif (${filteredScouts.length}/${visibleScouts.length})` : 'Mon Profil Scout'}
-                    </h3>
-                    {isAdmin && (
-                      <p className="text-[10px] text-slate-400 font-medium">Scout Managers, Admins & Observateurs</p>
-                    )}
-                  </div>
-                </div>
+              {isAdmin && filteredScouts.length > 0 && (
+                <label className="flex items-center cursor-pointer select-none" title={allFilteredSelected ? "Tout désélectionner" : "Tout sélectionner"}>
+                  <input
+                    ref={masterCheckboxRef}
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={handleToggleSelectAll}
+                    className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                  />
+                </label>
+              )}
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  {isAdmin ? `Cellule Scouts • Effectif (${filteredScouts.length}/${visibleScouts.length})` : 'Mon Profil Scout'}
+                </h3>
                 {isAdmin && (
+                  <p className="text-[10px] text-slate-400 font-medium">Scout Managers, Admins & Observateurs</p>
+                )}
+              </div>
+            </div>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="px-2.5 py-1.5 rounded-xl bg-primary text-white text-xs font-semibold shadow-xs hover:bg-primary/90 transition-all flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Ajouter un scout
+              </button>
+            )}
+          </div>
+
+          {/* BARRE DE RECHERCHE ET ONGLETS DE STATUT (US-DASH-25) */}
+          {isAdmin && visibleScouts.length > 0 && (
+            <div className="space-y-2 bg-slate-50/60 p-2.5 rounded-2xl border border-slate-200/80">
+              {/* Barre de recherche */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={scoutSearchQuery}
+                  onChange={(e) => setScoutSearchQuery(e.target.value)}
+                  placeholder="Rechercher par nom, rôle, région..."
+                  className="w-full pl-8.5 pr-7 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-2xs"
+                />
+                {scoutSearchQuery && (
                   <button
                     type="button"
-                    onClick={openCreateModal}
-                    className="px-2.5 py-1.5 rounded-xl bg-primary text-white text-xs font-semibold shadow-xs hover:bg-primary/90 transition-all flex items-center gap-1.5"
+                    onClick={() => setScoutSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    Ajouter un scout
+                    <X className="w-3 h-3" />
                   </button>
                 )}
               </div>
 
-              {/* BARRE DE RECHERCHE ET ONGLETS DE STATUT (US-DASH-25) */}
-              {isAdmin && visibleScouts.length > 0 && (
-                <div className="space-y-2 bg-slate-50/60 p-2.5 rounded-2xl border border-slate-200/80">
-                  {/* Barre de recherche */}
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={scoutSearchQuery}
-                      onChange={(e) => setScoutSearchQuery(e.target.value)}
-                      placeholder="Rechercher par nom, rôle, région..."
-                      className="w-full pl-8.5 pr-7 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-2xs"
-                    />
-                    {scoutSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setScoutSearchQuery('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+              {/* Filtres par statut */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 custom-scrollbar">
+                {[
+                  { id: 'all', label: 'Tous', count: visibleScouts.length },
+                  { id: 'active', label: 'Actifs', count: visibleScouts.filter(s => s.status === 'active').length, dot: 'bg-emerald-500' },
+                  { id: 'inactive', label: 'Inactifs', count: visibleScouts.filter(s => s.status === 'inactive').length, dot: 'bg-slate-400' },
+                  { id: 'in_mission', label: 'En Mission', count: visibleScouts.filter(s => s.status === 'active' && candidates.some(c => isCandidateForScout(c, s))).length, dot: 'bg-purple-500' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setStatusFilter(tab.id as any)}
+                    className={cn(
+                      "px-2 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-1",
+                      statusFilter === tab.id
+                        ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
                     )}
-                  </div>
+                  >
+                    {tab.dot && <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", tab.dot)} />}
+                    <span>{tab.label}</span>
+                    <span className={cn(
+                      "text-[10px] px-1 rounded-md",
+                      statusFilter === tab.id ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+                    )}>
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-                  {/* Filtres par statut */}
-                  <div className="flex items-center gap-1 overflow-x-auto pb-0.5 custom-scrollbar">
-                    {[
-                      { id: 'all', label: 'Tous', count: visibleScouts.length },
-                      { id: 'active', label: 'Actifs', count: visibleScouts.filter(s => s.status === 'active').length, dot: 'bg-emerald-500' },
-                      { id: 'inactive', label: 'Inactifs', count: visibleScouts.filter(s => s.status === 'inactive').length, dot: 'bg-slate-400' },
-                      { id: 'in_mission', label: 'En Mission', count: visibleScouts.filter(s => s.status === 'active' && candidates.some(c => isCandidateForScout(c, s))).length, dot: 'bg-purple-500' }
-                    ].map(tab => (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setStatusFilter(tab.id as any)}
-                        className={cn(
-                          "px-2 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-1",
-                          statusFilter === tab.id
-                            ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+          {/* BANDEAU D'ACTIONS GROUPÉES (US-DASH-22) */}
+          {isAdmin && selectedScoutIds.length > 0 && (
+            <div className="p-3 rounded-2xl bg-slate-900 border border-rose-500/30 text-white shadow-lg flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center text-xs font-black shrink-0">
+                  {selectedScoutIds.length}
+                </span>
+                <span className="text-xs font-bold text-slate-200 truncate">
+                  {selectedScoutIds.length > 1 ? 'Scouts sélectionnés' : 'Scout sélectionné'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedScoutIds([])}
+                  className="text-[11px] font-bold text-slate-400 hover:text-white px-2 py-1 transition-colors cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsBulkDeleteModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Supprimer ({selectedScoutIds.length})
+                </button>
+              </div>
+            </div>
+          )}
+
+          {visibleScouts.length === 0 ? (
+            <div className="p-6 text-center bg-white rounded-2xl border border-dashed border-slate-200 space-y-3">
+              <Users className="w-8 h-8 text-slate-400 mx-auto" />
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Aucun recruteur de terrain</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Ajoutez vos scouts pour leur assigner des zones et suivre leurs détections.
+                </p>
+              </div>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-all shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Ajouter un scout
+                </button>
+              )}
+            </div>
+          ) : filteredScouts.length === 0 ? (
+            <div className="p-6 text-center bg-white rounded-2xl border border-dashed border-slate-200 space-y-3">
+              <Filter className="w-8 h-8 text-slate-400 mx-auto" />
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Aucun recruteur ne correspond</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Modifiez vos critères de recherche ou réinitialisez le filtre de statut.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setScoutSearchQuery(''); setStatusFilter('all'); }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Réinitialiser les filtres
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredScouts.map((scout) => {
+                const isSelected = activeScout?.id === scout.id;
+                const isScoutChecked = selectedScoutIds.includes(scout.id);
+                const candCount = candidates.filter(c => isCandidateForScout(c, scout)).length;
+
+                return (
+                  <div
+                    key={scout.id}
+                    onClick={() => setSelectedScoutId(scout.id)}
+                    className={cn(
+                      "p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between group",
+                      isScoutChecked
+                        ? "bg-rose-50/20 border-rose-300 ring-2 ring-rose-500/20 shadow-sm"
+                        : isSelected
+                          ? "bg-white border-primary shadow-md ring-2 ring-primary/10"
+                          : "bg-white hover:bg-slate-50 border-slate-200"
+                    )}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSelectScout(scout.id);
+                          }}
+                          className="p-1 -ml-1 text-slate-400 hover:text-rose-600 transition-colors shrink-0 cursor-pointer"
+                          title={isScoutChecked ? "Désélectionner" : "Sélectionner pour suppression"}
+                        >
+                          {isScoutChecked ? (
+                            <CheckSquare className="w-4 h-4 text-rose-600" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-300 group-hover:text-slate-400" />
+                          )}
+                        </button>
+                      )}
+                      <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                        {scout.photo_url ? (
+                          <img
+                            src={scout.photo_url}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          scout.full_name.split(' ').map(n => n[0]).join('')
                         )}
-                      >
-                        {tab.dot && <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", tab.dot)} />}
-                        <span>{tab.label}</span>
-                        <span className={cn(
-                          "text-[10px] px-1 rounded-md",
-                          statusFilter === tab.id ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
-                        )}>
-                          {tab.count}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="text-sm font-bold text-slate-900 truncate">{scout.full_name}</h4>
+                          {scout.role_title?.toLowerCase().includes('admin') && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
+                              Admin
+                            </span>
+                          )}
+                          {scout.role_title?.toLowerCase().includes('manager') && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                              Manager
+                            </span>
+                          )}
+                          {(scout.role_title?.toLowerCase().includes('éditeur') || scout.role_title?.toLowerCase().includes('editeur')) && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-100 text-cyan-800 border border-cyan-200 shrink-0">
+                              Éditeur
+                            </span>
+                          )}
+                          {scout.role_title?.toLowerCase().includes('user') && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-zinc-100 text-zinc-800 border border-zinc-200 shrink-0">
+                              User
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">{scout.role_title}</p>
+                        <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5 truncate">
+                          <MapPin className="w-3 h-3 text-primary shrink-0" /> {scout.recruitment_region?.includes('|') ? scout.recruitment_region.split('|')[0] : scout.recruitment_region}
                         </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+                      </div>
+                    </div>
 
-              {/* BANDEAU D'ACTIONS GROUPÉES (US-DASH-22) */}
-              {isAdmin && selectedScoutIds.length > 0 && (
-                <div className="p-3 rounded-2xl bg-slate-900 border border-rose-500/30 text-white shadow-lg flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center text-xs font-black shrink-0">
-                      {selectedScoutIds.length}
-                    </span>
-                    <span className="text-xs font-bold text-slate-200 truncate">
-                      {selectedScoutIds.length > 1 ? 'Scouts sélectionnés' : 'Scout sélectionné'}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <div className="text-right">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-full text-[10px] font-bold block mb-1 border shadow-2xs",
+                          candCount > 0
+                            ? "bg-purple-50 text-purple-700 border-purple-200/60"
+                            : "bg-slate-100 text-slate-600 border-slate-200/50"
+                        )}>
+                          {candCount > 0 ? `${candCount} prospection${candCount > 1 ? 's' : ''}` : 'Disponible'}
+                        </span>
+                        <span className={cn(
+                          "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded inline-flex items-center gap-1 border shadow-2xs",
+                          scout.status === 'active'
+                            ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                            : "text-slate-600 bg-slate-100 border-slate-200"
+                        )}>
+                          <span className={cn("w-1.5 h-1.5 rounded-full", scout.status === 'active' ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
+                          {scout.status === 'active' ? 'Actif' : 'Inactif'}
+                        </span>
+                      </div>
+                      <ChevronRight className={cn(
+                        "w-5 h-5 transition-colors shrink-0",
+                        isSelected ? "text-primary" : "text-slate-300 group-hover:text-slate-400"
+                      )} />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedScoutIds([])}
-                      className="text-[11px] font-bold text-slate-400 hover:text-white px-2 py-1 transition-colors cursor-pointer"
-                    >
-                      Annuler
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsBulkDeleteModalOpen(true)}
-                      className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Supprimer ({selectedScoutIds.length})
-                    </button>
-                  </div>
-                </div>
-              )}
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-              {visibleScouts.length === 0 ? (
-                <div className="p-6 text-center bg-white rounded-2xl border border-dashed border-slate-200 space-y-3">
-                  <Users className="w-8 h-8 text-slate-400 mx-auto" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700">Aucun recruteur de terrain</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Ajoutez vos scouts pour leur assigner des zones et suivre leurs détections.
-                    </p>
-                  </div>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={openCreateModal}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-all shadow-xs"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Ajouter un scout
-                    </button>
+        {/* Dashboard Personnel du Scout Sélectionné (8 Cols) */}
+        {activeScout ? (
+          <div className="lg:col-span-8 bg-white rounded-3xl p-6 border shadow-sm space-y-6">
+            {/* Profil Top Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-3xl bg-slate-900 text-white flex items-center justify-center text-xl font-black shrink-0 overflow-hidden border border-slate-200 shadow-sm">
+                  {activeScout.photo_url ? (
+                    <img
+                      src={activeScout.photo_url}
+                      alt={activeScout.full_name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    activeScout.full_name.split(' ').map(n => n[0]).join('')
                   )}
                 </div>
-              ) : filteredScouts.length === 0 ? (
-                <div className="p-6 text-center bg-white rounded-2xl border border-dashed border-slate-200 space-y-3">
-                  <Filter className="w-8 h-8 text-slate-400 mx-auto" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700">Aucun recruteur ne correspond</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Modifiez vos critères de recherche ou réinitialisez le filtre de statut.
-                    </p>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-xl font-bold text-foreground">{activeScout.full_name}</h3>
+                    {/* Badge Statut Administratif */}
+                    <span className={cn(
+                      "px-2.5 py-0.5 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-2xs",
+                      activeScout.status === 'active'
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-slate-100 text-slate-600 border-slate-200"
+                    )}>
+                      <span className={cn("w-2 h-2 rounded-full", activeScout.status === 'active' ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
+                      {activeScout.status === 'active' ? 'Statut : Actif' : 'Statut : Inactif'}
+                    </span>
+
+                    {/* Badge Statut Opérationnel */}
+                    <span className={cn(
+                      "px-2.5 py-0.5 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-2xs",
+                      scoutCandidates.length > 0
+                        ? "bg-purple-50 text-purple-700 border-purple-200"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                    )}>
+                      <Target className="w-3.5 h-3.5" />
+                      {scoutCandidates.length > 0 ? `${scoutCandidates.length} joueur(s) assigné(s)` : 'Disponible'}
+                    </span>
+
+                    {/* Badge Rôle */}
+                    {activeScout.role_title?.toLowerCase().includes('admin') ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                        Scout Admin
+                      </span>
+                    ) : activeScout.role_title?.toLowerCase().includes('manager') ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Scout Manager
+                      </span>
+                    ) : (activeScout.role_title?.toLowerCase().includes('éditeur') || activeScout.role_title?.toLowerCase().includes('editeur')) ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-cyan-100 text-cyan-800 border border-cyan-200">
+                        Scout Éditeur
+                      </span>
+                    ) : activeScout.role_title?.toLowerCase().includes('user') ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-zinc-100 text-zinc-800 border border-zinc-200">
+                        Scout User
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-slate-900 text-white">
+                        {activeScout.role_title || 'Scout'}
+                      </span>
+                    )}
                   </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {activeScout.role_title} • Région : {activeScout.recruitment_region?.includes('|') ? activeScout.recruitment_region.split('|')[0] : activeScout.recruitment_region}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-600">
+                    {activeScout.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-primary" /> {activeScout.phone}</span>}
+                    {activeScout.email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-primary" /> {activeScout.email}</span>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {isAdmin && (
                   <button
                     type="button"
-                    onClick={() => { setScoutSearchQuery(''); setStatusFilter('all'); }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
+                    disabled={isUpdatingStatus}
+                    onClick={() => handleQuickToggleStatus(activeScout)}
+                    className={cn(
+                      "px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs",
+                      activeScout.status === 'active'
+                        ? "bg-slate-50 text-slate-700 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200"
+                        : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                    )}
+                    title={activeScout.status === 'active' ? "Désactiver ce recruteur (passer en inactif)" : "Activer ce recruteur"}
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    Réinitialiser les filtres
+                    {isUpdatingStatus ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Power className={cn("w-3.5 h-3.5", activeScout.status === 'active' ? "text-slate-500" : "text-emerald-600")} />
+                    )}
+                    <span>{activeScout.status === 'active' ? 'Passer en Inactif' : 'Activer le Scout'}</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => openEditModal(activeScout)}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  title="Modifier le profil"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+                {isAdmin && (
+                  <button
+                    onClick={async () => {
+                      const isTargetScoutAdmin = activeScout.role_title?.toLowerCase().includes('admin') || (activeScout as any).system_role === 'scout_admin';
+                      if (isTargetScoutAdmin && !isSuperAdmin) {
+                        toast.error("Seul le Super Administrateur peut supprimer un compte Scout Admin.");
+                        return;
+                      }
+                      if (confirm(`Retirer le scout ${activeScout.full_name} ?`)) {
+                        try {
+                          const scoutToDeleteId = activeScout.id;
+                          const remaining = visibleScouts.filter(s => s.id !== scoutToDeleteId);
+                          setSelectedScoutId(remaining[0]?.id || null);
+                          setSelectedScoutIds(prev => prev.filter(id => id !== scoutToDeleteId));
+                          await onDeleteScout(scoutToDeleteId);
+                        } catch (err) {
+                          console.error('Erreur suppression scout:', err);
+                        }
+                      }
+                    }}
+                    className={cn(
+                      "p-2 rounded-xl border border-slate-200 transition-colors cursor-pointer",
+                      (activeScout.role_title?.toLowerCase().includes('admin') && !isSuperAdmin)
+                        ? "text-slate-300 border-slate-200 cursor-not-allowed hover:bg-transparent"
+                        : "text-rose-600 hover:bg-rose-50"
+                    )}
+                    disabled={activeScout.role_title?.toLowerCase().includes('admin') && !isSuperAdmin}
+                    title={activeScout.role_title?.toLowerCase().includes('admin') && !isSuperAdmin ? "Seul le Super Admin peut supprimer un Scout Admin" : "Supprimer"}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* KPIs Performance & Statut du Scout */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className={cn(
+                "p-3.5 rounded-2xl border text-center flex flex-col justify-center shadow-2xs",
+                activeScout.status === 'active' ? "bg-emerald-50/50 border-emerald-100" : "bg-slate-50 border-slate-200"
+              )}>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">Statut Actuel</span>
+                <span className={cn(
+                  "text-sm font-black mt-1 inline-flex items-center justify-center gap-1.5",
+                  activeScout.status === 'active' ? "text-emerald-700" : "text-slate-600"
+                )}>
+                  <span className={cn("w-2 h-2 rounded-full", activeScout.status === 'active' ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
+                  {activeScout.status === 'active' ? 'Opérationnel' : 'Inactif'}
+                </span>
+                <span className="text-[10px] text-slate-400 mt-0.5">
+                  {activeScout.recruited_date ? `Depuis ${new Date(activeScout.recruited_date).toLocaleDateString('fr-FR')}` : 'En poste'}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-center flex flex-col justify-center">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">Talents Découverts</span>
+                <span className="text-2xl font-black text-foreground mt-0.5">{scoutCandidates.length}</span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-100 text-center flex flex-col justify-center">
+                <span className="text-[10px] uppercase font-bold text-amber-800 block">Évalués</span>
+                <span className="text-2xl font-black text-amber-700 mt-0.5">
+                  {scoutCandidates.filter(c => scoutEvals.some(e => e.candidate_id === c.id)).length}
+                </span>
+              </div>
+
+              <div
+                className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100 text-center flex flex-col justify-center"
+                title={
+                  scoutAssignedMissionsInfo.totalCount > 0
+                    ? `Missions assignées par : ${scoutAssignedMissionsInfo.assigners.map(a => `${a.name} (${a.count})`).join(', ')}`
+                    : 'Aucune mission assignée'
+                }
+              >
+                <span className="text-[10px] uppercase font-bold text-indigo-800 block">Missions Assignées</span>
+                <span className="text-2xl font-black text-indigo-700 mt-0.5">
+                  {scoutAssignedMissionsInfo.totalCount}
+                </span>
+                <span className="text-[10px] font-semibold text-indigo-900/80 mt-0.5 line-clamp-2 leading-tight">
+                  {scoutAssignedMissionsInfo.totalCount > 0
+                    ? `Par : ${scoutAssignedMissionsInfo.assigners
+                      .map(a => (scoutAssignedMissionsInfo.assigners.length > 1 ? `${a.name} (${a.count})` : a.name))
+                      .join(', ')}`
+                    : 'Aucune mission'}
+                </span>
+              </div>
+            </div>
+
+            {/* Onglets Joueurs & Shortlists (Shadow Lists) */}
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
+                <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100/90 border border-slate-200/80">
+                  <button
+                    type="button"
+                    onClick={() => setActiveSectionTab('candidates')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer",
+                      activeSectionTab === 'candidates'
+                        ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                    )}
+                  >
+                    <Users className="w-3.5 h-3.5 text-primary" />
+                    <span>Joueurs</span>
+                    <span className={cn(
+                      "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+                      activeSectionTab === 'candidates'
+                        ? "bg-primary/10 text-primary"
+                        : "bg-slate-200/70 text-slate-600"
+                    )}>
+                      {filteredScoutCandidates.length}/{scoutCandidates.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveSectionTab('shortlists')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer",
+                      activeSectionTab === 'shortlists'
+                        ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                    )}
+                  >
+                    <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Shortlists</span>
+                    <span className={cn(
+                      "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+                      activeSectionTab === 'shortlists'
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-slate-200/70 text-slate-600"
+                    )}>
+                      {scoutSavedShortlists.length}
+                    </span>
                   </button>
                 </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {filteredScouts.map((scout) => {
-                    const isSelected = activeScout?.id === scout.id;
-                    const isScoutChecked = selectedScoutIds.includes(scout.id);
-                    const candCount = candidates.filter(c => isCandidateForScout(c, scout)).length;
 
-                    return (
-                      <div
-                        key={scout.id}
-                        onClick={() => setSelectedScoutId(scout.id)}
+                {/* Barre de recherche compacte & Bouton Filtres (affichés dans l'onglet Joueurs) */}
+                {activeSectionTab === 'candidates' && (
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1 sm:w-48">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Rechercher joueur / club..."
+                        value={candSearch}
+                        onChange={(e) => setCandSearch(e.target.value)}
+                        className="w-full pl-8 pr-2.5 py-1.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-slate-400"
+                      />
+                      {candSearch && (
+                        <button
+                          onClick={() => setCandSearch('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => setShowCandFilters(prev => !prev)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-colors cursor-pointer",
+                        showCandFilters || activeFilterCount > 0
+                          ? "bg-primary/10 border-primary/30 text-primary"
+                          : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      )}
+                      title="Filtrer les joueurs par catégorie, poste ou score"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Filtres</span>
+                      {activeFilterCount > 0 && (
+                        <span className="w-4 h-4 rounded-full bg-primary text-white text-[10px] flex items-center justify-center font-bold">
+                          {activeFilterCount}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* CONTENU ONGLET 1 : JOUEURS */}
+              {activeSectionTab === 'candidates' && (
+                <>
+                  {/* Tiroir de filtres (Catégorie, Poste avec nom complet, Score, Tri Meilleur Score) */}
+                  {showCandFilters && (
+                    <div className="p-3.5 mb-3 bg-slate-50/95 rounded-2xl border border-slate-200/90 flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-500">Catégorie:</span>
+                        <select
+                          value={candCategoryFilter}
+                          onChange={(e) => setCandCategoryFilter(e.target.value)}
+                          className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
+                        >
+                          <option value="ALL">Toutes</option>
+                          {categoriesList.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-500">Poste:</span>
+                        <select
+                          value={candPositionFilter}
+                          onChange={(e) => setCandPositionFilter(e.target.value)}
+                          className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary max-w-[210px] shadow-2xs"
+                        >
+                          <option value="ALL">Tous les postes</option>
+                          {positionsList.map(pos => (
+                            <option key={pos} value={pos}>
+                              {POSITION_LABELS[pos] || pos}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-500">Note Min:</span>
+                        <select
+                          value={candScoreFilter}
+                          onChange={(e) => setCandScoreFilter(e.target.value)}
+                          className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
+                        >
+                          <option value="ALL">Toutes les notes</option>
+                          <option value="9">⭐ 9+ / 10</option>
+                          <option value="8">⭐ 8+ / 10</option>
+                          <option value="7">⭐ 7+ / 10</option>
+                          <option value="6">⭐ 6+ / 10</option>
+                        </select>
+                      </div>
+
+                      {/* Bouton Meilleur Score */}
+                      <button
+                        type="button"
+                        onClick={() => setCandSortBestScore(prev => !prev)}
                         className={cn(
-                          "p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between group",
-                          isScoutChecked
-                            ? "bg-rose-50/20 border-rose-300 ring-2 ring-rose-500/20 shadow-sm"
-                            : isSelected
-                              ? "bg-white border-primary shadow-md ring-2 ring-primary/10"
-                              : "bg-white hover:bg-slate-50 border-slate-200"
+                          "px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                          candSortBestScore
+                            ? "bg-amber-500 text-white border-amber-600 shadow-amber-500/20 shadow-md"
+                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
                         )}
+                        title="Trier les joueurs par meilleur score scout"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {isAdmin && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleSelectScout(scout.id);
-                              }}
-                              className="p-1 -ml-1 text-slate-400 hover:text-rose-600 transition-colors shrink-0 cursor-pointer"
-                              title={isScoutChecked ? "Désélectionner" : "Sélectionner pour suppression"}
-                            >
-                              {isScoutChecked ? (
-                                <CheckSquare className="w-4 h-4 text-rose-600" />
-                              ) : (
-                                <Square className="w-4 h-4 text-slate-300 group-hover:text-slate-400" />
-                              )}
-                            </button>
-                          )}
-                          <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
-                            {scout.photo_url ? (
-                              <img
-                                src={scout.photo_url}
-                                alt=""
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLElement).style.display = 'none';
-                                }}
+                        <ArrowUpDown className="w-3.5 h-3.5" />
+                        <span>Meilleur Score</span>
+                      </button>
+
+                      {activeFilterCount > 0 && (
+                        <button
+                          onClick={resetFilters}
+                          className="ml-auto flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Réinitialiser
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Liste des joueurs scrollable */}
+                  {scoutCandidates.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground bg-slate-50 rounded-2xl border border-dashed">
+                      Aucun joueur actuellement associé à ce scout.
+                    </div>
+                  ) : filteredScoutCandidates.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-muted-foreground bg-slate-50 rounded-2xl border border-dashed">
+                      Aucun joueur ne correspond aux filtres appliqués.
+                    </div>
+                  ) : (
+                    <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1.5">
+                      {filteredScoutCandidates.map((c) => {
+                        // Agrégation résiliente des rapports/évaluations du joueur
+                        const candEvalsList = [
+                          ...evaluations.filter(e => e.candidate_id === c.id),
+                          ...(c.evaluations || [])
+                        ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+
+                        const sortedEvals = [...candEvalsList].sort((a, b) => {
+                          const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
+                          const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
+                          return tB - tA;
+                        });
+                        // Dernier rapport d'évaluation rédigé
+                        const latestEval = sortedEvals[0];
+
+                        // 1. Scores des 4 piliers individuels (Technique, Tactique, Physique, Mental) issus du DERNIER RAPPORT
+                        const getScoreVal = (val: any) => {
+                          if (val == null || val === '') return null;
+                          const num = Number(val);
+                          return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                        };
+
+                        const techScore = getScoreVal(latestEval?.technical_score ?? (latestEval as any)?.tech_score ?? (latestEval as any)?.technical_rating);
+                        const tactScore = getScoreVal(latestEval?.tactical_score ?? (latestEval as any)?.tact_score ?? (latestEval as any)?.tactical_rating);
+                        const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
+                        const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
+
+                        // 2. Dernier potentiel du joueur : 0.0 strict si le joueur n'a aucun rapport
+                        const potentialScore: number | null = (candEvalsList.length === 0 || !latestEval)
+                          ? 0
+                          : (latestEval.potential_rating != null && !isNaN(Number(latestEval.potential_rating)))
+                            ? Math.round(Number(latestEval.potential_rating) * 10) / 10
+                            : (c.potential_rating != null && !isNaN(Number(c.potential_rating)))
+                              ? Math.round(Number(c.potential_rating) * 10) / 10
+                              : 0;
+
+                        return (
+                          <div
+                            key={c.id}
+                            className="p-3.5 bg-slate-50/85 hover:bg-white transition-all rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                                <img
+                                  src={c.photo_url || '/assets/avatar.svg'}
+                                  alt={`${c.first_name} ${c.last_name}`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    if (!target.src.endsWith('/assets/avatar.svg')) {
+                                      target.src = '/assets/avatar.svg';
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-xs font-black text-slate-900">{c.first_name} {c.last_name}</p>
+                                  {c.age_category && (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 uppercase">
+                                      {c.age_category}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-muted-foreground mt-0.5">
+                                  <strong className="text-slate-700">{POSITION_LABELS[c.primary_position] || c.primary_position}</strong>
+                                  {' '}• {c.current_club || 'Sans club'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                              {/* Mini-Scorecard Pro 4 Piliers + Potentiel avec survol Radar & Barres de progression */}
+                              <CandidatePillarsScorecard
+                                candidate={c}
+                                latestEval={latestEval}
+                                techScore={techScore}
+                                tactScore={tactScore}
+                                physScore={physScore}
+                                mentScore={mentScore}
+                                potentialScore={potentialScore}
+                                onOpenDetail={onOpenCandidateDetail ? () => onOpenCandidateDetail(c) : undefined}
                               />
-                            ) : (
-                              scout.full_name.split(' ').map(n => n[0]).join('')
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <h4 className="text-sm font-bold text-slate-900 truncate">{scout.full_name}</h4>
-                              {scout.role_title?.toLowerCase().includes('admin') && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
-                                  Admin
-                                </span>
-                              )}
-                              {scout.role_title?.toLowerCase().includes('manager') && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
-                                  Manager
-                                </span>
-                              )}
-                              {(scout.role_title?.toLowerCase().includes('éditeur') || scout.role_title?.toLowerCase().includes('editeur')) && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-cyan-100 text-cyan-800 border border-cyan-200 shrink-0">
-                                  Éditeur
-                                </span>
-                              )}
-                              {scout.role_title?.toLowerCase().includes('user') && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-zinc-100 text-zinc-800 border border-zinc-200 shrink-0">
-                                  User
-                                </span>
+
+                              {/* Bouton Rapport avec rond jaune et chiffre en noir (0 par défaut) */}
+                              {onOpenCandidateDetail && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenCandidateDetail(c, 'report')}
+                                  className="px-3.5 py-1.5 rounded-full bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-xs cursor-pointer shrink-0"
+                                  title={`Consulter les rapports du joueur (${candEvalsList.length} rapport${candEvalsList.length !== 1 ? 's' : ''})`}
+                                >
+                                  <span className="font-bold text-xs text-white">Rapport</span>
+                                  <span className="w-5 h-5 min-w-[20px] rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs">
+                                    {candEvalsList.length}
+                                  </span>
+                                </button>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground truncate">{scout.role_title}</p>
-                            <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5 truncate">
-                              <MapPin className="w-3 h-3 text-primary shrink-0" /> {scout.recruitment_region?.includes('|') ? scout.recruitment_region.split('|')[0] : scout.recruitment_region}
-                            </span>
                           </div>
-                        </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
 
-                        <div className="flex items-center gap-2 shrink-0 ml-2">
-                          <div className="text-right">
-                            <span className={cn(
-                              "px-2 py-0.5 rounded-full text-[10px] font-bold block mb-1 border shadow-2xs",
-                              candCount > 0
-                                ? "bg-purple-50 text-purple-700 border-purple-200/60"
-                                : "bg-slate-100 text-slate-600 border-slate-200/50"
-                            )}>
-                              {candCount > 0 ? `${candCount} prospection${candCount > 1 ? 's' : ''}` : 'Disponible'}
-                            </span>
-                            <span className={cn(
-                              "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded inline-flex items-center gap-1 border shadow-2xs",
-                              scout.status === 'active'
-                                ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                                : "text-slate-600 bg-slate-100 border-slate-200"
-                            )}>
-                              <span className={cn("w-1.5 h-1.5 rounded-full", scout.status === 'active' ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
-                              {scout.status === 'active' ? 'Actif' : 'Inactif'}
-                            </span>
+              {/* CONTENU ONGLET 2 : SHORTLISTS (SHADOW LISTS) */}
+              {activeSectionTab === 'shortlists' && (
+                <div className="space-y-2.5">
+                  {scoutSavedShortlists.length === 0 ? (
+                    <div className="py-10 text-center bg-slate-50/80 rounded-2xl border border-dashed border-slate-200 space-y-2">
+                      <Trophy className="w-8 h-8 text-amber-400 mx-auto opacity-70" />
+                      <p className="text-xs font-bold text-slate-700">Aucune Shadow List enregistrée pour ce scout</p>
+                      <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                        Les compositions tactiques et Shadow Lists créées par ce scout s'afficheront ici.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1.5">
+                      {scoutSavedShortlists.map((sl) => {
+                        const order = sl.custom_slot_order || {};
+                        const configuredSlotCount = Object.keys(order).filter(k => Array.isArray(order[k]) && order[k].length > 0).length;
+
+                        return (
+                          <div
+                            key={sl.id}
+                            className="p-3.5 bg-slate-50/85 hover:bg-white transition-all rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0 shadow-2xs">
+                                <Trophy className="w-5 h-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h5 className="text-xs font-black text-slate-900 truncate">
+                                    {sl.title}
+                                  </h5>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                    {sl.formation_key || '4-3-3'}
+                                  </span>
+                                  {sl.category_filter && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                      {sl.category_filter}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                  <span>{configuredSlotCount} poste{configuredSlotCount > 1 ? 's' : ''} configuré{configuredSlotCount > 1 ? 's' : ''}</span>
+                                  <span>•</span>
+                                  <span>Enregistrée le {new Date(sl.created_at).toLocaleDateString('fr-FR')}</span>
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/recruitment-v2?tab=shortlist&shortlistId=${sl.id}`)}
+                                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer group"
+                                title="Basculer vers la page Shadow list avec cette composition"
+                              >
+                                <span>Voir le détail</span>
+                                <ExternalLink className="w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditShortlist(sl)}
+                                className="p-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                title="Modifier l'intitulé et la description"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteShortlist(sl)}
+                                className="p-1.5 rounded-xl border border-slate-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-colors cursor-pointer"
+                                title="Supprimer cette shortlist"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
-                          <ChevronRight className={cn(
-                            "w-5 h-5 transition-colors shrink-0",
-                            isSelected ? "text-primary" : "text-slate-300 group-hover:text-slate-400"
-                          )} />
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-
-            {/* Dashboard Personnel du Scout Sélectionné (8 Cols) */}
-            {activeScout ? (
-              <div className="lg:col-span-8 bg-white rounded-3xl p-6 border shadow-sm space-y-6">
-                {/* Profil Top Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-3xl bg-slate-900 text-white flex items-center justify-center text-xl font-black shrink-0 overflow-hidden border border-slate-200 shadow-sm">
-                      {activeScout.photo_url ? (
-                        <img
-                          src={activeScout.photo_url}
-                          alt={activeScout.full_name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        activeScout.full_name.split(' ').map(n => n[0]).join('')
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-xl font-bold text-foreground">{activeScout.full_name}</h3>
-                        {/* Badge Statut Administratif */}
-                        <span className={cn(
-                          "px-2.5 py-0.5 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-2xs",
-                          activeScout.status === 'active'
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : "bg-slate-100 text-slate-600 border-slate-200"
-                        )}>
-                          <span className={cn("w-2 h-2 rounded-full", activeScout.status === 'active' ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
-                          {activeScout.status === 'active' ? 'Statut : Actif' : 'Statut : Inactif'}
-                        </span>
-
-                        {/* Badge Statut Opérationnel */}
-                        <span className={cn(
-                          "px-2.5 py-0.5 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-2xs",
-                          scoutCandidates.length > 0
-                            ? "bg-purple-50 text-purple-700 border-purple-200"
-                            : "bg-amber-50 text-amber-700 border-amber-200"
-                        )}>
-                          <Target className="w-3.5 h-3.5" />
-                          {scoutCandidates.length > 0 ? `${scoutCandidates.length} joueur(s) assigné(s)` : 'Disponible'}
-                        </span>
-
-                        {/* Badge Rôle */}
-                        {activeScout.role_title?.toLowerCase().includes('admin') ? (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-purple-100 text-purple-800 border border-purple-200">
-                            Scout Admin
-                          </span>
-                        ) : activeScout.role_title?.toLowerCase().includes('manager') ? (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Scout Manager
-                          </span>
-                        ) : (activeScout.role_title?.toLowerCase().includes('éditeur') || activeScout.role_title?.toLowerCase().includes('editeur')) ? (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-cyan-100 text-cyan-800 border border-cyan-200">
-                            Scout Éditeur
-                          </span>
-                        ) : activeScout.role_title?.toLowerCase().includes('user') ? (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-zinc-100 text-zinc-800 border border-zinc-200">
-                            Scout User
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-slate-900 text-white">
-                            {activeScout.role_title || 'Scout'}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {activeScout.role_title} • Région : {activeScout.recruitment_region?.includes('|') ? activeScout.recruitment_region.split('|')[0] : activeScout.recruitment_region}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-600">
-                        {activeScout.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-primary" /> {activeScout.phone}</span>}
-                        {activeScout.email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-primary" /> {activeScout.email}</span>}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        disabled={isUpdatingStatus}
-                        onClick={() => handleQuickToggleStatus(activeScout)}
-                        className={cn(
-                          "px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs",
-                          activeScout.status === 'active'
-                            ? "bg-slate-50 text-slate-700 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200"
-                            : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                        )}
-                        title={activeScout.status === 'active' ? "Désactiver ce recruteur (passer en inactif)" : "Activer ce recruteur"}
-                      >
-                        {isUpdatingStatus ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Power className={cn("w-3.5 h-3.5", activeScout.status === 'active' ? "text-slate-500" : "text-emerald-600")} />
-                        )}
-                        <span>{activeScout.status === 'active' ? 'Passer en Inactif' : 'Activer le Scout'}</span>
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openEditModal(activeScout)}
-                      className="p-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-                      title="Modifier le profil"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
-                    {isAdmin && (
-                      <button
-                        onClick={async () => {
-                          const isTargetScoutAdmin = activeScout.role_title?.toLowerCase().includes('admin') || (activeScout as any).system_role === 'scout_admin';
-                          if (isTargetScoutAdmin && !isSuperAdmin) {
-                            toast.error("Seul le Super Administrateur peut supprimer un compte Scout Admin.");
-                            return;
-                          }
-                          if (confirm(`Retirer le scout ${activeScout.full_name} ?`)) {
-                            try {
-                              const scoutToDeleteId = activeScout.id;
-                              const remaining = visibleScouts.filter(s => s.id !== scoutToDeleteId);
-                              setSelectedScoutId(remaining[0]?.id || null);
-                              setSelectedScoutIds(prev => prev.filter(id => id !== scoutToDeleteId));
-                              await onDeleteScout(scoutToDeleteId);
-                            } catch (err) {
-                              console.error('Erreur suppression scout:', err);
-                            }
-                          }
-                        }}
-                        className={cn(
-                          "p-2 rounded-xl border border-slate-200 transition-colors cursor-pointer",
-                          (activeScout.role_title?.toLowerCase().includes('admin') && !isSuperAdmin)
-                            ? "text-slate-300 border-slate-200 cursor-not-allowed hover:bg-transparent"
-                            : "text-rose-600 hover:bg-rose-50"
-                        )}
-                        disabled={activeScout.role_title?.toLowerCase().includes('admin') && !isSuperAdmin}
-                        title={activeScout.role_title?.toLowerCase().includes('admin') && !isSuperAdmin ? "Seul le Super Admin peut supprimer un Scout Admin" : "Supprimer"}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* KPIs Performance & Statut du Scout */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className={cn(
-                    "p-3.5 rounded-2xl border text-center flex flex-col justify-center shadow-2xs",
-                    activeScout.status === 'active' ? "bg-emerald-50/50 border-emerald-100" : "bg-slate-50 border-slate-200"
-                  )}>
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground block">Statut Actuel</span>
-                    <span className={cn(
-                      "text-sm font-black mt-1 inline-flex items-center justify-center gap-1.5",
-                      activeScout.status === 'active' ? "text-emerald-700" : "text-slate-600"
-                    )}>
-                      <span className={cn("w-2 h-2 rounded-full", activeScout.status === 'active' ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
-                      {activeScout.status === 'active' ? 'Opérationnel' : 'Inactif'}
-                    </span>
-                    <span className="text-[10px] text-slate-400 mt-0.5">
-                      {activeScout.recruited_date ? `Depuis ${new Date(activeScout.recruited_date).toLocaleDateString('fr-FR')}` : 'En poste'}
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-center flex flex-col justify-center">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground block">Talents Découverts</span>
-                    <span className="text-2xl font-black text-foreground mt-0.5">{scoutCandidates.length}</span>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-100 text-center flex flex-col justify-center">
-                    <span className="text-[10px] uppercase font-bold text-amber-800 block">Évalués</span>
-                    <span className="text-2xl font-black text-amber-700 mt-0.5">
-                      {scoutCandidates.filter(c => scoutEvals.some(e => e.candidate_id === c.id)).length}
-                    </span>
-                  </div>
-
-                  <div
-                    className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100 text-center flex flex-col justify-center"
-                    title={
-                      scoutAssignedMissionsInfo.totalCount > 0
-                        ? `Missions assignées par : ${scoutAssignedMissionsInfo.assigners.map(a => `${a.name} (${a.count})`).join(', ')}`
-                        : 'Aucune mission assignée'
-                    }
-                  >
-                    <span className="text-[10px] uppercase font-bold text-indigo-800 block">Missions Assignées</span>
-                    <span className="text-2xl font-black text-indigo-700 mt-0.5">
-                      {scoutAssignedMissionsInfo.totalCount}
-                    </span>
-                    <span className="text-[10px] font-semibold text-indigo-900/80 mt-0.5 line-clamp-2 leading-tight">
-                      {scoutAssignedMissionsInfo.totalCount > 0
-                        ? `Par : ${scoutAssignedMissionsInfo.assigners
-                            .map(a => (scoutAssignedMissionsInfo.assigners.length > 1 ? `${a.name} (${a.count})` : a.name))
-                            .join(', ')}`
-                        : 'Aucune mission'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Onglets Joueurs & Shortlists (Shadow Lists) */}
-                <div>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
-                    <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-100/90 border border-slate-200/80">
-                      <button
-                        type="button"
-                        onClick={() => setActiveSectionTab('candidates')}
-                        className={cn(
-                          "px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer",
-                          activeSectionTab === 'candidates'
-                            ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
-                            : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
-                        )}
-                      >
-                        <Users className="w-3.5 h-3.5 text-primary" />
-                        <span>Joueurs</span>
-                        <span className={cn(
-                          "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                          activeSectionTab === 'candidates'
-                            ? "bg-primary/10 text-primary"
-                            : "bg-slate-200/70 text-slate-600"
-                        )}>
-                          {filteredScoutCandidates.length}/{scoutCandidates.length}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setActiveSectionTab('shortlists')}
-                        className={cn(
-                          "px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all cursor-pointer",
-                          activeSectionTab === 'shortlists'
-                            ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
-                            : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
-                        )}
-                      >
-                        <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Shortlists</span>
-                        <span className={cn(
-                          "text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                          activeSectionTab === 'shortlists'
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-slate-200/70 text-slate-600"
-                        )}>
-                          {scoutSavedShortlists.length}
-                        </span>
-                      </button>
-                    </div>
-
-                    {/* Barre de recherche compacte & Bouton Filtres (affichés dans l'onglet Joueurs) */}
-                    {activeSectionTab === 'candidates' && (
-                      <div className="flex items-center gap-2">
-                        <div className="relative flex-1 sm:w-48">
-                          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                          <input
-                            type="text"
-                            placeholder="Rechercher joueur / club..."
-                            value={candSearch}
-                            onChange={(e) => setCandSearch(e.target.value)}
-                            className="w-full pl-8 pr-2.5 py-1.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-slate-400"
-                          />
-                          {candSearch && (
-                            <button
-                              onClick={() => setCandSearch('')}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-
-                        <button
-                          onClick={() => setShowCandFilters(prev => !prev)}
-                          className={cn(
-                            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-colors cursor-pointer",
-                            showCandFilters || activeFilterCount > 0
-                              ? "bg-primary/10 border-primary/30 text-primary"
-                              : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                          )}
-                          title="Filtrer les joueurs par catégorie, poste ou score"
-                        >
-                          <SlidersHorizontal className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Filtres</span>
-                          {activeFilterCount > 0 && (
-                            <span className="w-4 h-4 rounded-full bg-primary text-white text-[10px] flex items-center justify-center font-bold">
-                              {activeFilterCount}
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* CONTENU ONGLET 1 : JOUEURS */}
-                  {activeSectionTab === 'candidates' && (
-                    <>
-                      {/* Tiroir de filtres (Catégorie, Poste avec nom complet, Score, Tri Meilleur Score) */}
-                      {showCandFilters && (
-                        <div className="p-3.5 mb-3 bg-slate-50/95 rounded-2xl border border-slate-200/90 flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-slate-500">Catégorie:</span>
-                            <select
-                              value={candCategoryFilter}
-                              onChange={(e) => setCandCategoryFilter(e.target.value)}
-                              className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
-                            >
-                              <option value="ALL">Toutes</option>
-                              {categoriesList.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-slate-500">Poste:</span>
-                            <select
-                              value={candPositionFilter}
-                              onChange={(e) => setCandPositionFilter(e.target.value)}
-                              className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary max-w-[210px] shadow-2xs"
-                            >
-                              <option value="ALL">Tous les postes</option>
-                              {positionsList.map(pos => (
-                                <option key={pos} value={pos}>
-                                  {POSITION_LABELS[pos] || pos}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-slate-500">Note Min:</span>
-                            <select
-                              value={candScoreFilter}
-                              onChange={(e) => setCandScoreFilter(e.target.value)}
-                              className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
-                            >
-                              <option value="ALL">Toutes les notes</option>
-                              <option value="9">⭐ 9+ / 10</option>
-                              <option value="8">⭐ 8+ / 10</option>
-                              <option value="7">⭐ 7+ / 10</option>
-                              <option value="6">⭐ 6+ / 10</option>
-                            </select>
-                          </div>
-
-                          {/* Bouton Meilleur Score */}
-                          <button
-                            type="button"
-                            onClick={() => setCandSortBestScore(prev => !prev)}
-                            className={cn(
-                              "px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                              candSortBestScore
-                                ? "bg-amber-500 text-white border-amber-600 shadow-amber-500/20 shadow-md"
-                                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
-                            )}
-                            title="Trier les joueurs par meilleur score scout"
-                          >
-                            <ArrowUpDown className="w-3.5 h-3.5" />
-                            <span>Meilleur Score</span>
-                          </button>
-
-                          {activeFilterCount > 0 && (
-                            <button
-                              onClick={resetFilters}
-                              className="ml-auto flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
-                            >
-                              <RotateCcw className="w-3 h-3" />
-                              Réinitialiser
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Liste des joueurs scrollable */}
-                      {scoutCandidates.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-muted-foreground bg-slate-50 rounded-2xl border border-dashed">
-                          Aucun joueur actuellement associé à ce scout.
-                        </div>
-                      ) : filteredScoutCandidates.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-muted-foreground bg-slate-50 rounded-2xl border border-dashed">
-                          Aucun joueur ne correspond aux filtres appliqués.
-                        </div>
-                      ) : (
-                        <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1.5">
-                          {filteredScoutCandidates.map((c) => {
-                            // Agrégation résiliente des rapports/évaluations du joueur
-                            const candEvalsList = [
-                              ...evaluations.filter(e => e.candidate_id === c.id),
-                              ...(c.evaluations || [])
-                            ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
-
-                            const sortedEvals = [...candEvalsList].sort((a, b) => {
-                              const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
-                              const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
-                              return tB - tA;
-                            });
-                            // Dernier rapport d'évaluation rédigé
-                            const latestEval = sortedEvals[0];
-
-                            // 1. Scores des 4 piliers individuels (Technique, Tactique, Physique, Mental) issus du DERNIER RAPPORT
-                            const getScoreVal = (val: any) => {
-                              if (val == null || val === '') return null;
-                              const num = Number(val);
-                              return !isNaN(num) ? Math.round(num * 10) / 10 : null;
-                            };
-
-                            const techScore = getScoreVal(latestEval?.technical_score ?? (latestEval as any)?.tech_score ?? (latestEval as any)?.technical_rating);
-                            const tactScore = getScoreVal(latestEval?.tactical_score ?? (latestEval as any)?.tact_score ?? (latestEval as any)?.tactical_rating);
-                            const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
-                            const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
-
-                            // 2. Dernier potentiel du joueur : 0.0 strict si le joueur n'a aucun rapport
-                            const potentialScore: number | null = (candEvalsList.length === 0 || !latestEval)
-                              ? 0
-                              : (latestEval.potential_rating != null && !isNaN(Number(latestEval.potential_rating)))
-                                ? Math.round(Number(latestEval.potential_rating) * 10) / 10
-                                : (c.potential_rating != null && !isNaN(Number(c.potential_rating)))
-                                  ? Math.round(Number(c.potential_rating) * 10) / 10
-                                  : 0;
-
-                            return (
-                              <div
-                                key={c.id}
-                                className="p-3.5 bg-slate-50/85 hover:bg-white transition-all rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
-                                    <img
-                                      src={c.photo_url || '/assets/avatar.svg'}
-                                      alt={`${c.first_name} ${c.last_name}`}
-                                      className="w-full h-full object-cover"
-                                      onError={(e) => {
-                                        const target = e.currentTarget;
-                                        if (!target.src.endsWith('/assets/avatar.svg')) {
-                                          target.src = '/assets/avatar.svg';
-                                        }
-                                      }}
-                                    />
-                                  </div>
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <p className="text-xs font-black text-slate-900">{c.first_name} {c.last_name}</p>
-                                      {c.age_category && (
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 uppercase">
-                                          {c.age_category}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                                      <strong className="text-slate-700">{POSITION_LABELS[c.primary_position] || c.primary_position}</strong>
-                                      {' '}• {c.current_club || 'Sans club'}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                                  {/* Mini-Scorecard Pro 4 Piliers + Potentiel avec survol Radar & Barres de progression */}
-                                  <CandidatePillarsScorecard
-                                    candidate={c}
-                                    latestEval={latestEval}
-                                    techScore={techScore}
-                                    tactScore={tactScore}
-                                    physScore={physScore}
-                                    mentScore={mentScore}
-                                    potentialScore={potentialScore}
-                                    onOpenDetail={onOpenCandidateDetail ? () => onOpenCandidateDetail(c) : undefined}
-                                  />
-
-                                  {/* Bouton Rapport avec rond jaune et chiffre en noir (0 par défaut) */}
-                                  {onOpenCandidateDetail && (
-                                    <button
-                                      type="button"
-                                      onClick={() => onOpenCandidateDetail(c, 'report')}
-                                      className="px-3.5 py-1.5 rounded-full bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-xs cursor-pointer shrink-0"
-                                      title={`Consulter les rapports du joueur (${candEvalsList.length} rapport${candEvalsList.length !== 1 ? 's' : ''})`}
-                                    >
-                                      <span className="font-bold text-xs text-white">Rapport</span>
-                                      <span className="w-5 h-5 min-w-[20px] rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs">
-                                        {candEvalsList.length}
-                                      </span>
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {/* CONTENU ONGLET 2 : SHORTLISTS (SHADOW LISTS) */}
-                  {activeSectionTab === 'shortlists' && (
-                    <div className="space-y-2.5">
-                      {scoutSavedShortlists.length === 0 ? (
-                        <div className="py-10 text-center bg-slate-50/80 rounded-2xl border border-dashed border-slate-200 space-y-2">
-                          <Trophy className="w-8 h-8 text-amber-400 mx-auto opacity-70" />
-                          <p className="text-xs font-bold text-slate-700">Aucune Shadow List enregistrée pour ce scout</p>
-                          <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                            Les compositions tactiques et Shadow Lists créées par ce scout s'afficheront ici.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1.5">
-                          {scoutSavedShortlists.map((sl) => {
-                            const order = sl.custom_slot_order || {};
-                            const configuredSlotCount = Object.keys(order).filter(k => Array.isArray(order[k]) && order[k].length > 0).length;
-
-                            return (
-                              <div
-                                key={sl.id}
-                                className="p-3.5 bg-slate-50/85 hover:bg-white transition-all rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                              >
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0 shadow-2xs">
-                                    <Trophy className="w-5 h-5" />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <h5 className="text-xs font-black text-slate-900 truncate">
-                                        {sl.title}
-                                      </h5>
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                        {sl.formation_key || '4-3-3'}
-                                      </span>
-                                      {sl.category_filter && (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                          {sl.category_filter}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                      <span>{configuredSlotCount} poste{configuredSlotCount > 1 ? 's' : ''} configuré{configuredSlotCount > 1 ? 's' : ''}</span>
-                                      <span>•</span>
-                                      <span>Enregistrée le {new Date(sl.created_at).toLocaleDateString('fr-FR')}</span>
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => navigate(`/recruitment-v2?tab=shortlist&shortlistId=${sl.id}`)}
-                                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer group"
-                                    title="Basculer vers la page Shadow list avec cette composition"
-                                  >
-                                    <span>Voir le détail</span>
-                                    <ExternalLink className="w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform" />
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEditShortlist(sl)}
-                                    className="p-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
-                                    title="Modifier l'intitulé et la description"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteShortlist(sl)}
-                                    className="p-1.5 rounded-xl border border-slate-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-colors cursor-pointer"
-                                    title="Supprimer cette shortlist"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="lg:col-span-8 bg-white rounded-3xl p-12 border shadow-sm flex flex-col items-center justify-center text-center space-y-4">
-                <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                  <Users className="w-8 h-8" />
-                </div>
-                <div className="max-w-md space-y-1">
-                  <h3 className="text-lg font-bold text-slate-900">Aucun recruteur de terrain sélectionné</h3>
-                  <p className="text-xs text-slate-500">
-                    {isAdmin
-                      ? "Ajoutez des scouts pour suivre leurs détections de terrain, leurs rapports d'observation et leur vivier de candidats."
-                      : "Votre profil de scout n'a pas encore été configuré."}
-                  </p>
-                </div>
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={openCreateModal}
-                    className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow hover:bg-primary/90 transition-all flex items-center gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Ajouter un scout
-                  </button>
-                )}
-              </div>
+          </div>
+        ) : (
+          <div className="lg:col-span-8 bg-white rounded-3xl p-12 border shadow-sm flex flex-col items-center justify-center text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+              <Users className="w-8 h-8" />
+            </div>
+            <div className="max-w-md space-y-1">
+              <h3 className="text-lg font-bold text-slate-900">Aucun recruteur de terrain sélectionné</h3>
+              <p className="text-xs text-slate-500">
+                {isAdmin
+                  ? "Ajoutez des scouts pour suivre leurs détections de terrain, leurs rapports d'observation et leur vivier de candidats."
+                  : "Votre profil de scout n'a pas encore été configuré."}
+              </p>
+            </div>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow hover:bg-primary/90 transition-all flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Ajouter un scout
+              </button>
             )}
-        </div>
+          </div>
+        )}
+      </div>
 
       {/* Formulaire Ajout / Édition Scout (US-DASH-34) */}
       {isModalOpen && (

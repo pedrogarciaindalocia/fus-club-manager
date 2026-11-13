@@ -30,7 +30,8 @@ const CLUB_ABBREVIATION_ALIASES: Record<string, string[]> = {
   CODM: ['codm', 'cod meknes', 'club omnisports de meknes', 'c o d meknes'],
   DHJ: ['dhj', 'difaa el jadida', 'difaa hassani jadidi', 'difaa hassani el jadida'],
   OCS: ['ocs', 'olympic safi', 'olympique safi'],
-  AAMF: ['aamf', 'amf', 'academie mohammed vi', 'academie mohammed 6', 'academie m6', 'academie mohammed vi de football'],
+  AMF: ['amf', 'academie mohammed vi', 'academie mohammed 6', 'academie m6', 'academie mohammed vi de football', 'academie mohammed vi football', 'amf de football'],
+  AAMF: ['aamf', 'association academie mohammed vi', 'a a m f', 'a.a.m.f', 'association amf'],
   CFBG: ['cfbg', 'centre de formation ben guerir', 'cf ben guerir', 'club football ben guerir'],
   SCCM: ['sccm', 'chabab mohammedia', 'sporting club chabab mohammedia', 'sc chabab mohammedia'],
   RCAZ: ['rcaz', 'renaissance zemamra', 'renaissance club athletic zemamra'],
@@ -269,6 +270,16 @@ function resolveCanonicalClubKey(nameOrAbbr: string): string | null {
   let bestScore = 0;
 
   for (const [key, variants] of Object.entries(CLUB_ABBREVIATION_ALIASES)) {
+    // AAMF (Association AMF / Association Académie Mohammed VI) est strictement distincte de AMF (Académie Mohammed VI)
+    if (
+      key === 'AMF' &&
+      (norm.includes('association') ||
+        norm.includes('aamf') ||
+        tokens.includes('association') ||
+        tokens.includes('aamf'))
+    ) {
+      continue;
+    }
     const normKey = normalizeName(key);
     if (norm === normKey) {
       return key;

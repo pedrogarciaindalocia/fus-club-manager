@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner';
 import LiveTracking from './LiveTracking';
 import type { Match, Player } from '../../types';
+import { getFusAcademyStadium } from '../../utils/stadiumHelpers';
 
 import {
   FORMATIONS_BY_FORMAT,
@@ -79,15 +80,35 @@ const MatchDayPage: React.FC = () => {
     const target = liveMatch || scheduledMatch;
     if (target) {
       setSelectedMatchId(target.id);
+      const isTargetLeague = Boolean(
+        target.league_id &&
+        (target as any).match_type !== 'amical' &&
+        (target as any).match_type !== 'internal_scrimmage' &&
+        !target.notes?.includes('[Opposition Interne]') &&
+        !target.category?.toLowerCase().includes('amical')
+      );
+      const targetRoundName = isTargetLeague
+        ? ((target as any).round_name || (target.lineup as any)?.round_name || 'Journée 1')
+        : '';
       setFormData({
         ...target,
-        lineup: target.lineup || { startingXI: Array(11).fill(''), substitutes: [], formation: target.formation || '4-3-3' },
+        round_name: targetRoundName,
+        lineup: target.lineup ? { ...target.lineup, round_name: targetRoundName } : { startingXI: Array(11).fill(''), substitutes: [], formation: target.formation || '4-3-3', round_name: targetRoundName },
         staff_ids: target.staff_ids || [],
         opponent_formation: target.opponent_formation || '4-4-2'
       });
       if (liveMatch) setShowLive(true);
     }
   }, [isLoading, todayMatches.length]);
+
+  useEffect(() => {
+    if (stadiums.length > 0 && formData.is_home && !formData.stadium_id) {
+      const fusStadium = getFusAcademyStadium(stadiums, mainClub?.id);
+      if (fusStadium) {
+        setFormData(prev => ({ ...prev, stadium_id: fusStadium.id }));
+      }
+    }
+  }, [stadiums, formData.is_home, formData.stadium_id, mainClub?.id]);
 
   useEffect(() => {
     if (formData.lineup) {
@@ -109,9 +130,20 @@ const MatchDayPage: React.FC = () => {
     const m = matches.find(x => x.id === id);
     if (!m) return;
     setSelectedMatchId(id);
+    const isMatchLeague = Boolean(
+      m.league_id &&
+      (m as any).match_type !== 'amical' &&
+      (m as any).match_type !== 'internal_scrimmage' &&
+      !m.notes?.includes('[Opposition Interne]') &&
+      !m.category?.toLowerCase().includes('amical')
+    );
+    const targetRoundName = isMatchLeague
+      ? ((m as any).round_name || (m.lineup as any)?.round_name || 'Journée 1')
+      : '';
     setFormData({
       ...m,
-      lineup: m.lineup || { startingXI: Array(11).fill(''), substitutes: [], formation: m.formation || '4-3-3' },
+      round_name: targetRoundName,
+      lineup: m.lineup ? { ...m.lineup, round_name: targetRoundName } : { startingXI: Array(11).fill(''), substitutes: [], formation: m.formation || '4-3-3', round_name: targetRoundName },
       staff_ids: m.staff_ids || [],
       opponent_formation: m.opponent_formation || '4-4-2'
     });
@@ -126,13 +158,30 @@ const MatchDayPage: React.FC = () => {
     setSaving(true);
     try {
       const { lineup, staff_ids, opponent_formation, ...rest } = formData;
+      const isMatchLeague = Boolean(
+        (formData.league_id || match.league_id) &&
+        (formData as any).match_type !== 'amical' &&
+        (formData as any).match_type !== 'internal_scrimmage' &&
+        match.match_type !== 'amical' &&
+        match.match_type !== 'internal_scrimmage' &&
+        !match.notes?.includes('[Opposition Interne]') &&
+        !match.category?.toLowerCase().includes('amical')
+      );
+      const targetRoundName = isMatchLeague
+        ? ((formData as any).round_name || (lineup as any)?.round_name || 'Journée 1')
+        : null;
+      const updatedLineup = {
+        ...(lineup || {}),
+        round_name: targetRoundName,
+      };
       await updateMatch({ 
         id: match.id, 
         data: {
           ...rest, 
+          round_name: targetRoundName,
           opponent_formation: opponent_formation || '4-4-2',
           formation: lineup?.formation || '4-3-3',
-          lineup,
+          lineup: updatedLineup,
           staff_ids
         }
       });
@@ -357,6 +406,126 @@ const MatchDayPage: React.FC = () => {
                      <div key="setup" className="p-10 space-y-12">
                         <SectionTitle icon={<Settings className="w-5 h-5 text-primary" />} title="Réglages de Match" subtitle="Ajustez les détails de la rencontre pour aujourd'hui" />
                         <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
+                           {/* PILIER 2 (US-DASH-146 & US-DASH-148) : Choix de la Journée UNIQUEMENT pour le Championnat Officiel */}
+                           {(() => {
+                             const isFormMatchLeague = Boolean(
+                               (formData.league_id || match?.league_id) &&
+                               (formData as any).match_type !== 'amical' &&
+                               (formData as any).match_type !== 'internal_scrimmage' &&
+                               match?.match_type !== 'amical' &&
+                               match?.match_type !== 'internal_scrimmage' &&
+                               !match?.notes?.includes('[Opposition Interne]') &&
+                               !match?.category?.toLowerCase().includes('amical')
+                             );
+
+                             if (!isFormMatchLeague) {
+                               return (
+                                 <div className="md:col-span-2 p-4 rounded-3xl bg-slate-50 border border-slate-200 flex items-center justify-between shadow-2xs">
+                                   <div className="flex items-center gap-2.5">
+                                     <Trophy className="w-4 h-4 text-slate-500" />
+                                     <div>
+                                       <p className="text-xs font-black uppercase tracking-tight text-slate-800">
+                                         {(formData as any).match_type === 'internal_scrimmage' || match?.match_type === 'internal_scrimmage' ? 'Opposition Interne' : 'Match Amical / Hors Championnat'}
+                                       </p>
+                                       <p className="text-[10px] font-semibold text-slate-500">
+                                         Rencontre amicale ou interne
+                                       </p>
+                                     </div>
+                                   </div>
+                                   <span className="text-[10px] font-black uppercase text-slate-600 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
+                                     Pas de Journée de Championnat
+                                   </span>
+                                 </div>
+                               );
+                             }
+
+                             return (
+                               <div className="md:col-span-2 p-5 rounded-3xl bg-slate-50 border-2 border-primary/25 shadow-xs space-y-3">
+                                 <div className="flex items-center justify-between">
+                                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                                     <Calendar className="w-4 h-4 text-primary" /> Journée de Championnat Officiel
+                                     <span className="text-[8px] font-black uppercase tracking-wider bg-red-100 text-[#FF3737] px-2 py-0.5 rounded-full border border-red-200">
+                                       Paramètre Primordial
+                                     </span>
+                                   </label>
+                                   <span className="text-[11px] font-black uppercase text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
+                                     {(formData as any).round_name || (formData.lineup as any)?.round_name || 'Journée 1'}
+                                   </span>
+                                 </div>
+
+                                 {/* Raccourcis rapides J1 à J15 */}
+                                 <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 pt-1">
+                                   {Array.from({ length: 15 }, (_, i) => i + 1).map(jNum => {
+                                     const val = `Journée ${jNum}`;
+                                     const currentVal = (formData as any).round_name || (formData.lineup as any)?.round_name;
+                                     const isSel = currentVal === val;
+                                     return (
+                                       <button
+                                         key={jNum}
+                                         type="button"
+                                         onClick={() => {
+                                           setFormData(prev => ({
+                                             ...prev,
+                                             round_name: val,
+                                             lineup: { ...(prev.lineup || {}), round_name: val } as any,
+                                           }));
+                                         }}
+                                         className={`h-8 rounded-xl text-[11px] font-black transition-all border ${
+                                           isSel
+                                             ? 'bg-primary text-white border-primary shadow-md scale-105'
+                                             : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                         }`}
+                                       >
+                                         J{jNum}
+                                       </button>
+                                     );
+                                   })}
+                                 </div>
+
+                                 {/* Sélecteur J1 à J38 + Tournois + Champ libre */}
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                   <select
+                                     className="w-full h-11 rounded-xl bg-white border border-slate-200 px-3 font-black text-xs text-slate-800 outline-none focus:ring-2 ring-primary/20 cursor-pointer"
+                                     value={(formData as any).round_name || (formData.lineup as any)?.round_name || 'Journée 1'}
+                                     onChange={e => {
+                                       const val = e.target.value;
+                                       setFormData(prev => ({
+                                         ...prev,
+                                         round_name: val,
+                                         lineup: { ...(prev.lineup || {}), round_name: val } as any,
+                                       }));
+                                     }}
+                                   >
+                                     {Array.from({ length: 38 }, (_, i) => `Journée ${i + 1}`).map(rName => (
+                                       <option key={rName} value={rName}>{rName}</option>
+                                     ))}
+                                     <option value="Match de Coupe">Match de Coupe</option>
+                                     <option value="Tour préliminaire">Tour préliminaire</option>
+                                     <option value="16ème de finale">16ème de finale</option>
+                                     <option value="8ème de finale">8ème de finale</option>
+                                     <option value="Quart de finale">Quart de finale</option>
+                                     <option value="Demi-finale">Demi-finale</option>
+                                     <option value="Finale">Finale</option>
+                                   </select>
+                                   <input
+                                     type="text"
+                                     placeholder="Intitulé libre (ex: J4 - Match en retard)..."
+                                     value={(formData as any).round_name || ''}
+                                     onChange={e => {
+                                       const val = e.target.value;
+                                       setFormData(prev => ({
+                                         ...prev,
+                                         round_name: val,
+                                         lineup: { ...(prev.lineup || {}), round_name: val } as any,
+                                       }));
+                                     }}
+                                     className="w-full h-11 rounded-xl bg-white border border-slate-200 px-3 font-bold text-xs text-slate-800 outline-none focus:ring-2 ring-primary/20"
+                                   />
+                                 </div>
+                               </div>
+                             );
+                           })()}
+
                            <div className="space-y-6">
                               <div className="space-y-3">
                                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2"><Calendar className="w-3.5 h-3.5 text-primary" /> Date</label>
@@ -372,21 +541,104 @@ const MatchDayPage: React.FC = () => {
                                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2"><Shield className="w-3.5 h-3.5 text-primary" /> Adversaire</label>
                                  <select value={formData.opponent_id || ''} onChange={(e) => updateField('opponent_id', e.target.value)} className="w-full h-14 px-8 rounded-2xl bg-secondary/30 border-2 border-transparent focus:border-primary font-bold transition-all appearance-none shadow-sm">
                                     <option value="" disabled>Sélectionner un adversaire</option>
-                                    {opponentClubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    {opponentClubs.map(c => {
+                                      const cNorm = (c.name || '').toUpperCase().trim();
+                                      const sNorm = ((c as any).short_name || '').toUpperCase().trim();
+                                      const label =
+                                        cNorm === 'AMF' || sNorm === 'AMF'
+                                          ? 'AMF — Académie Mohammed VI'
+                                          : cNorm === 'AAMF' || sNorm === 'AAMF'
+                                          ? 'AAMF — Association AMF'
+                                          : c.name;
+                                      return <option key={c.id} value={c.id}>{label}</option>;
+                                    })}
                                  </select>
                               </div>
                               <div className="space-y-3">
-                                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2"><MapPin className="w-3.5 h-3.5 text-primary" /> Stade</label>
+                                 <div className="flex items-center justify-between">
+                                   <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
+                                     <MapPin className="w-3.5 h-3.5 text-primary" /> Stade
+                                   </label>
+                                   {formData.is_home && (
+                                     <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                                       🏟️ {getFusAcademyStadium(stadiums, mainClub?.id)?.name || 'FUS ACADEMY'} (Auto Domicile)
+                                     </span>
+                                   )}
+                                 </div>
                                   <select value={formData.stadium_id || ''} onChange={(e) => updateField('stadium_id', e.target.value)} className="w-full h-14 px-8 rounded-2xl bg-secondary/30 border-2 border-transparent focus:border-primary font-bold appearance-none shadow-sm">
                                     <option value="">Sélectionner un stade</option>
                                     {stadiums.map(v => <option key={v.id} value={v.id}>{v.name} ({v.city})</option>)}
                                  </select>
+
+                                 {/* Raccourcis Terrains 1 à 4 à Domicile */}
+                                 {formData.is_home && (
+                                   <div className="grid grid-cols-4 gap-2 pt-1">
+                                     {['1', '2', '3', '4'].map(n => {
+                                       const fusStadium = getFusAcademyStadium(stadiums, mainClub?.id);
+                                       const pitchLabel = `Terrain ${n}`;
+                                       const isPitchSel = Boolean((formData.notes && formData.notes.includes(pitchLabel)) || (formData.lineup as any)?.pitch_number === n);
+                                       return (
+                                         <button
+                                           key={n}
+                                           type="button"
+                                           onClick={() => {
+                                             const sName = fusStadium?.name || 'FUS ACADEMY';
+                                             setFormData(prev => ({
+                                               ...prev,
+                                               stadium_id: fusStadium?.id || prev.stadium_id || '',
+                                               lineup: { ...(prev.lineup || {}), pitch_number: isPitchSel ? null : n } as any,
+                                               notes: isPitchSel ? (prev.notes || '').replace(new RegExp(`\\s*—?\\s*${pitchLabel}`), '') : `${sName} — ${pitchLabel}`,
+                                             }));
+                                           }}
+                                           className={`h-10 rounded-xl text-xs font-black transition-all border ${
+                                             isPitchSel
+                                               ? 'bg-primary text-white border-primary shadow-md scale-105'
+                                               : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                           }`}
+                                         >
+                                           Terrain {n}
+                                         </button>
+                                       );
+                                     })}
+                                   </div>
+                                 )}
                               </div>
                            </div>
                            <div className="md:col-span-2 pt-6">
                               <div className="flex bg-secondary/30 p-2 rounded-[2.5rem] border-2 border-secondary shadow-inner">
-                                  <button onClick={() => { if (!formData.is_home) setFormData(prev => ({ ...prev, is_home: true, score_home: prev.score_away ?? 0, score_away: prev.score_home ?? 0 })); }} className={`flex-1 h-14 rounded-[2rem] font-black uppercase text-[10px] tracking-widest transition-all ${formData.is_home ? 'bg-primary text-white shadow-xl scale-105' : 'text-muted-foreground hover:bg-white/50'}`}>Domicile</button>
-                                 <button onClick={() => { if (formData.is_home) setFormData(prev => ({ ...prev, is_home: false, score_home: prev.score_away ?? 0, score_away: prev.score_home ?? 0 })); }} className={`flex-1 h-14 rounded-[2rem] font-black uppercase text-[10px] tracking-widest transition-all ${!formData.is_home ? 'bg-slate-900 text-white shadow-xl scale-105' : 'text-muted-foreground hover:bg-white/50'}`}>Extérieur</button>
+                                  <button
+                                     onClick={() => {
+                                       if (!formData.is_home) {
+                                         const fusStadium = getFusAcademyStadium(stadiums, mainClub?.id);
+                                         setFormData(prev => ({
+                                           ...prev,
+                                           is_home: true,
+                                           stadium_id: fusStadium?.id || prev.stadium_id || '',
+                                           score_home: prev.score_away ?? 0,
+                                           score_away: prev.score_home ?? 0
+                                         }));
+                                       }
+                                     }}
+                                     className={`flex-1 h-14 rounded-[2rem] font-black uppercase text-[10px] tracking-widest transition-all ${formData.is_home ? 'bg-primary text-white shadow-xl scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+                                  >
+                                     Domicile
+                                  </button>
+                                 <button
+                                     onClick={() => {
+                                       if (formData.is_home) {
+                                         setFormData(prev => ({
+                                           ...prev,
+                                           is_home: false,
+                                           stadium_id: '',
+                                           score_home: prev.score_away ?? 0,
+                                           score_away: prev.score_home ?? 0
+                                         }));
+                                       }
+                                     }}
+                                     className={`flex-1 h-14 rounded-[2rem] font-black uppercase text-[10px] tracking-widest transition-all ${!formData.is_home ? 'bg-slate-900 text-white shadow-xl scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+                                 >
+                                     Extérieur
+                                 </button>
                               </div>
                            </div>
                         </div>

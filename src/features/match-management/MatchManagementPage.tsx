@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMatches } from '../../hooks/useMatches';
 import { useClubData } from '../../hooks/useClubData';
@@ -59,6 +59,7 @@ import { DeleteMatchModal } from './components/DeleteMatchModal';
 import { OpponentMatchesPanel } from './components/OpponentMatchesPanel';
 import { MatchSheetImportModal } from './components/MatchSheetImportModal';
 import { FrmfCalendarSyncModal } from './components/FrmfCalendarSyncModal';
+import { ExactDatePickerModal } from './components/ExactDatePickerModal';
 import { frmfCalendarSyncService } from '../../services/frmfCalendarSyncService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PLAYER_CATEGORIES, normalizeAgeCategory } from '../../constants';
@@ -113,6 +114,7 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
       || (match.notes && match.notes.includes('[Opposition Interne]'))
       || (mainClub && match.opponent_id === mainClub.id);
    const isFriendly = !isInternal && (!match.league_id || match.category?.toLowerCase().includes('amical') || match.notes?.toLowerCase().includes('amical'));
+   const isLeague = !isInternal && !isFriendly;
    const league = leagues.find(l => l.id === match.league_id);
    const leagueName = isInternal
       ? 'Opposition Interne'
@@ -207,17 +209,17 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
             </div>
          </div>
 
-         {/* Catégorie FUS & Journée de Championnat (US-UX-126 & US-MATCH-134) */}
-         <div className="absolute top-3 left-11 z-10 flex items-center gap-1.5">
-            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-[#FF3737] text-white shadow-md border border-white/20">
-               {match.category || 'Équipe'}
-            </span>
-            {Boolean(match.round_name || (match as any).lineup?.round_name) && (
-               <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-900 text-white shadow-xs border border-slate-700">
-                  {match.round_name || (match as any).lineup?.round_name}
+            {/* Catégorie FUS & Journée de Championnat (US-UX-126 & US-MATCH-134 & US-DASH-148) */}
+            <div className="absolute top-3 left-11 z-10 flex items-center gap-1.5">
+               <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-[#FF3737] text-white shadow-md border border-white/20">
+                  {match.category || 'Équipe'}
                </span>
-            )}
-         </div>
+               {isLeague && Boolean(match.round_name || (match as any).lineup?.round_name) && (
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-900 text-white shadow-xs border border-slate-700">
+                     {match.round_name || (match as any).lineup?.round_name}
+                  </span>
+               )}
+            </div>
 
          {/* Statut LIVE ou Type de match badge en haut à droite */}
          <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
@@ -398,15 +400,17 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
                   </Button>
                )}
 
-               <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onDelete}
-                  className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all"
-                  title="Supprimer le match"
-               >
-                  <Trash2 className="w-3.5 h-3.5" />
-               </Button>
+               {onDelete && (
+                  <Button
+                     variant="ghost"
+                     size="sm"
+                     onClick={onDelete}
+                     className="h-7 w-7 p-0 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all"
+                     title="Supprimer le match"
+                  >
+                     <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+               )}
                <ChevronRight className={`w-4 h-4 transition-all ${isSelected ? 'text-primary translate-x-1' : 'text-muted-foreground opacity-30'}`} />
             </div>
          </div>
@@ -424,7 +428,7 @@ const MatchManagementPage: React.FC = () => {
    const { mainClub, opponentClubs, isLoading: clubLoading } = useClubData();
    const { leagues } = useCompetitions();
    const { teams } = useTeams();
-   const { can, canManageCategory, authState } = usePermissions();
+   const { can, canManageCategory, authState, hasSubModuleAccess } = usePermissions();
 
    const resolveRequestedTab = (
       tab: string | null,
@@ -471,7 +475,20 @@ const MatchManagementPage: React.FC = () => {
    const [isFrmfCalendarSyncOpen, setIsFrmfCalendarSyncOpen] = useState(false);
    const [pendingFrmfSyncCount, setPendingFrmfSyncCount] = useState<number>(0);
 
-   const canCreateMatches = can('create_match');
+   const canPlanMatch = can('plan_match') || hasSubModuleAccess('matches', 'plan_match');
+   const canSyncMyClub = can('sync_my_club') || hasSubModuleAccess('matches', 'sync_my_club');
+   const canImportFrmf = can('import_frmf_sheet') || hasSubModuleAccess('matches', 'import_frmf_sheet');
+   const canManageMatchPlayed = can('manage_match_played') || hasSubModuleAccess('matches', 'manage_match_played');
+   const canLiveTracking = can('live_tracking') || hasSubModuleAccess('matches', 'live_tracking');
+   const canManageStandings = can('manage_standings') || hasSubModuleAccess('matches', 'manage_standings');
+   const canDeleteMatch = hasSubModuleAccess('matches', 'delete');
+   const canCreateMatches = canPlanMatch;
+
+   useEffect(() => {
+      if (calendarSection === 'opponents' && !canManageStandings) {
+         setCalendarSection('my_club');
+      }
+   }, [calendarSection, canManageStandings]);
    const syncLatestRef = React.useRef({
       mainClub,
       opponentClubs,
@@ -490,7 +507,7 @@ const MatchManagementPage: React.FC = () => {
    };
 
    const refreshPendingFrmfSyncCount = useCallback(async () => {
-      if (!canCreateMatches || matchesLoading || clubLoading) return;
+      if (!canSyncMyClub || matchesLoading || clubLoading) return;
       const snap = syncLatestRef.current;
       try {
          const audit = await frmfCalendarSyncService.auditFromDatabase({
@@ -509,7 +526,7 @@ const MatchManagementPage: React.FC = () => {
 
    useEffect(() => {
       let active = true;
-      if (!canCreateMatches || matchesLoading || clubLoading) return;
+      if (!canSyncMyClub || matchesLoading || clubLoading) return;
       const timer = setTimeout(() => {
          if (active) void refreshPendingFrmfSyncCount();
       }, 350);
@@ -518,7 +535,7 @@ const MatchManagementPage: React.FC = () => {
          clearTimeout(timer);
       };
    }, [
-      canCreateMatches,
+      canSyncMyClub,
       matchesLoading,
       clubLoading,
       matches.length,
@@ -542,6 +559,37 @@ const MatchManagementPage: React.FC = () => {
          setCategoryFilter(normalizeAgeCategory(authState.userCategories[0]));
       }
    }, [authState?.userCategories]);
+
+   // US-DASH-147 : Distinction stricte AMF (Académie Mohammed VI) vs AAMF & rectification automatique du calendrier
+   useEffect(() => {
+      if (!matches.length || !opponentClubs.length) return;
+      const amfClub = opponentClubs.find(
+         c =>
+            (c.name?.toUpperCase().trim() === 'AMF' ||
+             c.short_name?.toUpperCase().trim() === 'AMF' ||
+             (c.name?.toLowerCase().includes('academie mohammed vi') && !c.name?.toLowerCase().includes('association'))) &&
+            c.name?.toUpperCase().trim() !== 'AAMF' &&
+            c.short_name?.toUpperCase().trim() !== 'AAMF'
+      );
+      const aamfClub = opponentClubs.find(
+         c =>
+            c.name?.toUpperCase().trim() === 'AAMF' ||
+            c.short_name?.toUpperCase().trim() === 'AAMF'
+      );
+      if (amfClub && aamfClub && amfClub.id !== aamfClub.id) {
+         const misassignedMatches = matches.filter(
+            m => m.category === 'U21' && m.opponent_id === aamfClub.id
+         );
+         if (misassignedMatches.length > 0) {
+            console.info(
+               `[US-DASH-147] Rectification Calendrier U21 : ${misassignedMatches.length} match(s) re-liés de AAMF vers AMF (Académie Mohammed VI)`
+            );
+            misassignedMatches.forEach(m => {
+               void updateMatch({ id: m.id, data: { opponent_id: amfClub.id } });
+            });
+         }
+      }
+   }, [matches, opponentClubs, updateMatch]);
    const [calendarSection, setCalendarSection] = useState<'my_club' | 'opponents'>('my_club');
    const [leagueFilter, setLeagueFilter] = useState<string>('All');
    const [dateFilter, setDateFilter] = useState<string>('');
@@ -552,6 +600,14 @@ const MatchManagementPage: React.FC = () => {
    const [viewMode, setViewMode] = useState<'grid' | 'table' | 'planning'>('table');
    const [currentMonth, setCurrentMonth] = useState(new Date());
    const [calendarSelectedDate, setCalendarSelectedDate] = useState<string | null>(null);
+   const [isExactDatePickerOpen, setIsExactDatePickerOpen] = useState(false);
+
+   // Références pour le défilement et drag horizontal fluide (US-DASH-144)
+   const dateStripRef = React.useRef<HTMLDivElement>(null);
+   const isMouseDownRef = React.useRef(false);
+   const startXRef = React.useRef(0);
+   const scrollLeftRef = React.useRef(0);
+   const hasDraggedRef = React.useRef(false);
 
 
 
@@ -802,22 +858,16 @@ const MatchManagementPage: React.FC = () => {
 
    const todayStr = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
 
-   // Calcul des 7 jours de la semaine (style Flashscore / LiveScore - Photo 2)
-   const weekDays = useMemo(() => {
-      const current = new Date(dateStripAnchor);
-      const day = current.getDay();
-      // Lundi = premier jour de la semaine (dimanche = 0, donc diff = -6)
-      const diffToMonday = day === 0 ? -6 : 1 - day;
-      const monday = new Date(current);
-      monday.setDate(current.getDate() + diffToMonday);
-
+   // Calcul des jours défilants (-45 jours passés à +65 jours futurs - US-DASH-144)
+   const timelineDays = useMemo(() => {
+      const anchor = new Date(dateStripAnchor);
+      const days = [];
       const dayNames = ['DIM', 'LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM'];
       const monthNames = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEP', 'OCT', 'NOV', 'DÉC'];
 
-      const days = [];
-      for (let i = 0; i < 7; i++) {
-         const d = new Date(monday);
-         d.setDate(monday.getDate() + i);
+      for (let i = -45; i <= 65; i++) {
+         const d = new Date(anchor);
+         d.setDate(anchor.getDate() + i);
          const yyyy = d.getFullYear();
          const mm = String(d.getMonth() + 1).padStart(2, '0');
          const dd = String(d.getDate()).padStart(2, '0');
@@ -851,35 +901,85 @@ const MatchManagementPage: React.FC = () => {
       return counts;
    }, [matches, categoryFilter, leagueFilter, canManageCategory]);
 
-   const handlePrevWeek = () => {
-      setDateStripAnchor(prev => {
-         const next = new Date(prev);
-         next.setDate(prev.getDate() - 7);
-         return next;
-      });
+   // Centrage automatique d'une date dans le bandeau
+   const centerDayInView = useCallback((formattedDate: string, smooth: boolean = true) => {
+      if (!dateStripRef.current) return;
+      const dayEl = dateStripRef.current.querySelector(`[data-date="${formattedDate}"]`) as HTMLElement;
+      if (dayEl) {
+         dayEl.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', inline: 'center', block: 'nearest' });
+      }
+   }, []);
+
+   // Centrer la date d'aujourd'hui ou la date filtrée au chargement
+   useEffect(() => {
+      const target = dateFilter || todayStr;
+      const timer = setTimeout(() => {
+         centerDayInView(target, false);
+      }, 150);
+      return () => clearTimeout(timer);
+   }, [centerDayInView, todayStr]);
+
+   // Gestionnaires du glisser-déposer horizontal (drag to scroll) à la souris
+   const handleMouseDown = (e: React.MouseEvent) => {
+      if (!dateStripRef.current) return;
+      isMouseDownRef.current = true;
+      hasDraggedRef.current = false;
+      startXRef.current = e.pageX - dateStripRef.current.offsetLeft;
+      scrollLeftRef.current = dateStripRef.current.scrollLeft;
    };
 
-   const handleNextWeek = () => {
-      setDateStripAnchor(prev => {
-         const next = new Date(prev);
-         next.setDate(prev.getDate() + 7);
-         return next;
-      });
+   const handleMouseMove = (e: React.MouseEvent) => {
+      if (!isMouseDownRef.current || !dateStripRef.current) return;
+      e.preventDefault();
+      const x = e.pageX - dateStripRef.current.offsetLeft;
+      const walk = (x - startXRef.current) * 1.5;
+      if (Math.abs(walk) > 4) {
+         hasDraggedRef.current = true;
+      }
+      dateStripRef.current.scrollLeft = scrollLeftRef.current - walk;
+   };
+
+   const handleMouseUpOrLeave = () => {
+      isMouseDownRef.current = false;
+   };
+
+   const handleDayClick = (formattedDate: string) => {
+      if (hasDraggedRef.current) {
+         hasDraggedRef.current = false;
+         return;
+      }
+      handleSelectDay(formattedDate);
+   };
+
+   // Défilement par les flèches < et >
+   const handleScrollStrip = (direction: 'left' | 'right') => {
+      if (dateStripRef.current) {
+         const scrollAmount = direction === 'left' ? -350 : 350;
+         dateStripRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+      }
    };
 
    const handleGoToToday = () => {
-      const now = new Date();
-      setDateStripAnchor(now);
+      setDateStripAnchor(new Date());
       setDateFilter(todayStr);
+      setCalendarSelectedDate(todayStr);
       setListFilter('all');
+      setTimeout(() => centerDayInView(todayStr, true), 80);
    };
 
    const handleSelectDay = (formattedDate: string) => {
       if (dateFilter === formattedDate) {
          setDateFilter('');
+         setCalendarSelectedDate(null);
       } else {
          setDateFilter(formattedDate);
+         setCalendarSelectedDate(formattedDate);
          setListFilter('all');
+         const d = new Date(formattedDate + 'T00:00:00');
+         if (!isNaN(d.getTime())) {
+            setCurrentMonth(d);
+         }
+         setTimeout(() => centerDayInView(formattedDate, true), 80);
       }
    };
 
@@ -1094,35 +1194,37 @@ const MatchManagementPage: React.FC = () => {
 
                   <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
                      {/* ── ONGLETS MAJEURS : MON CLUB vs ADVERSAIRES ── */}
-                     <div className="flex items-center bg-slate-100 p-1 rounded-xl sm:rounded-2xl border border-slate-200 shrink-0">
-                        <button
-                           type="button"
-                           onClick={() => setCalendarSection('my_club')}
-                           className={`h-9 sm:h-11 px-3.5 sm:px-4 rounded-lg sm:rounded-xl font-black uppercase tracking-wider text-[10px] sm:text-[11px] flex items-center gap-2 transition-all ${calendarSection === 'my_club'
-                              ? 'bg-[#FF3737] text-white shadow-md shadow-red-500/25 scale-[1.02]'
-                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                              }`}
-                        >
-                           <Shield className="w-3.5 h-3.5 shrink-0" />
-                           <span>Mon Club</span>
-                           <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${calendarSection === 'my_club' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
-                              }`}>
-                              {matches.length}
-                           </span>
-                        </button>
+                     {canManageStandings && (
+                        <div className="flex items-center bg-slate-100 p-1 rounded-xl sm:rounded-2xl border border-slate-200 shrink-0">
+                           <button
+                              type="button"
+                              onClick={() => setCalendarSection('my_club')}
+                              className={`h-9 sm:h-11 px-3.5 sm:px-4 rounded-lg sm:rounded-xl font-black uppercase tracking-wider text-[10px] sm:text-[11px] flex items-center gap-2 transition-all ${calendarSection === 'my_club'
+                                 ? 'bg-[#FF3737] text-white shadow-md shadow-red-500/25 scale-[1.02]'
+                                 : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                 }`}
+                           >
+                              <Shield className="w-3.5 h-3.5 shrink-0" />
+                              <span>Mon Club</span>
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${calendarSection === 'my_club' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                                 }`}>
+                                 {matches.length}
+                              </span>
+                           </button>
 
-                        <button
-                           type="button"
-                           onClick={() => setCalendarSection('opponents')}
-                           className={`h-9 sm:h-11 px-3.5 sm:px-4 rounded-lg sm:rounded-xl font-black uppercase tracking-wider text-[10px] sm:text-[11px] flex items-center gap-2 transition-all ${calendarSection === 'opponents'
-                              ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25 scale-[1.02]'
-                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                              }`}
-                        >
-                           <Swords className="w-3.5 h-3.5 shrink-0 text-amber-400" />
-                           <span>Adversaires</span>
-                        </button>
-                     </div>
+                           <button
+                              type="button"
+                              onClick={() => setCalendarSection('opponents')}
+                              className={`h-9 sm:h-11 px-3.5 sm:px-4 rounded-lg sm:rounded-xl font-black uppercase tracking-wider text-[10px] sm:text-[11px] flex items-center gap-2 transition-all ${calendarSection === 'opponents'
+                                 ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25 scale-[1.02]'
+                                 : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                 }`}
+                           >
+                              <Swords className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                              <span>Adversaires</span>
+                           </button>
+                        </div>
+                     )}
 
                      {calendarSection === 'my_club' && (
                         <>
@@ -1166,52 +1268,56 @@ const MatchManagementPage: React.FC = () => {
                               </button>
                            </div>
 
-                           {/* Synchroniser My Club, Importer Feuille FRMF & Planifier un match Buttons */}
-                           {can('create_match') && (
-                              <>
-                                 <Button
-                                    onClick={() => setIsFrmfCalendarSyncOpen(true)}
-                                    variant="outline"
-                                    className="border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 h-10 sm:h-12 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-bold uppercase tracking-wider text-[10px] sm:text-[11px] gap-2 transition-all hover:scale-[1.02] active:scale-95 shrink-0"
-                                    title="Vérifier et synchroniser dans le calendrier les matchs joués de My Club issus de Classement & Résultats"
-                                 >
-                                    <RefreshCw className="w-4 h-4 text-emerald-600" />
-                                    <span className="hidden md:inline">Synchroniser My Club</span>
-                                    <span className="md:hidden">Synchro</span>
-                                    {pendingFrmfSyncCount > 0 && (
-                                       <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-[#FF3737] text-white text-[10px] font-black shadow-xs">
-                                          {pendingFrmfSyncCount}
-                                       </span>
-                                    )}
-                                 </Button>
+                           {/* Synchroniser My Club (Permission Spécifique / Photo 2) */}
+                           {canSyncMyClub && (
+                              <Button
+                                 onClick={() => setIsFrmfCalendarSyncOpen(true)}
+                                 variant="outline"
+                                 className="border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 h-10 sm:h-12 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-bold uppercase tracking-wider text-[10px] sm:text-[11px] gap-2 transition-all hover:scale-[1.02] active:scale-95 shrink-0"
+                                 title="Vérifier et synchroniser dans le calendrier les matchs joués de My Club issus de Classement & Résultats"
+                              >
+                                 <RefreshCw className="w-4 h-4 text-emerald-600" />
+                                 <span className="hidden md:inline">Synchroniser My Club</span>
+                                 <span className="md:hidden">Synchro</span>
+                                 {pendingFrmfSyncCount > 0 && (
+                                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-[#FF3737] text-white text-[10px] font-black shadow-xs">
+                                       {pendingFrmfSyncCount}
+                                    </span>
+                                 )}
+                              </Button>
+                           )}
 
-                                 <Button
-                                    onClick={() => setIsPdfImportOpen(true)}
-                                    variant="outline"
-                                    className="border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 h-10 sm:h-12 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-bold uppercase tracking-wider text-[10px] sm:text-[11px] gap-2 transition-all hover:scale-[1.02] active:scale-95 shrink-0"
-                                    title="Importer automatiquement une feuille de match FRMF (PDF)"
-                                 >
-                                    <FileText className="w-4 h-4 text-red-500" />
-                                    <span className="hidden md:inline">Importer Feuille FRMF (PDF)</span>
-                                    <span className="md:hidden">Feuille FRMF</span>
-                                 </Button>
+                           {/* Importer Feuille FRMF PDF (Permission Spécifique / Photo 1) */}
+                           {canImportFrmf && (
+                              <Button
+                                 onClick={() => setIsPdfImportOpen(true)}
+                                 variant="outline"
+                                 className="border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 h-10 sm:h-12 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-bold uppercase tracking-wider text-[10px] sm:text-[11px] gap-2 transition-all hover:scale-[1.02] active:scale-95 shrink-0"
+                                 title="Importer automatiquement une feuille de match FRMF (PDF)"
+                              >
+                                 <FileText className="w-4 h-4 text-red-500" />
+                                 <span className="hidden md:inline">Importer Feuille FRMF (PDF)</span>
+                                 <span className="md:hidden">Feuille FRMF</span>
+                              </Button>
+                           )}
 
-                                 <Button
-                                    onClick={() => navigate('/matches/new' + (categoryFilter !== 'All' ? `?category=${encodeURIComponent(categoryFilter)}` : ''))}
-                                    className="bg-[#FF3737] hover:bg-[#e02e2e] text-white h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-[11px] gap-2 shadow-lg shadow-red-500/25 transition-all hover:scale-[1.02] active:scale-95 group shrink-0"
-                                 >
-                                    <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
-                                    <span className="hidden sm:inline">Planifier un Match</span>
-                                    <span className="sm:hidden">Planifier</span>
-                                 </Button>
-                              </>
+                           {/* Planifier un Match (Permission Spécifique / Photo 1) */}
+                           {canPlanMatch && (
+                              <Button
+                                 onClick={() => navigate('/matches/new' + (categoryFilter !== 'All' ? `?category=${encodeURIComponent(categoryFilter)}` : ''))}
+                                 className="bg-[#FF3737] hover:bg-[#e02e2e] text-white h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-[11px] gap-2 shadow-lg shadow-red-500/25 transition-all hover:scale-[1.02] active:scale-95 group shrink-0"
+                              >
+                                 <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
+                                 <span className="hidden sm:inline">Planifier un Match</span>
+                                 <span className="sm:hidden">Planifier</span>
+                              </Button>
                            )}
                         </>
                      )}
                   </div>
                </div>
 
-               {calendarSection === 'opponents' ? (
+               {calendarSection === 'opponents' && canManageStandings ? (
                   <OpponentMatchesPanel
                      fusMatches={matches}
                      leagues={leagues}
@@ -1230,19 +1336,26 @@ const MatchManagementPage: React.FC = () => {
                         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
                            {/* Jours de la semaine avec navigation */}
                            <div className="relative flex items-center border-b border-slate-100">
-                              {/* Bouton Semaine Précédente */}
+                              {/* Bouton Défiler vers la gauche */}
                               <button
                                  type="button"
-                                 onClick={handlePrevWeek}
-                                 className="w-8 sm:w-10 h-16 sm:h-20 flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-colors shrink-0 border-r border-slate-100"
-                                 title="Semaine précédente"
+                                 onClick={() => handleScrollStrip('left')}
+                                 className="w-8 sm:w-10 h-16 sm:h-20 flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-colors shrink-0 border-r border-slate-100 cursor-pointer"
+                                 title="Défiler vers la gauche"
                               >
                                  <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
                               </button>
 
-                              {/* Grille des 7 jours */}
-                              <div className="grid grid-cols-7 flex-1 divide-x divide-slate-100 text-center select-none">
-                                 {weekDays.map(day => {
+                              {/* Grille défilante et glissable des jours (Drag & Touch to scroll - US-DASH-144) */}
+                              <div
+                                 ref={dateStripRef}
+                                 onMouseDown={handleMouseDown}
+                                 onMouseMove={handleMouseMove}
+                                 onMouseUp={handleMouseUpOrLeave}
+                                 onMouseLeave={handleMouseUpOrLeave}
+                                 className="flex-1 flex overflow-x-auto scrollbar-hide divide-x divide-slate-100 text-center select-none cursor-grab active:cursor-grabbing scroll-smooth py-0"
+                              >
+                                 {timelineDays.map(day => {
                                     const isSelected = dateFilter === day.formatted;
                                     const isCurrentToday = day.isToday;
                                     const count = matchesCountByDate[day.formatted] || 0;
@@ -1250,9 +1363,10 @@ const MatchManagementPage: React.FC = () => {
                                     return (
                                        <button
                                           key={day.formatted}
+                                          data-date={day.formatted}
                                           type="button"
-                                          onClick={() => handleSelectDay(day.formatted)}
-                                          className={`relative flex flex-col items-center justify-center py-2.5 sm:py-3.5 px-1 transition-all group hover:bg-slate-50/80 ${isSelected ? 'bg-emerald-50/30' : ''
+                                          onClick={() => handleDayClick(day.formatted)}
+                                          className={`relative min-w-[78px] sm:min-w-[96px] md:min-w-[104px] flex-shrink-0 flex flex-col items-center justify-center py-2.5 sm:py-3.5 px-2 transition-all group hover:bg-slate-50/80 cursor-pointer ${isSelected ? 'bg-emerald-50/40' : ''
                                              }`}
                                        >
                                           {/* Jour de la semaine (ex: LUN, MAR...) */}
@@ -1305,12 +1419,12 @@ const MatchManagementPage: React.FC = () => {
                                  })}
                               </div>
 
-                              {/* Bouton Semaine Suivante */}
+                              {/* Bouton Défiler vers la droite */}
                               <button
                                  type="button"
-                                 onClick={handleNextWeek}
-                                 className="w-8 sm:w-10 h-16 sm:h-20 flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-colors shrink-0 border-l border-slate-100"
-                                 title="Semaine suivante"
+                                 onClick={() => handleScrollStrip('right')}
+                                 className="w-8 sm:w-10 h-16 sm:h-20 flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-colors shrink-0 border-l border-slate-100 cursor-pointer"
+                                 title="Défiler vers la droite"
                               >
                                  <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
                               </button>
@@ -1411,29 +1525,23 @@ const MatchManagementPage: React.FC = () => {
                                     <span>Aujourd'hui</span>
                                  </button>
 
-                                 {/* Sélecteur de date (Photo 2 : Voir d'autres dates) */}
-                                 <label className="relative flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-slate-300 shadow-2xs transition-all group">
-                                    <Calendar className="w-3.5 h-3.5 text-slate-500 group-hover:text-primary shrink-0" />
+                                 {/* Choix exact de la date (Modal Calendrier Interactif - US-DASH-144) */}
+                                 <button
+                                    type="button"
+                                    onClick={() => setIsExactDatePickerOpen(true)}
+                                    className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all border shadow-2xs group cursor-pointer ${
+                                       dateFilter ? 'bg-slate-900 text-white border-slate-900' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                    }`}
+                                    title="Ouvrir le calendrier pour choisir une date exacte"
+                                 >
+                                    <Calendar className={`w-3.5 h-3.5 shrink-0 ${dateFilter ? 'text-white' : 'text-[#FF3737]'}`} />
                                     <span className="hidden sm:inline">
-                                       {dateFilter ? `Date: ${dateFilter}` : "Voir d'autres dates"}
+                                       {dateFilter ? `Date : ${dateFilter}` : 'Choix exact de la date'}
                                     </span>
                                     <span className="sm:hidden">
-                                       {dateFilter || "Date"}
+                                       {dateFilter || 'Date'}
                                     </span>
-                                    <input
-                                       type="date"
-                                       value={dateFilter}
-                                       onChange={(e) => {
-                                          const val = e.target.value;
-                                          if (val) {
-                                             setDateFilter(val);
-                                             setDateStripAnchor(new Date(val + 'T00:00:00'));
-                                             setListFilter('all');
-                                          }
-                                       }}
-                                       className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                                    />
-                                 </label>
+                                 </button>
 
                                  {dateFilter && (
                                     <button
@@ -1603,52 +1711,62 @@ const MatchManagementPage: React.FC = () => {
                      )}
 
                      {viewMode === 'planning' ? (
-                        <div className="space-y-4 sm:space-y-5">
-                           {/* Calendar Card */}
-                           <div className="bg-white border rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-6 shadow-xl overflow-x-auto">
-                              {/* Month Navigation Header */}
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-4 sm:pb-5 gap-4 mb-4 sm:mb-5">
-                                 <div className="flex items-center gap-3 sm:gap-4">
-                                    <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-slate-800">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
+                           {/* ── COLONNE GAUCHE : Calendrier Mensuel Interactif (US-DASH-145) ── */}
+                           <div className="lg:col-span-5 xl:col-span-4 bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xs p-4 sm:p-5 flex flex-col gap-3.5 sticky top-20">
+                              {/* Navigation du mois */}
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                                 <div>
+                                    <h3 className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-800">
                                        {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-                                    </h2>
-                                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border">
-                                       <button
-                                          onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
-                                          className="p-1.5 hover:bg-white hover:text-primary rounded-lg transition-all text-slate-500"
-                                       >
-                                          <ChevronRight className="w-4 h-4 rotate-180" />
-                                       </button>
-                                       <button
-                                          onClick={() => setCurrentMonth(new Date())}
-                                          className="px-3 py-1 bg-white text-[10px] font-black uppercase tracking-wider rounded-lg text-slate-700 hover:text-primary shadow-sm transition-all"
-                                       >
-                                          Aujourd'hui
-                                       </button>
-                                       <button
-                                          onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
-                                          className="p-1.5 hover:bg-white hover:text-primary rounded-lg transition-all text-slate-500"
-                                       >
-                                          <ChevronRight className="w-4 h-4" />
-                                       </button>
-                                    </div>
+                                    </h3>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                       Cliquez sur un jour pour voir ses matchs à droite
+                                    </p>
                                  </div>
-                                 <div className="flex items-center gap-3 text-[9px] font-black text-muted-foreground uppercase tracking-wider">
-                                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-slate-600 font-bold">Live</span></div>
-                                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500" /><span className="text-slate-600 font-bold">Prévu</span></div>
-                                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-slate-400" /><span className="text-slate-600 font-bold">Terminé</span></div>
+                                 <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                                    <button
+                                       type="button"
+                                       onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
+                                       className="p-1 hover:bg-white hover:text-primary rounded-lg transition-all text-slate-500 cursor-pointer"
+                                       title="Mois précédent"
+                                    >
+                                       <ChevronLeft className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                       type="button"
+                                       onClick={() => {
+                                          const now = new Date();
+                                          setCurrentMonth(now);
+                                          handleGoToToday();
+                                       }}
+                                       className="px-2.5 py-1 bg-white text-[9.5px] font-black uppercase tracking-wider rounded-lg text-slate-700 hover:text-primary shadow-2xs transition-all cursor-pointer"
+                                       title="Revenir à aujourd'hui"
+                                    >
+                                       Aujourd'hui
+                                    </button>
+                                    <button
+                                       type="button"
+                                       onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
+                                       className="p-1 hover:bg-white hover:text-primary rounded-lg transition-all text-slate-500 cursor-pointer"
+                                       title="Mois suivant"
+                                    >
+                                       <ChevronRight className="w-4 h-4" />
+                                    </button>
                                  </div>
                               </div>
 
-                              {/* Weekdays Header */}
-                              <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center mb-2">
+                              {/* Jours de la semaine */}
+                              <div className="grid grid-cols-7 gap-1 text-center select-none">
                                  {daysOfWeek.map(day => (
-                                    <div key={day} className="text-[9px] font-black uppercase tracking-widest text-slate-400 py-1">{day}</div>
+                                    <div key={day} className="text-[9.5px] font-black uppercase tracking-wider text-slate-400 py-1">
+                                       {day}
+                                    </div>
                                  ))}
                               </div>
 
-                              {/* Calendar Grid */}
-                              <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+                              {/* Grille des 42 jours du mois */}
+                              <div className="grid grid-cols-7 gap-1 select-none">
                                  {calendarDays.map(({ date, isCurrentMonth, formattedDate }, idx) => {
                                     const dayMatches = matches.filter(m => {
                                        if (!canManageCategory(m.category)) return false;
@@ -1656,147 +1774,117 @@ const MatchManagementPage: React.FC = () => {
                                        if (categoryFilter !== 'All' && normalizeAgeCategory(m.category) !== categoryFilter) return false;
                                        return matchBelongsToLeague(m, leagueFilter);
                                     });
-                                    const isToday = new Date().toLocaleDateString('en-CA') === formattedDate;
-                                    const isSelected = calendarSelectedDate === formattedDate;
-                                    const hasMatches = dayMatches.length > 0;
+                                    const isTodayCell = formattedDate === todayStr;
+                                    const isSelectedCell = (dateFilter || calendarSelectedDate || todayStr) === formattedDate;
+                                    const count = dayMatches.length;
+                                    const hasLive = dayMatches.some(m => m.status === 'live');
+                                    const hasScheduled = dayMatches.some(m => m.status === 'scheduled');
+
                                     return (
-                                       <div
+                                       <button
                                           key={idx}
+                                          type="button"
                                           onDragOver={(e) => handleDragOver(e, formattedDate)}
                                           onDragLeave={(e) => handleDragLeave(e, formattedDate)}
                                           onDrop={(e) => handleDrop(e, formattedDate)}
                                           onClick={() => {
-                                             setCalendarSelectedDate(isSelected ? null : formattedDate);
+                                             setDateFilter(formattedDate);
+                                             setCalendarSelectedDate(formattedDate);
+                                             setListFilter('all');
+                                             setTimeout(() => centerDayInView(formattedDate, true), 80);
                                           }}
-                                          className={`relative min-h-[72px] sm:min-h-[92px] p-1.5 sm:p-2 rounded-xl sm:rounded-2xl border-2 transition-all flex flex-col group ${!isCurrentMonth ? 'opacity-30 border-transparent bg-slate-50/20' :
-                                             dragOverDate === formattedDate ? 'border-emerald-500 bg-emerald-50/90 ring-4 ring-emerald-400/30 scale-[1.02] shadow-xl z-10' :
-                                                isSelected ? 'border-primary bg-primary/5 shadow-lg shadow-primary/10 ring-2 ring-primary/20' :
-                                                   isToday ? 'border-primary/50 bg-blue-50/50 shadow-sm' :
-                                                      hasMatches ? 'border-slate-200 bg-white hover:border-primary/40 hover:shadow-md cursor-pointer' :
-                                                         'border-slate-100 bg-slate-50/30 hover:border-slate-200 cursor-pointer'
-                                             }`}
+                                          className={`relative h-10 sm:h-11 rounded-xl flex flex-col items-center justify-center p-1 transition-all cursor-pointer group border ${
+                                             isSelectedCell
+                                                ? 'bg-[#16a34a] text-white border-[#16a34a] shadow-md shadow-emerald-600/30 font-black scale-105 z-10'
+                                                : isTodayCell
+                                                   ? 'bg-emerald-50 text-[#16a34a] border-emerald-300 font-black'
+                                                   : isCurrentMonth
+                                                      ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-100'
+                                                      : 'bg-slate-50/40 text-slate-300 border-transparent hover:bg-slate-100/50'
+                                          } ${dragOverDate === formattedDate ? 'border-primary ring-2 ring-primary/40 bg-emerald-100/80 scale-105' : ''}`}
+                                          title={`${formattedDate}${count > 0 ? ` (${count} match${count > 1 ? 's' : ''})` : ''}`}
                                        >
-                                          {/* Day number & Quick Actions */}
-                                          <div className="flex items-center justify-between mb-1">
-                                             <div className="flex items-center gap-1">
-                                                <span className={`text-[10px] sm:text-xs font-black ${isToday ? 'bg-primary text-white w-5 h-5 rounded-full flex items-center justify-center shadow-sm' :
-                                                   isSelected ? 'text-primary' : 'text-slate-600'
-                                                   }`}>{date.getDate()}</span>
-                                                {hasMatches && (
-                                                   <span className="text-[8px] font-bold text-slate-400 bg-slate-100 px-1 rounded-full hidden sm:inline">
-                                                      {dayMatches.length}
-                                                   </span>
-                                                )}
-                                             </div>
-                                             {can('create_match') && (
-                                                <button
-                                                   onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      navigate(`/matches/new?date=${formattedDate}${categoryFilter !== 'All' ? `&category=${encodeURIComponent(categoryFilter)}` : ''}`);
-                                                   }}
-                                                   className="opacity-70 sm:opacity-0 sm:group-hover:opacity-100 p-1 hover:bg-primary hover:text-white rounded-md text-slate-400 transition-all shadow-sm"
-                                                   title="Planifier un match pour ce jour"
-                                                ><Plus className="w-2.5 h-2.5 sm:w-3 sm:h-3" /></button>
-                                             )}
-                                          </div>
+                                          <span className={`text-[11px] sm:text-xs leading-none font-black ${
+                                             isSelectedCell ? 'text-white' : isTodayCell ? 'text-[#16a34a]' : isCurrentMonth ? 'text-slate-800' : 'text-slate-400'
+                                          }`}>
+                                             {date.getDate()}
+                                          </span>
 
-                                          {/* Drag Over Dropzone Indicator */}
-                                          {dragOverDate === formattedDate && (
-                                             <div className="text-[8px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100 rounded py-0.5 text-center mb-1 animate-pulse">
-                                                Déposer ici
+                                          {/* Badge compteur de matchs ou pastille */}
+                                          {count > 0 && (
+                                             <div className="flex items-center gap-0.5 mt-0.5">
+                                                <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
+                                                   isSelectedCell
+                                                      ? 'bg-white/25 text-white'
+                                                      : hasLive
+                                                         ? 'bg-red-600 text-white animate-pulse'
+                                                         : hasScheduled
+                                                            ? 'bg-emerald-600 text-white'
+                                                            : 'bg-slate-200 text-slate-700'
+                                                }`}>
+                                                   {count}
+                                                </span>
                                              </div>
                                           )}
 
-                                          {/* Match Cards in Day Cell */}
-                                          <div className="flex flex-col gap-1 w-full mt-auto">
-                                             {dayMatches.slice(0, 2).map(match => {
-                                                const oppClub = opponentClubs.find(c => c.id === match.opponent_id);
-                                                const oppName = getOpponentName(match.opponent_id);
-                                                const isDraggable = match.status !== 'finished';
-                                                const matchLeague = leagues.find(l => l.id === match.league_id);
-                                                const isInternalScrimmage = (match as any).match_type === 'internal_scrimmage'
-                                                   || (match.lineup as any)?.internal_opposition?.is_internal_scrimmage
-                                                   || (match.notes && match.notes.includes('[Opposition Interne]'))
-                                                   || (mainClub && match.opponent_id === mainClub.id);
-                                                const isFriendlyM = !isInternalScrimmage && (!match.league_id || match.category?.toLowerCase().includes('amical') || match.notes?.toLowerCase().includes('amical'));
-                                                const oppLogoSrc = (isInternalScrimmage && mainClub?.logo_url)
-                                                   ? mainClub.logo_url
-                                                   : (oppClub?.logo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(oppName)}`);
-
-                                                return (
-                                                   <div
-                                                      key={match.id}
-                                                      draggable={isDraggable}
-                                                      onDragStart={(e) => handleDragStart(e, match.id)}
-                                                      onClick={(e) => {
-                                                         e.stopPropagation();
-                                                         setSelectedMatchId(match.id);
-                                                         setActiveTab('overview');
-                                                      }}
-                                                      className={`flex items-center gap-1 w-full px-1.5 py-1 rounded-lg border text-[8px] font-black transition-all ${isDraggable ? 'cursor-grab active:cursor-grabbing hover:scale-[1.02]' : 'cursor-pointer'
-                                                         } ${match.status === 'live' ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100' :
-                                                            match.status === 'scheduled' ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100' :
-                                                               'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                                                         }`}
-                                                      title={`${isDraggable ? 'Glisser pour déplacer • ' : ''}${oppName} (${match.category || 'Équipe'}) - ${matchLeague?.name || (isInternalScrimmage ? 'Interne' : isFriendlyM ? 'Amical' : 'Compétition')}`}
-                                                   >
-                                                      {isDraggable && <GripVertical className="w-2.5 h-2.5 text-slate-400 shrink-0 hidden sm:inline" />}
-
-                                                      {/* Opponent Logo with Category Badge */}
-                                                      <div className="relative shrink-0">
-                                                         <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full overflow-hidden bg-white border border-slate-200">
-                                                            <img src={oppLogoSrc} alt="" className="w-full h-full object-contain" />
-                                                         </div>
-                                                         {match.category && (
-                                                            <span className="absolute -bottom-1 -right-1 bg-primary text-white text-[6px] font-black px-0.5 rounded leading-none border border-white">
-                                                               {match.category}
-                                                            </span>
-                                                         )}
-                                                      </div>
-
-                                                      <span className="truncate max-w-[36px] sm:max-w-[48px] font-bold text-[8px] sm:text-[9px]">{oppName}</span>
-
-                                                      {/* Competition logo or badge */}
-                                                      {matchLeague?.logo_url ? (
-                                                         <img src={matchLeague.logo_url} alt="" className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain shrink-0 ml-auto" title={matchLeague.name} />
-                                                      ) : isInternalScrimmage ? (
-                                                         <span className="text-[7px] shrink-0 ml-auto" title="Opposition Interne">⚔️</span>
-                                                      ) : isFriendlyM ? (
-                                                         <span className="text-[7px] shrink-0 ml-auto" title="Match Amical">🤝</span>
-                                                      ) : (
-                                                         <Trophy className="w-2.5 h-2.5 text-amber-500 shrink-0 ml-auto" title={matchLeague?.name || 'Compétition'} />
-                                                      )}
-
-                                                      {match.status === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping ml-0.5 shrink-0" />}
-                                                   </div>
-                                                );
-                                             })}
-                                             {dayMatches.length > 2 && (
-                                                <span className="text-[8px] font-black text-slate-400 text-center">+{dayMatches.length - 2} autre(s)</span>
-                                             )}
-                                          </div>
-                                       </div>
+                                          {/* Ligne repère sous le jour actif si pas de match */}
+                                          {isSelectedCell && count === 0 && (
+                                             <span className="w-2.5 h-0.5 bg-white/60 rounded-full mt-0.5" />
+                                          )}
+                                       </button>
                                     );
                                  })}
                               </div>
-                           </div >
 
-                           {/* Selected Date Match Panel — like the mobile app */}
-                           {
-                              calendarSelectedDate && (() => {
-                                 const panelMatches = matches.filter(m => {
-                                    if (!canManageCategory(m.category)) return false;
-                                    if (m.match_date !== calendarSelectedDate) return false;
-                                    if (categoryFilter !== 'All' && normalizeAgeCategory(m.category) !== categoryFilter) return false;
-                                    return matchBelongsToLeague(m, leagueFilter);
-                                 });
-                                 const selDate = new Date(calendarSelectedDate + 'T00:00:00');
-                                 const dayLabel = selDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
+                              {/* Légende & Statistiques du mois */}
+                              <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[9px] font-black uppercase tracking-wider text-slate-500">
+                                 <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-1.5">
+                                       <span className="w-2 h-2 rounded-full bg-red-600" />
+                                       <span>Live</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                       <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                                       <span>Prévu</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                       <span className="w-2 h-2 rounded-full bg-slate-400" />
+                                       <span>Terminé</span>
+                                    </div>
+                                 </div>
+                                 {canPlanMatch && (
+                                    <button
+                                       type="button"
+                                       onClick={() => {
+                                          const activeDate = dateFilter || calendarSelectedDate || todayStr;
+                                          navigate(`/matches/new?date=${activeDate}${categoryFilter !== 'All' ? `&category=${encodeURIComponent(categoryFilter)}` : ''}`);
+                                       }}
+                                       className="text-[#FF3737] hover:underline flex items-center gap-1 cursor-pointer font-black"
+                                    >
+                                       <Plus className="w-3 h-3" />
+                                       <span>Planifier</span>
+                                    </button>
+                                 )}
+                              </div>
+                           </div>
+
+                           {/* ── COLONNE DROITE : Matchs de la journée sélectionnée (US-DASH-145) ── */}
+                           <div className="lg:col-span-7 xl:col-span-8 space-y-4">
+                              {(() => {
+                              const activeDate = dateFilter || calendarSelectedDate || todayStr;
+                              const panelMatches = matches.filter(m => {
+                                 if (!canManageCategory(m.category)) return false;
+                                 if (m.match_date !== activeDate) return false;
+                                 if (categoryFilter !== 'All' && normalizeAgeCategory(m.category) !== categoryFilter) return false;
+                                 return matchBelongsToLeague(m, leagueFilter);
+                              });
+                              const selDate = new Date(activeDate + 'T00:00:00');
+                              const dayLabel = isNaN(selDate.getTime()) ? activeDate : selDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
 
                                  if (panelMatches.length === 0) {
                                     return (
                                        <div
-                                          key={calendarSelectedDate}
+                                          key={activeDate}
                                           className="p-6 bg-white rounded-2xl border border-slate-200 shadow-lg text-center space-y-3"
                                        >
                                           <div className="flex items-center justify-between">
@@ -1804,16 +1892,25 @@ const MatchManagementPage: React.FC = () => {
                                                 <div className="w-2 h-5 bg-slate-300 rounded-full" />
                                                 <span className="text-[11px] font-black uppercase tracking-widest text-slate-700">{dayLabel}</span>
                                              </div>
-                                             <button onClick={() => setCalendarSelectedDate(null)} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-all">
-                                                <X className="w-3.5 h-3.5 text-slate-500" />
-                                             </button>
+                                             {(dateFilter || calendarSelectedDate) && (
+                                                <button
+                                                   onClick={() => {
+                                                      setDateFilter('');
+                                                      setCalendarSelectedDate(null);
+                                                   }}
+                                                   className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-all cursor-pointer"
+                                                   title="Réinitialiser la date"
+                                                >
+                                                   <X className="w-3.5 h-3.5 text-slate-500" />
+                                                </button>
+                                             )}
                                           </div>
                                           <p className="text-xs text-slate-500 font-medium">Aucun match du FUS n'est programmé pour cette date.</p>
-                                          {can('create_match') && (
+                                          {canPlanMatch && (
                                              <Button
                                                 size="sm"
                                                 onClick={() => {
-                                                   navigate(`/matches/new?date=${calendarSelectedDate}${categoryFilter !== 'All' ? `&category=${encodeURIComponent(categoryFilter)}` : ''}`);
+                                                   navigate(`/matches/new?date=${activeDate}${categoryFilter !== 'All' ? `&category=${encodeURIComponent(categoryFilter)}` : ''}`);
                                                 }}
                                                 className="bg-primary hover:bg-primary/90 text-white text-xs font-bold gap-1.5"
                                              >
@@ -1826,7 +1923,7 @@ const MatchManagementPage: React.FC = () => {
 
                                  return (
                                     <div
-                                       key={calendarSelectedDate}
+                                       key={activeDate}
                                        className="space-y-3"
                                     >
                                        {/* Date header */}
@@ -1837,9 +1934,18 @@ const MatchManagementPage: React.FC = () => {
                                           </div>
                                           <div className="flex items-center gap-2">
                                              <span className="bg-primary text-white text-[9px] font-black px-2.5 py-1 rounded-full">{panelMatches.length} match{panelMatches.length > 1 ? 's' : ''}</span>
-                                             <button onClick={() => setCalendarSelectedDate(null)} className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-all">
-                                                <X className="w-3.5 h-3.5 text-slate-500" />
-                                             </button>
+                                             {(dateFilter || calendarSelectedDate) && (
+                                                <button
+                                                   onClick={() => {
+                                                      setDateFilter('');
+                                                      setCalendarSelectedDate(null);
+                                                   }}
+                                                   className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-all cursor-pointer"
+                                                   title="Réinitialiser la date"
+                                                >
+                                                   <X className="w-3.5 h-3.5 text-slate-500" />
+                                                </button>
+                                             )}
                                           </div>
                                        </div>
 
@@ -1867,6 +1973,13 @@ const MatchManagementPage: React.FC = () => {
                                           const rightClubName = isHome ? getOpponentName(match.opponent_id) : mainClubName;
                                           const rightClubLogo = isHome ? oppLogo : mainClubLogo;
                                           const rightIsFus = !isHome;
+
+                                          const leftFormation = isHome
+                                             ? (match.formation || (match.lineup as any)?.formation || '4-3-3')
+                                             : (match.opponent_formation || (match.lineup as any)?.opponent_formation || '4-4-2');
+                                          const rightFormation = !isHome
+                                             ? (match.formation || (match.lineup as any)?.formation || '4-3-3')
+                                             : (match.opponent_formation || (match.lineup as any)?.opponent_formation || '4-4-2');
 
                                           return (
                                              <motion.div
@@ -1932,6 +2045,10 @@ const MatchManagementPage: React.FC = () => {
                                                          )}
                                                       </div>
                                                       <span className="text-[10px] font-black text-white uppercase tracking-tight text-center max-w-[80px] leading-tight">{leftClubName}</span>
+                                                      {/* Tactical Formation under logo (FUS Rule) */}
+                                                      <span className="text-[9px] font-black tracking-wider px-2 py-0.5 rounded-md bg-slate-800 text-emerald-400 border border-slate-700/80 shadow-xs">
+                                                         {leftFormation}
+                                                      </span>
                                                       <span className="text-[8px] font-black bg-white/10 text-white/70 px-2 py-0.5 rounded-full uppercase">DOM</span>
                                                    </div>
 
@@ -1980,6 +2097,10 @@ const MatchManagementPage: React.FC = () => {
                                                          )}
                                                       </div>
                                                       <span className="text-[10px] font-black text-white uppercase tracking-tight text-center max-w-[80px] leading-tight">{rightClubName}</span>
+                                                      {/* Tactical Formation under logo (FUS Rule) */}
+                                                      <span className="text-[9px] font-black tracking-wider px-2 py-0.5 rounded-md bg-slate-800 text-emerald-400 border border-slate-700/80 shadow-xs">
+                                                         {rightFormation}
+                                                      </span>
                                                       <span className="text-[8px] font-black bg-white/10 text-white/70 px-2 py-0.5 rounded-full uppercase">EXT</span>
                                                    </div>
                                                 </div>
@@ -2046,16 +2167,7 @@ const MatchManagementPage: React.FC = () => {
                                  );
                               })()
                            }
-
-                           {/* Empty state when no date selected */}
-                           {
-                              !calendarSelectedDate && (
-                                 <div className="flex items-center justify-center gap-2 py-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                                    <Calendar className="w-4 h-4" />
-                                    Cliquez sur un jour avec des matches pour voir les détails
-                                 </div>
-                              )
-                           }
+                           </div>
                         </div>
                      ) : viewMode === 'table' ? (
                         <div className="space-y-4">
@@ -2132,19 +2244,25 @@ const MatchManagementPage: React.FC = () => {
 
                                        const isLive = match.status === 'live';
                                        const isFinished = match.status === 'finished' || (match.status !== 'live' && match.match_date < todayStr);
+                                       const isRowInternal = (match as any).match_type === 'internal_scrimmage'
+                                          || (match.lineup as any)?.internal_opposition?.is_internal_scrimmage
+                                          || (match.notes && match.notes.includes('[Opposition Interne]'))
+                                          || (mainClub && match.opponent_id === mainClub.id);
+                                       const isRowFriendly = !isRowInternal && (!match.league_id || match.category?.toLowerCase().includes('amical') || match.notes?.toLowerCase().includes('amical'));
+                                       const isRowOfficialLeague = !isRowInternal && !isRowFriendly;
 
                                        return (
                                           <div
                                              key={match.id}
                                              onClick={() => {
                                                 setSelectedMatchId(match.id);
-                                                setActiveTab(isLive ? 'live' : 'overview');
+                                                setActiveTab(isLive && canLiveTracking ? 'live' : 'overview');
                                              }}
                                              className={`flex items-center justify-between py-3.5 px-3 sm:px-6 hover:bg-slate-50/90 transition-colors cursor-pointer group ${isLive ? 'bg-red-50/40 border-l-4 border-l-[#FF3737]' : ''
                                                 }`}
                                           >
                                              {/* Sélection multi-match si activée */}
-                                             {selectedMatchIds.size > 0 && (
+                                             {selectedMatchIds.size > 0 && canDeleteMatch && (
                                                 <div className="mr-3 shrink-0" onClick={e => e.stopPropagation()}>
                                                    <input
                                                       type="checkbox"
@@ -2199,9 +2317,9 @@ const MatchManagementPage: React.FC = () => {
                                                 </div>
                                              </div>
 
-                                             {/* Centre : Journée & Score + TF / Statut */}
+                                             {/* Centre : Journée (si championnat officiel) & Score + TF / Statut */}
                                              <div className="w-24 sm:w-32 flex flex-col items-center justify-center shrink-0 px-2 text-center">
-                                                {Boolean(match.round_name || (match as any).lineup?.round_name) && (
+                                                {isRowOfficialLeague && Boolean(match.round_name || (match as any).lineup?.round_name) && (
                                                    <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-none mb-0.5">
                                                       {match.round_name || (match as any).lineup?.round_name}
                                                    </span>
@@ -2253,7 +2371,7 @@ const MatchManagementPage: React.FC = () => {
 
                                              {/* Actions discrètes au survol */}
                                              <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0" onClick={e => e.stopPropagation()}>
-                                                {match.status === 'scheduled' && (
+                                                {match.status === 'scheduled' && canLiveTracking && canManageCategory(match.category) && (
                                                    <Button
                                                       variant="ghost"
                                                       size="sm"
@@ -2265,7 +2383,19 @@ const MatchManagementPage: React.FC = () => {
                                                       <span className="text-[9px] font-black uppercase">Live</span>
                                                    </Button>
                                                 )}
-                                                {can('manage_matches') && canManageCategory(match.category) && (
+                                                {match.status === 'live' && canLiveTracking && (
+                                                   <Button
+                                                      variant="ghost"
+                                                      size="sm"
+                                                      onClick={() => handleOpenLiveConsole(match.id)}
+                                                      className="h-8 px-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200"
+                                                      title="Console Live"
+                                                   >
+                                                      <Play className="w-3.5 h-3.5 mr-1" />
+                                                      <span className="text-[9px] font-black uppercase">Live</span>
+                                                   </Button>
+                                                )}
+                                                {canManageMatchPlayed && canManageCategory(match.category) && (
                                                    <Button
                                                       variant="ghost"
                                                       size="sm"
@@ -2276,7 +2406,7 @@ const MatchManagementPage: React.FC = () => {
                                                       <Edit3 className="w-3.5 h-3.5" />
                                                    </Button>
                                                 )}
-                                                {can('manage_matches') && (
+                                                {canDeleteMatch && canManageCategory(match.category) && (
                                                    <Button
                                                       variant="ghost"
                                                       size="sm"
@@ -2306,14 +2436,14 @@ const MatchManagementPage: React.FC = () => {
                                     setSelectedMatchId(match.id);
                                     setActiveTab('overview');
                                  }}
-                                 onEdit={canManageCategory(match.category) ? (e) => {
+                                 onEdit={canManageMatchPlayed && canManageCategory(match.category) ? (e) => {
                                     e.stopPropagation();
                                     navigate(`/matches/edit/${match.id}`, { state: { match } });
                                  } : undefined}
-                                 onDelete={canManageCategory(match.category) ? (e) => {
+                                 onDelete={canDeleteMatch && canManageCategory(match.category) ? (e) => {
                                     handleOpenDeleteSingle(match, e);
                                  } : undefined}
-                                 onStartLive={canManageCategory(match.category) ? (e) => {
+                                 onStartLive={canLiveTracking && canManageCategory(match.category) ? (e) => {
                                     e.stopPropagation();
                                     setSelectedMatchId(match.id);
                                     setActiveTab('live');
@@ -2353,9 +2483,9 @@ const MatchManagementPage: React.FC = () => {
                         mainClub={mainClub}
                         opponentClubs={opponentClubs}
                         getOpponentName={getOpponentName}
-                        onOrchestrate={() => {
+                        onOrchestrate={canManageMatchPlayed ? () => {
                            navigate(`/matches/edit/${selectedMatch.id}`, { state: { match: selectedMatch } });
-                        }}
+                        } : undefined}
                         onStats={() => setActiveTab('stats')}
                         onBack={() => {
                            setActiveTab('details');
@@ -2388,7 +2518,7 @@ const MatchManagementPage: React.FC = () => {
          }
 
          {
-            activeTab === 'preparation' && selectedMatchId && (
+            activeTab === 'preparation' && selectedMatchId && canManageMatchPlayed && (
                <div key="prep">
                   <ScheduleMatchWizard
                      initialMatch={selectedMatch || matches.find(m => m.id === selectedMatchId) || editingMatch}
@@ -2403,7 +2533,7 @@ const MatchManagementPage: React.FC = () => {
          }
 
          {
-            activeTab === 'live' && selectedMatchId && (
+            activeTab === 'live' && selectedMatchId && canLiveTracking && (
                <div key="live">
                   <LiveTracking matchId={selectedMatchId} onMatchFinished={async () => { await refetch?.(); setListFilter('finished'); setActiveTab('details'); }} />
                </div>
@@ -2411,7 +2541,7 @@ const MatchManagementPage: React.FC = () => {
          }
 
          {
-            activeTab === 'wizard' && (
+            activeTab === 'wizard' && canPlanMatch && (
                <div key="wizard">
                   <ScheduleMatchWizard
                      initialMatch={editingMatch}
@@ -2512,7 +2642,7 @@ const MatchManagementPage: React.FC = () => {
          </AnimatePresence >
          {/* Floating Action Button (FAB) pour Planification Rapide */}
          {
-            can('create_match') && activeTab === 'details' && (
+            canPlanMatch && activeTab === 'details' && (
                <motion.button
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
@@ -2566,6 +2696,25 @@ const MatchManagementPage: React.FC = () => {
                await refetch();
                await refreshPendingFrmfSyncCount();
             }}
+         />
+
+         {/* Modal Sélecteur de date exacte (US-DASH-144) */}
+         <ExactDatePickerModal
+            isOpen={isExactDatePickerOpen}
+            onClose={() => setIsExactDatePickerOpen(false)}
+            selectedDate={dateFilter}
+            onSelectDate={(val) => {
+               setDateFilter(val);
+               setCalendarSelectedDate(val);
+               if (val) {
+                  const d = new Date(val + 'T00:00:00');
+                  if (!isNaN(d.getTime())) setCurrentMonth(d);
+                  setDateStripAnchor(d);
+                  setListFilter('all');
+                  setTimeout(() => centerDayInView(val, true), 100);
+               }
+            }}
+            matchesCountByDate={matchesCountByDate}
          />
       </div >
    );

@@ -83,6 +83,9 @@ export { matchesPlannedCriteria, normalizeTimeHHMM };
 export const matchSheetIngestionService = {
   /**
    * Recherche un match déjà planifié en base par Date, Heure, Adversaire et Catégorie.
+   * Si non trouvé à la date exacte, recherche si un match existe déjà pour la même confrontation
+   * dont le score est vide et sans aucun événement enregistré (match pré-planifié ou avec date provisoire).
+   * Dans ce cas, retourne ce match afin qu'il soit rectifié au lieu d'insérer un doublon (US-DASH-146).
    */
   async checkExistingPlannedMatch(params: {
     clubId?: string | null;
@@ -90,36 +93,102 @@ export const matchSheetIngestionService = {
     matchDate: string;
     matchTime?: string | null;
     category: string;
+    roundName?: string | null;
   }): Promise<{ exists: boolean; match?: any }> {
     const clubId = params.clubId || (await getMyClubId());
     const targetDate = (params.matchDate || '').trim().slice(0, 10);
-    if (!clubId || !params.opponentId || !targetDate || !params.category) {
+    if (!clubId || !params.opponentId || !params.category) {
       return { exists: false };
     }
 
-    const { data: candidates, error } = await supabase
+    // 1. Recherche prioritaire par date exacte
+    if (targetDate) {
+      const { data: candidates, error } = await supabase
+        .from('matches')
+        .select(
+          'id, club_id, team_id, opponent_id, score_home, score_away, status, match_date, match_time, category, is_home, lineup, opponent_lineup, opponent_subs'
+        )
+        .eq('club_id', clubId)
+        .eq('opponent_id', params.opponentId)
+        .eq('match_date', targetDate);
+
+      if (!error && candidates && candidates.length > 0) {
+        const matched = candidates.find((cand) =>
+          matchesPlannedCriteria(cand, {
+            opponentId: params.opponentId,
+            matchDate: targetDate,
+            matchTime: params.matchTime,
+            category: params.category,
+          })
+        );
+        if (matched) {
+          return { exists: true, match: matched };
+        }
+      }
+    }
+
+    // 2. PILIER 1 (US-DASH-146) : Si aucun match trouvé à la date exacte,
+    // recherche un match pré-existant pour le même club adverse et la même catégorie
+    // dont le score est VIDE et qui n'a AUCUN événement enregistré (`match_events` vide).
+    const { data: opponentMatches, error: oppErr } = await supabase
       .from('matches')
       .select(
         'id, club_id, team_id, opponent_id, score_home, score_away, status, match_date, match_time, category, is_home, lineup, opponent_lineup, opponent_subs'
       )
       .eq('club_id', clubId)
-      .eq('opponent_id', params.opponentId)
-      .eq('match_date', targetDate);
+      .eq('opponent_id', params.opponentId);
 
-    if (error || !candidates || candidates.length === 0) {
+    if (oppErr || !opponentMatches || opponentMatches.length === 0) {
       return { exists: false };
     }
 
-    const matched = candidates.find((cand) =>
-      matchesPlannedCriteria(cand, {
-        opponentId: params.opponentId,
-        matchDate: targetDate,
-        matchTime: params.matchTime,
-        category: params.category,
-      })
-    );
+    const normCat = params.category.toUpperCase().trim();
+    const candidateBlanks = opponentMatches.filter((cand: any) => {
+      const cCat = String(cand.category || '').toUpperCase().trim();
+      if (cCat && normCat && cCat !== normCat) return false;
+      const isScoreEmpty =
+        (cand.score_home === null || cand.score_home === undefined) &&
+        (cand.score_away === null || cand.score_away === undefined);
+      return isScoreEmpty && cand.status !== 'finished';
+    });
 
-    return matched ? { exists: true, match: matched } : { exists: false };
+    if (candidateBlanks.length === 0) {
+      return { exists: false };
+    }
+
+    // Vérifier les événements en base pour chaque candidat
+    for (const cand of candidateBlanks) {
+      const { count: eventsCount } = await supabase
+        .from('match_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('match_id', cand.id);
+
+      if ((eventsCount || 0) === 0) {
+        // Si une journée est spécifiée, privilégier le candidat qui correspond à la même journée
+        if (params.roundName) {
+          const candRound =
+            cand.round_name ||
+            (cand.lineup && typeof cand.lineup === 'object' ? (cand.lineup as any).round_name : null);
+          if (candRound && String(candRound).trim().toLowerCase() === String(params.roundName).trim().toLowerCase()) {
+            return { exists: true, match: cand };
+          }
+        }
+      }
+    }
+
+    // Si aucune correspondance stricte sur la journée, prendre le premier match vierge sans événements
+    for (const cand of candidateBlanks) {
+      const { count: eventsCount } = await supabase
+        .from('match_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('match_id', cand.id);
+
+      if ((eventsCount || 0) === 0) {
+        return { exists: true, match: cand };
+      }
+    }
+
+    return { exists: false };
   },
   /**
    * Interroge directement Supabase (`public.clubs` + `public.matches`) pour récupérer les clubs adversaires réels
@@ -243,7 +312,7 @@ export const matchSheetIngestionService = {
         ? dbLeagues.find(l => l.is_active !== false && normalizeSeasonFormat(l.season) === normSeason && !l.category) || null
         : null);
 
-    // 4. Vérification si le match existe déjà dans la base (Date, Heure, Adversaire, Catégorie)
+    // 4. Vérification si le match existe déjà dans la base (Date, Heure, Adversaire, Catégorie, Journée)
     let existingMatchCheck: { exists: boolean; match?: any } = { exists: false };
     if (matchedOpponentClub) {
       existingMatchCheck = await this.checkExistingPlannedMatch({
@@ -252,6 +321,7 @@ export const matchSheetIngestionService = {
         matchDate: parsed.date,
         matchTime: parsed.time,
         category: parsed.category,
+        roundName: parsed.round,
       });
     }
 
@@ -740,13 +810,14 @@ export const matchSheetIngestionService = {
       target_team_id: teamId,
     }));
 
-    // 7. Vérifier si le match est DÉJÀ PLANIFIÉ (Date, Heure, Adversaire, Catégorie)
+    // 7. Vérifier si le match est DÉJÀ PLANIFIÉ (Date, Heure, Adversaire, Catégorie, Journée)
     const plannedCheck = await this.checkExistingPlannedMatch({
       clubId,
       opponentId: opponent.id,
       matchDate: parsed.date,
       matchTime: parsed.time,
       category: parsed.category,
+      roundName: parsed.round,
     });
     const existing = plannedCheck.exists ? plannedCheck.match : null;
 

@@ -66,7 +66,10 @@ import {
   Calendar,
   Info,
   MapPin,
-  Radio
+  Radio,
+  RefreshCw,
+  FileText,
+  PlaySquare
 } from 'lucide-react';
 import ImageCropperModal from '../../components/ImageCropperModal';
 import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
@@ -76,6 +79,30 @@ import { getRoleConfig, OFFICIAL_JOB_TITLES, type OfficialJobTitle } from '../..
 import { recruitmentService, generateSecureTempPassword, generateScoutLogin } from '../recruitment_v2/services/recruitmentService';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
 import defaultClubLogo from '../../assets/fus-logo.png';
+import { dispatchMatchPushNotification } from '../../services/pushNotificationSender';
+
+/**
+ * Règle métier stricte :
+ * Les matchs programmés qui n'ont pas été lancés plus de 24 heures après la date
+ * et l'heure prévues du coup d'envoi doivent disparaître de l'espace d'assignation opérateur.
+ */
+export const isMatchExpiredUnlaunched = (m: {
+  status?: string | null;
+  match_date?: string | null;
+  match_time?: string | null;
+}): boolean => {
+  if (!m) return false;
+  if (m.status === 'live' || m.status === 'finished') return false;
+  if (!m.match_date) return false;
+  try {
+    const timeStr = m.match_time ? m.match_time.slice(0, 5) : '00:00';
+    const kickoffMs = new Date(`${m.match_date}T${timeStr}:00`).getTime();
+    if (isNaN(kickoffMs)) return false;
+    return (Date.now() - kickoffMs) > (24 * 60 * 60 * 1000);
+  } catch {
+    return false;
+  }
+};
 
 export interface OperableMatch {
   id: string;
@@ -275,9 +302,12 @@ export const DASHBOARD_HIERARCHY_MODULES: DashboardCategoryDef[] = [
     colorBadge: 'bg-amber-500/20 text-amber-700 dark:text-amber-300',
     subModules: [
       { id: 'matches', title: 'Calendrier des Matchs', badge: 'Calendrier', desc: 'Gestion et suivi des rencontres officielles et amicales (/matches)' },
-      { id: 'championship_performances', title: 'Championnat & Performances', badge: 'Analyse', desc: 'Classement officiel et analyse Attaque vs Défense (/championship-performances)' },
+      { id: 'matchday', title: 'Match du Jour & Matchs Joués', badge: 'Match du Jour', desc: 'Préparation tactique, feuille de match et suivi direct (/matchday)' },
+      { id: 'classement_resultats', title: 'Classement & Résultats FRMF', badge: 'Classement', desc: 'Tableaux officiels et suivi des résultats FRMF (/classement-resultats)' },
+      { id: 'championship_performances', title: 'Championnat & Performances', badge: 'Analyse', desc: 'Classement officiel et suivi des performances (/championship-performances)' },
+      { id: 'attack_defense', title: 'Adversaires vs Attaque', badge: 'Tactique', desc: 'Comparateur offensif et défensif des adversaires (/championship-performances?tab=attack_defense)' },
       { id: 'official_shortlist', title: 'Shortlist Officielle', badge: 'Tactique', desc: 'Placement tactique et composition officielle (/official-shortlist)' },
-      { id: 'arbitres', title: 'Arbitres', badge: 'Arbitrage', desc: 'Désignation et suivi des corps arbitraux (/arbitres)' },
+      { id: 'arbitres', title: 'Arbitres & Officiels', badge: 'Arbitrage', desc: 'Désignation et suivi des corps arbitraux (/arbitres)' },
       { id: 'leagues', title: 'Compétitions & Ligues', badge: 'Tournois', desc: 'Paramétrage des championnats et coupes (/leagues)' },
       { id: 'stadiums', title: 'Stades & Terrains', badge: 'Infrastructures', desc: 'Gestion des installations sportives (/stadiums)' }
     ]
@@ -395,6 +425,10 @@ export const MATCH_SPECIFIC_ACTIONS: {
   badgeClass: string;
 }[] = [
     { key: 'plan_match', label: 'Planifier un match', sublabel: 'Planification, programmation et configuration du match (/matches/new)', icon: CalendarPlus, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
+    { key: 'sync_my_club', label: 'Synchroniser My Club (FRMF)', sublabel: 'Synchronisation automatique du calendrier My Club depuis les résultats FRMF', icon: RefreshCw, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
+    { key: 'import_frmf_sheet', label: 'Importer Feuille FRMF (PDF)', sublabel: 'Importation intelligente et reconnaissance OCR des feuilles de match FRMF', icon: FileText, badgeClass: 'bg-rose-500/20 text-rose-700 dark:text-rose-300' },
+    { key: 'manage_match_played', label: 'Feuille & Match Joué (Préparation)', sublabel: 'Accès à la préparation du match, composition, consignes et verrouillage', icon: PlaySquare, badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-300' },
+    { key: 'live_tracking', label: 'Live Match & Chronomètre', sublabel: 'Gestion du chronomètre en direct, saisie des scores et événements live', icon: Radio, badgeClass: 'bg-red-500/20 text-red-700 dark:text-red-300' },
     { key: 'manage_standings', label: 'Gestion de classement', sublabel: 'Ajouter les clubs adverses et enregistrer leurs résultats pour le classement officiel', icon: Trophy, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
   ];
 
@@ -811,7 +845,9 @@ Direction Générale — FUS Rabat`;
       const clubsMap = new Map(clubsList.map(c => [c.id, c]));
       const stadiumsMap = new Map(stadiumsList.map(s => [s.id, s.name]));
 
-      const mapped: OperableMatch[] = (matchesRes.data || []).map((m: any) => {
+      const mapped: OperableMatch[] = (matchesRes.data || [])
+        .filter((m: any) => !isMatchExpiredUnlaunched(m))
+        .map((m: any) => {
         const oppClub = m.opponent_id ? clubsMap.get(m.opponent_id) : null;
         const oppName = oppClub?.name || (m.opponent_id === DEFAULT_FUS_CLUB_ID ? mainClubName : 'Adversaire');
         const oppLogo = (oppClub?.logo_url && oppClub.logo_url !== 'null' && oppClub.logo_url.trim() !== '') ? oppClub.logo_url : null;
@@ -1446,6 +1482,55 @@ Direction Générale — FUS Rabat`;
 
               if (updErr) {
                 console.error('[UserManagement] Erreur assignation match nouveau compte:', updErr);
+              } else {
+                try {
+                  const foundOperable = operableMatches.find(o => o.id === matchId);
+                  const homeName = foundOperable?.homeName || (curMatch?.is_home ? 'FUS Rabat' : 'Adversaire');
+                  const awayName = foundOperable?.awayName || (curMatch?.is_home ? 'Adversaire' : 'FUS Rabat');
+                  const matchCategory = foundOperable?.category || curMatch?.category || '';
+                  const matchDate = foundOperable?.match_date || curMatch?.match_date || '';
+                  const matchTime = foundOperable?.match_time || curMatch?.match_time || '';
+
+                  const broadcastPayload = {
+                    match_id: matchId,
+                    matchId: matchId,
+                    category: matchCategory,
+                    home_name: homeName,
+                    away_name: awayName,
+                    match_date: matchDate,
+                    match_time: matchTime,
+                    operator_id: createdUserId,
+                    operator_name: opName,
+                    operator_role: opRole,
+                    operator_avatar_url: opAvatar,
+                  };
+
+                  const assignChannel = supabase.channel('operator-assignments');
+                  assignChannel.subscribe(async (status) => {
+                    if (status === 'SUBSCRIBED') {
+                      await assignChannel.send({
+                        type: 'broadcast',
+                        event: 'operator_assigned',
+                        payload: broadcastPayload,
+                      });
+                      supabase.removeChannel(assignChannel);
+                    }
+                  });
+
+                  dispatchMatchPushNotification({
+                    match_id: matchId,
+                    type: 'operator_assigned',
+                    category: matchCategory,
+                    operator_id: createdUserId,
+                    operator_name: opName,
+                    operator_avatar_url: opAvatar,
+                    operator_role: opRole,
+                    title: `🎙️ Opérateur Match Assigné [${matchCategory || 'FUS'}]`,
+                    body: `${opName} a été désigné Opérateur Live pour le match ${homeName} vs ${awayName} le ${matchDate}.`,
+                  }).catch(pErr => console.warn('[UserManagement] Erreur push assignation nouveau compte:', pErr));
+                } catch (bErr) {
+                  console.warn('[UserManagement] Erreur broadcast assignation nouveau compte:', bErr);
+                }
               }
             }
             await fetchOperableMatches();
@@ -1839,6 +1924,56 @@ Direction Générale — FUS Rabat`;
 
             if (assignErr) {
               console.error('[UserManagement] Erreur assignation match:', matchId, assignErr);
+            } else {
+              // Notification Realtime & Push pour l'Opérateur et l'ensemble du Staff
+              try {
+                const foundOperable = operableMatches.find(o => o.id === matchId);
+                const homeName = foundOperable?.homeName || (targetMatch?.is_home ? 'FUS Rabat' : 'Adversaire');
+                const awayName = foundOperable?.awayName || (targetMatch?.is_home ? 'Adversaire' : 'FUS Rabat');
+                const matchCategory = foundOperable?.category || targetMatch?.category || '';
+                const matchDate = foundOperable?.match_date || targetMatch?.match_date || '';
+                const matchTime = foundOperable?.match_time || targetMatch?.match_time || '';
+
+                const broadcastPayload = {
+                  match_id: matchId,
+                  matchId: matchId,
+                  category: matchCategory,
+                  home_name: homeName,
+                  away_name: awayName,
+                  match_date: matchDate,
+                  match_time: matchTime,
+                  operator_id: currentUserId,
+                  operator_name: opName,
+                  operator_role: opRole,
+                  operator_avatar_url: opAvatar,
+                };
+
+                const assignChannel = supabase.channel('operator-assignments');
+                assignChannel.subscribe(async (status) => {
+                  if (status === 'SUBSCRIBED') {
+                    await assignChannel.send({
+                      type: 'broadcast',
+                      event: 'operator_assigned',
+                      payload: broadcastPayload,
+                    });
+                    supabase.removeChannel(assignChannel);
+                  }
+                });
+
+                dispatchMatchPushNotification({
+                  match_id: matchId,
+                  type: 'operator_assigned',
+                  category: matchCategory,
+                  operator_id: currentUserId,
+                  operator_name: opName,
+                  operator_avatar_url: opAvatar,
+                  operator_role: opRole,
+                  title: `🎙️ Opérateur Match Assigné [${matchCategory || 'FUS'}]`,
+                  body: `${opName} a été désigné Opérateur Live pour le match ${homeName} vs ${awayName} le ${matchDate}.`,
+                }).catch(pErr => console.warn('[UserManagement] Erreur push assignation:', pErr));
+              } catch (bErr) {
+                console.warn('[UserManagement] Erreur broadcast assignation:', bErr);
+              }
             }
           }
         }
@@ -4557,11 +4692,15 @@ Direction Générale — FUS Rabat`;
                             };
 
                             const isProgrammedOrLive = (m: OperableMatch) => {
+                              if (isMatchExpiredUnlaunched(m)) return false;
                               return m.status !== 'finished' && m.status !== 'cancelled';
                             };
 
-                            // Seuls les matchs programmés (ou en direct) ET les matchs couverts par le user concerné sont éligibles
-                            const eligibleMatches = operableMatches.filter(m => isProgrammedOrLive(m) || isUserCovered(m));
+                            // Seuls les matchs programmés non expirés (ou en direct) ET les matchs non expirés couverts par le user sont éligibles
+                            const eligibleMatches = operableMatches.filter(m => {
+                              if (isMatchExpiredUnlaunched(m)) return false;
+                              return isProgrammedOrLive(m) || isUserCovered(m);
+                            });
 
                             const filteredList = eligibleMatches.filter(m => {
                               if (matchFilterScope === 'programmed') return isProgrammedOrLive(m);

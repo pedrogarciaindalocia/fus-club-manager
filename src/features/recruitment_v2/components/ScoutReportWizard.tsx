@@ -202,8 +202,8 @@ export const ScoutReportWizard: React.FC<ScoutReportWizardProps> = ({
                     idx === currentStep
                       ? 'bg-primary text-white shadow-sm'
                       : idx < currentStep
-                      ? 'bg-white/20 text-white cursor-pointer hover:bg-white/25'
-                      : 'bg-white/5 text-slate-500 cursor-not-allowed'
+                        ? 'bg-white/20 text-white cursor-pointer hover:bg-white/25'
+                        : 'bg-white/5 text-slate-500 cursor-not-allowed'
                   )}
                 >
                   <span>{s.icon}</span>

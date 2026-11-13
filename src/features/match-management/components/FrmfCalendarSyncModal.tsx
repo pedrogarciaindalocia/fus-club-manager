@@ -377,11 +377,25 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-semibold text-slate-500">
             <span className="inline-flex items-center gap-1">
               <Clock className="w-3 h-3 text-slate-400" />
-              Calendrier : {item.existingCalendarMatch.match_date}
+              {item.needsDateRectification ? (
+                <span className="text-amber-600 dark:text-amber-400 font-bold inline-flex items-center gap-1">
+                  Date rectifiée : {item.currentDate || item.existingCalendarMatch.match_date}
+                  <ArrowRight className="w-2.5 h-2.5" />
+                  {item.targetDate}
+                </span>
+              ) : (
+                <>Calendrier : {item.existingCalendarMatch.match_date}</>
+              )}
             </span>
-            <span className="text-blue-700 dark:text-blue-300 font-bold">
-              Scores, compos &amp; événements conservés
-            </span>
+            {item.isBlankMatch ? (
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200">
+                Match vierge (0 événement) : date, heure &amp; score rectifiés
+              </span>
+            ) : (
+              <span className="text-blue-700 dark:text-blue-300 font-bold">
+                Scores, compos &amp; événements conservés
+              </span>
+            )}
           </div>
         </div>
       </button>

@@ -23,7 +23,10 @@ export interface AuthState {
 export const SUBMODULE_TO_PARENT_MAP: Record<string, string> = {
   // Compétition & Matchs
   matches: 'competition',
+  matchday: 'competition',
+  classement_resultats: 'competition',
   championship_performances: 'competition',
+  attack_defense: 'competition',
   official_shortlist: 'competition',
   arbitres: 'competition',
   leagues: 'competition',
@@ -379,14 +382,27 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return perms.includes('sub:candidates:manage_reports') || perms.includes('sub:candidates:reports');
     }
 
-    // Alias Planifier un match <-> Create sur le calendrier des matchs
-    if (subModule === 'matches' && (action === 'plan_match' || action === 'create')) {
-      return perms.includes('sub:matches:plan_match') || perms.includes('sub:matches:create');
-    }
-
-    // Alias Classement sur les matchs
-    if (subModule === 'matches' && (action === 'manage_standings' || action === 'standings')) {
-      return perms.includes('sub:matches:manage_standings');
+    // Actions Métier Spécifiques (Calendrier des Matchs) :
+    // Chaque action spécifique doit être STRICTEMENT vérifiée par sa propre clé sub:matches:<action>
+    if (subModule === 'matches') {
+      if (action === 'plan_match' || action === 'create') {
+        return perms.includes('sub:matches:plan_match') || perms.includes('sub:matches:create') || perms.includes('plan_match');
+      }
+      if (action === 'sync_my_club' || action === 'sync_frmf') {
+        return perms.includes('sub:matches:sync_my_club') || perms.includes('sync_my_club');
+      }
+      if (action === 'import_frmf_sheet' || action === 'import_pdf') {
+        return perms.includes('sub:matches:import_frmf_sheet') || perms.includes('import_frmf_sheet');
+      }
+      if (action === 'manage_match_played' || action === 'prepare_match') {
+        return perms.includes('sub:matches:manage_match_played') || perms.includes('manage_match_played');
+      }
+      if (action === 'live_tracking' || action === 'live_match' || action === 'track_live_match') {
+        return perms.includes('sub:matches:live_tracking') || perms.includes('live_tracking');
+      }
+      if (action === 'manage_standings' || action === 'standings') {
+        return perms.includes('sub:matches:manage_standings') || perms.includes('manage_standings');
+      }
     }
 
     // Toute sous-rubrique ou action non explicitement cochée est strictement masquée
@@ -439,21 +455,52 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (action === 'create_match' || action === 'plan_match' || action === 'schedule_match') {
       return (
         perms.includes('sub:matches:plan_match') ||
-        perms.includes('sub:matches:create') ||
+        perms.includes('plan_match') ||
         perms.includes('schedule_match')
+      );
+    }
+
+    if (action === 'import_frmf_sheet' || action === 'import_pdf') {
+      return (
+        perms.includes('sub:matches:import_frmf_sheet') ||
+        perms.includes('import_frmf_sheet')
+      );
+    }
+
+    if (action === 'sync_my_club' || action === 'sync_frmf') {
+      return (
+        perms.includes('sub:matches:sync_my_club') ||
+        perms.includes('sync_my_club')
+      );
+    }
+
+    if (action === 'manage_match_played' || action === 'prepare_match' || action === 'edit_matches') {
+      return (
+        perms.includes('sub:matches:manage_match_played') ||
+        perms.includes('manage_match_played')
+      );
+    }
+
+    if (action === 'live_tracking' || action === 'live_match' || action === 'track_live_match') {
+      return (
+        perms.includes('sub:matches:live_tracking') ||
+        perms.includes('live_tracking')
       );
     }
 
     if (action === 'manage_matches') {
       return (
-        hasSubModuleAccess('matches', 'update') ||
-        hasSubModuleAccess('matches', 'create') ||
-        hasSubModuleAccess('matches', 'plan_match')
+        perms.includes('sub:matches:manage_match_played') ||
+        perms.includes('manage_match_played') ||
+        hasSubModuleAccess('matches', 'update')
       );
     }
 
     if (action === 'manage_standings' || action === 'manage_ranking' || action === 'standings') {
-      return perms.includes('sub:matches:manage_standings');
+      return (
+        perms.includes('sub:matches:manage_standings') ||
+        perms.includes('manage_standings')
+      );
     }
 
     if (action === 'create_opponent' || action === 'manage_opponents') {

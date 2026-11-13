@@ -6,7 +6,7 @@ import {
   Swords, Building2, Target, Calendar, LayoutTemplate,
   X, ChevronLeft, ChevronDown, Sparkles, UserPlus, Compass,
   Dumbbell, Award, Zap, Menu, Blocks, Archive, User, ClipboardCheck,
-  Image as ImageIcon, LifeBuoy, Eye
+  Image as ImageIcon, LifeBuoy, Eye, PlaySquare
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabaseAdmin } from '../lib/supabase';
@@ -246,14 +246,14 @@ const Sidebar: React.FC<SidebarProps> = ({
       icon: Trophy,
       items: [
         { path: '/matches', label: 'Calendrier', icon: Calendar, subId: 'matches' },
-        { path: '/classement-resultats', label: 'Classement & Résultats', icon: Award, subId: 'matches' },
-        { path: '/players', label: 'Joueurs', icon: Users, subId: 'players' },
+        { path: '/matchday', label: 'Match du Jour', icon: PlaySquare, subId: 'matchday' },
+        { path: '/classement-resultats', label: 'Classement & Résultats FRMF', icon: Award, subId: 'classement_resultats' },
         { path: '/championship-performances', label: 'Championnat & Performances', icon: Activity, subId: 'championship_performances' },
-        { path: '/championship-performances?tab=attack_defense', label: 'Adversaires vs Attaque', icon: Swords, subId: 'championship_performances' },
+        { path: '/championship-performances?tab=attack_defense', label: 'Adversaires vs Attaque', icon: Swords, subId: 'attack_defense' },
         { path: '/official-shortlist', label: 'Shortlist Officielle', icon: Trophy, subId: 'official_shortlist' },
-        { path: '/arbitres', label: 'Arbitres', icon: UserCheck, subId: 'arbitres' },
-        { path: '/leagues', label: 'Compétitions', icon: Trophy, subId: 'leagues' },
-        { path: '/stadiums', label: 'Stades', icon: Building2, subId: 'stadiums' },
+        { path: '/arbitres', label: 'Arbitres & Officiels', icon: UserCheck, subId: 'arbitres' },
+        { path: '/leagues', label: 'Compétitions & Ligues', icon: Trophy, subId: 'leagues' },
+        { path: '/stadiums', label: 'Stades & Terrains', icon: Building2, subId: 'stadiums' },
       ],
     },
     {
@@ -273,15 +273,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       title: 'Effectif & Sportif',
       icon: Users,
       items: [
-        {
-          path: '/players',
-          label: 'Mon Club',
-          icon: Shield,
-          children: [
-            { path: '/players', label: 'Joueurs', icon: Users, subId: 'players' },
-            { path: '/teams', label: 'Équipes', icon: Shield, subId: 'teams' },
-          ],
-        },
+        { path: '/players', label: 'Joueurs', icon: Users, subId: 'players' },
+        { path: '/teams', label: 'Équipes', icon: Shield, subId: 'teams' },
         { path: '/opponents', label: 'Adversaires', icon: Target, subId: 'opponents' },
         { path: '/staff', label: 'Staff Technique', icon: UserCog, subId: 'staff' },
       ],

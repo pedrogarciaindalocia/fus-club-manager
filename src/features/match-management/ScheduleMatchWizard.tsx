@@ -29,6 +29,7 @@ import {
 import { toast } from 'sonner';
 import { OpponentSquadModal } from '../club-management/components/OpponentSquadModal';
 import type { Match, Player, MatchPhase } from '../../types';
+import { getFusAcademyStadium } from '../../utils/stadiumHelpers';
 
 interface ScheduleMatchWizardProps {
   onBack: () => void;
@@ -228,6 +229,20 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
 
   // Step 2
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
+
+  // Auto-sélection automatique du stade FUS ACADEMY à Domicile
+  useEffect(() => {
+    if (stadiums.length > 0 && setup.is_home && !setup.stadium_id && !initialMatch?.stadium_id) {
+      const fusStadium = getFusAcademyStadium(stadiums, mainClub?.id);
+      if (fusStadium) {
+        setSetup(prev => ({
+          ...prev,
+          stadium_id: fusStadium.id,
+          location: prev.pitch_number ? `${fusStadium.name} — Terrain ${prev.pitch_number}` : fusStadium.name,
+        }));
+      }
+    }
+  }, [stadiums, setup.is_home, setup.stadium_id, initialMatch?.stadium_id, mainClub?.id]);
 
   // Step 3
   const [formation, setFormation] = useState('4-3-3');
@@ -436,7 +451,9 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         match_time: initialMatch.match_time || '18:00',
         category: initialMatch.category || 'SENIOR',
         is_home: initialMatch.is_home ?? true,
-        round_name: (initialMatch as any).round_name || ((initialMatch as any).lineup as any)?.round_name || 'Journée 1',
+        round_name: (!isInternalMatch && Boolean(initialMatch.league_id))
+          ? ((initialMatch as any).round_name || ((initialMatch as any).lineup as any)?.round_name || 'Journée 1')
+          : '',
         match_phase: (initialMatch.match_phase as MatchPhase) || '',
         qualif_status: (initialMatch.match_phase as 'won' | 'lost' | '') || '',
       });
@@ -898,10 +915,14 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         internal_opponent_team_id: internal_opposition_type === 'inter_category' ? (internal_opponent_team_id || null) : null,
       } : null;
 
+      const isOfficialLeague = match_type === 'league';
+      const effectiveRoundName = isOfficialLeague ? (setup.round_name || 'Journée 1') : null;
+
       const matchPayload: any = {
         ...setupBase,
+        round_name: effectiveRoundName,
         opponent_id: effectiveOpponentId,
-        league_id: match_type === 'amical' || match_type === 'internal_scrimmage' || setup.league_id === '' ? null : setup.league_id,
+        league_id: isOfficialLeague && setup.league_id !== '' ? setup.league_id : null,
         stadium_id: setup.stadium_id === '' ? null : setup.stadium_id,
         match_time: setup.match_time,
         category: setup.category,
@@ -912,7 +933,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         status: initialMatch ? (initialMatch.status ?? 'scheduled') : 'scheduled',
         match_format: setup.match_format,
         lineup: {
-          round_name: setup.round_name || 'Journée 1',
+          round_name: effectiveRoundName,
           startingXI,
           substitutes,
           formation,
@@ -994,7 +1015,15 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
     return opponentClubs.find(c => c.id === id)?.name || '—';
   };
   const getLeagueName = (id: string) => leagues.find(l => l.id === id)?.name || '—';
-  const getStadiumName = (id: string) => stadiums.find(s => s.id === id)?.name || '—';
+  const getStadiumName = (id: string) => {
+    const found = stadiums.find(s => s.id === id);
+    if (found) return `${found.name}${found.city ? ` (${found.city})` : ''}`;
+    if (setup.is_home) {
+      const fusStadium = getFusAcademyStadium(stadiums, mainClub?.id);
+      return fusStadium ? `${fusStadium.name}${fusStadium.city ? ` (${fusStadium.city})` : ''}` : 'FUS ACADEMY (Rabat)';
+    }
+    return '—';
+  };
   // Ne reprendre que les affectations de cette rencontre, jamais celles d'un autre match.
   const surclassedTargetMap = useMemo(() => {
     const map = new Map<string, any>();
@@ -1289,6 +1318,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                           match_type: val,
                           league_id: val === 'league' ? prev.league_id : '',
                           match_phase: val === 'league' ? prev.match_phase : '',
+                          round_name: val === 'league' ? (prev.round_name || 'Journée 1') : '',
                           opponent_id: val === 'internal_scrimmage' ? (mainClub?.id || prev.opponent_id) : (prev.opponent_id === mainClub?.id ? '' : prev.opponent_id),
                         }));
                       }}
@@ -1479,7 +1509,17 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       <select className="w-full h-16 rounded-2xl bg-white border border-transparent px-8 font-black text-lg outline-none focus:ring-4 ring-primary/20 appearance-none shadow-sm transition-all"
                         value={setup.opponent_id || ''} onChange={e => setSetup({ ...setup, opponent_id: e.target.value })}>
                         <option value="">Sélectionner...</option>
-                        {opponentClubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        {opponentClubs.map(c => {
+                          const cNorm = (c.name || '').toUpperCase().trim();
+                          const sNorm = ((c as any).short_name || '').toUpperCase().trim();
+                          const label =
+                            cNorm === 'AMF' || sNorm === 'AMF'
+                              ? 'AMF — Académie Mohammed VI'
+                              : cNorm === 'AAMF' || sNorm === 'AAMF'
+                              ? 'AAMF — Association AMF'
+                              : c.name;
+                          return <option key={c.id} value={c.id}>{label}</option>;
+                        })}
                       </select>
                     )}
                   </div>
@@ -1530,85 +1570,48 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                     </div>
                   )}
 
-                  {/* Choix de la Journée de Championnat (US-MATCH-134) */}
-                  <div className="space-y-3 p-5 rounded-3xl bg-white/90 border border-slate-200/80 shadow-xs">
-                    <div className="flex items-center justify-between ml-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-primary" /> Journée de Championnat
-                      </label>
-                      <span className="text-[10px] font-black uppercase text-primary bg-primary/10 px-2.5 py-0.5 rounded-full">
-                        {setup.round_name || 'Journée 1'}
-                      </span>
-                    </div>
-
-                    {/* Raccourcis rapides J1 à J10 */}
-                    <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 pt-1">
-                      {Array.from({ length: 10 }, (_, i) => i + 1).map(jNum => {
-                        const val = `Journée ${jNum}`;
-                        const isSel = setup.round_name === val;
-                        return (
-                          <button
-                            key={jNum}
-                            type="button"
-                            onClick={() => setSetup(prev => ({ ...prev, round_name: val }))}
-                            className={`h-9 rounded-xl text-[11px] font-black transition-all border ${isSel
-                                ? 'bg-primary text-white border-primary shadow-md scale-105'
-                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                              }`}
-                          >
-                            J{jNum}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Liste déroulante complète (J1 à J38 + Tournois/Coupes) */}
-                    <select
-                      className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-black text-xs text-slate-800 outline-none focus:ring-2 ring-primary/20 appearance-none cursor-pointer mt-1"
-                      value={setup.round_name || 'Journée 1'}
-                      onChange={e => setSetup(prev => ({ ...prev, round_name: e.target.value }))}
-                    >
-                      {Array.from({ length: 38 }, (_, i) => `Journée ${i + 1}`).map(rName => (
-                        <option key={rName} value={rName}>{rName}</option>
-                      ))}
-                      <option value="Match Amical">Match Amical</option>
-                      <option value="Opposition Interne">Opposition Interne</option>
-                      <option value="Match de Coupe">Match de Coupe</option>
-                      <option value="Tour préliminaire">Tour préliminaire</option>
-                      <option value="16ème de finale">16ème de finale</option>
-                      <option value="8ème de finale">8ème de finale</option>
-                      <option value="Quart de finale">Quart de finale</option>
-                      <option value="Demi-finale">Demi-finale</option>
-                      <option value="Finale">Finale</option>
-                    </select>
-                  </div>
                   {setup.is_home ? (
                     <div className="space-y-3">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-3">
-                        <span className="inline-block mr-2">🟩</span> Quel Terrain à Domicile ?
-                      </label>
+                      <div className="flex items-center justify-between ml-3">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          <span className="inline-block mr-2">🟩</span> Quel Terrain à Domicile ?
+                        </label>
+                        {(() => {
+                          const fusStadium = getFusAcademyStadium(stadiums, mainClub?.id);
+                          return (
+                            <span className="text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                              🏟️ {fusStadium?.name || 'FUS ACADEMY'} (Auto Domicile)
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <div className="grid grid-cols-4 gap-3">
-                        {['1', '2', '3', '4'].map(n => (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() => {
-                              const fusStadium = stadiums.find(s => s.club_id === mainClub?.id) || stadiums[0];
-                              setSetup(prev => ({
-                                ...prev,
-                                pitch_number: prev.pitch_number === n ? '' : n,
-                                stadium_id: fusStadium?.id || prev.stadium_id || '',
-                                location: `Académie FUS — Terrain ${n}`
-                              }));
-                            }}
-                            className={`h-16 rounded-2xl font-black text-xl tracking-tight transition-all border-2 ${setup.pitch_number === n
-                                ? 'bg-primary text-white border-primary shadow-xl shadow-primary/30 scale-105'
-                                : 'bg-white text-slate-700 border-transparent hover:border-primary/30 hover:bg-primary/5 shadow-sm'
-                              }`}
-                          >
-                            Terrain {n}
-                          </button>
-                        ))}
+                        {['1', '2', '3', '4'].map(n => {
+                          const fusStadium = getFusAcademyStadium(stadiums, mainClub?.id);
+                          const isSel = setup.pitch_number === n;
+                          return (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => {
+                                const nextPitch = isSel ? '' : n;
+                                const stadiumName = fusStadium?.name || 'FUS ACADEMY';
+                                setSetup(prev => ({
+                                  ...prev,
+                                  pitch_number: nextPitch,
+                                  stadium_id: fusStadium?.id || prev.stadium_id || '',
+                                  location: nextPitch ? `${stadiumName} — Terrain ${nextPitch}` : stadiumName
+                                }));
+                              }}
+                              className={`h-16 rounded-2xl font-black text-xl tracking-tight transition-all border-2 ${isSel
+                                  ? 'bg-primary text-white border-primary shadow-xl shadow-primary/30 scale-105'
+                                  : 'bg-white text-slate-700 border-transparent hover:border-primary/30 hover:bg-primary/5 shadow-sm'
+                                }`}
+                            >
+                              Terrain {n}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   ) : (
@@ -1637,6 +1640,91 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   )}
                 </div>
                 <div className="space-y-6">
+                  {/* PILIER 2 (US-DASH-146 & US-DASH-148) : Choix de la Journée UNIQUEMENT pour le Championnat Officiel */}
+                  {setup.match_type === 'league' ? (
+                    <div className="space-y-3 p-5 rounded-3xl bg-white border-2 border-primary/25 shadow-sm ring-4 ring-primary/5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-primary" />
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-800">
+                            Journée de Championnat Officiel
+                          </label>
+                          <span className="text-[8px] font-black uppercase tracking-wider bg-red-100 text-[#FF3737] px-2 py-0.5 rounded-full border border-red-200">
+                            Paramètre Primordial
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-black uppercase text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
+                          {setup.round_name || 'Journée 1'}
+                        </span>
+                      </div>
+
+                      {/* Raccourcis rapides J1 à J15 */}
+                      <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 pt-1">
+                        {Array.from({ length: 15 }, (_, i) => i + 1).map(jNum => {
+                          const val = `Journée ${jNum}`;
+                          const isSel = setup.round_name === val;
+                          return (
+                            <button
+                              key={jNum}
+                              type="button"
+                              onClick={() => setSetup(prev => ({ ...prev, round_name: val }))}
+                              className={`h-8 rounded-xl text-[11px] font-black transition-all border ${isSel
+                                  ? 'bg-primary text-white border-primary shadow-md scale-105'
+                                  : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                                }`}
+                            >
+                              J{jNum}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Sélecteur J1 à J38 + Tournois + Champ libre */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <select
+                          className="w-full h-11 rounded-xl bg-slate-50 border border-slate-200 px-3 font-black text-xs text-slate-800 outline-none focus:ring-2 ring-primary/20 cursor-pointer"
+                          value={setup.round_name || 'Journée 1'}
+                          onChange={e => setSetup(prev => ({ ...prev, round_name: e.target.value }))}
+                        >
+                          {Array.from({ length: 38 }, (_, i) => `Journée ${i + 1}`).map(rName => (
+                            <option key={rName} value={rName}>{rName}</option>
+                          ))}
+                          <option value="Match de Coupe">Match de Coupe</option>
+                          <option value="Tour préliminaire">Tour préliminaire</option>
+                          <option value="16ème de finale">16ème de finale</option>
+                          <option value="8ème de finale">8ème de finale</option>
+                          <option value="Quart de finale">Quart de finale</option>
+                          <option value="Demi-finale">Demi-finale</option>
+                          <option value="Finale">Finale</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Intitulé libre (ex: J4 - Match en retard)..."
+                          value={setup.round_name || ''}
+                          onChange={e => setSetup(prev => ({ ...prev, round_name: e.target.value }))}
+                          className="w-full h-11 rounded-xl bg-slate-50 border border-slate-200 px-3 font-bold text-xs text-slate-800 outline-none focus:ring-2 ring-primary/20"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-3xl bg-slate-50 border border-slate-200 flex items-center justify-between shadow-2xs">
+                      <div className="flex items-center gap-2.5">
+                        <Trophy className="w-4 h-4 text-slate-500" />
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-tight text-slate-800">
+                            {setup.match_type === 'amical' ? 'Match Amical' : 'Opposition Interne'}
+                          </p>
+                          <p className="text-[10px] font-semibold text-slate-500">
+                            Rencontre hors championnat
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-black uppercase text-slate-600 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
+                        Pas de Journée de Championnat
+                      </span>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-3">Date Prévue</label>
@@ -1649,8 +1737,28 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                   </div>
                   <div className="pt-2">
                     <div className="bg-white/50 rounded-[2.5rem] p-3 flex border-2 border-secondary shadow-inner">
-                      <button type="button" onClick={() => setSetup(prev => ({ ...prev, is_home: true }))} className={`flex-1 h-16 rounded-[1.8rem] text-[11px] font-black uppercase tracking-widest transition-all ${setup.is_home ? 'bg-primary text-white shadow-2xl scale-105' : 'text-muted-foreground hover:bg-white'}`}>Domicile</button>
-                      <button type="button" onClick={() => setSetup(prev => ({ ...prev, is_home: false, pitch_number: '', stadium_id: '' }))} className={`flex-1 h-16 rounded-[1.8rem] text-[11px] font-black uppercase tracking-widest transition-all ${!setup.is_home ? 'bg-slate-900 text-white shadow-2xl scale-105' : 'text-muted-foreground hover:bg-white'}`}>Extérieur</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const fusStadium = getFusAcademyStadium(stadiums, mainClub?.id);
+                          setSetup(prev => ({
+                            ...prev,
+                            is_home: true,
+                            stadium_id: fusStadium?.id || prev.stadium_id || '',
+                            location: prev.pitch_number && fusStadium ? `${fusStadium.name} — Terrain ${prev.pitch_number}` : (fusStadium?.name || prev.location || '')
+                          }));
+                        }}
+                        className={`flex-1 h-16 rounded-[1.8rem] text-[11px] font-black uppercase tracking-widest transition-all ${setup.is_home ? 'bg-primary text-white shadow-2xl scale-105' : 'text-muted-foreground hover:bg-white'}`}
+                      >
+                        Domicile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSetup(prev => ({ ...prev, is_home: false, pitch_number: '', stadium_id: '', location: '' }))}
+                        className={`flex-1 h-16 rounded-[1.8rem] text-[11px] font-black uppercase tracking-widest transition-all ${!setup.is_home ? 'bg-slate-900 text-white shadow-2xl scale-105' : 'text-muted-foreground hover:bg-white'}`}
+                      >
+                        Extérieur
+                      </button>
                     </div>
                   </div>
 

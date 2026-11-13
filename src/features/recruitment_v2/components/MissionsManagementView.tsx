@@ -317,8 +317,8 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
     if (mission.is_locked) return true;
     const name = (mission.assigned_by_name || '').toLowerCase();
     if (name.includes('direction') || name.includes('admin') || name.includes('super')) return true;
-    const assignerScout = scouts.find(s => 
-      s.id === mission.assigned_by_id || 
+    const assignerScout = scouts.find(s =>
+      s.id === mission.assigned_by_id ||
       (s.full_name && s.full_name.toLowerCase().trim() === name.trim())
     );
     if (assignerScout) {
@@ -412,7 +412,7 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
     const completed = allMissions.filter(m => m.status === 'completed').length;
 
     // Décompte pour badge mes missions à accuser (masqué définitivement pour le Super Admin et l'Admin)
-    const myPendingAck = isSuperAdminOrAdmin ? 0 : allMissions.filter(m => 
+    const myPendingAck = isSuperAdminOrAdmin ? 0 : allMissions.filter(m =>
       (m.assigned_to_id === currentUserId || (m.assigned_to_name && currentUserName && m.assigned_to_name.toLowerCase().trim() === currentUserName.toLowerCase().trim()) || isScoutManager) &&
       (m.status === 'pending_ack' || (m.status === 'pending' && !m.acknowledged_at)) &&
       m.status !== 'completed'
@@ -734,8 +734,8 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
             const isAckLoading = isAcknowledgingId === mission.id;
 
             // Récupération des profils et photos des Scouts A et B
-            const assignerScout = scouts.find(s => 
-              s.id === mission.assigned_by_id || 
+            const assignerScout = scouts.find(s =>
+              s.id === mission.assigned_by_id ||
               (s.full_name && mission.assigned_by_name && s.full_name.toLowerCase().trim() === mission.assigned_by_name.toLowerCase().trim())
             );
             const assignerPhoto = mission.assigned_by_avatar || assignerScout?.photo_url;
@@ -747,8 +747,8 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
               .slice(0, 2)
               .toUpperCase();
 
-            const assigneeScout = scouts.find(s => 
-              s.id === mission.assigned_to_id || 
+            const assigneeScout = scouts.find(s =>
+              s.id === mission.assigned_to_id ||
               (s.full_name && mission.assigned_to_name && s.full_name.toLowerCase().trim() === mission.assigned_to_name.toLowerCase().trim())
             );
             const assigneePhoto = mission.assigned_to_avatar || assigneeScout?.photo_url;
@@ -1403,10 +1403,10 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
                               ? p.id === 'urgent'
                                 ? 'bg-red-600 text-white border-red-600 shadow-2xs'
                                 : p.id === 'high'
-                                ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
-                                : p.id === 'medium'
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                                : 'bg-slate-800 text-white border-slate-800 shadow-2xs'
+                                  ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
+                                  : p.id === 'medium'
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                                    : 'bg-slate-800 text-white border-slate-800 shadow-2xs'
                               : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                           )}
                         >

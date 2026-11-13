@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { 
-  User, 
-  Search, 
-  X, 
-  Check, 
-  ChevronDown, 
-  Shield, 
-  Loader2, 
+import {
+  User,
+  Search,
+  X,
+  Check,
+  ChevronDown,
+  Shield,
+  Loader2,
   AlertCircle,
   MapPin,
   Sparkles
@@ -55,7 +55,7 @@ export const PlayerSelect: React.FC<PlayerSelectProps> = ({
   const filteredCandidates = useMemo(() => {
     if (!searchQuery.trim()) return candidates;
     const q = searchQuery.toLowerCase().trim();
-    return candidates.filter(c => 
+    return candidates.filter(c =>
       `${c.first_name} ${c.last_name}`.toLowerCase().includes(q) ||
       c.primary_position?.toLowerCase().includes(q) ||
       c.age_category?.toLowerCase().includes(q) ||

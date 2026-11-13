@@ -79,7 +79,7 @@ export const frmfCalendarSyncService = {
     let mainClub = options?.mainClub || null;
 
     if (options?.forceFreshCalendar || !calendarMatches || !opponentClubs || !teams || !leagues || !mainClub) {
-      const [matchesRes, clubsRes, teamsRes, leaguesRes, mainClubRes] = await Promise.all([
+      const [matchesRes, clubsRes, teamsRes, leaguesRes, mainClubRes, eventsRes] = await Promise.all([
         options?.forceFreshCalendar || !calendarMatches
           ? supabase.from('matches').select('*').eq('club_id', clubId)
           : Promise.resolve({ data: calendarMatches, error: null }),
@@ -95,6 +95,7 @@ export const frmfCalendarSyncService = {
         !mainClub
           ? supabase.from('clubs').select('*').eq('id', clubId).maybeSingle()
           : Promise.resolve({ data: mainClub, error: null }),
+        supabase.from('match_events').select('match_id').not('match_id', 'is', null),
       ]);
 
       if (!matchesRes.error && Array.isArray(matchesRes.data)) {
@@ -112,6 +113,52 @@ export const frmfCalendarSyncService = {
       if (!mainClub && mainClubRes?.data) {
         mainClub = mainClubRes.data as MyClubSettings;
       }
+
+      // Construction de l'ensemble des matchs ayant des événements enregistrés
+      const matchesWithEventsSet = new Set<string>();
+      if (!eventsRes.error && Array.isArray(eventsRes.data)) {
+        for (const ev of eventsRes.data as Array<{ match_id: string | null }>) {
+          if (ev?.match_id) {
+            matchesWithEventsSet.add(String(ev.match_id));
+          }
+        }
+      }
+
+      const myClubCtx = buildMyClubContext(mainClub);
+      const filteredOpponents = (opponentClubs || []).filter(
+        (c) => c.id !== clubId && !isMyClubName(c.name || '', myClubCtx)
+      );
+
+      const audit = auditFrmfMyClubMatchesForCalendar({
+        frmfDataset: frmfRes.dataset,
+        calendarMatches: calendarMatches || [],
+        mainClub,
+        opponentClubs: filteredOpponents,
+        teams: teams || [],
+        leagues: leagues || [],
+        canManageCategory: options?.canManageCategory,
+        matchesWithEventsSet,
+      });
+
+      return {
+        ...audit,
+        dbStatus: frmfRes.dbStatus,
+        errorMessage: frmfRes.errorMessage,
+      };
+    }
+
+    const { data: eventsData } = await supabase
+      .from('match_events')
+      .select('match_id')
+      .not('match_id', 'is', null);
+
+    const matchesWithEventsSet = new Set<string>();
+    if (Array.isArray(eventsData)) {
+      for (const ev of eventsData as Array<{ match_id: string | null }>) {
+        if (ev?.match_id) {
+          matchesWithEventsSet.add(String(ev.match_id));
+        }
+      }
     }
 
     const myClubCtx = buildMyClubContext(mainClub);
@@ -127,6 +174,7 @@ export const frmfCalendarSyncService = {
       teams: teams || [],
       leagues: leagues || [],
       canManageCategory: options?.canManageCategory,
+      matchesWithEventsSet,
     });
 
     return {
@@ -285,6 +333,83 @@ export const frmfCalendarSyncService = {
           throw new Error(
             `Aucune équipe My Club trouvée pour la catégorie ${item.category}. Créez d'abord une équipe dans Effectif.`
           );
+        }
+
+        // 4b. PILIER 1 (US-DASH-146) : Recherche d'un match vierge existant (score vide + 0 événement) pour éviter tout doublon
+        const candidateBlankMatch = liveMatches.find((m) => {
+          if (m.opponent_id !== opponentClub?.id) return false;
+          const mCat = String(m.category || '').toUpperCase().trim();
+          const targetCat = String(item.category || '').toUpperCase().trim();
+          if (mCat && targetCat && mCat !== targetCat) return false;
+          const scoreEmpty =
+            (m.score_home === null || m.score_home === undefined) &&
+            (m.score_away === null || m.score_away === undefined);
+          return scoreEmpty && m.status !== 'finished';
+        });
+
+        if (candidateBlankMatch) {
+          const { count: evCount } = await supabase
+            .from('match_events')
+            .select('id', { count: 'exact', head: true })
+            .eq('match_id', candidateBlankMatch.id);
+
+          if ((evCount || 0) === 0) {
+            // Match existant vierge détecté : on rectifie le match en base au lieu d'insérer un doublon
+            const existingLineup =
+              candidateBlankMatch.lineup && typeof candidateBlankMatch.lineup === 'object'
+                ? (candidateBlankMatch.lineup as Record<string, unknown>)
+                : {};
+            const updatedLineup = {
+              ...existingLineup,
+              round_name: item.roundName,
+              frmf_sync: {
+                source: 'frmf_matches',
+                frmf_match_id: item.frmfMatch.id || null,
+                match_day: item.matchDay,
+                league_group: item.group,
+                season: item.season,
+                rectified_at: new Date().toISOString(),
+              },
+            };
+
+            const rectifyPayload: Record<string, unknown> = {
+              match_date: item.matchDate,
+              match_time: item.matchTime,
+              score_home: item.scoreHome,
+              score_away: item.scoreAway,
+              status: 'finished',
+              league_id: item.resolvedLeagueId || candidateBlankMatch.league_id || null,
+              season: item.season,
+              lineup: updatedLineup,
+              ...(matchesHasRoundNameCol ? { round_name: item.roundName } : {}),
+            };
+
+            let updRes = await supabase
+              .from('matches')
+              .update(rectifyPayload as never)
+              .eq('id', candidateBlankMatch.id)
+              .eq('club_id', clubId)
+              .select()
+              .single();
+
+            if (updRes.error && isColumnMissingError(updRes.error) && 'round_name' in rectifyPayload) {
+              const safePayload = { ...rectifyPayload };
+              delete safePayload.round_name;
+              updRes = await supabase
+                .from('matches')
+                .update(safePayload as never)
+                .eq('id', candidateBlankMatch.id)
+                .eq('club_id', clubId)
+                .select()
+                .single();
+            }
+
+            if (!updRes.error) {
+              createdMatchIds.push(candidateBlankMatch.id);
+              createdCount++;
+              continue;
+            }
+          }
         }
 
         // 5. Insérer le match terminé dans `public.matches`
@@ -450,6 +575,34 @@ export const frmfCalendarSyncService = {
           ...(hasRoundNameCol ? { round_name: item.targetRoundName } : {}),
         };
 
+        // PILIER 1 (US-DASH-146) : Si le match calendrier a un score vide ET aucun événement enregistré,
+        // on rectifie la date, l'heure et on enregistre le score officiel issu de FRMF
+        if (item.isBlankMatch) {
+          const { count: eventsCount } = await supabase
+            .from('match_events')
+            .select('id', { count: 'exact', head: true })
+            .eq('match_id', matchId);
+
+          if ((eventsCount || 0) === 0) {
+            if (item.needsDateRectification && item.targetDate) {
+              updatePayload.match_date = item.targetDate;
+              if (item.targetTime) {
+                updatePayload.match_time = item.targetTime;
+              }
+            }
+            if (
+              item.willUpdateScore &&
+              item.hasPlayedScore &&
+              item.frmfMatch.home_score !== null &&
+              item.frmfMatch.away_score !== null
+            ) {
+              updatePayload.score_home = item.frmfMatch.home_score;
+              updatePayload.score_away = item.frmfMatch.away_score;
+              updatePayload.status = 'finished';
+            }
+          }
+        }
+
         let updateRes = await supabase
           .from('matches')
           .update(updatePayload as never)
@@ -459,9 +612,11 @@ export const frmfCalendarSyncService = {
           .single();
 
         if (updateRes.error && isColumnMissingError(updateRes.error) && 'round_name' in updatePayload) {
+          const safeFallback = { ...updatePayload };
+          delete safeFallback.round_name;
           updateRes = await supabase
             .from('matches')
-            .update({ lineup: updatedLineup } as never)
+            .update(safeFallback as never)
             .eq('id', matchId)
             .eq('club_id', clubId)
             .select()

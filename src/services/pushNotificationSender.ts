@@ -128,6 +128,13 @@ export async function dispatchMatchPushNotification(record: PushNotificationReco
         bodyText = `La composition d'équipe FUS vs ${opponentName} est disponible !`;
         break;
 
+      case 'operator_assigned': {
+        const catStr = category ? `[${category}] ` : '';
+        title = record.title || `${catStr}🎙️ Opérateur Match Assigné`;
+        bodyText = record.body || `${record.operator_name || 'Un opérateur'} a été assigné pour le match FUS vs ${opponentName}.`;
+        break;
+      }
+
       default:
         if (record.title && record.body) {
           title = record.title;
@@ -179,6 +186,10 @@ export async function dispatchMatchPushNotification(record: PushNotificationReco
           category,
           tab: eventType === 'lineup_official' ? 'lineup' : 'live',
           playerName: playerName || undefined,
+          operator_id: record.operator_id || undefined,
+          operator_name: record.operator_name || undefined,
+          operator_avatar_url: record.operator_avatar_url || undefined,
+          operator_role: record.operator_role || undefined,
           isOpponent,
           minute: record.minute || undefined,
           title,
