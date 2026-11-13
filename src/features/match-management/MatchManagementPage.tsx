@@ -471,6 +471,7 @@ const MatchManagementPage: React.FC = () => {
       bulkIds: [],
    });
    const [categoryFilter, setCategoryFilter] = useState<string>('All');
+   const [calendarSection, setCalendarSection] = useState<'my_club' | 'opponents'>('my_club');
    const [isPdfImportOpen, setIsPdfImportOpen] = useState(false);
    const [isFrmfCalendarSyncOpen, setIsFrmfCalendarSyncOpen] = useState(false);
    const [pendingFrmfSyncCount, setPendingFrmfSyncCount] = useState<number>(0);
@@ -481,7 +482,8 @@ const MatchManagementPage: React.FC = () => {
    const canManageMatchPlayed = can('manage_match_played') || hasSubModuleAccess('matches', 'manage_match_played');
    const canLiveTracking = can('live_tracking') || hasSubModuleAccess('matches', 'live_tracking');
    const canManageStandings = can('manage_standings') || hasSubModuleAccess('matches', 'manage_standings');
-   const canDeleteMatch = hasSubModuleAccess('matches', 'delete');
+   const canDeleteMatch = canPlanMatch || hasSubModuleAccess('matches', 'delete');
+   const canUpdateMatch = canPlanMatch || canManageMatchPlayed || hasSubModuleAccess('matches', 'update');
    const canCreateMatches = canPlanMatch;
 
    useEffect(() => {
@@ -590,7 +592,6 @@ const MatchManagementPage: React.FC = () => {
          }
       }
    }, [matches, opponentClubs, updateMatch]);
-   const [calendarSection, setCalendarSection] = useState<'my_club' | 'opponents'>('my_club');
    const [leagueFilter, setLeagueFilter] = useState<string>('All');
    const [dateFilter, setDateFilter] = useState<string>('');
    const [searchQuery, setSearchQuery] = useState<string>('');
@@ -2395,7 +2396,7 @@ const MatchManagementPage: React.FC = () => {
                                                       <span className="text-[9px] font-black uppercase">Live</span>
                                                    </Button>
                                                 )}
-                                                {canManageMatchPlayed && canManageCategory(match.category) && (
+                                                {canUpdateMatch && canManageCategory(match.category) && (
                                                    <Button
                                                       variant="ghost"
                                                       size="sm"
@@ -2436,7 +2437,7 @@ const MatchManagementPage: React.FC = () => {
                                     setSelectedMatchId(match.id);
                                     setActiveTab('overview');
                                  }}
-                                 onEdit={canManageMatchPlayed && canManageCategory(match.category) ? (e) => {
+                                 onEdit={canUpdateMatch && canManageCategory(match.category) ? (e) => {
                                     e.stopPropagation();
                                     navigate(`/matches/edit/${match.id}`, { state: { match } });
                                  } : undefined}
@@ -2483,7 +2484,7 @@ const MatchManagementPage: React.FC = () => {
                         mainClub={mainClub}
                         opponentClubs={opponentClubs}
                         getOpponentName={getOpponentName}
-                        onOrchestrate={canManageMatchPlayed ? () => {
+                        onOrchestrate={canUpdateMatch ? () => {
                            navigate(`/matches/edit/${selectedMatch.id}`, { state: { match: selectedMatch } });
                         } : undefined}
                         onStats={() => setActiveTab('stats')}

@@ -55,7 +55,7 @@ export const ScheduleMatchPage: React.FC = () => {
         navigate('/matches', { replace: true });
       }
     } else {
-      const hasEditPermission = can('manage_match_played') || hasSubModuleAccess('matches', 'manage_match_played');
+      const hasEditPermission = can('plan_match') || hasSubModuleAccess('matches', 'plan_match') || can('manage_match_played') || hasSubModuleAccess('matches', 'manage_match_played');
       if (!hasEditPermission) {
         toast.error("Accès refusé : vous n'avez pas la permission d'éditer ou de préparer ce match.");
         navigate('/matches', { replace: true });

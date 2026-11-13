@@ -2449,9 +2449,11 @@ Direction Générale — FUS Rabat`;
 
       if (isCurrentlyActive) {
         delete next[key];
-        // Si Planifier un match est décoché, nettoyer aussi sub:matches:create
+        // Si Planifier un match est décoché, nettoyer aussi sub:matches:create, update, delete
         if (subId === 'matches' && action === 'plan_match') {
           delete next[`sub:matches:create`];
+          delete next[`sub:matches:update`];
+          delete next[`sub:matches:delete`];
         }
         // Si Create est décoché sur matches, nettoyer aussi sub:matches:plan_match
         if (subId === 'matches' && action === 'create') {
@@ -2480,13 +2482,17 @@ Direction Générale — FUS Rabat`;
         }
       } else {
         next[key] = true;
-        // Si Planifier un match est coché, activer aussi sub:matches:create
+        // Si Planifier un match est coché, activer le pack CRUD complet pour les matches (create, update, delete)
         if (subId === 'matches' && action === 'plan_match') {
           next[`sub:matches:create`] = true;
+          next[`sub:matches:update`] = true;
+          next[`sub:matches:delete`] = true;
         }
-        // Si Create est coché sur matches, activer aussi sub:matches:plan_match
+        // Si Create est coché sur matches, activer aussi sub:matches:plan_match, update, delete
         if (subId === 'matches' && action === 'create') {
           next[`sub:matches:plan_match`] = true;
+          next[`sub:matches:update`] = true;
+          next[`sub:matches:delete`] = true;
         }
         // Si Create, Update, Delete ou une action spécifique est activé, Read est automatiquement activé
         if (action !== 'read') {

@@ -388,6 +388,22 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (action === 'plan_match' || action === 'create') {
         return perms.includes('sub:matches:plan_match') || perms.includes('sub:matches:create') || perms.includes('plan_match');
       }
+      if (action === 'update' || action === 'edit') {
+        return (
+          perms.includes('sub:matches:update') ||
+          perms.includes('sub:matches:plan_match') ||
+          perms.includes('plan_match') ||
+          perms.includes('sub:matches:manage_match_played') ||
+          perms.includes('manage_match_played')
+        );
+      }
+      if (action === 'delete') {
+        return (
+          perms.includes('sub:matches:delete') ||
+          perms.includes('sub:matches:plan_match') ||
+          perms.includes('plan_match')
+        );
+      }
       if (action === 'sync_my_club' || action === 'sync_frmf') {
         return perms.includes('sub:matches:sync_my_club') || perms.includes('sync_my_club');
       }
@@ -395,7 +411,12 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return perms.includes('sub:matches:import_frmf_sheet') || perms.includes('import_frmf_sheet');
       }
       if (action === 'manage_match_played' || action === 'prepare_match') {
-        return perms.includes('sub:matches:manage_match_played') || perms.includes('manage_match_played');
+        return (
+          perms.includes('sub:matches:manage_match_played') ||
+          perms.includes('manage_match_played') ||
+          perms.includes('sub:matches:plan_match') ||
+          perms.includes('plan_match')
+        );
       }
       if (action === 'live_tracking' || action === 'live_match' || action === 'track_live_match') {
         return perms.includes('sub:matches:live_tracking') || perms.includes('live_tracking');
@@ -474,10 +495,13 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       );
     }
 
-    if (action === 'manage_match_played' || action === 'prepare_match' || action === 'edit_matches') {
+    if (action === 'manage_match_played' || action === 'prepare_match' || action === 'edit_matches' || action === 'edit_match') {
       return (
         perms.includes('sub:matches:manage_match_played') ||
-        perms.includes('manage_match_played')
+        perms.includes('manage_match_played') ||
+        perms.includes('sub:matches:plan_match') ||
+        perms.includes('plan_match') ||
+        perms.includes('schedule_match')
       );
     }
 
