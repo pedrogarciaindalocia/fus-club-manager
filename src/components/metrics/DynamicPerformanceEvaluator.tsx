@@ -15,6 +15,7 @@ export interface DynamicEvaluationChangePayload {
   metricSetId: string | null;
   metricSetName: string | null;
   positionCode: string | null;
+  positionName: string | null;
   technique: number;
   tactique: number;
   physique: number;
@@ -26,7 +27,7 @@ export interface DynamicEvaluationChangePayload {
 }
 
 interface DynamicPerformanceEvaluatorProps {
-  rubric: 'match' | 'training';
+  rubric: 'player' | 'match' | 'training';
   playerPosition?: string | null;
   initialSetId?: string | null;
   initialPositionCode?: string | null;
@@ -34,6 +35,7 @@ interface DynamicPerformanceEvaluatorProps {
   initialPillarScores?: Partial<Record<MetricPillar, number>> | null;
   compact?: boolean;
   onChange: (payload: DynamicEvaluationChangePayload) => void;
+  onPositionChange?: (position: MetricSetPosition | null, set: MetricSet | null) => void;
 }
 
 const PILLAR_META: Array<{
@@ -43,35 +45,35 @@ const PILLAR_META: Array<{
   badgeClass: string;
   accentClass: string;
 }> = [
-  {
-    key: 'technique',
-    label: '1. Technique',
-    icon: Target,
-    badgeClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
-    accentClass: 'accent-emerald-500',
-  },
-  {
-    key: 'tactique',
-    label: '2. Tactique',
-    icon: Shield,
-    badgeClass: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30',
-    accentClass: 'accent-indigo-500',
-  },
-  {
-    key: 'physique',
-    label: '3. Physique',
-    icon: Zap,
-    badgeClass: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30',
-    accentClass: 'accent-rose-500',
-  },
-  {
-    key: 'mental',
-    label: '4. Mental',
-    icon: Brain,
-    badgeClass: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
-    accentClass: 'accent-amber-500',
-  },
-];
+    {
+      key: 'technique',
+      label: '1. Technique',
+      icon: Target,
+      badgeClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+      accentClass: 'accent-emerald-500',
+    },
+    {
+      key: 'tactique',
+      label: '2. Tactique',
+      icon: Shield,
+      badgeClass: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30',
+      accentClass: 'accent-indigo-500',
+    },
+    {
+      key: 'physique',
+      label: '3. Physique',
+      icon: Zap,
+      badgeClass: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30',
+      accentClass: 'accent-rose-500',
+    },
+    {
+      key: 'mental',
+      label: '4. Mental',
+      icon: Brain,
+      badgeClass: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+      accentClass: 'accent-amber-500',
+    },
+  ];
 
 export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorProps> = ({
   rubric,
@@ -82,19 +84,22 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
   initialPillarScores,
   compact = false,
   onChange,
+  onPositionChange,
 }) => {
   const { metricSets, getPositionsForSet, isScoutUser } = useMetricSets();
 
+  const defaultBaseScore = rubric === 'player' ? 0 : 7;
   const [selectedSetId, setSelectedSetId] = useState<string>(() => initialSetId || '');
   const [selectedPosCode, setSelectedPosCode] = useState<string>(() => initialPositionCode || '');
+  const hasUserSelectedPosRef = useRef<boolean>(false);
   const [criteriaScores, setCriteriaScores] = useState<Record<string, number>>(
     () => ({ ...(initialCriteriaScores || {}) })
   );
   const [manualPillarScores, setManualPillarScores] = useState<Record<MetricPillar, number>>(() => ({
-    technique: initialPillarScores?.technique ?? 7,
-    tactique: initialPillarScores?.tactique ?? 7,
-    physique: initialPillarScores?.physique ?? 7,
-    mental: initialPillarScores?.mental ?? 7,
+    technique: initialPillarScores?.technique ?? defaultBaseScore,
+    tactique: initialPillarScores?.tactique ?? defaultBaseScore,
+    physique: initialPillarScores?.physique ?? defaultBaseScore,
+    mental: initialPillarScores?.mental ?? defaultBaseScore,
   }));
 
   // Synchroniser le lot sélectionné dès chargement de metricSets
@@ -112,23 +117,29 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
     return getPositionsForSet(activeSet.id);
   }, [activeSet, getPositionsForSet]);
 
-  // Synchroniser automatiquement le poste du joueur dans le lot
+  // Synchroniser automatiquement le poste du joueur dans le lot (sans écraser le choix manuel)
   useEffect(() => {
     if (positionsInSet.length === 0) return;
+    const stillValid =
+      selectedPosCode &&
+      positionsInSet.some(p => p.code.toUpperCase() === selectedPosCode.toUpperCase());
+    if (stillValid && hasUserSelectedPosRef.current) return;
+    if (stillValid && !initialPositionCode) return;
+
     if (initialPositionCode) {
       const exactInit = positionsInSet.find(
         p => p.code.toUpperCase() === initialPositionCode.toUpperCase()
       );
       if (exactInit) {
-        setSelectedPosCode(exactInit.code);
+        if (selectedPosCode !== exactInit.code) setSelectedPosCode(exactInit.code);
         return;
       }
     }
     const matched = resolveMetricSetPositionForPlayer(positionsInSet, playerPosition);
-    if (matched) {
+    if (matched && selectedPosCode !== matched.code) {
       setSelectedPosCode(matched.code);
     }
-  }, [playerPosition, initialPositionCode, positionsInSet]);
+  }, [playerPosition, initialPositionCode, positionsInSet, selectedPosCode]);
 
   const activePosition: MetricSetPosition | null = useMemo(() => {
     if (positionsInSet.length === 0) return null;
@@ -147,12 +158,19 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onPosChangeRef = useRef(onPositionChange);
+  onPosChangeRef.current = onPositionChange;
+
+  useEffect(() => {
+    onPosChangeRef.current?.(isScoutUser ? null : activePosition, isScoutUser ? null : activeSet);
+  }, [isScoutUser, activePosition, activeSet]);
 
   useEffect(() => {
     onChangeRef.current({
       metricSetId: isScoutUser ? null : activeSet?.id || null,
       metricSetName: isScoutUser ? null : activeSet?.name || null,
       positionCode: isScoutUser ? null : activePosition?.code || null,
+      positionName: isScoutUser ? null : (activePosition ? getMetricPositionFrenchName(activePosition) : null),
       technique: summary.technique,
       tactique: summary.tactique,
       physique: summary.physique,
@@ -167,6 +185,7 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
     activeSet?.id,
     activeSet?.name,
     activePosition?.code,
+    activePosition,
     summary.technique,
     summary.tactique,
     summary.physique,
@@ -229,7 +248,7 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
               </div>
               <input
                 type="range"
-                min="1"
+                min="0"
                 max="10"
                 step="0.5"
                 value={manualPillarScores[p.key]}
@@ -260,6 +279,7 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
           <select
             value={activeSet?.id || ''}
             onChange={e => {
+              hasUserSelectedPosRef.current = false;
               setSelectedSetId(e.target.value);
               setSelectedPosCode('');
               setCriteriaScores({});
@@ -281,6 +301,7 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
           <select
             value={activePosition?.code || ''}
             onChange={e => {
+              hasUserSelectedPosRef.current = true;
               setSelectedPosCode(e.target.value);
               setCriteriaScores({});
             }}
@@ -336,7 +357,7 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
           const pillarAvg = summary[pillar.key];
           const ratedInPillar = criteriaList.filter(c => {
             const val = criteriaScores[`${pillar.key}:${c}`] ?? criteriaScores[c];
-            return typeof val === 'number' && val > 0;
+            return typeof val === 'number' && Number.isFinite(val) && val >= 0;
           }).length;
 
           return (
@@ -354,14 +375,32 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
 
                 <div className="flex items-center gap-2">
                   {criteriaList.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => handleSetAllInPillar(pillar.key, manualPillarScores[pillar.key])}
-                      className="text-[10px] font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white underline"
-                      title="Pré-remplir tous les critères de ce pilier"
-                    >
-                      Tout à {manualPillarScores[pillar.key].toFixed(0)}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSetAllInPillar(pillar.key, 0)}
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
+                        title="Noter tous les critères de ce pilier à 0"
+                      >
+                        0
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetAllInPillar(pillar.key, 5)}
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
+                        title="Noter tous les critères de ce pilier à 5"
+                      >
+                        5
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetAllInPillar(pillar.key, 7.5)}
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
+                        title="Noter tous les critères de ce pilier à 7.5"
+                      >
+                        7.5
+                      </button>
+                    </div>
                   )}
                   {ratedInPillar > 0 && (
                     <button
@@ -387,7 +426,7 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
                   </div>
                   <input
                     type="range"
-                    min="1"
+                    min="0"
                     max="10"
                     step="0.5"
                     value={manualPillarScores[pillar.key]}
@@ -405,7 +444,7 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
                   {criteriaList.map(crit => {
                     const scopedKey = `${pillar.key}:${crit}`;
                     const currentVal = criteriaScores[scopedKey] ?? criteriaScores[crit];
-                    const isRated = typeof currentVal === 'number' && currentVal > 0;
+                    const isRated = typeof currentVal === 'number' && Number.isFinite(currentVal) && currentVal >= 0;
                     const sliderVal = isRated ? currentVal : manualPillarScores[pillar.key];
 
                     return (
@@ -414,19 +453,48 @@ export const DynamicPerformanceEvaluator: React.FC<DynamicPerformanceEvaluatorPr
                           <span className="font-medium text-slate-700 dark:text-slate-200 leading-snug">
                             {crit}
                           </span>
-                          <span
-                            className={`text-xs font-black tabular-nums shrink-0 ${
-                              isRated
-                                ? 'text-slate-900 dark:text-white'
-                                : 'text-slate-400'
-                            }`}
-                          >
-                            {isRated ? `${currentVal.toFixed(1)}` : '—'}
-                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCriterionChange(
+                                  pillar.key,
+                                  crit,
+                                  Math.max(0, Number(((isRated ? currentVal : sliderVal) - 0.5).toFixed(1)))
+                                )
+                              }
+                              className="w-5 h-5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-black text-slate-600 dark:text-slate-300 flex items-center justify-center"
+                              title="-0.5"
+                            >
+                              -
+                            </button>
+                            <span
+                              className={`text-xs font-black tabular-nums min-w-[2.2rem] text-center ${isRated
+                                  ? 'text-slate-900 dark:text-white'
+                                  : 'text-slate-400'
+                                }`}
+                            >
+                              {isRated ? `${currentVal.toFixed(1)}` : '—'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCriterionChange(
+                                  pillar.key,
+                                  crit,
+                                  Math.min(10, Number(((isRated ? currentVal : sliderVal) + 0.5).toFixed(1)))
+                                )
+                              }
+                              className="w-5 h-5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] font-black text-slate-600 dark:text-slate-300 flex items-center justify-center"
+                              title="+0.5"
+                            >
+                              +
+                            </button>
+                          </div>
                         </div>
                         <input
                           type="range"
-                          min="1"
+                          min="0"
                           max="10"
                           step="0.5"
                           value={sliderVal}

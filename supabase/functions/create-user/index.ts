@@ -38,20 +38,24 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing auth header' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const token = authHeader.replace('Bearer ', '')
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+    const isDirectServiceRole = token === supabaseServiceKey
     let callerUser = null
-    try {
-      const { data, error } = await supabaseAdmin.auth.getUser(token)
-      if (error) throw error
-      callerUser = data.user
-    } catch (e) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-    if (!callerUser) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+    if (!isDirectServiceRole) {
+      try {
+        const { data, error } = await supabaseAdmin.auth.getUser(token)
+        if (error) throw error
+        callerUser = data.user
+      } catch (_e) {
+        return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+      if (!callerUser) {
+        return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
     }
 
-    // Authenticated endpoint: get_all_profiles (accessible to authenticated users)
+    // Authenticated endpoint: get_all_profiles (accessible to authenticated users or service_role)
     if (action === 'get_all_profiles') {
       const { data: profiles, error: pErr } = await supabaseAdmin
         .from('user_profiles')
@@ -60,18 +64,21 @@ serve(async (req) => {
       return new Response(JSON.stringify({ profiles }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
     }
 
-    const { data: callerProfile, error: profileError } = await supabaseAdmin
-      .from('user_profiles')
-      .select('system_role')
-      .eq('id', callerUser.id)
-      .single()
+    let isAuthorizedAdmin = isDirectServiceRole
+    if (!isAuthorizedAdmin && callerUser) {
+      const { data: callerProfile, error: profileError } = await supabaseAdmin
+        .from('user_profiles')
+        .select('system_role')
+        .eq('id', callerUser.id)
+        .maybeSingle()
+      const roleLower = String(callerProfile?.system_role || '').toLowerCase()
+      isAuthorizedAdmin = !profileError && ['super_admin', 'admin', 'scout_admin', 'direction', 'technical_director'].includes(roleLower)
+    }
 
-    const isAuthorizedAdmin = callerProfile?.system_role === 'super_admin' || callerProfile?.system_role === 'admin'
-    if (profileError || !isAuthorizedAdmin) {
+    if (!isAuthorizedAdmin) {
       return new Response(JSON.stringify({ error: 'Unauthorized: Only admin or super_admin can perform this action' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Duplicate get_all_profiles handling removed - early handling above
     const { email, password, full_name, system_role, categories, club_id, user_id, job_title, phone_number } = body;
 
     if (action === 'create') {
@@ -86,16 +93,29 @@ serve(async (req) => {
         user_metadata: { full_name }
       })
 
-      if (authError) return new Response(JSON.stringify({ error: authError.message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      if (authError || !authData?.user) {
+        return new Response(JSON.stringify({ error: authError?.message || 'Auth user creation failed' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      const profileUpsertPayload: Record<string, any> = {
+        id: authData.user.id,
+        full_name,
+        system_role,
+        force_password_change: true,
+        job_title: job_title || null,
+        phone_number: phone_number || null,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      }
+      if (club_id) profileUpsertPayload.default_club_id = club_id
 
       const { error: updateError } = await supabaseAdmin
         .from('user_profiles')
-        .update({ system_role, force_password_change: true, default_club_id: club_id, job_title: job_title || null, phone_number: phone_number || null })
-        .eq('id', authData.user.id)
+        .upsert(profileUpsertPayload, { onConflict: 'id' })
 
       if (updateError) {
         await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
-        return new Response(JSON.stringify({ error: 'Failed to update user profile' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ error: 'Failed to upsert user profile: ' + updateError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
 
       // Assign categories if needed
@@ -109,27 +129,33 @@ serve(async (req) => {
     } else if (action === 'update') {
       if (!user_id) return new Response(JSON.stringify({ error: 'Missing user_id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-      // Update auth user (email, password, full_name)
+      // Update auth user (email, password, full_name) cleanly without silent crash
       const authUpdatePayload: Record<string, any> = {}
       if (email) authUpdatePayload.email = email
       if (password) authUpdatePayload.password = password
       if (full_name) authUpdatePayload.user_metadata = { full_name }
 
       if (Object.keys(authUpdatePayload).length > 0) {
-        await supabaseAdmin.auth.admin.updateUserById(user_id, authUpdatePayload)
+        const { error: authUpdErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, authUpdatePayload)
+        if (authUpdErr) {
+          console.warn('[create-user] updateUserById notice:', authUpdErr.message)
+        }
       }
 
-      // Update profile with service_role (bypasses RLS)
-      const profileUpdate: Record<string, any> = {}
+      // Upsert profile with service_role (ensures row exists for every updated auth user)
+      const profileUpdate: Record<string, any> = {
+        id: user_id,
+        updated_at: new Date().toISOString(),
+      }
       if (system_role !== undefined) profileUpdate.system_role = system_role
       if (job_title !== undefined) profileUpdate.job_title = job_title || null
       if (phone_number !== undefined) profileUpdate.phone_number = phone_number || null
       if (full_name !== undefined) profileUpdate.full_name = full_name
+      if (club_id) profileUpdate.default_club_id = club_id
 
       const { error: updateError } = await supabaseAdmin
         .from('user_profiles')
-        .update(profileUpdate)
-        .eq('id', user_id)
+        .upsert(profileUpdate, { onConflict: 'id' })
 
       if (updateError) return new Response(JSON.stringify({ error: 'Failed to update user profile: ' + updateError.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 

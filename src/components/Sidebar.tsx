@@ -6,7 +6,7 @@ import {
   Swords, Building2, Target, Calendar, LayoutTemplate,
   X, ChevronLeft, ChevronDown, Sparkles, UserPlus, Compass,
   Dumbbell, Award, Zap, Menu, Blocks, Archive, User, ClipboardCheck,
-  Image as ImageIcon, LifeBuoy, Eye, PlaySquare
+  Image as ImageIcon, LifeBuoy, Eye, PlaySquare, Sliders
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabaseAdmin } from '../lib/supabase';
@@ -41,7 +41,7 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
 
   // Branche Analyse Vidéo & Data
   if (isAnalyst) {
-    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/championship-performances' || path === '/arbitres' || path === '/leagues' || path === '/stadiums' || path.startsWith('/classement-resultats')) return true;
+    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/championship-performances' || path === '/player-performance' || path === '/performance-metrics' || path === '/arbitres' || path === '/leagues' || path === '/stadiums' || path.startsWith('/classement-resultats')) return true;
     if (path.startsWith('/players') || path === '/club' || path.startsWith('/teams') || path.startsWith('/opponents') || path.startsWith('/staff')) return true;
     if (path.startsWith('/media')) return true;
     if (path === '/' || path === '/dashboard') return true;
@@ -68,7 +68,7 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
   if (isCoach) {
     if (path.startsWith('/trainings')) return true;
     if (path.startsWith('/matches') || path === '/matchday') return true;
-    if (path === '/official-shortlist' || path === '/championship-performances' || path === '/classement-resultats') return true;
+    if (path === '/official-shortlist' || path === '/championship-performances' || path === '/player-performance' || path === '/performance-metrics' || path.startsWith('/classement-resultats')) return true;
     if (path === '/players' || path === '/teams' || path === '/opponents') return true;
     if (path === '/arbitres' || path === '/leagues' || path === '/stadiums') return true;
     if (path === '/media') return true;
@@ -78,7 +78,7 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
 
   // Rôle Admin Métier / Direction standard (hors analyste, scout, coach)
   if (normRole === 'admin' || normRole === 'direction' || normRole === 'manager') {
-    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/championship-performances' || path === '/arbitres' || path === '/leagues' || path === '/stadiums' || path.startsWith('/classement-resultats')) return true;
+    if (path.startsWith('/matches') || path === '/matchday' || path === '/official-shortlist' || path === '/championship-performances' || path === '/player-performance' || path === '/performance-metrics' || path === '/arbitres' || path === '/leagues' || path === '/stadiums' || path.startsWith('/classement-resultats')) return true;
     if (path.startsWith('/players') || path === '/club' || path.startsWith('/teams') || path.startsWith('/opponents') || path.startsWith('/staff')) return true;
     if (path.startsWith('/trainings')) return true;
     if (path.startsWith('/recruitment-v2')) return true;
@@ -249,6 +249,8 @@ const Sidebar: React.FC<SidebarProps> = ({
         { path: '/matchday', label: 'Match du Jour', icon: PlaySquare, subId: 'matchday' },
         { path: '/classement-resultats', label: 'Classement & Résultats FRMF', icon: Award, subId: 'classement_resultats' },
         { path: '/championship-performances', label: 'Championnat & Performances', icon: Activity, subId: 'championship_performances' },
+        { path: '/player-performance', label: 'Performance Joueur', icon: Sliders, subId: 'player_performance' },
+        { path: '/performance-metrics', label: 'Métriques Perf. Joueur', icon: Target, subId: 'player_performance_metrics' },
         { path: '/championship-performances?tab=attack_defense', label: 'Adversaires vs Attaque', icon: Swords, subId: 'attack_defense' },
         { path: '/official-shortlist', label: 'Shortlist Officielle', icon: Trophy, subId: 'official_shortlist' },
         { path: '/arbitres', label: 'Arbitres & Officiels', icon: UserCheck, subId: 'arbitres' },
@@ -376,10 +378,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           }
 
           if (isMirrorMode) {
+            if (isScout && (item.subId === 'player_performance' || item.subId === 'player_performance_metrics')) {
+              return null;
+            }
             return hasMirrorSubAccess(item.subId, item.path) ? item : null;
           }
 
           if (!item.subId) return item;
+          if (isScout && (item.subId === 'player_performance' || item.subId === 'player_performance_metrics')) {
+            return null;
+          }
           const isAllowed = hasSubModuleAccess(item.subId, 'read', cat.id);
           return isAllowed ? item : null;
         })

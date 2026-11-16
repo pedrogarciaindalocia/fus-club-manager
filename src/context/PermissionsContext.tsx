@@ -26,6 +26,8 @@ export const SUBMODULE_TO_PARENT_MAP: Record<string, string> = {
   matchday: 'competition',
   classement_resultats: 'competition',
   championship_performances: 'competition',
+  player_performance: 'competition',
+  player_performance_metrics: 'competition',
   attack_defense: 'competition',
   official_shortlist: 'competition',
   arbitres: 'competition',
@@ -150,7 +152,7 @@ const getInitialAuthState = (): AuthState => {
         created_at: new Date().toISOString(),
       },
       roles: ['super_admin'],
-      userCategories: ['U16', 'U17', 'U18', 'U19', 'Pro'],
+      userCategories: [],
       permissions: ['*'],
       loading: false,
       isRealSuperAdmin: true,
@@ -286,7 +288,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
         isAuthenticated: true,
         user: fallbackUser,
         roles: ['super_admin'],
-        userCategories: ['U16', 'U17', 'U18', 'U19', 'Pro'],
+        userCategories: [],
         permissions: ['*'],
         loading: false,
         isRealSuperAdmin: true,
@@ -572,6 +574,9 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     : ['U7', 'U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U21', 'Senior', 'PRO'];
 
   const canManageCategory = (category: string | null | undefined): boolean => {
+    // 0. Le Super Admin dispose d'un accès absolu sans restriction à toutes les catégories
+    if (isEffectiveSuperAdmin()) return true;
+
     const role = authState.user?.system_role?.toLowerCase() || '';
     const isScoutAdmin = role === 'scout_admin' || authState.user?.role?.toLowerCase() === 'scout_admin' || authState.roles.some(r => r.toLowerCase() === 'scout_admin');
     if (isScoutAdmin) return true;
@@ -585,9 +590,8 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     // 2. Si AUCUNE catégorie spécifique n'a été restreinte/cochée pour ce compte :
-    // Les administrateurs généraux (super_admin, admin, direction) ont accès à tout par défaut.
-    const isSuperAdmin = !authState.isImpersonating && (role === 'super_admin' || authState.isRealSuperAdmin);
-    if (isSuperAdmin || role === 'admin' || role === 'direction') {
+    // Les administrateurs généraux (admin, direction) ont accès à tout par défaut.
+    if (role === 'admin' || role === 'direction') {
       return true;
     }
 

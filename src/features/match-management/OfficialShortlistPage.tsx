@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { usePlayers } from '../../hooks/usePlayers';
+import { useMatches } from '../../hooks/useMatches';
+import { useClubData } from '../../hooks/useClubData';
 import { normalizeAgeCategory } from '../../constants';
 import { getPositionDetails } from '../../constants/positions';
 import ScoutasticDenseSlotCard from '../../components/ScoutasticDenseSlotCard';
@@ -252,6 +254,8 @@ function mapPlayerToSlotIndex(player: any, slots: FormationSlot[]): number {
 
 export const OfficialShortlistPage: React.FC = () => {
   const { players: squadPlayers = [] } = usePlayers();
+  const { matches = [] } = useMatches();
+  const { opponentClubs = [], mainClub } = useClubData();
   const {
     mentionsByPlayerId,
     latestMentionByPlayerId,
@@ -1096,6 +1100,9 @@ export const OfficialShortlistPage: React.FC = () => {
           player={selectedPlayerForMention}
           targetCategory={categoryFilter}
           mentions={mentionsByPlayerId.get(selectedPlayerForMention.id) || []}
+          rawMatches={matches}
+          opponentClubs={opponentClubs}
+          mainClub={mainClub}
           isSaving={isSavingMention}
           onSave={upsertMention}
           onDelete={deleteMention}

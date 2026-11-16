@@ -58,6 +58,13 @@ import { AdministrativeProcedureModal } from './components/AdministrativeProcedu
 import { getFrenchPositionLabel } from './constants/scoutCriteriaByPosition';
 import { CandidatePillarsScorecard } from './components/CandidatePillarsScorecard';
 import { PreferredFootIcon } from './components/PreferredFootIcon';
+import { TestDateHoverCalendarPill } from './components/TestDateHoverCalendarPill';
+import {
+  formatTestDateIntervalLabel,
+  getTestCandidateIds,
+  groupConsecutiveTestDateRanges,
+  type TestDateInterval,
+} from './utils/testDateIntervals';
 import { cn } from '../../lib/utils';
 const FOOT_OPTIONS = [
   { id: 'ALL', label: 'Tous les pieds' },
@@ -391,6 +398,7 @@ export const RecruitmentV2Page: React.FC = () => {
     setIsBulkDeleteModalOpen(false);
     setIsBulkArchiveModalOpen(false);
     setIsDeletingCandidate(false);
+    setInvitedCalendarFocus(null);
   }, [activeTab]);
   const [selectedScoutForCandidate, setSelectedScoutForCandidate] = useState<string | undefined>(undefined);
   const [isEvaluationModalOpen, setIsEvaluationModalOpen] = useState(false);
@@ -412,6 +420,61 @@ export const RecruitmentV2Page: React.FC = () => {
   const [playerToWatchVideo, setPlayerToWatchVideo] = useState<TrialCandidate | null>(null);
   const [candidateForDriveLink, setCandidateForDriveLink] = useState<TrialCandidate | null>(null);
   const [candidateForAdminProcedure, setCandidateForAdminProcedure] = useState<TrialCandidate | null>(null);
+  const [invitedCalendarFocus, setInvitedCalendarFocus] = useState<{
+    candidateId: string;
+    candidateName: string;
+    dates: string[];
+    initialMonthDate: string;
+    initialTab: 'invited' | 'plan';
+    contextSubtitle: string;
+  } | null>(null);
+
+  const candidateTestSummaryMap = useMemo(() => {
+    const sessionsByCandidate = new Map<string, PlayerTest[]>();
+    tests.forEach((test) => {
+      if (test.status === 'cancelled' || !test.test_date) return;
+      getTestCandidateIds(test).forEach((candId) => {
+        const arr = sessionsByCandidate.get(candId);
+        if (arr) arr.push(test);
+        else sessionsByCandidate.set(candId, [test]);
+      });
+    });
+
+    const summaryMap = new Map<string, { intervals: TestDateInterval[]; allDates: string[]; sessions: PlayerTest[] }>();
+    sessionsByCandidate.forEach((candSessions, candId) => {
+      const intervals = groupConsecutiveTestDateRanges(candSessions.map((s) => s.test_date));
+      const allDates = intervals.flatMap((i) => i.dates);
+      summaryMap.set(candId, { intervals, allDates, sessions: candSessions });
+    });
+    return summaryMap;
+  }, [tests]);
+
+  const handleOpenInvitedCalendar = (
+    cand: TrialCandidate,
+    interval?: TestDateInterval
+  ) => {
+    const fullName = `${cand.first_name} ${cand.last_name}`.trim();
+    if (interval && interval.dates.length > 0) {
+      setInvitedCalendarFocus({
+        candidateId: cand.id,
+        candidateName: fullName,
+        dates: interval.dates,
+        initialMonthDate: interval.startDate,
+        initialTab: 'invited',
+        contextSubtitle: `Période sélectionnée : ${formatTestDateIntervalLabel(interval)} — Cliquez sur d'autres jours du calendrier pour voir les joueurs invités`,
+      });
+      return;
+    }
+
+    setInvitedCalendarFocus({
+      candidateId: cand.id,
+      candidateName: fullName,
+      dates: [todayStr],
+      initialMonthDate: todayStr,
+      initialTab: 'plan',
+      contextSubtitle: `Aucune session planifiée pour ${fullName} — Choisissez les dates et invitez le joueur`,
+    });
+  };
 
   const handleOpenAdminProcedure = (candidate: TrialCandidate) => {
     if (!canProcessRecruitNow) {
@@ -481,15 +544,36 @@ export const RecruitmentV2Page: React.FC = () => {
     );
   };
 
+  const resolveCandidateStatus = React.useCallback((c: TrialCandidate): PlayerRecruitmentStatus => {
+    const candDecision = getCandidateLatestDecision(c);
+    if (
+      isCandidateRecruitNow(c) ||
+      candDecision === 'recruit_now' ||
+      c.scout_state_decision === 'recruit_now' ||
+      (c as any).scout_state_decision === 'recruit_standby'
+    ) {
+      return 'recruit_now';
+    }
+    if (
+      candDecision === 'invitation_test' ||
+      c.scout_state_decision === 'invitation_test' ||
+      c.status === 'in_trial'
+    ) {
+      return 'invitation_test';
+    }
+    return 'to_follow';
+  }, [getCandidateLatestDecision, isCandidateRecruitNow]);
+
   // Rendu unifié de la cellule/ligne Statut :
   // - Si "Recrutement immédiatement" et habilité -> afficher uniquement le bouton d'action à la place du statut (sans icône)
+  // - Si "Inviter à un test" -> afficher la date ou l'intervalle de date cliquable (ou "À planifier") juste en dessous
   // - Sinon -> affichage purement informatif sans liste déroulante ni icône
-  const renderCandidateStatusControl = (c: TrialCandidate, fullWidthButton = false) => {
-    const candDecision = getCandidateLatestDecision(c);
-    const currentStatus: PlayerRecruitmentStatus =
-      (isCandidateRecruitNow(c) || candDecision === 'recruit_now' || c.scout_state_decision === 'recruit_now' || c.scout_state_decision === 'recruit_standby') ? 'recruit_now' :
-        (candDecision === 'invitation_test' || c.scout_state_decision === 'invitation_test' || c.status === 'in_trial') ? 'invitation_test' :
-          'to_follow';
+  const renderCandidateStatusControl = (
+    c: TrialCandidate,
+    fullWidthButton = false,
+    align: 'start' | 'end' = 'start'
+  ) => {
+    const currentStatus = resolveCandidateStatus(c);
 
     if (currentStatus === 'recruit_now' && (canProcessRecruitNow || isOnlyRecruitNowUser)) {
       return (
@@ -522,13 +606,56 @@ export const RecruitmentV2Page: React.FC = () => {
           ? "bg-blue-50 text-blue-800 border-blue-200"
           : "bg-indigo-50 text-indigo-800 border-indigo-200";
 
+    const candTestSummary = currentStatus === 'invitation_test'
+      ? candidateTestSummaryMap.get(c.id)
+      : undefined;
+    const testIntervals = candTestSummary?.intervals || [];
+
     return (
-      <span className={cn(
-        "inline-flex items-center px-2.5 py-1 rounded-xl border text-[11px] font-black uppercase tracking-wider select-none whitespace-nowrap",
-        statusBadgeClass
+      <div className={cn(
+        "flex flex-col gap-1.5",
+        align === 'end' ? "items-end" : "items-start"
       )}>
-        {statusLabel}
-      </span>
+        <span className={cn(
+          "inline-flex items-center px-2.5 py-1 rounded-xl border text-[11px] font-black uppercase tracking-wider select-none whitespace-nowrap",
+          statusBadgeClass
+        )}>
+          {statusLabel}
+        </span>
+
+        {currentStatus === 'invitation_test' && (
+          testIntervals.length > 0 ? (
+            <div className={cn(
+              "flex flex-wrap gap-1",
+              align === 'end' ? "justify-end" : "justify-start"
+            )}>
+              {testIntervals.map((interval) => (
+                <TestDateHoverCalendarPill
+                  key={`${interval.startDate}-${interval.endDate}`}
+                  candidateName={`${c.first_name} ${c.last_name}`.trim()}
+                  interval={interval}
+                  allCandidateTestDates={candTestSummary?.allDates}
+                  sessions={candTestSummary?.sessions}
+                  onClick={() => handleOpenInvitedCalendar(c, interval)}
+                />
+              ))}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenInvitedCalendar(c);
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-dashed border-blue-300 bg-blue-50/70 hover:bg-blue-600 hover:text-white hover:border-blue-600 text-blue-700 text-[11px] font-bold transition-all cursor-pointer active:scale-95 whitespace-nowrap group/date"
+              title={`Planifier ou consulter le calendrier pour ${c.first_name} ${c.last_name}`}
+            >
+              <Calendar className="w-3 h-3 text-blue-600 group-hover/date:text-white shrink-0 transition-colors" />
+              <span>À planifier</span>
+            </button>
+          )
+        )}
+      </div>
     );
   };
   // Scout Report Wizard state
@@ -1052,6 +1179,19 @@ export const RecruitmentV2Page: React.FC = () => {
     });
   }, [candidates, authState?.userCategories, isRecruitmentAdmin, isScoutManager, currentScout, authState?.user?.id, authState?.user?.full_name, evaluations, observations]);
 
+  const activeScopedCandidates = React.useMemo(
+    () => scopedCandidates.filter(c => c.pipeline_stage !== 'archived' && c.status !== 'archived'),
+    [scopedCandidates]
+  );
+
+  const databaseScopedTests = React.useMemo(() => {
+    const allowedIds = new Set(activeScopedCandidates.map(c => c.id));
+    return tests.filter((t) => {
+      const ids = getTestCandidateIds(t);
+      return ids.length === 0 || ids.some(id => allowedIds.has(id));
+    });
+  }, [tests, activeScopedCandidates]);
+
   // Cellule scouts & personnel : Les administrateurs et managers apparaissent ensemble dans la cellule personnel
   const scopedScouts = React.useMemo(() => {
     if (scouts && scouts.length > 0) {
@@ -1439,11 +1579,11 @@ export const RecruitmentV2Page: React.FC = () => {
         return false;
       }
 
-      // Filtre Décision Scout / Statut (si activé manuellement) : déterminé par le DERNIER RAPPORT
-      const candDecision = getCandidateLatestDecision(c);
+      // Filtre Décision Scout / Statut (si activé manuellement)
+      const resolvedStatus = resolveCandidateStatus(c);
       if (decisionFilter === 'recruit_now' && !isCandidateRecruitNow(c)) {
         return false;
-      } else if (decisionFilter !== 'ALL' && decisionFilter !== 'recruit_now' && candDecision !== decisionFilter) {
+      } else if (decisionFilter !== 'ALL' && decisionFilter !== 'recruit_now' && resolvedStatus !== decisionFilter) {
         return false;
       }
 
@@ -1466,7 +1606,7 @@ export const RecruitmentV2Page: React.FC = () => {
     });
 
     return sorted;
-  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, myPlayersOnly, nationalityTagFilter, currentScout, authState?.user, decisionFilter, isOnlyRecruitNowUser, isCandidateRecruitNow, getCandidateLatestDecision]);
+  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, myPlayersOnly, nationalityTagFilter, currentScout, authState?.user, decisionFilter, isOnlyRecruitNowUser, isCandidateRecruitNow, resolveCandidateStatus]);
 
   // 1b. Filtrage des candidats archivés pour l'onglet Archives
   const filteredArchivedCandidates = React.useMemo(() => {
@@ -1914,1208 +2054,1275 @@ export const RecruitmentV2Page: React.FC = () => {
 
         {/* L'onglet Kanban a été supprimé de la V2 */}
 
-        {/* TAB 3 : CANDIDATS & TUTEURS (LISTE) */}
+        {/* TAB 3 : CANDIDATS & TUTEURS (LISTE OU VUE CALENDRIER DES JOUEURS INVITÉS) */}
         {activeTab === 'candidates' && canAccessTab('candidates') && (
-          <div className="space-y-4">
+          invitedCalendarFocus ? (
+            <TestCalendarView
+              key={`${invitedCalendarFocus.candidateId}-${invitedCalendarFocus.dates.join(',')}`}
+              tests={databaseScopedTests}
+              candidates={activeScopedCandidates}
+              evaluations={evaluations}
+              scouts={scopedScouts}
+              isLoading={isLoadingTests}
+              initialSelectedDates={invitedCalendarFocus.dates}
+              initialMonthDate={invitedCalendarFocus.initialMonthDate}
+              initialRightPanelTab={invitedCalendarFocus.initialTab}
+              focusedCandidateId={invitedCalendarFocus.candidateId}
+              defaultPlannerCandidateId={invitedCalendarFocus.candidateId}
+              onBack={() => setInvitedCalendarFocus(null)}
+              backLabel="Retour à la Database"
+              contextTitle={`Convocations Test — ${invitedCalendarFocus.candidateName}`}
+              contextSubtitle={invitedCalendarFocus.contextSubtitle}
+              onOpenCandidateDetail={(cand) => {
+                if (canViewCandidateDetails(cand)) {
+                  openCandidateDetail(cand);
+                }
+              }}
+              onOpenNewTest={(defaultDate) => {
+                setEditingTest(null);
+                setSchedulingCandidate(
+                  activeScopedCandidates.find(c => c.id === invitedCalendarFocus.candidateId) || null
+                );
+                setNewTestDefaultDate(defaultDate);
+                setIsSessionModalOpen(true);
+              }}
+              onSaveBatchTests={(canCreateCandidate || isRecruitmentAdmin || canAccessTab('sessions'))
+                ? async (testsPayload) => {
+                  await createTestsBatch(testsPayload);
+                }
+                : undefined}
+              onUpdateTest={(canCreateCandidate || isRecruitmentAdmin || canAccessTab('sessions'))
+                ? async (id, updates) => {
+                  await updateTest({ id, updates });
+                }
+                : undefined}
+              onEditTest={(test) => {
+                setEditingTest(test);
+                setNewTestDefaultDate(undefined);
+                setIsSessionModalOpen(true);
+              }}
+              onDeleteTest={async (testId) => {
+                await deleteTest(testId);
+              }}
+              onDeleteTests={async (testIds) => {
+                await deleteTests(testIds);
+              }}
+              onMoveTest={async (testId, newDate) => {
+                await updateTest({ id: testId, updates: { test_date: newDate } });
+              }}
+              onOpenEvaluationForTest={canManageReports ? (candidate, test) => {
+                if (!canAddReportForCandidate(candidate)) {
+                  toast.error("Vous n'avez pas la permission d'évaluer ce joueur.");
+                  return;
+                }
+                setEvaluatingCandidate(candidate);
+                const hasExisting = evaluations.some(e => e.candidate_id === candidate.id);
+                setEvaluationInitialMode(hasExisting ? 'reevaluate' : 'create');
+                setEvaluationInitialTestId(test.id);
+                setIsEvaluationModalOpen(true);
+              } : undefined}
+            />
+          ) : (
+            <div className="space-y-4">
 
-            {/* Header Database avec bouton Ajouter & Toggle Vue */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                  <Users className="w-4 h-4" />
+              {/* Header Database avec bouton Ajouter & Toggle Vue */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black text-slate-800">Base de données joueurs</h2>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {filteredCandidates.length} joueur{filteredCandidates.length !== 1 ? 's' : ''} {filteredCandidates.length !== candidates.length ? `/ ${candidates.length} au total` : 'enregistrés'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-sm font-black text-slate-800">Base de données joueurs</h2>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    {filteredCandidates.length} joueur{filteredCandidates.length !== 1 ? 's' : ''} {filteredCandidates.length !== candidates.length ? `/ ${candidates.length} au total` : 'enregistrés'}
-                  </p>
+
+                <div className="flex items-center gap-2.5">
+                  {/* Toggle Vue : Tableau (par défaut) / Grille */}
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('table')}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                        viewMode === 'table'
+                          ? "bg-white text-primary shadow-xs font-black"
+                          : "text-slate-500 hover:text-slate-900"
+                      )}
+                      title="Affichage en tableau"
+                    >
+                      <List className="w-3.5 h-3.5" />
+                      Tableau
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('grid')}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                        viewMode === 'grid'
+                          ? "bg-white text-primary shadow-xs font-black"
+                          : "text-slate-500 hover:text-slate-900"
+                      )}
+                      title="Affichage en grille"
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      Grille
+                    </button>
+                  </div>
+
+                  {canCreateCandidate && (
+                    <>
+                      <button
+                        onClick={() => {
+                          if (isScoutRestricted && currentScout) {
+                            navigate(`/recruitment-v2/add-player?scoutId=${currentScout.id}&returnTab=${activeTab}`);
+                          } else {
+                            navigate('/recruitment-v2/add-player');
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow-md shadow-primary/25 hover:bg-primary/90 active:scale-95 transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Ajouter Joueur
+                      </button>
+
+                      {canManageReports && (
+                        <button
+                          onClick={() => navigate('/recruitment-v2/add-report')}
+                          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md hover:bg-indigo-500 active:scale-95 transition-all cursor-pointer"
+                          title="Rédiger un rapport scout pour un candidat"
+                        >
+                          <ClipboardList className="w-4 h-4" />
+                          Ajouter un rapport
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-2.5">
-                {/* Toggle Vue : Tableau (par défaut) / Grille */}
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('table')}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                      viewMode === 'table'
-                        ? "bg-white text-primary shadow-xs font-black"
-                        : "text-slate-500 hover:text-slate-900"
-                    )}
-                    title="Affichage en tableau"
-                  >
-                    <List className="w-3.5 h-3.5" />
-                    Tableau
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('grid')}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
-                      viewMode === 'grid'
-                        ? "bg-white text-primary shadow-xs font-black"
-                        : "text-slate-500 hover:text-slate-900"
-                    )}
-                    title="Affichage en grille"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                    Grille
-                  </button>
+              {/* Barre de Filtre Complet (Placée directement au-dessus du tableau) */}
+              <div className="bg-white rounded-3xl p-4 md:p-5 border shadow-sm space-y-3">
+                {/* LIGNE 0 : Filtres Marocains / Africains (sans bouton Tous) + Filtres Rapides de Statut (sans icônes) */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 gap-1 flex-wrap mr-1">
+                      {/* Filtre : Marocains */}
+                      <button
+                        type="button"
+                        onClick={() => setNationalityTagFilter(prev => prev === 'marocains' ? 'all' : 'marocains')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                          nationalityTagFilter === 'marocains'
+                            ? "bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-400/40"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                        )}
+                        title={nationalityTagFilter === 'marocains' ? "Cliquez pour désactiver le filtre Marocains" : "Afficher les joueurs de nationalité marocaine"}
+                      >
+                        <span>Marocains</span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                          nationalityTagFilter === 'marocains'
+                            ? "bg-white/20 text-white"
+                            : "bg-slate-200 text-slate-700"
+                        )}>
+                          {nationalityCounts.morocCount}
+                        </span>
+                      </button>
+
+                      {/* Filtre : Africains */}
+                      <button
+                        type="button"
+                        onClick={() => setNationalityTagFilter(prev => prev === 'africains' ? 'all' : 'africains')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                          nationalityTagFilter === 'africains'
+                            ? "bg-amber-500 text-slate-950 font-black shadow-xs ring-2 ring-amber-400/40"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                        )}
+                        title={nationalityTagFilter === 'africains' ? "Cliquez pour désactiver le filtre Africains" : "Afficher les joueurs de nationalité africaine"}
+                      >
+                        <span>Africains</span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                          nationalityTagFilter === 'africains'
+                            ? "bg-slate-950/20 text-slate-950"
+                            : "bg-slate-200 text-slate-700"
+                        )}>
+                          {nationalityCounts.afriCount}
+                        </span>
+                      </button>
+                    </div>
+
+                    <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 mr-1">
+                      Statuts :
+                    </span>
+
+                    {/* Filtre Rapide : À suivre */}
+                    <div className="inline-flex items-center p-1 bg-indigo-50 rounded-2xl border border-indigo-200/80">
+                      <button
+                        type="button"
+                        onClick={() => setDecisionFilter(prev => prev === 'to_follow' ? 'ALL' : 'to_follow')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                          decisionFilter === 'to_follow'
+                            ? "bg-indigo-600 text-white font-black shadow-xs ring-2 ring-indigo-400/40"
+                            : "text-indigo-800 hover:bg-white"
+                        )}
+                        title="Filtrer les talents positionnés en veille active (À suivre)"
+                      >
+                        <span>À suivre</span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                          decisionFilter === 'to_follow'
+                            ? "bg-white/20 text-white"
+                            : "bg-indigo-200 text-indigo-900"
+                        )}>
+                          {activeScopedCandidates.filter(c => resolveCandidateStatus(c) === 'to_follow').length}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Filtre Rapide : Inviter à un test */}
+                    <div className="inline-flex items-center p-1 bg-blue-50 rounded-2xl border border-blue-200/80">
+                      <button
+                        type="button"
+                        onClick={() => setDecisionFilter(prev => prev === 'invitation_test' ? 'ALL' : 'invitation_test')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                          decisionFilter === 'invitation_test'
+                            ? "bg-blue-600 text-white font-black shadow-xs ring-2 ring-blue-400/40"
+                            : "text-blue-800 hover:bg-white"
+                        )}
+                        title="Filtrer les talents convoqués pour match d'essai ou détection"
+                      >
+                        <span>Inviter à un test</span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                          decisionFilter === 'invitation_test'
+                            ? "bg-white/20 text-white"
+                            : "bg-blue-200 text-blue-900"
+                        )}>
+                          {activeScopedCandidates.filter(c => resolveCandidateStatus(c) === 'invitation_test').length}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Filtre Rapide : À recruter immédiatement */}
+                    <div className="inline-flex items-center p-1 bg-emerald-50 rounded-2xl border border-emerald-200/80">
+                      <button
+                        type="button"
+                        onClick={() => setDecisionFilter(prev => prev === 'recruit_now' ? 'ALL' : 'recruit_now')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                          decisionFilter === 'recruit_now'
+                            ? "bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-400/40"
+                            : "text-emerald-800 hover:bg-white"
+                        )}
+                        title="Filtrer uniquement les talents validés à recruter immédiatement"
+                      >
+                        <span>Recrutement immédiatement</span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                          decisionFilter === 'recruit_now'
+                            ? "bg-white/20 text-white"
+                            : "bg-emerald-200 text-emerald-900"
+                        )}>
+                          {activeScopedCandidates.filter(c => isCandidateRecruitNow(c)).length}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {canCreateCandidate && (
-                  <>
-                    <button
-                      onClick={() => {
-                        if (isScoutRestricted && currentScout) {
-                          navigate(`/recruitment-v2/add-player?scoutId=${currentScout.id}&returnTab=${activeTab}`);
-                        } else {
-                          navigate('/recruitment-v2/add-player');
-                        }
-                      }}
-                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow-md shadow-primary/25 hover:bg-primary/90 active:scale-95 transition-all"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Ajouter Joueur
-                    </button>
-
-                    {canManageReports && (
+                {/* LIGNE 1 : Recherche + Compteur de talents + Reset */}
+                <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+                  <div className="relative w-full md:flex-1">
+                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="Filtre global : nom, prénom, club, ville, pays, scout, évaluateur..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-9 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 text-slate-900 font-medium transition-all"
+                    />
+                    {searchQuery && (
                       <button
-                        onClick={() => navigate('/recruitment-v2/add-report')}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md hover:bg-indigo-500 active:scale-95 transition-all cursor-pointer"
-                        title="Rédiger un rapport scout pour un candidat"
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"
+                        title="Effacer la recherche"
                       >
-                        <ClipboardList className="w-4 h-4" />
-                        Ajouter un rapport
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Barre de Filtre Complet (Placée directement au-dessus du tableau) */}
-            <div className="bg-white rounded-3xl p-4 md:p-5 border shadow-sm space-y-3">
-              {/* LIGNE 0 : Filtres Marocains / Africains (sans bouton Tous) + Filtres Rapides de Statut (sans icônes) */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 gap-1 flex-wrap mr-1">
-                    {/* Filtre : Marocains */}
-                    <button
-                      type="button"
-                      onClick={() => setNationalityTagFilter(prev => prev === 'marocains' ? 'all' : 'marocains')}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                        nationalityTagFilter === 'marocains'
-                          ? "bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-400/40"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-white"
-                      )}
-                      title={nationalityTagFilter === 'marocains' ? "Cliquez pour désactiver le filtre Marocains" : "Afficher les joueurs de nationalité marocaine"}
-                    >
-                      <span>Marocains</span>
-                      <span className={cn(
-                        "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
-                        nationalityTagFilter === 'marocains'
-                          ? "bg-white/20 text-white"
-                          : "bg-slate-200 text-slate-700"
-                      )}>
-                        {nationalityCounts.morocCount}
-                      </span>
-                    </button>
-
-                    {/* Filtre : Africains */}
-                    <button
-                      type="button"
-                      onClick={() => setNationalityTagFilter(prev => prev === 'africains' ? 'all' : 'africains')}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                        nationalityTagFilter === 'africains'
-                          ? "bg-amber-500 text-slate-950 font-black shadow-xs ring-2 ring-amber-400/40"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-white"
-                      )}
-                      title={nationalityTagFilter === 'africains' ? "Cliquez pour désactiver le filtre Africains" : "Afficher les joueurs de nationalité africaine"}
-                    >
-                      <span>Africains</span>
-                      <span className={cn(
-                        "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
-                        nationalityTagFilter === 'africains'
-                          ? "bg-slate-950/20 text-slate-950"
-                          : "bg-slate-200 text-slate-700"
-                      )}>
-                        {nationalityCounts.afriCount}
-                      </span>
-                    </button>
                   </div>
 
-                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 mr-1">
-                    Statuts :
-                  </span>
-
-                  {/* Filtre Rapide : À suivre */}
-                  <div className="inline-flex items-center p-1 bg-indigo-50 rounded-2xl border border-indigo-200/80">
+                  <div className="flex items-center gap-2 self-stretch md:self-auto justify-between md:justify-end text-xs shrink-0 flex-wrap">
+                    {/* Bouton filtre rapide : Mes Joueurs Uniquement */}
                     <button
                       type="button"
-                      onClick={() => setDecisionFilter(prev => prev === 'to_follow' ? 'ALL' : 'to_follow')}
+                      onClick={() => setMyPlayersOnly(!myPlayersOnly)}
                       className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                        decisionFilter === 'to_follow'
-                          ? "bg-indigo-600 text-white font-black shadow-xs ring-2 ring-indigo-400/40"
-                          : "text-indigo-800 hover:bg-white"
+                        "px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-xs cursor-pointer",
+                        myPlayersOnly
+                          ? "bg-indigo-600 text-white ring-2 ring-indigo-400 shadow-indigo-500/25 scale-105"
+                          : "bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200/80"
                       )}
-                      title="Filtrer les talents positionnés en veille active (À suivre)"
+                      title="Afficher uniquement les joueurs que vous avez ajoutés / découverts"
                     >
-                      <span>À suivre</span>
-                      <span className={cn(
-                        "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
-                        decisionFilter === 'to_follow'
-                          ? "bg-white/20 text-white"
-                          : "bg-indigo-200 text-indigo-900"
-                      )}>
-                        {scopedCandidates.filter(c => getCandidateLatestDecision(c) === 'to_follow').length}
-                      </span>
+                      <UserCheck className={cn("w-3.5 h-3.5", myPlayersOnly ? "text-white" : "text-indigo-600")} />
+                      <span>Mes Joueurs Uniquement</span>
                     </button>
-                  </div>
 
-                  {/* Filtre Rapide : Inviter à un test */}
-                  <div className="inline-flex items-center p-1 bg-blue-50 rounded-2xl border border-blue-200/80">
-                    <button
-                      type="button"
-                      onClick={() => setDecisionFilter(prev => prev === 'invitation_test' ? 'ALL' : 'invitation_test')}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                        decisionFilter === 'invitation_test'
-                          ? "bg-blue-600 text-white font-black shadow-xs ring-2 ring-blue-400/40"
-                          : "text-blue-800 hover:bg-white"
-                      )}
-                      title="Filtrer les talents convoqués pour match d'essai ou détection"
-                    >
-                      <span>Inviter à un test</span>
-                      <span className={cn(
-                        "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
-                        decisionFilter === 'invitation_test'
-                          ? "bg-white/20 text-white"
-                          : "bg-blue-200 text-blue-900"
-                      )}>
-                        {scopedCandidates.filter(c => getCandidateLatestDecision(c) === 'invitation_test').length}
-                      </span>
-                    </button>
-                  </div>
+                    <span className="font-bold text-slate-700 bg-slate-100/90 px-3 py-2 rounded-xl flex items-center gap-1.5 border border-slate-200/60">
+                      <Users className="w-3.5 h-3.5 text-primary" />
+                      <strong>{filteredCandidates.length}</strong> / {candidates.length} talents
+                    </span>
 
-                  {/* Filtre Rapide : À recruter immédiatement */}
-                  <div className="inline-flex items-center p-1 bg-emerald-50 rounded-2xl border border-emerald-200/80">
-                    <button
-                      type="button"
-                      onClick={() => setDecisionFilter(prev => prev === 'recruit_now' ? 'ALL' : 'recruit_now')}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                        decisionFilter === 'recruit_now'
-                          ? "bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-400/40"
-                          : "text-emerald-800 hover:bg-white"
-                      )}
-                      title="Filtrer uniquement les talents validés à recruter immédiatement"
-                    >
-                      <span>Recrutement immédiatement</span>
-                      <span className={cn(
-                        "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
-                        decisionFilter === 'recruit_now'
-                          ? "bg-white/20 text-white"
-                          : "bg-emerald-200 text-emerald-900"
-                      )}>
-                        {scopedCandidates.filter(c => isCandidateRecruitNow(c)).length}
-                      </span>
-                    </button>
+                    {isAnyFilterActive && (
+                      <button
+                        type="button"
+                        onClick={handleResetAllFilters}
+                        className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                        title="Réinitialiser tous les critères de filtre"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Réinitialiser</span>
+                      </button>
+                    )}
                   </div>
                 </div>
-              </div>
 
-              {/* LIGNE 1 : Recherche + Compteur de talents + Reset */}
-              <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-                <div className="relative w-full md:flex-1">
-                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Filtre global : nom, prénom, club, ville, pays, scout, évaluateur..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-9 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 text-slate-900 font-medium transition-all"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded-md transition-colors"
-                      title="Effacer la recherche"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 self-stretch md:self-auto justify-between md:justify-end text-xs shrink-0 flex-wrap">
-                  {/* Bouton filtre rapide : Mes Joueurs Uniquement */}
-                  <button
-                    type="button"
-                    onClick={() => setMyPlayersOnly(!myPlayersOnly)}
-                    className={cn(
-                      "px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-xs cursor-pointer",
-                      myPlayersOnly
-                        ? "bg-indigo-600 text-white ring-2 ring-indigo-400 shadow-indigo-500/25 scale-105"
-                        : "bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200/80"
-                    )}
-                    title="Afficher uniquement les joueurs que vous avez ajoutés / découverts"
-                  >
-                    <UserCheck className={cn("w-3.5 h-3.5", myPlayersOnly ? "text-white" : "text-indigo-600")} />
-                    <span>Mes Joueurs Uniquement</span>
-                  </button>
-
-                  <span className="font-bold text-slate-700 bg-slate-100/90 px-3 py-2 rounded-xl flex items-center gap-1.5 border border-slate-200/60">
-                    <Users className="w-3.5 h-3.5 text-primary" />
-                    <strong>{filteredCandidates.length}</strong> / {candidates.length} talents
-                  </span>
-
-                  {isAnyFilterActive && (
-                    <button
-                      type="button"
-                      onClick={handleResetAllFilters}
-                      className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                      title="Réinitialiser tous les critères de filtre"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Réinitialiser</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* LIGNE 2 : Sélecteurs déroulants de filtrage complet */}
-              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1 border-t border-slate-100">
-                {/* 1. Catégorie d'Âge */}
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                    Catégorie d'Âge
-                  </label>
-                  <select
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    className={cn(
-                      "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
-                      categoryFilter !== 'ALL'
-                        ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
-                        : "border-slate-200 bg-white text-slate-700"
-                    )}
-                  >
-                    <option value="ALL">Toutes les catégories</option>
-                    {(() => {
-                      const groups = groupCategoriesByPole(visibleRecruitmentCategories);
-                      return (
-                        <>
-                          {groups.labellise.length > 0 && (
-                            <optgroup label="⚽ Pôle Labellisé (U9 - U12)">
-                              {groups.labellise.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                              ))}
-                            </optgroup>
-                          )}
-                          {groups.formation.length > 0 && (
-                            <optgroup label="🎓 Pôle Formation (U13 - U21)">
-                              {groups.formation.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                              ))}
-                            </optgroup>
-                          )}
-                          {groups.senior.length > 0 && (
-                            <optgroup label="🏆 Pôle Senior (U23 & Senior)">
-                              {groups.senior.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                              ))}
-                            </optgroup>
-                          )}
-                          {groups.other.length > 0 && (
-                            <optgroup label="Autres">
-                              {groups.other.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </select>
-                </div>
-
-                {/* 2. Poste de Jeu */}
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                    Poste de Jeu
-                  </label>
-                  <select
-                    value={positionFilter}
-                    onChange={(e) => setPositionFilter(e.target.value)}
-                    className={cn(
-                      "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
-                      positionFilter !== 'ALL'
-                        ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
-                        : "border-slate-200 bg-white text-slate-700"
-                    )}
-                  >
-                    <option value="ALL">Tous les postes</option>
-                    {PLAYER_POSITIONS.map(pos => (
-                      <option key={pos.code} value={pos.code}>
-                        {pos.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 3. Pied Fort */}
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                    Pied Fort
-                  </label>
-                  <select
-                    value={footFilter}
-                    onChange={(e) => setFootFilter(e.target.value)}
-                    className={cn(
-                      "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
-                      footFilter !== 'ALL'
-                        ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
-                        : "border-slate-200 bg-white text-slate-700"
-                    )}
-                  >
-                    {FOOT_OPTIONS.map(opt => (
-                      <option key={opt.id} value={opt.id}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 4. Scout (Réservé à la Direction) */}
-                {isRecruitmentAdmin ? (
+                {/* LIGNE 2 : Sélecteurs déroulants de filtrage complet */}
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1 border-t border-slate-100">
+                  {/* 1. Catégorie d'Âge */}
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                      Scout
+                      Catégorie d'Âge
                     </label>
                     <select
-                      value={scoutFilter}
-                      onChange={(e) => setScoutFilter(e.target.value)}
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
                       className={cn(
                         "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
-                        scoutFilter !== 'ALL'
+                        categoryFilter !== 'ALL'
                           ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
                           : "border-slate-200 bg-white text-slate-700"
                       )}
                     >
-                      <option value="ALL">Tous les scouts</option>
-                      {scouts.map(scout => {
-                        const cleanRole = (!scout.role_title || scout.role_title.includes('Scout') || scout.role_title.includes('Détecteur') || scout.role_title.includes('Recruteur'))
-                          ? 'Scout'
-                          : scout.role_title;
+                      <option value="ALL">Toutes les catégories</option>
+                      {(() => {
+                        const groups = groupCategoriesByPole(visibleRecruitmentCategories);
                         return (
-                          <option key={scout.id} value={scout.full_name}>
-                            {scout.full_name} ({cleanRole})
-                          </option>
+                          <>
+                            {groups.labellise.length > 0 && (
+                              <optgroup label="⚽ Pôle Labellisé (U9 - U12)">
+                                {groups.labellise.map(cat => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {groups.formation.length > 0 && (
+                              <optgroup label="🎓 Pôle Formation (U13 - U21)">
+                                {groups.formation.map(cat => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {groups.senior.length > 0 && (
+                              <optgroup label="🏆 Pôle Senior (U23 & Senior)">
+                                {groups.senior.map(cat => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {groups.other.length > 0 && (
+                              <optgroup label="Autres">
+                                {groups.other.map(cat => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </>
                         );
-                      })}
+                      })()}
                     </select>
                   </div>
-                ) : (
-                  <div className="hidden lg:block" />
+
+                  {/* 2. Poste de Jeu */}
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                      Poste de Jeu
+                    </label>
+                    <select
+                      value={positionFilter}
+                      onChange={(e) => setPositionFilter(e.target.value)}
+                      className={cn(
+                        "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
+                        positionFilter !== 'ALL'
+                          ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
+                          : "border-slate-200 bg-white text-slate-700"
+                      )}
+                    >
+                      <option value="ALL">Tous les postes</option>
+                      {PLAYER_POSITIONS.map(pos => (
+                        <option key={pos.code} value={pos.code}>
+                          {pos.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 3. Pied Fort */}
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                      Pied Fort
+                    </label>
+                    <select
+                      value={footFilter}
+                      onChange={(e) => setFootFilter(e.target.value)}
+                      className={cn(
+                        "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
+                        footFilter !== 'ALL'
+                          ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
+                          : "border-slate-200 bg-white text-slate-700"
+                      )}
+                    >
+                      {FOOT_OPTIONS.map(opt => (
+                        <option key={opt.id} value={opt.id}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 4. Scout (Réservé à la Direction) */}
+                  {isRecruitmentAdmin ? (
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                        Scout
+                      </label>
+                      <select
+                        value={scoutFilter}
+                        onChange={(e) => setScoutFilter(e.target.value)}
+                        className={cn(
+                          "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
+                          scoutFilter !== 'ALL'
+                            ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
+                            : "border-slate-200 bg-white text-slate-700"
+                        )}
+                      >
+                        <option value="ALL">Tous les scouts</option>
+                        {scouts.map(scout => {
+                          const cleanRole = (!scout.role_title || scout.role_title.includes('Scout') || scout.role_title.includes('Détecteur') || scout.role_title.includes('Recruteur'))
+                            ? 'Scout'
+                            : scout.role_title;
+                          return (
+                            <option key={scout.id} value={scout.full_name}>
+                              {scout.full_name} ({cleanRole})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="hidden lg:block" />
+                  )}
+                </div>
+
+                {/* LIGNE 3 : Badges des filtres actifs */}
+                {isAnyFilterActive && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 text-[11px]">
+                    <span className="font-bold text-slate-400 flex items-center gap-1 mr-1">
+                      <Filter className="w-3 h-3 text-primary" />
+                      Filtres actifs :
+                    </span>
+
+                    {nationalityTagFilter !== 'all' && (
+                      <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 font-semibold border border-emerald-200 flex items-center gap-1">
+                        Origine : {nationalityTagFilter === 'marocains' ? 'Marocains' : 'Africains'}
+                        <button
+                          type="button"
+                          onClick={() => setNationalityTagFilter('all')}
+                          className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer"
+                          title="Désactiver ce filtre"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )}
+
+                    {searchQuery && (
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800 font-semibold border border-slate-200 flex items-center gap-1">
+                        Recherche : "{searchQuery}"
+                        <button onClick={() => setSearchQuery('')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
+                      </span>
+                    )}
+
+                    {categoryFilter !== 'ALL' && (
+                      <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-semibold border border-primary/20 flex items-center gap-1">
+                        Catégorie : {categoryFilter}
+                        <button onClick={() => setCategoryFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
+                      </span>
+                    )}
+
+                    {positionFilter !== 'ALL' && (
+                      <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-semibold border border-primary/20 flex items-center gap-1">
+                        Poste : {positionFilter}
+                        <button onClick={() => setPositionFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
+                      </span>
+                    )}
+
+                    {footFilter !== 'ALL' && (
+                      <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-semibold border border-primary/20 flex items-center gap-1">
+                        Pied : {footFilter}
+                        <button onClick={() => setFootFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
+                      </span>
+                    )}
+
+                    {scoutFilter !== 'ALL' && (
+                      <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-semibold border border-primary/20 flex items-center gap-1">
+                        Scout : {scoutFilter}
+                        <button onClick={() => setScoutFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
+                      </span>
+                    )}
+
+                    {decisionFilter !== 'ALL' && (
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-900 font-bold border border-slate-300 flex items-center gap-1">
+                        Statut : {decisionFilter === 'recruit_now' ? 'Recrutement immédiatement' : decisionFilter === 'invitation_test' ? 'Inviter à un test' : 'À suivre'}
+                        <button onClick={() => setDecisionFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
 
-              {/* LIGNE 3 : Badges des filtres actifs */}
-              {isAnyFilterActive && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 text-[11px]">
-                  <span className="font-bold text-slate-400 flex items-center gap-1 mr-1">
-                    <Filter className="w-3 h-3 text-primary" />
-                    Filtres actifs :
-                  </span>
-
-                  {nationalityTagFilter !== 'all' && (
-                    <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-900 font-semibold border border-emerald-200 flex items-center gap-1">
-                      Origine : {nationalityTagFilter === 'marocains' ? 'Marocains' : 'Africains'}
-                      <button
-                        type="button"
-                        onClick={() => setNationalityTagFilter('all')}
-                        className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer"
-                        title="Désactiver ce filtre"
-                      >
-                        ×
-                      </button>
+              {/* Bandeau d'Actions Groupées (Si des joueurs sont sélectionnés) */}
+              {selectedCandidateIds.length > 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 px-4 bg-indigo-50/90 border border-indigo-200 rounded-2xl animate-in fade-in slide-in-from-top-2 duration-200 shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-2.5 py-1 rounded-xl bg-indigo-600 text-white font-black text-xs shadow-xs">
+                      {selectedCandidateIds.length}
                     </span>
-                  )}
-
-                  {searchQuery && (
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800 font-semibold border border-slate-200 flex items-center gap-1">
-                      Recherche : "{searchQuery}"
-                      <button onClick={() => setSearchQuery('')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
+                    <span className="text-xs font-bold text-indigo-950">
+                      joueur{selectedCandidateIds.length > 1 ? 's' : ''} sélectionné{selectedCandidateIds.length > 1 ? 's' : ''} {selectedVisibleCount < selectedCandidateIds.length ? `(${selectedVisibleCount} visible${selectedVisibleCount > 1 ? 's' : ''})` : ''}
                     </span>
-                  )}
+                  </div>
 
-                  {categoryFilter !== 'ALL' && (
-                    <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-semibold border border-primary/20 flex items-center gap-1">
-                      Catégorie : {categoryFilter}
-                      <button onClick={() => setCategoryFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
-                    </span>
-                  )}
-
-                  {positionFilter !== 'ALL' && (
-                    <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-semibold border border-primary/20 flex items-center gap-1">
-                      Poste : {positionFilter}
-                      <button onClick={() => setPositionFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
-                    </span>
-                  )}
-
-                  {footFilter !== 'ALL' && (
-                    <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-semibold border border-primary/20 flex items-center gap-1">
-                      Pied : {footFilter}
-                      <button onClick={() => setFootFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
-                    </span>
-                  )}
-
-                  {scoutFilter !== 'ALL' && (
-                    <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-semibold border border-primary/20 flex items-center gap-1">
-                      Scout : {scoutFilter}
-                      <button onClick={() => setScoutFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
-                    </span>
-                  )}
-
-                  {decisionFilter !== 'ALL' && (
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-900 font-bold border border-slate-300 flex items-center gap-1">
-                      Statut : {decisionFilter === 'recruit_now' ? 'Recrutement immédiatement' : decisionFilter === 'invitation_test' ? 'Inviter à un test' : 'À suivre'}
-                      <button onClick={() => setDecisionFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Bandeau d'Actions Groupées (Si des joueurs sont sélectionnés) */}
-            {selectedCandidateIds.length > 0 && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 px-4 bg-indigo-50/90 border border-indigo-200 rounded-2xl animate-in fade-in slide-in-from-top-2 duration-200 shadow-2xs">
-                <div className="flex items-center gap-2.5">
-                  <span className="px-2.5 py-1 rounded-xl bg-indigo-600 text-white font-black text-xs shadow-xs">
-                    {selectedCandidateIds.length}
-                  </span>
-                  <span className="text-xs font-bold text-indigo-950">
-                    joueur{selectedCandidateIds.length > 1 ? 's' : ''} sélectionné{selectedCandidateIds.length > 1 ? 's' : ''} {selectedVisibleCount < selectedCandidateIds.length ? `(${selectedVisibleCount} visible${selectedVisibleCount > 1 ? 's' : ''})` : ''}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={handleClearSelection}
-                    className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-700 text-xs font-bold transition-all cursor-pointer"
-                  >
-                    Tout désélectionner
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsBulkArchiveModalOpen(true)}
-                    className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                    title="Archiver les joueurs sélectionnés"
-                  >
-                    <Archive className="w-3.5 h-3.5" />
-                    <span>Archiver ({selectedCandidateIds.length})</span>
-                  </button>
-
-                  {canDeleteAnyCandidate && (
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
-                      onClick={() => setIsBulkDeleteModalOpen(true)}
-                      className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                      title="Supprimer définitivement les joueurs sélectionnés"
+                      onClick={handleClearSelection}
+                      className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-700 text-xs font-bold transition-all cursor-pointer"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Supprimer ({selectedCandidateIds.length})</span>
+                      Tout désélectionner
                     </button>
-                  )}
+
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkArchiveModalOpen(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="Archiver les joueurs sélectionnés"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                      <span>Archiver ({selectedCandidateIds.length})</span>
+                    </button>
+
+                    {canDeleteAnyCandidate && (
+                      <button
+                        type="button"
+                        onClick={() => setIsBulkDeleteModalOpen(true)}
+                        className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Supprimer définitivement les joueurs sélectionnés"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Supprimer ({selectedCandidateIds.length})</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Bannière Dédiée : Directeur Administratif / Recrutement Immédiat Exclusif */}
-            {isOnlyRecruitNowUser && (
-              <div className="p-4 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-emerald-500/10 border border-rose-200/80 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-2xs">
-                <div>
-                  <p className="font-black text-slate-900">Espace Procédure Administrative de Recrutement Immédiat</p>
-                  <p className="text-slate-500 text-[11px]">Affichage exclusif des profils ayant le statut à recruter immédiatement.</p>
+              {/* Bannière Dédiée : Directeur Administratif / Recrutement Immédiat Exclusif */}
+              {isOnlyRecruitNowUser && (
+                <div className="p-4 bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-emerald-500/10 border border-rose-200/80 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-2xs">
+                  <div>
+                    <p className="font-black text-slate-900">Espace Procédure Administrative de Recrutement Immédiat</p>
+                    <p className="text-slate-500 text-[11px]">Affichage exclusif des profils ayant le statut à recruter immédiatement.</p>
+                  </div>
+                  <span className="px-3 py-1 rounded-xl bg-white border border-rose-200 text-rose-700 font-black text-xs shadow-2xs whitespace-nowrap">
+                    {filteredCandidates.length} joueur{filteredCandidates.length > 1 ? 's' : ''} à traiter
+                  </span>
                 </div>
-                <span className="px-3 py-1 rounded-xl bg-white border border-rose-200 text-rose-700 font-black text-xs shadow-2xs whitespace-nowrap">
-                  {filteredCandidates.length} joueur{filteredCandidates.length > 1 ? 's' : ''} à traiter
-                </span>
-              </div>
-            )}
+              )}
 
-            {filteredCandidates.length === 0 ? (
-              <div className="bg-white rounded-3xl p-12 border shadow-sm text-center space-y-2">
-                <Users className="w-8 h-8 text-muted-foreground mx-auto" />
-                <h3 className="text-sm font-bold text-slate-800">Aucun profil ne correspond à ce filtre</h3>
-                <p className="text-xs text-muted-foreground">
-                  Essayez d'ajuster ou d'effacer votre terme de recherche dans la barre unique ci-dessus.
-                </p>
-              </div>
-            ) : viewMode === 'table' ? (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
-                      <tr>
-                        {canDeleteAnyCandidate && (
-                          <th className="py-3.5 px-3 w-10 text-center">
-                            <input
-                              ref={headerCheckboxRef}
-                              type="checkbox"
-                              checked={isAllSelected}
-                              onChange={handleToggleSelectAll}
-                              className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all"
-                              title={isAllSelected ? "Tout désélectionner" : "Tout sélectionner"}
-                              aria-label="Sélectionner tous les joueurs visibles"
-                            />
-                          </th>
-                        )}
-                        <th className="py-3.5 px-4">Joueur</th>
-                        <th className="py-3.5 px-3">Scout Détecteur</th>
-                        {isRecruitmentAdmin && (
-                          <th className="py-3.5 px-3 text-center">Scores Détecteur (5 Piliers)</th>
-                        )}
-                        <th className="py-3.5 px-3">Statut</th>
-                        {!isOnlyRecruitNowUser && (
-                          <th className="py-3.5 px-4 text-right min-w-[360px]">Actions</th>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs">
-                      {filteredCandidates.map((c) => {
-                        // Agrégation résiliente des rapports/évaluations du joueur
-                        const candEvalsList = [
-                          ...evaluations.filter(e => e.candidate_id === c.id),
-                          ...(c.evaluations || [])
-                        ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+              {filteredCandidates.length === 0 ? (
+                <div className="bg-white rounded-3xl p-12 border shadow-sm text-center space-y-2">
+                  <Users className="w-8 h-8 text-muted-foreground mx-auto" />
+                  <h3 className="text-sm font-bold text-slate-800">Aucun profil ne correspond à ce filtre</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Essayez d'ajuster ou d'effacer votre terme de recherche dans la barre unique ci-dessus.
+                  </p>
+                </div>
+              ) : viewMode === 'table' ? (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                        <tr>
+                          {canDeleteAnyCandidate && (
+                            <th className="py-3.5 px-3 w-10 text-center">
+                              <input
+                                ref={headerCheckboxRef}
+                                type="checkbox"
+                                checked={isAllSelected}
+                                onChange={handleToggleSelectAll}
+                                className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all"
+                                title={isAllSelected ? "Tout désélectionner" : "Tout sélectionner"}
+                                aria-label="Sélectionner tous les joueurs visibles"
+                              />
+                            </th>
+                          )}
+                          <th className="py-3.5 px-4">Joueur</th>
+                          <th className="py-3.5 px-3">Scout Détecteur</th>
+                          {isRecruitmentAdmin && (
+                            <th className="py-3.5 px-3 text-center">Scores Détecteur (5 Piliers)</th>
+                          )}
+                          <th className="py-3.5 px-3">Statut</th>
+                          {!isOnlyRecruitNowUser && (
+                            <th className="py-3.5 px-4 text-right min-w-[360px]">Actions</th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {filteredCandidates.map((c) => {
+                          // Agrégation résiliente des rapports/évaluations du joueur
+                          const candEvalsList = [
+                            ...evaluations.filter(e => e.candidate_id === c.id),
+                            ...(c.evaluations || [])
+                          ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
 
-                        const sortedEvals = [...candEvalsList].sort((a, b) => {
-                          const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
-                          const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
-                          return tB - tA;
-                        });
-                        // Dernier rapport d'évaluation rédigé
-                        const latestEval = sortedEvals[0];
+                          const sortedEvals = [...candEvalsList].sort((a, b) => {
+                            const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
+                            const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
+                            return tB - tA;
+                          });
+                          // Dernier rapport d'évaluation rédigé
+                          const latestEval = sortedEvals[0];
 
-                        // 1. Scores des 4 piliers individuels (Technique, Tactique, Physique, Mental) issus du DERNIER RAPPORT
-                        const getScoreVal = (val: any) => {
-                          if (val == null || val === '') return null;
-                          const num = Number(val);
-                          return !isNaN(num) ? Math.round(num * 10) / 10 : null;
-                        };
+                          // 1. Scores des 4 piliers individuels (Technique, Tactique, Physique, Mental) issus du DERNIER RAPPORT
+                          const getScoreVal = (val: any) => {
+                            if (val == null || val === '') return null;
+                            const num = Number(val);
+                            return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                          };
 
-                        const techScore = getScoreVal(latestEval?.technical_score ?? (latestEval as any)?.tech_score ?? (latestEval as any)?.technical_rating);
-                        const tactScore = getScoreVal(latestEval?.tactical_score ?? (latestEval as any)?.tact_score ?? (latestEval as any)?.tactical_rating);
-                        const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
-                        const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
+                          const techScore = getScoreVal(latestEval?.technical_score ?? (latestEval as any)?.tech_score ?? (latestEval as any)?.technical_rating);
+                          const tactScore = getScoreVal(latestEval?.tactical_score ?? (latestEval as any)?.tact_score ?? (latestEval as any)?.tactical_rating);
+                          const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
+                          const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
 
-                        // 2. Dernier potentiel du joueur (0.0 strict si aucun rapport)
-                        const potentialScore = resolveCandidatePotentialScore(c, latestEval, candEvalsList.length);
+                          // 2. Dernier potentiel du joueur (0.0 strict si aucun rapport)
+                          const potentialScore = resolveCandidatePotentialScore(c, latestEval, candEvalsList.length);
 
-                        const candTests = tests.filter(t => t.candidate_id === c.id || t.candidate_ids?.includes(c.id));
-                        const isSelected = selectedCandidateIds.includes(c.id);
+                          const isSelected = selectedCandidateIds.includes(c.id);
 
-                        return (
-                          <tr
-                            key={c.id}
-                            className={cn(
-                              "transition-colors group",
-                              isSelected ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-slate-50/70"
-                            )}
-                          >
-                            {/* Case à cocher 1ère colonne (uniquement si suppression autorisée) */}
-                            {canDeleteAnyCandidate && (
-                              <td className="py-3 px-3 w-10 text-center">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => handleToggleSelectCandidate(c.id)}
-                                  className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all"
-                                  aria-label={`Sélectionner ${c.first_name} ${c.last_name}`}
-                                />
-                              </td>
-                            )}
-
-                            {/* Joueur (avec l'intégralité du profil, poste en français et caractéristiques) */}
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-3.5">
-                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
-                                  <img
-                                    src={c.photo_url || '/assets/avatar.svg'}
-                                    alt={`${c.first_name} ${c.last_name}`}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      const target = e.currentTarget;
-                                      if (!target.src.endsWith('/assets/avatar.svg')) {
-                                        target.src = '/assets/avatar.svg';
-                                      }
-                                    }}
+                          return (
+                            <tr
+                              key={c.id}
+                              className={cn(
+                                "transition-colors group",
+                                isSelected ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-slate-50/70"
+                              )}
+                            >
+                              {/* Case à cocher 1ère colonne (uniquement si suppression autorisée) */}
+                              {canDeleteAnyCandidate && (
+                                <td className="py-3 px-3 w-10 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => handleToggleSelectCandidate(c.id)}
+                                    className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all"
+                                    aria-label={`Sélectionner ${c.first_name} ${c.last_name}`}
                                   />
-                                </div>
-                                <div className="space-y-1.5 min-w-[220px]">
-                                  {canViewCandidateDetails(c) ? (
-                                    <span
-                                      onClick={() => openCandidateDetail(c)}
-                                      className="font-bold text-sm text-slate-900 hover:text-primary cursor-pointer transition-colors block"
-                                    >
-                                      {c.first_name} {c.last_name}
-                                    </span>
-                                  ) : (
-                                    <span className="font-bold text-sm text-slate-900 block select-none">
-                                      {c.first_name} {c.last_name}
-                                    </span>
-                                  )}
+                                </td>
+                              )}
 
-                                  {/* Ligne 1 : Âge + Surclassement + Poste principal en français sans abréviation */}
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    {renderCandidateAgeBadge(c, 'rounded-md')}
-                                    {renderCandidateSurclassementBadge(c, latestEval, candEvalsList.length, 'rounded-md')}
-                                    <span className="font-bold text-slate-900 text-xs tracking-tight">
-                                      {getFrenchPositionLabel(c.primary_position)}
-                                    </span>
+                              {/* Joueur (avec l'intégralité du profil, poste en français et caractéristiques) */}
+                              <td className="py-3 px-4">
+                                <div className="flex items-center gap-3.5">
+                                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                                    <img
+                                      src={c.photo_url || '/assets/avatar.svg'}
+                                      alt={`${c.first_name} ${c.last_name}`}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        const target = e.currentTarget;
+                                        if (!target.src.endsWith('/assets/avatar.svg')) {
+                                          target.src = '/assets/avatar.svg';
+                                        }
+                                      }}
+                                    />
                                   </div>
-
-                                  {/* Ligne 2 : Icône pied fort uniquement • Taille / Poids */}
-                                  {(c.preferred_foot || c.height_cm || c.weight_kg) && (
-                                    <div className="flex items-center gap-2 text-[11px] text-slate-600 flex-wrap pt-0.5">
-                                      {c.preferred_foot && (
-                                        <span
-                                          className="inline-flex items-center justify-center bg-slate-100/90 border border-slate-200/80 px-2 py-0.5 rounded-lg"
-                                          title={`Pied fort : ${c.preferred_foot}`}
-                                          aria-label={`Pied fort : ${c.preferred_foot}`}
-                                        >
-                                          <PreferredFootIcon foot={c.preferred_foot} className="w-[22px] h-[22px]" />
-                                        </span>
-                                      )}
-
-                                      {(c.height_cm || c.weight_kg) && (
-                                        <>
-                                          {c.preferred_foot && <span className="text-slate-300">•</span>}
-                                          <span className="font-semibold text-slate-600 text-[11px]" title="Taille & Poids">
-                                            {c.height_cm ? `${c.height_cm} cm` : '-'} / {c.weight_kg ? `${c.weight_kg} kg` : '-'}
-                                          </span>
-                                        </>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* Scout Détecteur & Auteur(s) de rapport */}
-                            <td className="py-3 px-3">
-                              <div className="flex flex-col gap-1 items-start">
-                                {c.discovering_scout_name ? (
-                                  <ScoutAvatar
-                                    scoutId={c.discovering_scout_id}
-                                    scoutName={c.discovering_scout_name}
-                                    scouts={scouts}
-                                    size="xs"
-                                    showBadge
-                                    badgePrefix={(isRecruitmentAdmin || isScoutManager) ? "Détecteur :" : undefined}
-                                    className="bg-slate-50 text-slate-800 border border-slate-200 shadow-2xs"
-                                  />
-                                ) : (
-                                  <span className="text-[11px] text-slate-400 italic">Cellule FUS</span>
-                                )}
-
-                                {/* Mention explicite des autres scouts ayant rentré un rapport (Admin & Super Admin) */}
-                                {isRecruitmentAdmin && (() => {
-                                  const candEvals = evaluations.filter(e => e.candidate_id === c.id);
-                                  const evalScoutsMap = new Map<string, { id?: string; name: string }>();
-                                  candEvals.forEach(e => {
-                                    const name = e.evaluator_name?.trim();
-                                    if (name && !evalScoutsMap.has(name.toLowerCase())) {
-                                      evalScoutsMap.set(name.toLowerCase(), { id: e.evaluator_id, name });
-                                    }
-                                  });
-                                  const otherScouts = Array.from(evalScoutsMap.values()).filter(
-                                    s => !c.discovering_scout_name || s.name.toLowerCase() !== c.discovering_scout_name.toLowerCase().trim()
-                                  );
-
-                                  if (otherScouts.length > 0) {
-                                    return (
-                                      <div className="flex flex-wrap items-center gap-1 mt-0.5" title={`Contre-rapport(s) rédigé(s) par : ${otherScouts.map(s => s.name).join(', ')}`}>
-                                        {otherScouts.map((sc, i) => (
-                                          <ScoutAvatar
-                                            key={i}
-                                            scoutId={sc.id}
-                                            scoutName={sc.name}
-                                            scouts={scouts}
-                                            size="xs"
-                                            showBadge
-                                            badgePrefix="Rapport :"
-                                            className="bg-indigo-50/90 text-indigo-800 border border-indigo-200 shadow-2xs"
-                                          />
-                                        ))}
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                })()}
-                              </div>
-                            </td>
-
-                            {/* Scores 5 Piliers (Technique, Tactique, Physique, Mental, Potentiel) avec survol Radar & Barres de progression */}
-                            {isRecruitmentAdmin && (
-                              <td className="py-3 px-3 text-center">
-                                <CandidatePillarsScorecard
-                                  candidate={c}
-                                  latestEval={latestEval}
-                                  techScore={techScore}
-                                  tactScore={tactScore}
-                                  physScore={physScore}
-                                  mentScore={mentScore}
-                                  potentialScore={potentialScore}
-                                  onOpenDetail={canViewCandidateDetails(c) ? () => openCandidateDetail(c) : undefined}
-                                />
-                              </td>
-                            )}
-
-                            {/* Colonne Statut du joueur : Bouton action si 'Recrutement immédiatement', sinon information seule sans icône */}
-                            <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
-                              {renderCandidateStatusControl(c)}
-                            </td>
-
-                            {/* Actions : masqué si utilisateur recrutement immédiat exclusif (bouton déjà affiché à la place du statut) */}
-                            {!isOnlyRecruitNowUser && (
-                              <td className="py-3 px-4 text-right">
-                                <div className="flex items-center justify-end gap-2.5">
-
-                                  {/* Bouton Vidéo Google Drive */}
-                                  {c.video_url ? (
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => setPlayerToWatchVideo(c)}
-                                        className="w-[80px] h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs cursor-pointer active:scale-95 shrink-0 whitespace-nowrap"
-                                        title="Visionner la vidéo du joueur (Google Drive)"
+                                  <div className="space-y-1.5 min-w-[220px]">
+                                    {canViewCandidateDetails(c) ? (
+                                      <span
+                                        onClick={() => openCandidateDetail(c)}
+                                        className="font-bold text-sm text-slate-900 hover:text-primary cursor-pointer transition-colors block"
                                       >
-                                        <Play className="w-3.5 h-3.5 fill-current" />
-                                        <span>Play</span>
-                                      </button>
-                                      {canAddDriveLinkForCandidate(c) && (
+                                        {c.first_name} {c.last_name}
+                                      </span>
+                                    ) : (
+                                      <span className="font-bold text-sm text-slate-900 block select-none">
+                                        {c.first_name} {c.last_name}
+                                      </span>
+                                    )}
+
+                                    {/* Ligne 1 : Âge + Surclassement + Poste principal en français sans abréviation */}
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {renderCandidateAgeBadge(c, 'rounded-md')}
+                                      {renderCandidateSurclassementBadge(c, latestEval, candEvalsList.length, 'rounded-md')}
+                                      <span className="font-bold text-slate-900 text-xs tracking-tight">
+                                        {getFrenchPositionLabel(c.primary_position)}
+                                      </span>
+                                    </div>
+
+                                    {/* Ligne 2 : Icône pied fort uniquement • Taille / Poids */}
+                                    {(c.preferred_foot || c.height_cm || c.weight_kg) && (
+                                      <div className="flex items-center gap-2 text-[11px] text-slate-600 flex-wrap pt-0.5">
+                                        {c.preferred_foot && (
+                                          <span
+                                            className="inline-flex items-center justify-center bg-slate-100/90 border border-slate-200/80 px-2 py-0.5 rounded-lg"
+                                            title={`Pied fort : ${c.preferred_foot}`}
+                                            aria-label={`Pied fort : ${c.preferred_foot}`}
+                                          >
+                                            <PreferredFootIcon foot={c.preferred_foot} className="w-[22px] h-[22px]" />
+                                          </span>
+                                        )}
+
+                                        {(c.height_cm || c.weight_kg) && (
+                                          <>
+                                            {c.preferred_foot && <span className="text-slate-300">•</span>}
+                                            <span className="font-semibold text-slate-600 text-[11px]" title="Taille & Poids">
+                                              {c.height_cm ? `${c.height_cm} cm` : '-'} / {c.weight_kg ? `${c.weight_kg} kg` : '-'}
+                                            </span>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Scout Détecteur & Auteur(s) de rapport */}
+                              <td className="py-3 px-3">
+                                <div className="flex flex-col gap-1 items-start">
+                                  {c.discovering_scout_name ? (
+                                    <ScoutAvatar
+                                      scoutId={c.discovering_scout_id}
+                                      scoutName={c.discovering_scout_name}
+                                      scouts={scouts}
+                                      size="xs"
+                                      showBadge
+                                      badgePrefix={(isRecruitmentAdmin || isScoutManager) ? "Détecteur :" : undefined}
+                                      className="bg-slate-50 text-slate-800 border border-slate-200 shadow-2xs"
+                                    />
+                                  ) : (
+                                    <span className="text-[11px] text-slate-400 italic">Cellule FUS</span>
+                                  )}
+
+                                  {/* Mention explicite des autres scouts ayant rentré un rapport (Admin & Super Admin) */}
+                                  {isRecruitmentAdmin && (() => {
+                                    const candEvals = evaluations.filter(e => e.candidate_id === c.id);
+                                    const evalScoutsMap = new Map<string, { id?: string; name: string }>();
+                                    candEvals.forEach(e => {
+                                      const name = e.evaluator_name?.trim();
+                                      if (name && !evalScoutsMap.has(name.toLowerCase())) {
+                                        evalScoutsMap.set(name.toLowerCase(), { id: e.evaluator_id, name });
+                                      }
+                                    });
+                                    const otherScouts = Array.from(evalScoutsMap.values()).filter(
+                                      s => !c.discovering_scout_name || s.name.toLowerCase() !== c.discovering_scout_name.toLowerCase().trim()
+                                    );
+
+                                    if (otherScouts.length > 0) {
+                                      return (
+                                        <div className="flex flex-wrap items-center gap-1 mt-0.5" title={`Contre-rapport(s) rédigé(s) par : ${otherScouts.map(s => s.name).join(', ')}`}>
+                                          {otherScouts.map((sc, i) => (
+                                            <ScoutAvatar
+                                              key={i}
+                                              scoutId={sc.id}
+                                              scoutName={sc.name}
+                                              scouts={scouts}
+                                              size="xs"
+                                              showBadge
+                                              badgePrefix="Rapport :"
+                                              className="bg-indigo-50/90 text-indigo-800 border border-indigo-200 shadow-2xs"
+                                            />
+                                          ))}
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              </td>
+
+                              {/* Scores 5 Piliers (Technique, Tactique, Physique, Mental, Potentiel) avec survol Radar & Barres de progression */}
+                              {isRecruitmentAdmin && (
+                                <td className="py-3 px-3 text-center">
+                                  <CandidatePillarsScorecard
+                                    candidate={c}
+                                    latestEval={latestEval}
+                                    techScore={techScore}
+                                    tactScore={tactScore}
+                                    physScore={physScore}
+                                    mentScore={mentScore}
+                                    potentialScore={potentialScore}
+                                    onOpenDetail={canViewCandidateDetails(c) ? () => openCandidateDetail(c) : undefined}
+                                  />
+                                </td>
+                              )}
+
+                              {/* Colonne Statut du joueur : Bouton action si 'Recrutement immédiatement', sinon information seule sans icône */}
+                              <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
+                                {renderCandidateStatusControl(c)}
+                              </td>
+
+                              {/* Actions : masqué si utilisateur recrutement immédiat exclusif (bouton déjà affiché à la place du statut) */}
+                              {!isOnlyRecruitNowUser && (
+                                <td className="py-3 px-4 text-right">
+                                  <div className="flex items-center justify-end gap-2.5">
+
+                                    {/* Bouton Vidéo Google Drive */}
+                                    {c.video_url ? (
+                                      <div className="flex items-center gap-1 shrink-0">
                                         <button
                                           type="button"
-                                          onClick={() => setCandidateForDriveLink(c)}
-                                          className="w-8 h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 transition-all flex items-center justify-center text-xs font-bold shadow-2xs cursor-pointer shrink-0"
-                                          title="Modifier le lien vidéo Google Drive"
+                                          onClick={() => setPlayerToWatchVideo(c)}
+                                          className="w-[80px] h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs cursor-pointer active:scale-95 shrink-0 whitespace-nowrap"
+                                          title="Visionner la vidéo du joueur (Google Drive)"
                                         >
-                                          <Edit3 className="w-3.5 h-3.5" />
+                                          <Play className="w-3.5 h-3.5 fill-current" />
+                                          <span>Play</span>
                                         </button>
-                                      )}
-                                    </div>
-                                  ) : canAddDriveLinkForCandidate(c) ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => setCandidateForDriveLink(c)}
-                                      className="w-[115px] h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs cursor-pointer shrink-0 whitespace-nowrap"
-                                      title="Ajouter un lien vidéo Google Drive"
-                                    >
-                                      <Video className="w-3.5 h-3.5" />
-                                      <span>+ Lien Drive</span>
-                                    </button>
-                                  ) : (
-                                    <div className="w-[115px] shrink-0" />
-                                  )}
-
-                                  {/* Bouton Rapport [N] */}
-                                  {canManageReports && (() => {
-                                    const candEvals = [
-                                      ...evaluations.filter(e => e.candidate_id === c.id),
-                                      ...(c.evaluations || [])
-                                    ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
-                                    const totalCount = candEvals.length;
-                                    const myCount = candEvals.filter(isEvaluationStrictlyAuthoredByCurrentScout).length;
-                                    const count = (isRecruitmentAdmin || isScoutManager) ? totalCount : myCount;
-                                    const titleText = isScoutManager
-                                      ? `${totalCount} rapport${totalCount > 1 ? 's' : ''} au total (${myCount} rédigé${myCount > 1 ? 's' : ''} par vous, ${totalCount - myCount} par d'autres scouts — confidentiels)`
-                                      : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`;
-                                    return (
+                                        {canAddDriveLinkForCandidate(c) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setCandidateForDriveLink(c)}
+                                            className="w-8 h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 transition-all flex items-center justify-center text-xs font-bold shadow-2xs cursor-pointer shrink-0"
+                                            title="Modifier le lien vidéo Google Drive"
+                                          >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    ) : canAddDriveLinkForCandidate(c) ? (
                                       <button
                                         type="button"
-                                        onClick={() => openCandidateDetail(c, 'report')}
-                                        className="w-[115px] h-8 rounded-full transition-all flex items-center justify-center gap-2 text-xs font-bold shadow-xs shrink-0 whitespace-nowrap bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
-                                        title={titleText}
+                                        onClick={() => setCandidateForDriveLink(c)}
+                                        className="w-[115px] h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 transition-all flex items-center justify-center gap-1.5 text-xs font-bold shadow-2xs cursor-pointer shrink-0 whitespace-nowrap"
+                                        title="Ajouter un lien vidéo Google Drive"
                                       >
-                                        <span className="font-bold text-xs text-white">Rapport</span>
-                                        <span className="w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs bg-amber-400 text-slate-950">
-                                          {count}
-                                        </span>
+                                        <Video className="w-3.5 h-3.5" />
+                                        <span>+ Lien Drive</span>
                                       </button>
-                                    );
-                                  })()}
+                                    ) : (
+                                      <div className="w-[115px] shrink-0" />
+                                    )}
 
-                                  {/* Bouton Assigner Mission */}
-                                  {canAssignMissions && (
-                                    <button
-                                      type="button"
-                                      onClick={() => openAssignModal(c)}
-                                      className="w-8 h-8 rounded-full border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
-                                      title="Assigner à un scout & confier une mission"
-                                    >
-                                      <UserPlus className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
+                                    {/* Bouton Rapport [N] */}
+                                    {canManageReports && (() => {
+                                      const candEvals = [
+                                        ...evaluations.filter(e => e.candidate_id === c.id),
+                                        ...(c.evaluations || [])
+                                      ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+                                      const totalCount = candEvals.length;
+                                      const myCount = candEvals.filter(isEvaluationStrictlyAuthoredByCurrentScout).length;
+                                      const count = (isRecruitmentAdmin || isScoutManager) ? totalCount : myCount;
+                                      const titleText = isScoutManager
+                                        ? `${totalCount} rapport${totalCount > 1 ? 's' : ''} au total (${myCount} rédigé${myCount > 1 ? 's' : ''} par vous, ${totalCount - myCount} par d'autres scouts — confidentiels)`
+                                        : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`;
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => openCandidateDetail(c, 'report')}
+                                          className="w-[115px] h-8 rounded-full transition-all flex items-center justify-center gap-2 text-xs font-bold shadow-xs shrink-0 whitespace-nowrap bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
+                                          title={titleText}
+                                        >
+                                          <span className="font-bold text-xs text-white">Rapport</span>
+                                          <span className="w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs bg-amber-400 text-slate-950">
+                                            {count}
+                                          </span>
+                                        </button>
+                                      );
+                                    })()}
 
-                                  {/* Modifier la fiche complète */}
-                                  {canUpdateCandidateFull(c) && (
-                                    <button
-                                      onClick={() => {
-                                        navigate(`/recruitment-v2/add-player?editId=${c.id}&returnTab=${activeTab}`);
-                                      }}
-                                      className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-                                      title="Modifier la fiche complète du joueur"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
+                                    {/* Bouton Assigner Mission */}
+                                    {canAssignMissions && (
+                                      <button
+                                        type="button"
+                                        onClick={() => openAssignModal(c)}
+                                        className="w-8 h-8 rounded-full border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
+                                        title="Assigner à un scout & confier une mission"
+                                      >
+                                        <UserPlus className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
 
-                                  {canDeleteCandidate(c) && (
-                                    <button
-                                      onClick={() => setCandidateToDelete(c)}
-                                      className="w-8 h-8 rounded-full border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-                                      title="Supprimer ou archiver le joueur"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredCandidates.map((c) => {
-                  // Agrégation résiliente des rapports/évaluations du joueur
-                  const candEvalsList = [
-                    ...evaluations.filter(e => e.candidate_id === c.id),
-                    ...(c.evaluations || [])
-                  ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+                                    {/* Modifier la fiche complète */}
+                                    {canUpdateCandidateFull(c) && (
+                                      <button
+                                        onClick={() => {
+                                          navigate(`/recruitment-v2/add-player?editId=${c.id}&returnTab=${activeTab}`);
+                                        }}
+                                        className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                                        title="Modifier la fiche complète du joueur"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
 
-                  const sortedEvals = [...candEvalsList].sort((a, b) => {
-                    const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
-                    const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
-                    return tB - tA;
-                  });
-                  // Dernier rapport d'évaluation rédigé
-                  const latestEval = sortedEvals[0];
-
-                  // 1. Scores des 4 piliers individuels (Technique, Tactique, Physique, Mental) issus du DERNIER RAPPORT
-                  const getScoreVal = (val: any) => {
-                    if (val == null || val === '') return null;
-                    const num = Number(val);
-                    return !isNaN(num) ? Math.round(num * 10) / 10 : null;
-                  };
-
-                  const techScore = getScoreVal(latestEval?.technical_score ?? (latestEval as any)?.tech_score ?? (latestEval as any)?.technical_rating);
-                  const tactScore = getScoreVal(latestEval?.tactical_score ?? (latestEval as any)?.tact_score ?? (latestEval as any)?.tactical_rating);
-                  const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
-                  const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
-
-                  const isSelected = selectedCandidateIds.includes(c.id);
-
-                  return (
-                    <div
-                      key={c.id}
-                      className={cn(
-                        "bg-white rounded-2xl p-5 border shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4",
-                        isSelected ? "ring-2 ring-primary border-primary/50 bg-primary/2" : ""
-                      )}
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3.5">
-                            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
-                              <img
-                                src={c.photo_url || '/assets/avatar.svg'}
-                                alt={`${c.first_name} ${c.last_name}`}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  const target = e.currentTarget;
-                                  if (!target.src.endsWith('/assets/avatar.svg')) {
-                                    target.src = '/assets/avatar.svg';
-                                  }
-                                }}
-                              />
-                            </div>
-                            <div>
-                              {canViewCandidateDetails(c) ? (
-                                <h3
-                                  onClick={() => openCandidateDetail(c)}
-                                  className="font-bold text-sm text-foreground hover:text-primary cursor-pointer transition-colors"
-                                >
-                                  {c.first_name} {c.last_name}
-                                </h3>
-                              ) : (
-                                <h3 className="font-bold text-sm text-foreground select-none">
-                                  {c.first_name} {c.last_name}
-                                </h3>
+                                    {canDeleteCandidate(c) && (
+                                      <button
+                                        onClick={() => setCandidateToDelete(c)}
+                                        className="w-8 h-8 rounded-full border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                                        title="Supprimer ou archiver le joueur"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
                               )}
-                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                <span className="text-xs text-muted-foreground font-medium">{c.primary_position}</span>
-                                {renderCandidateAgeBadge(c, 'rounded-full')}
-                                {renderCandidateSurclassementBadge(c, latestEval, candEvalsList.length, 'rounded-full')}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {filteredCandidates.map((c) => {
+                    // Agrégation résiliente des rapports/évaluations du joueur
+                    const candEvalsList = [
+                      ...evaluations.filter(e => e.candidate_id === c.id),
+                      ...(c.evaluations || [])
+                    ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+
+                    const sortedEvals = [...candEvalsList].sort((a, b) => {
+                      const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
+                      const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
+                      return tB - tA;
+                    });
+                    // Dernier rapport d'évaluation rédigé
+                    const latestEval = sortedEvals[0];
+
+                    // 1. Scores des 4 piliers individuels (Technique, Tactique, Physique, Mental) issus du DERNIER RAPPORT
+                    const getScoreVal = (val: any) => {
+                      if (val == null || val === '') return null;
+                      const num = Number(val);
+                      return !isNaN(num) ? Math.round(num * 10) / 10 : null;
+                    };
+
+                    const techScore = getScoreVal(latestEval?.technical_score ?? (latestEval as any)?.tech_score ?? (latestEval as any)?.technical_rating);
+                    const tactScore = getScoreVal(latestEval?.tactical_score ?? (latestEval as any)?.tact_score ?? (latestEval as any)?.tactical_rating);
+                    const physScore = getScoreVal(latestEval?.physical_score ?? (latestEval as any)?.phys_score ?? (latestEval as any)?.physical_rating);
+                    const mentScore = getScoreVal(latestEval?.mental_score ?? (latestEval as any)?.ment_score ?? (latestEval as any)?.mental_rating);
+
+                    const isSelected = selectedCandidateIds.includes(c.id);
+
+                    return (
+                      <div
+                        key={c.id}
+                        className={cn(
+                          "bg-white rounded-2xl p-5 border shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4",
+                          isSelected ? "ring-2 ring-primary border-primary/50 bg-primary/2" : ""
+                        )}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3.5">
+                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 shadow-2xs">
+                                <img
+                                  src={c.photo_url || '/assets/avatar.svg'}
+                                  alt={`${c.first_name} ${c.last_name}`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    if (!target.src.endsWith('/assets/avatar.svg')) {
+                                      target.src = '/assets/avatar.svg';
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                {canViewCandidateDetails(c) ? (
+                                  <h3
+                                    onClick={() => openCandidateDetail(c)}
+                                    className="font-bold text-sm text-foreground hover:text-primary cursor-pointer transition-colors"
+                                  >
+                                    {c.first_name} {c.last_name}
+                                  </h3>
+                                ) : (
+                                  <h3 className="font-bold text-sm text-foreground select-none">
+                                    {c.first_name} {c.last_name}
+                                  </h3>
+                                )}
+                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                  <span className="text-xs text-muted-foreground font-medium">{c.primary_position}</span>
+                                  {renderCandidateAgeBadge(c, 'rounded-full')}
+                                  {renderCandidateSurclassementBadge(c, latestEval, candEvalsList.length, 'rounded-full')}
+                                </div>
                               </div>
                             </div>
+
+                            {/* Case à cocher en mode Grille */}
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectCandidate(c.id)}
+                              className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all mt-1"
+                              aria-label={`Sélectionner ${c.first_name} ${c.last_name}`}
+                            />
                           </div>
 
-                          {/* Case à cocher en mode Grille */}
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleSelectCandidate(c.id)}
-                            className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/30 cursor-pointer transition-all mt-1"
-                            aria-label={`Sélectionner ${c.first_name} ${c.last_name}`}
-                          />
-                        </div>
-
-                        {/* Morphologie & Club */}
-                        <div className="grid grid-cols-3 gap-2 mt-4 p-2.5 rounded-xl bg-slate-50 border text-center text-xs">
-                          <div>
-                            <span className="text-[10px] text-muted-foreground block">Pied</span>
-                            <span
-                              className="inline-flex items-center justify-center mt-0.5"
-                              title={`Pied fort : ${c.preferred_foot}`}
-                              aria-label={`Pied fort : ${c.preferred_foot}`}
-                            >
-                              <PreferredFootIcon foot={c.preferred_foot} className="w-[22px] h-[22px]" />
-                            </span>
+                          {/* Morphologie & Club */}
+                          <div className="grid grid-cols-3 gap-2 mt-4 p-2.5 rounded-xl bg-slate-50 border text-center text-xs">
+                            <div>
+                              <span className="text-[10px] text-muted-foreground block">Pied</span>
+                              <span
+                                className="inline-flex items-center justify-center mt-0.5"
+                                title={`Pied fort : ${c.preferred_foot}`}
+                                aria-label={`Pied fort : ${c.preferred_foot}`}
+                              >
+                                <PreferredFootIcon foot={c.preferred_foot} className="w-[22px] h-[22px]" />
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-muted-foreground block">Taille / Poids</span>
+                              <span className="font-bold">{c.height_cm ? `${c.height_cm}cm` : '-'} / {c.weight_kg ? `${c.weight_kg}kg` : '-'}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-muted-foreground block">Nationalité & Origine</span>
+                              <span className="font-bold flex items-center gap-1 text-slate-900">
+                                <span className="text-xs leading-none">{getCountryFlag(c.country || c.nationality)}</span>
+                                <span>{c.nationality || 'Marocaine'}</span>
+                                {c.city && <span className="text-slate-500 font-medium text-[11px]">({c.city})</span>}
+                              </span>
+                            </div>
                           </div>
-                          <div>
-                            <span className="text-[10px] text-muted-foreground block">Taille / Poids</span>
-                            <span className="font-bold">{c.height_cm ? `${c.height_cm}cm` : '-'} / {c.weight_kg ? `${c.weight_kg}kg` : '-'}</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-muted-foreground block">Nationalité & Origine</span>
-                            <span className="font-bold flex items-center gap-1 text-slate-900">
-                              <span className="text-xs leading-none">{getCountryFlag(c.country || c.nationality)}</span>
-                              <span>{c.nationality || 'Marocaine'}</span>
-                              {c.city && <span className="text-slate-500 font-medium text-[11px]">({c.city})</span>}
-                            </span>
-                          </div>
-                        </div>
 
-                        {c.current_club && (
-                          <p className="text-xs text-slate-600 mt-2 flex items-center gap-1.5 font-medium">
-                            <Shield className="w-3.5 h-3.5 text-primary" />
-                            Club : <span className="font-bold text-slate-800">{c.current_club}</span>
-                          </p>
-                        )}
+                          {c.current_club && (
+                            <p className="text-xs text-slate-600 mt-2 flex items-center gap-1.5 font-medium">
+                              <Shield className="w-3.5 h-3.5 text-primary" />
+                              Club : <span className="font-bold text-slate-800">{c.current_club}</span>
+                            </p>
+                          )}
 
-                        {/* Tuteur info if available */}
-                        {c.guardian_name && (
-                          <p className="text-[11px] text-amber-800 mt-1 flex items-center gap-1.5 font-medium">
-                            <HeartHandshake className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            Tuteur : {c.guardian_name} ({c.guardian_relationship || 'Père'})
-                          </p>
-                        )}
+                          {/* Tuteur info if available */}
+                          {c.guardian_name && (
+                            <p className="text-[11px] text-amber-800 mt-1 flex items-center gap-1.5 font-medium">
+                              <HeartHandshake className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              Tuteur : {c.guardian_name} ({c.guardian_relationship || 'Père'})
+                            </p>
+                          )}
 
-                        {/* Scout & Mission badges */}
-                        <div className="pt-2 mt-2 border-t border-slate-100 flex flex-wrap gap-1.5 text-[11px]">
-                          {isRecruitmentAdmin && (() => {
-                            const discScout = c.discovering_scout_name;
-                            const assScout = c.assigned_scout_name;
-                            const isSame = !assScout || (discScout && discScout.trim().toLowerCase() === assScout.trim().toLowerCase());
+                          {/* Scout & Mission badges */}
+                          <div className="pt-2 mt-2 border-t border-slate-100 flex flex-wrap gap-1.5 text-[11px]">
+                            {isRecruitmentAdmin && (() => {
+                              const discScout = c.discovering_scout_name;
+                              const assScout = c.assigned_scout_name;
+                              const isSame = !assScout || (discScout && discScout.trim().toLowerCase() === assScout.trim().toLowerCase());
 
-                            if (isSame && discScout) {
-                              return (
-                                <ScoutAvatar
-                                  scoutId={c.discovering_scout_id}
-                                  scoutName={discScout}
-                                  scouts={scouts}
-                                  size="xs"
-                                  showBadge
-                                  badgePrefix="Scout :"
-                                  className="bg-blue-50/90 text-blue-800 border border-blue-200/80 shadow-2xs"
-                                />
-                              );
-                            }
-
-                            return (
-                              <>
-                                {discScout && (
+                              if (isSame && discScout) {
+                                return (
                                   <ScoutAvatar
                                     scoutId={c.discovering_scout_id}
                                     scoutName={discScout}
                                     scouts={scouts}
                                     size="xs"
                                     showBadge
-                                    badgePrefix="Scout A :"
+                                    badgePrefix="Scout :"
                                     className="bg-blue-50/90 text-blue-800 border border-blue-200/80 shadow-2xs"
                                   />
-                                )}
-                                {assScout && (isRecruitmentAdmin || Boolean(
-                                  (scoutId && (c.assigned_scout_id === scoutId || c.active_mission?.assigned_to_id === scoutId)) ||
-                                  (scoutName && assScout.toLowerCase().trim() === scoutName)
-                                )) && (
+                                );
+                              }
+
+                              return (
+                                <>
+                                  {discScout && (
                                     <ScoutAvatar
-                                      scoutId={c.assigned_scout_id}
-                                      scoutName={assScout}
+                                      scoutId={c.discovering_scout_id}
+                                      scoutName={discScout}
                                       scouts={scouts}
                                       size="xs"
                                       showBadge
-                                      badgePrefix="Scout B :"
-                                      className="bg-purple-50/90 text-purple-800 border border-purple-200/80 shadow-2xs"
+                                      badgePrefix="Scout A :"
+                                      className="bg-blue-50/90 text-blue-800 border border-blue-200/80 shadow-2xs"
                                     />
                                   )}
-                              </>
-                            );
-                          })()}
-                          {c.active_mission?.mission_title && (isRecruitmentAdmin || Boolean(
-                            (scoutId && c.active_mission.assigned_to_id === scoutId) ||
-                            (scoutName && c.active_mission.assigned_to_name && c.active_mission.assigned_to_name.toLowerCase().trim() === scoutName) ||
-                            (authState?.user?.id && c.active_mission.assigned_to_id === authState.user.id)
-                          )) && (
-                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200 truncate max-w-full">
-                                <span>🎯 {c.active_mission.mission_title}</span>
-                                {c.active_mission.acknowledged_at ? (
-                                  <span className="text-[9px] text-emerald-700 font-extrabold bg-emerald-100 px-1 rounded">✓ Reçu</span>
-                                ) : (
-                                  <span className="text-[9px] text-amber-700 font-bold bg-amber-100 px-1 rounded animate-pulse">⏳ Attente</span>
-                                )}
-                              </span>
-                            )}
-                          {isRecruitmentAdmin && c.recruiter_name && !c.assigned_scout_name && (
-                            <ScoutAvatar
-                              scoutId={c.recruiter_id}
-                              scoutName={c.recruiter_name}
-                              scouts={scouts}
-                              size="xs"
-                              showBadge
-                              badgePrefix="Recruteur :"
-                              className="bg-amber-50/90 text-amber-900 border border-amber-200/80 shadow-2xs"
-                            />
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Statut du joueur : bouton action si recrutement immédiat, sinon information sans icône */}
-                      <div className="pt-2 border-t flex items-center justify-between gap-2">
-                        <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider shrink-0">Statut</span>
-                        {renderCandidateStatusControl(c)}
-                      </div>
-
-                      {/* Actions en mode Grid */}
-                      {!isOnlyRecruitNowUser && (
-                        <div className="pt-2 border-t flex flex-col gap-2">
-                          <div className="flex items-center justify-between gap-2.5">
-                            {/* Bouton Vidéo Google Drive : Play uniquement si le lien est présent, sinon + Drive */}
-                            {c.video_url ? (
-                              <div className="flex-1 flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => setPlayerToWatchVideo(c)}
-                                  className="flex-1 h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95 whitespace-nowrap"
-                                  title="Visionner la vidéo du joueur (Google Drive)"
-                                >
-                                  <Play className="w-3.5 h-3.5 fill-current" />
-                                  <span>Play</span>
-                                </button>
-                                {canAddDriveLinkForCandidate(c) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setCandidateForDriveLink(c)}
-                                    className="w-8 h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 font-bold text-xs flex items-center justify-center shadow-2xs transition-all cursor-pointer shrink-0"
-                                    title="Modifier le lien vidéo Google Drive"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </div>
-                            ) : canAddDriveLinkForCandidate(c) ? (
-                              <button
-                                type="button"
-                                onClick={() => setCandidateForDriveLink(c)}
-                                className="flex-1 h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition-all cursor-pointer whitespace-nowrap"
-                                title="Ajouter un lien vidéo Google Drive"
-                              >
-                                <Video className="w-3.5 h-3.5" />
-                                <span>+ Drive</span>
-                              </button>
-                            ) : null}
-
-                            {canManageReports && (() => {
-                              const candEvals = [
-                                ...evaluations.filter(e => e.candidate_id === c.id),
-                                ...(c.evaluations || [])
-                              ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
-                              const totalCount = candEvals.length;
-                              const myCount = candEvals.filter(isEvaluationStrictlyAuthoredByCurrentScout).length;
-                              const count = (isRecruitmentAdmin || isScoutManager) ? totalCount : myCount;
-                              const titleText = isScoutManager
-                                ? `${totalCount} rapport${totalCount > 1 ? 's' : ''} au total (${myCount} rédigé${myCount > 1 ? 's' : ''} par vous, ${totalCount - myCount} par d'autres scouts — confidentiels)`
-                                : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`;
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => openCandidateDetail(c, 'report')}
-                                  className="flex-1 h-8 rounded-full text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs whitespace-nowrap bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
-                                  title={titleText}
-                                >
-                                  <span className="font-bold text-xs text-white">Rapport</span>
-                                  <span className="w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs bg-amber-400 text-slate-950">
-                                    {count}
-                                  </span>
-                                </button>
+                                  {assScout && (isRecruitmentAdmin || Boolean(
+                                    (scoutId && (c.assigned_scout_id === scoutId || c.active_mission?.assigned_to_id === scoutId)) ||
+                                    (scoutName && assScout.toLowerCase().trim() === scoutName)
+                                  )) && (
+                                      <ScoutAvatar
+                                        scoutId={c.assigned_scout_id}
+                                        scoutName={assScout}
+                                        scouts={scouts}
+                                        size="xs"
+                                        showBadge
+                                        badgePrefix="Scout B :"
+                                        className="bg-purple-50/90 text-purple-800 border border-purple-200/80 shadow-2xs"
+                                      />
+                                    )}
+                                </>
                               );
                             })()}
-
-                            {canAssignMissions && (
-                              <button
-                                type="button"
-                                onClick={() => openAssignModal(c)}
-                                className="w-8 h-8 rounded-full border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
-                                title="Assigner à un scout & confier une mission"
-                              >
-                                <UserPlus className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* Modifier la fiche complète (protégé par CRUD update et catégorie) */}
-                            {canUpdateCandidateFull(c) && (
-                              <button
-                                onClick={() => {
-                                  navigate(`/recruitment-v2/add-player?editId=${c.id}&returnTab=${activeTab}`);
-                                }}
-                                className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-                                title="Modifier la fiche complète du joueur"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {canDeleteCandidate(c) && (
-                              <button
-                                onClick={() => setCandidateToDelete(c)}
-                                className="w-8 h-8 rounded-full border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-                                title="Supprimer ou archiver le joueur"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                            {c.active_mission?.mission_title && (isRecruitmentAdmin || Boolean(
+                              (scoutId && c.active_mission.assigned_to_id === scoutId) ||
+                              (scoutName && c.active_mission.assigned_to_name && c.active_mission.assigned_to_name.toLowerCase().trim() === scoutName) ||
+                              (authState?.user?.id && c.active_mission.assigned_to_id === authState.user.id)
+                            )) && (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200 truncate max-w-full">
+                                  <span>🎯 {c.active_mission.mission_title}</span>
+                                  {c.active_mission.acknowledged_at ? (
+                                    <span className="text-[9px] text-emerald-700 font-extrabold bg-emerald-100 px-1 rounded">✓ Reçu</span>
+                                  ) : (
+                                    <span className="text-[9px] text-amber-700 font-bold bg-amber-100 px-1 rounded animate-pulse">⏳ Attente</span>
+                                  )}
+                                </span>
+                              )}
+                            {isRecruitmentAdmin && c.recruiter_name && !c.assigned_scout_name && (
+                              <ScoutAvatar
+                                scoutId={c.recruiter_id}
+                                scoutName={c.recruiter_name}
+                                scouts={scouts}
+                                size="xs"
+                                showBadge
+                                badgePrefix="Recruteur :"
+                                className="bg-amber-50/90 text-amber-900 border border-amber-200/80 shadow-2xs"
+                              />
                             )}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+
+                        {/* Statut du joueur : bouton action si recrutement immédiat, sinon badge + dates cliquables si invitation test */}
+                        <div className="pt-2 border-t flex items-start justify-between gap-2">
+                          <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider shrink-0 mt-1.5">Statut</span>
+                          {renderCandidateStatusControl(c, false, 'end')}
+                        </div>
+
+                        {/* Actions en mode Grid */}
+                        {!isOnlyRecruitNowUser && (
+                          <div className="pt-2 border-t flex flex-col gap-2">
+                            <div className="flex items-center justify-between gap-2.5">
+                              {/* Bouton Vidéo Google Drive : Play uniquement si le lien est présent, sinon + Drive */}
+                              {c.video_url ? (
+                                <div className="flex-1 flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPlayerToWatchVideo(c)}
+                                    className="flex-1 h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+                                    title="Visionner la vidéo du joueur (Google Drive)"
+                                  >
+                                    <Play className="w-3.5 h-3.5 fill-current" />
+                                    <span>Play</span>
+                                  </button>
+                                  {canAddDriveLinkForCandidate(c) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setCandidateForDriveLink(c)}
+                                      className="w-8 h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 font-bold text-xs flex items-center justify-center shadow-2xs transition-all cursor-pointer shrink-0"
+                                      title="Modifier le lien vidéo Google Drive"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              ) : canAddDriveLinkForCandidate(c) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setCandidateForDriveLink(c)}
+                                  className="flex-1 h-8 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-600 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition-all cursor-pointer whitespace-nowrap"
+                                  title="Ajouter un lien vidéo Google Drive"
+                                >
+                                  <Video className="w-3.5 h-3.5" />
+                                  <span>+ Drive</span>
+                                </button>
+                              ) : null}
+
+                              {canManageReports && (() => {
+                                const candEvals = [
+                                  ...evaluations.filter(e => e.candidate_id === c.id),
+                                  ...(c.evaluations || [])
+                                ].filter((e, idx, arr) => arr.findIndex(x => x.id === e.id) === idx);
+                                const totalCount = candEvals.length;
+                                const myCount = candEvals.filter(isEvaluationStrictlyAuthoredByCurrentScout).length;
+                                const count = (isRecruitmentAdmin || isScoutManager) ? totalCount : myCount;
+                                const titleText = isScoutManager
+                                  ? `${totalCount} rapport${totalCount > 1 ? 's' : ''} au total (${myCount} rédigé${myCount > 1 ? 's' : ''} par vous, ${totalCount - myCount} par d'autres scouts — confidentiels)`
+                                  : `Consulter les rapports (${count} rapport${count !== 1 ? 's' : ''})`;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => openCandidateDetail(c, 'report')}
+                                    className="flex-1 h-8 rounded-full text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs whitespace-nowrap bg-slate-950 text-white hover:bg-slate-800 cursor-pointer"
+                                    title={titleText}
+                                  >
+                                    <span className="font-bold text-xs text-white">Rapport</span>
+                                    <span className="w-5 h-5 min-w-[20px] rounded-full flex items-center justify-center text-[11px] font-black shrink-0 leading-none shadow-2xs bg-amber-400 text-slate-950">
+                                      {count}
+                                    </span>
+                                  </button>
+                                );
+                              })()}
+
+                              {canAssignMissions && (
+                                <button
+                                  type="button"
+                                  onClick={() => openAssignModal(c)}
+                                  className="w-8 h-8 rounded-full border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer flex items-center justify-center shrink-0 transition-colors"
+                                  title="Assigner à un scout & confier une mission"
+                                >
+                                  <UserPlus className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Modifier la fiche complète (protégé par CRUD update et catégorie) */}
+                              {canUpdateCandidateFull(c) && (
+                                <button
+                                  onClick={() => {
+                                    navigate(`/recruitment-v2/add-player?editId=${c.id}&returnTab=${activeTab}`);
+                                  }}
+                                  className="w-8 h-8 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                                  title="Modifier la fiche complète du joueur"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {canDeleteCandidate(c) && (
+                                <button
+                                  onClick={() => setCandidateToDelete(c)}
+                                  className="w-8 h-8 rounded-full border border-slate-200 text-rose-600 hover:bg-rose-50 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                                  title="Supprimer ou archiver le joueur"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )
         )}
 
 

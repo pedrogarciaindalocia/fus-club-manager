@@ -8,7 +8,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Calendar, Trash2, TrendingUp } from 'lucide-react';
+import { Calendar, Edit3, Trash2, TrendingUp } from 'lucide-react';
 import {
   buildMentionTimelinePoints,
   getMentionByScore,
@@ -23,6 +23,8 @@ interface PlayerMentionsChartProps {
   height?: number;
   title?: string;
   emptyMessage?: string;
+  selectedEntryId?: string | null;
+  selectedMentionDate?: string | null;
   onSelectEntry?: (point: MentionTimelinePoint) => void;
   onDeleteEntry?: (point: MentionTimelinePoint) => void;
   compact?: boolean;
@@ -60,6 +62,8 @@ export const PlayerMentionsChart: React.FC<PlayerMentionsChartProps> = ({
   height = 210,
   title = 'Courbe des mentions dans le temps',
   emptyMessage = 'Aucune mention datée enregistrée pour ce joueur.',
+  selectedEntryId = null,
+  selectedMentionDate = null,
   onSelectEntry,
   onDeleteEntry,
   compact = false,
@@ -125,7 +129,16 @@ export const PlayerMentionsChart: React.FC<PlayerMentionsChartProps> = ({
         <>
           <div style={{ width: '100%', height }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={points} margin={{ top: 12, right: 16, left: 4, bottom: 4 }}>
+              <AreaChart
+                data={points}
+                margin={{ top: 12, right: 16, left: 4, bottom: 4 }}
+                onClick={(state: any) => {
+                  const pt = state?.activePayload?.[0]?.payload as MentionTimelinePoint | undefined;
+                  if (pt && onSelectEntry) {
+                    onSelectEntry(pt);
+                  }
+                }}
+              >
                 <defs>
                   <linearGradient id="mentionCurveFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
@@ -193,24 +206,32 @@ export const PlayerMentionsChart: React.FC<PlayerMentionsChartProps> = ({
             </div>
           )}
 
-          {/* Historique daté interactif */}
-          <div className="mt-3 max-h-36 space-y-1.5 overflow-y-auto pr-1">
+          {/* Historique daté interactif (Sélectionner, Modifier, Supprimer) */}
+          <div className="mt-3 max-h-44 space-y-1.5 overflow-y-auto pr-1">
             {[...points].reverse().map(pt => {
               const meta = getMentionMeta(pt.mention);
+              const isSelected = Boolean(
+                (selectedEntryId && pt.id === selectedEntryId) ||
+                  (selectedMentionDate && pt.mention_date === selectedMentionDate)
+              );
               return (
                 <div
                   key={pt.id}
                   onClick={() => onSelectEntry?.(pt)}
-                  className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-1.5 text-xs transition ${
+                  className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs transition ${
                     onSelectEntry ? 'cursor-pointer hover:border-emerald-400' : ''
                   } ${
-                    darkSurface
-                      ? 'border-white/10 bg-slate-800/60 text-slate-200'
-                      : 'border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-200'
+                    isSelected
+                      ? darkSurface
+                        ? 'border-amber-400 bg-amber-500/15 text-white'
+                        : 'border-amber-400 bg-amber-50/70 text-slate-900 shadow-2xs'
+                      : darkSurface
+                        ? 'border-white/10 bg-slate-800/60 text-slate-200'
+                        : 'border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-200'
                   }`}
                 >
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="shrink-0 font-mono text-[11px] font-bold text-slate-400">
+                    <span className="shrink-0 font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">
                       {pt.fullDateLabel}
                     </span>
                     <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-black ${meta.badgeClass}`}>
@@ -222,18 +243,36 @@ export const PlayerMentionsChart: React.FC<PlayerMentionsChartProps> = ({
                       </span>
                     )}
                   </div>
-                  {onDeleteEntry && (
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.stopPropagation();
-                        onDeleteEntry(pt);
-                      }}
-                      title="Supprimer cette mention"
-                      className="shrink-0 rounded-lg p-1 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                  {(onSelectEntry || onDeleteEntry) && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      {onSelectEntry && (
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            onSelectEntry(pt);
+                          }}
+                          title="Sélectionner / Modifier cette mention"
+                          className="inline-flex items-center gap-1 rounded-lg bg-amber-100/90 px-2 py-1 text-[10px] font-black text-amber-900 transition hover:bg-amber-200 cursor-pointer"
+                        >
+                          <Edit3 className="h-3 w-3" />
+                          <span>Modifier</span>
+                        </button>
+                      )}
+                      {onDeleteEntry && (
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            onDeleteEntry(pt);
+                          }}
+                          title="Supprimer cette mention"
+                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               );

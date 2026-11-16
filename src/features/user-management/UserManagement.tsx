@@ -305,6 +305,8 @@ export const DASHBOARD_HIERARCHY_MODULES: DashboardCategoryDef[] = [
       { id: 'matchday', title: 'Match du Jour & Matchs Joués', badge: 'Match du Jour', desc: 'Préparation tactique, feuille de match et suivi direct (/matchday)' },
       { id: 'classement_resultats', title: 'Classement & Résultats FRMF', badge: 'Classement', desc: 'Tableaux officiels et suivi des résultats FRMF (/classement-resultats)' },
       { id: 'championship_performances', title: 'Championnat & Performances', badge: 'Analyse', desc: 'Classement officiel et suivi des performances (/championship-performances)' },
+      { id: 'player_performance', title: 'Performance Joueur (Matchs)', badge: 'Performance', desc: 'Évaluation 4 piliers, radar & suivi matchs officiels, amicaux et oppositions (/player-performance)' },
+      { id: 'player_performance_metrics', title: 'Gestion des Métriques — Performance Joueur', badge: 'Métriques', desc: 'Paramétrage des postes et critères des 4 piliers pour Performance Joueur (/performance-metrics)' },
       { id: 'attack_defense', title: 'Adversaires vs Attaque', badge: 'Tactique', desc: 'Comparateur offensif et défensif des adversaires (/championship-performances?tab=attack_defense)' },
       { id: 'official_shortlist', title: 'Shortlist Officielle', badge: 'Tactique', desc: 'Placement tactique et composition officielle (/official-shortlist)' },
       { id: 'arbitres', title: 'Arbitres & Officiels', badge: 'Arbitrage', desc: 'Désignation et suivi des corps arbitraux (/arbitres)' },
@@ -1650,27 +1652,43 @@ Direction Générale — FUS Rabat`;
         if (newPassword && newPassword.length >= 6) {
           authUpdates.password = newPassword;
         }
-        // N'appeler auth.admin.updateUserById que si une vraie clé service_role est active dans l'environnement
-        // Mise à jour sécurisée via Edge Function serveur (ou client admin si présent)
-        try {
-          const { error: edgeUpdErr } = await supabase.functions.invoke('create-user', {
-            body: {
-              action: 'update',
-              user_id: currentUserId,
-              email: formData.email?.trim().toLowerCase(),
-              password: newPassword || undefined,
-              full_name: formData.full_name,
-              system_role: formData.system_role,
-              job_title: formData.job_title,
-              phone_number: formData.phone_number,
-              club_id: DEFAULT_FUS_CLUB_ID
+        // N'appeler auth.admin.updateUserById directement que si service_role est actif ;
+        // n'utiliser l'Edge Function create-user qu'en dernier recours avec une vraie session active.
+        const hasServiceRoleClient = Boolean(adminClient && adminClient !== supabase);
+        const isUuidUser = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(currentUserId || '').trim());
+        if (hasServiceRoleClient && isUuidUser) {
+          try {
+            const { error: adminAuthUpdErr } = await adminClient.auth.admin.updateUserById(currentUserId, authUpdates);
+            if (!adminAuthUpdErr) {
+              passwordUpdateSuccess = true;
             }
-          });
-          if (!edgeUpdErr) {
-            passwordUpdateSuccess = true;
+          } catch (admAuthEx) {
+            console.warn('[UserManagement] Direct admin updateUserById notice:', admAuthEx);
           }
-        } catch (edgeEx) {
-          console.warn('[UserManagement] Edge Function update notice:', edgeEx);
+        } else if (isUuidUser) {
+          const { data: sData } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+          if (sData?.session?.access_token && (newPassword || authUpdates.email)) {
+            try {
+              const { error: edgeUpdErr } = await supabase.functions.invoke('create-user', {
+                body: {
+                  action: 'update',
+                  user_id: currentUserId,
+                  email: formData.email?.trim().toLowerCase(),
+                  password: newPassword || undefined,
+                  full_name: formData.full_name,
+                  system_role: formData.system_role,
+                  job_title: formData.job_title,
+                  phone_number: formData.phone_number,
+                  club_id: DEFAULT_FUS_CLUB_ID
+                }
+              });
+              if (!edgeUpdErr) {
+                passwordUpdateSuccess = true;
+              }
+            } catch (edgeEx) {
+              console.warn('[UserManagement] Edge Function update notice:', edgeEx);
+            }
+          }
         }
       } catch (authEx) {
         console.warn('[UserManagement] updateUser credentials exception:', authEx);
@@ -2140,23 +2158,37 @@ Direction Générale — FUS Rabat`;
         console.warn('Erreur cascade libération candidats:', relErr);
       }
 
-      // 4. Suppression du compte dans auth.users via Edge Function
-      try {
-        await supabase.functions.invoke('create-user', {
-          body: {
-            action: 'delete',
-            user_id: id
+      // 4. Suppression du compte dans auth.users (service_role direct prioritaire, sinon Edge Function si session active)
+      const adminClient = getAdminSupabase();
+      const hasServiceRoleClient = Boolean(adminClient && adminClient !== supabase);
+      const isUuidUser = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id || '').trim());
+      if (hasServiceRoleClient && isUuidUser) {
+        try {
+          await adminClient.auth.admin.deleteUser(id);
+        } catch (authDelErr) {
+          // Non bloquant si le compte n'existait que dans scouts/staff
+        }
+      } else if (isUuidUser) {
+        const { data: sData } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+        if (sData?.session?.access_token) {
+          try {
+            await supabase.functions.invoke('create-user', {
+              body: {
+                action: 'delete',
+                user_id: id
+              }
+            });
+          } catch (authDelErr) {
+            // Non bloquant
           }
-        });
-      } catch (authDelErr) {
-        // Non bloquant
+        }
       }
 
       // 5. Suppression définitive dans public.user_profiles
       try {
-        await supabase.from('user_profiles').delete().eq('id', id);
+        await adminClient.from('user_profiles').delete().eq('id', id);
         // Fallback marquer inactif au cas où RLS bloque DELETE
-        await supabase.from('user_profiles').update({ is_active: false }).eq('id', id);
+        await adminClient.from('user_profiles').update({ is_active: false }).eq('id', id);
       } catch (upErr) {
         console.warn('Notice user_profiles delete:', upErr);
       }

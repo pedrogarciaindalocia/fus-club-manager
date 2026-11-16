@@ -314,20 +314,41 @@ export const getHorizontalFormationPositions = (
     ? formationStr
     : (FORMATIONS_BY_FORMAT[format]?.[0] || '4-3-3');
 
-  // Parse lines: e.g. "2-2-1" -> [2, 2, 1]
+  const roleDefs = ALL_FORMATION_ROLES[normFormation];
+  if (roleDefs && roleDefs.length > 0) {
+    return roleDefs.map((role) => {
+      const verticalTop = parseFloat(role.top);
+      const verticalLeft = parseFloat(role.left);
+      const rawDepth = 8 + ((90 - verticalTop) / 78) * 36;
+      const depthPct = Math.min(45, Math.max(7, Math.round(rawDepth * 10) / 10));
+
+      if (team === 'home') {
+        return {
+          left: `${depthPct}%`,
+          top: `${verticalLeft}%`,
+          label: role.label,
+        };
+      }
+      return {
+        right: `${depthPct}%`,
+        top: `${100 - verticalLeft}%`,
+        label: role.label,
+      };
+    });
+  }
+
+  // Fallback parsing pour toute formation personnalisée hors référentiel
   const lineCounts = normFormation
     .split('-')
     .map(s => parseInt(s.trim(), 10))
     .filter(n => !isNaN(n) && n > 0);
 
-  // If parsing fails, use standard fallback
   if (lineCounts.length === 0) {
     lineCounts.push(format - 1);
   }
 
   const positions: HorizontalPosition[] = [];
 
-  // GK is always first
   if (team === 'home') {
     positions.push({ left: '8%', top: '50%', label: 'GK' });
   } else {
@@ -337,13 +358,10 @@ export const getHorizontalFormationPositions = (
   const numLines = lineCounts.length;
 
   lineCounts.forEach((count, lineIdx) => {
-    // Determine depth (% from left or right)
-    // Defense: ~18%, Attack: ~44%
     const depthPct = numLines === 1
       ? 28
       : 18 + Math.round((lineIdx / (numLines - 1)) * 26);
 
-    // Determine vertical spread for 'count' players on this line
     const tops: string[] = [];
     if (count === 1) {
       tops.push('50%');
@@ -362,7 +380,6 @@ export const getHorizontalFormationPositions = (
       }
     }
 
-    // Role labels roughly determined by line index
     let defaultLabel = 'MF';
     if (lineIdx === 0) defaultLabel = 'DF';
     else if (lineIdx === numLines - 1) defaultLabel = 'FW';
@@ -371,7 +388,7 @@ export const getHorizontalFormationPositions = (
       if (team === 'home') {
         positions.push({ left: `${depthPct}%`, top: topVal, label: defaultLabel });
       } else {
-        positions.push({ right: `${depthPct}%`, top: topVal, label: defaultLabel });
+        positions.push({ right: `${depthPct}%`, top: `${100 - parseFloat(topVal)}%`, label: defaultLabel });
       }
     });
   });

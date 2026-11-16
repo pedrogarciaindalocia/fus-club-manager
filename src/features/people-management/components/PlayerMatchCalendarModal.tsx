@@ -3,6 +3,8 @@ import { useMatches } from '../../../hooks/useMatches';
 import { useCompetitions } from '../../../hooks/useCompetitions';
 import { useClubData } from '../../../hooks/useClubData';
 import { usePlayers } from '../../../hooks/usePlayers';
+import { useTeams } from '../../../hooks/useTeams';
+import { resolveMatchSurclassement } from '../../../utils/playerProfileHelpers';
 import type { Player, Match } from '../../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '../../../components/ui/button';
@@ -28,6 +30,7 @@ export const PlayerMatchCalendarModal: React.FC<PlayerMatchCalendarModalProps> =
   initialPlayer,
 }) => {
   const { players } = usePlayers();
+  const { teams = [] } = useTeams();
   const { matches, isLoading: matchesLoading } = useMatches();
   const { leagues = [] } = useCompetitions();
   const { opponentClubs = [], mainClub } = useClubData();
@@ -42,6 +45,14 @@ export const PlayerMatchCalendarModal: React.FC<PlayerMatchCalendarModalProps> =
   const currentPlayer = useMemo(() => {
     return players.find(p => p.id === selectedPlayerId) || initialPlayer;
   }, [players, selectedPlayerId, initialPlayer]);
+
+  const currentPlayerCategory = useMemo(() => {
+    return (
+      currentPlayer?.category ||
+      teams.find(t => t.id === currentPlayer?.team_id)?.category ||
+      ''
+    );
+  }, [currentPlayer, teams]);
 
   // Fetch all match events from database for current player
   React.useEffect(() => {
@@ -351,6 +362,7 @@ export const PlayerMatchCalendarModal: React.FC<PlayerMatchCalendarModalProps> =
 
                 const leg = (leagues || []).find(l => l.id === m.league_id);
                 const legName = leg?.name || 'Ligue';
+                const surcInfo = resolveMatchSurclassement(m, selectedPlayerId, currentPlayerCategory);
 
                 const pEvents = matchEvents[m.id] || [];
                 const pGoals = pEvents.filter(e => e.type === 'goal' || e.type === 'own_goal');
@@ -366,10 +378,21 @@ export const PlayerMatchCalendarModal: React.FC<PlayerMatchCalendarModalProps> =
                   >
                     {/* Header bar of the match card */}
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 text-xs">
-                      <div className="flex items-center gap-3">
-                        <Badge className="bg-amber-100 text-amber-800 font-bold border-none text-[10px] px-3 py-1 flex items-center gap-1">
-                          <Trophy className="w-3.5 h-3.5" /> {legName} ({m.category})
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                        <Badge className="bg-slate-100 text-slate-700 font-bold border-none text-[10px] px-3 py-1 flex items-center gap-1">
+                          <Trophy className="w-3.5 h-3.5 text-amber-600" />{' '}
+                          {surcInfo.isSurclasse
+                            ? legName
+                            : `${legName}${surcInfo.matchCategory ? ` (${surcInfo.matchCategory})` : ''}`}
                         </Badge>
+                        {surcInfo.isSurclasse && surcInfo.matchCategory && (
+                          <Badge
+                            title={`Match disputé en surclassement (${surcInfo.matchCategory})`}
+                            className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2.5 py-1 flex items-center gap-1"
+                          >
+                            <ArrowUpRight className="w-3 h-3" /> Surclassé {surcInfo.matchCategory}
+                          </Badge>
+                        )}
                         <span className="font-bold text-slate-500 flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5 text-slate-400" />
                           {m.match_date} - {m.match_time?.substring(0, 5) || '18:00'}

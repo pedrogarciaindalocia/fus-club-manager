@@ -92,6 +92,52 @@ function writeLocalPositions(positions: MetricSetPosition[]) {
   } catch {}
 }
 
+const PLUGINS_SETS_KEY = 'player_performance_metric_sets';
+const PLUGINS_POSITIONS_KEY = 'player_performance_metric_set_positions';
+
+async function readSettingsPluginsMetricFallback(): Promise<{
+  sets: MetricSet[];
+  positions: MetricSetPosition[];
+}> {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('id, plugins')
+      .limit(1)
+      .maybeSingle();
+    if (!error && data?.plugins && typeof data.plugins === 'object') {
+      const plugins = data.plugins as Record<string, any>;
+      const sets = Array.isArray(plugins[PLUGINS_SETS_KEY]) ? (plugins[PLUGINS_SETS_KEY] as MetricSet[]) : [];
+      const positions = Array.isArray(plugins[PLUGINS_POSITIONS_KEY])
+        ? (plugins[PLUGINS_POSITIONS_KEY] as MetricSetPosition[])
+        : [];
+      return { sets, positions };
+    }
+  } catch {}
+  return { sets: [], positions: [] };
+}
+
+async function mirrorMetricCatalogToSettingsPlugins(
+  sets?: MetricSet[],
+  positions?: MetricSetPosition[]
+): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('id, plugins')
+      .limit(1)
+      .maybeSingle();
+    if (error || !data?.id) return;
+    const currentPlugins = data.plugins && typeof data.plugins === 'object' ? (data.plugins as Record<string, any>) : {};
+    const nextPlugins = {
+      ...currentPlugins,
+      ...(Array.isArray(sets) && sets.length > 0 ? { [PLUGINS_SETS_KEY]: sets } : {}),
+      ...(Array.isArray(positions) && positions.length > 0 ? { [PLUGINS_POSITIONS_KEY]: positions } : {}),
+    };
+    await supabase.from('settings').update({ plugins: nextPlugins }).eq('id', data.id);
+  } catch {}
+}
+
 /**
  * Hook dédié aux lots dynamiques personnalisés (ex: "Performance Joueur").
  * Totalement découplé de `metric_positions` / `useMetrics()` (Scouting V2 & fus-scout)
@@ -137,6 +183,7 @@ export function useMetricSets() {
             currentJobTitle
           );
           writeLocalSets(filtered);
+          void mirrorMetricCatalogToSettingsPlugins(filtered, undefined);
           return filtered;
         }
 
@@ -149,6 +196,17 @@ export function useMetricSets() {
       } catch (err: any) {
         if (isMissingTableOrCacheError(err)) setNeedsSqlMigration(true);
         console.warn('[useMetricSets] Exception chargement metric_sets:', err);
+      }
+
+      const fallbackPlugins = await readSettingsPluginsMetricFallback();
+      if (fallbackPlugins.sets.length > 0) {
+        const filteredPluginSets = filterVisibleMetricSetsForUser(
+          fallbackPlugins.sets,
+          currentRole,
+          currentJobTitle
+        );
+        writeLocalSets(filteredPluginSets);
+        return filteredPluginSets;
       }
 
       return filterVisibleMetricSetsForUser(readLocalSets(), currentRole, currentJobTitle);
@@ -178,6 +236,7 @@ export function useMetricSets() {
             criteria: sanitizeCriteriaPayload(p.criteria),
           }));
           writeLocalPositions(normalized);
+          void mirrorMetricCatalogToSettingsPlugins(undefined, normalized);
           return normalized;
         }
 
@@ -186,6 +245,16 @@ export function useMetricSets() {
         }
       } catch (err: any) {
         if (isMissingTableOrCacheError(err)) setNeedsSqlMigration(true);
+      }
+
+      const fallbackPlugins = await readSettingsPluginsMetricFallback();
+      if (fallbackPlugins.positions.length > 0) {
+        const normalizedPluginPos = fallbackPlugins.positions.map(p => ({
+          ...p,
+          criteria: sanitizeCriteriaPayload(p.criteria),
+        }));
+        writeLocalPositions(normalizedPluginPos);
+        return normalizedPluginPos;
       }
 
       return readLocalPositions();
@@ -260,7 +329,9 @@ export function useMetricSets() {
             id: `local_pos_${Date.now()}_${idx}_${row.code}`,
           })
         );
-        writeLocalPositions([...readLocalPositions(), ...seedRows]);
+        const updatedPositions = [...readLocalPositions(), ...seedRows];
+        writeLocalPositions(updatedPositions);
+        void mirrorMetricCatalogToSettingsPlugins(updatedSets, updatedPositions);
         return localSet;
       }
 
@@ -318,6 +389,7 @@ export function useMetricSets() {
         return updatedLocal;
       });
       writeLocalSets(nextList);
+      void mirrorMetricCatalogToSettingsPlugins(nextList, undefined);
       if (!updatedLocal) throw new Error('Lot introuvable');
       return updatedLocal;
     },
@@ -344,8 +416,11 @@ export function useMetricSets() {
         setNeedsSqlMigration(true);
       }
 
-      writeLocalSets(readLocalSets().filter(s => s.id !== id));
-      writeLocalPositions(readLocalPositions().filter(p => p.metric_set_id !== id));
+      const nextSets = readLocalSets().filter(s => s.id !== id);
+      const nextPositions = readLocalPositions().filter(p => p.metric_set_id !== id);
+      writeLocalSets(nextSets);
+      writeLocalPositions(nextPositions);
+      void mirrorMetricCatalogToSettingsPlugins(nextSets, nextPositions);
       return id;
     },
     onSuccess: () => {
@@ -399,7 +474,9 @@ export function useMetricSets() {
       const existingAll = readLocalPositions().filter(
         p => !(p.metric_set_id === payload.metric_set_id && p.code === payload.code)
       );
-      writeLocalPositions([...existingAll, localPos]);
+      const nextPos = [...existingAll, localPos];
+      writeLocalPositions(nextPos);
+      void mirrorMetricCatalogToSettingsPlugins(undefined, nextPos);
       return localPos;
     },
     onSuccess: () => {
@@ -458,6 +535,7 @@ export function useMetricSets() {
         return updatedItem;
       });
       writeLocalPositions(nextAll);
+      void mirrorMetricCatalogToSettingsPlugins(undefined, nextAll);
       if (!updatedItem) throw new Error('Poste introuvable dans ce lot');
       return updatedItem;
     },
@@ -484,7 +562,9 @@ export function useMetricSets() {
         setNeedsSqlMigration(true);
       }
 
-      writeLocalPositions(readLocalPositions().filter(p => p.id !== id));
+      const nextPos = readLocalPositions().filter(p => p.id !== id);
+      writeLocalPositions(nextPos);
+      void mirrorMetricCatalogToSettingsPlugins(undefined, nextPos);
       return id;
     },
     onSuccess: () => {

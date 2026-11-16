@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useClubData } from '../../hooks/useClubData';
 import { useMatches } from '../../hooks/useMatches';
 import { usePlayers } from '../../hooks/usePlayers';
@@ -16,7 +16,8 @@ import {
   Shield, Star, Layout,
   ChevronRight, CheckCircle2, Timer, Target,
   FileDown, LayoutGrid, Save, ChevronLeft,
-  Settings, Clock, MapPin, Search, Filter, Loader2 as LucideLoader, Eye, Radio
+  Settings, Clock, MapPin, Search, Filter, Loader2 as LucideLoader, Eye, Radio,
+  ArrowUpDown, Sparkles
 } from 'lucide-react';
 import { toast } from 'sonner';
 import LiveTracking from './LiveTracking';
@@ -30,6 +31,12 @@ import {
   inferMatchFormat
 } from './tacticalFormations';
 import { classifyPosition } from './ScheduleMatchWizard';
+import {
+  alignEntriesToFormation,
+  findBestEmptySlotForPlayer,
+  pickBestLineupFromSquad,
+  resolveDisplayLineupEntries
+} from './utils/lineupPositionHelper';
 
 const FORMATIONS = FORMATIONS_BY_FORMAT[11];
 
@@ -71,6 +78,32 @@ const MatchDayPage: React.FC = () => {
 
   const match = matches.find(m => m.id === selectedMatchId);
   const [formData, setFormData] = useState<Partial<Match>>({});
+  const alignedMatchIdRef = useRef<string | null>(null);
+
+  // Align unaligned MatchDay compositions on initial/async load (respecting manual_positions)
+  useEffect(() => {
+    if (!selectedMatchId || !formData.lineup || players.length === 0) return;
+    if (alignedMatchIdRef.current === selectedMatchId) return;
+    alignedMatchIdRef.current = selectedMatchId;
+    const rawLineup = formData.lineup as any;
+    if (rawLineup.manual_positions) return;
+    const rawXI = Array.isArray(rawLineup.startingXI) ? rawLineup.startingXI : [];
+    if (!rawXI.some((id: string) => Boolean(id))) return;
+    const resolvedXI = resolveDisplayLineupEntries(
+      rawXI,
+      rawLineup.formation || formData.formation || '4-3-3',
+      11,
+      (pid) => players.find(p => p.id === pid)?.position || null,
+      '',
+      Boolean(rawLineup.manual_positions)
+    );
+    if (JSON.stringify(resolvedXI) !== JSON.stringify(rawXI)) {
+      setFormData(prev => ({
+        ...prev,
+        lineup: prev.lineup ? { ...prev.lineup, startingXI: resolvedXI } : prev.lineup
+      }));
+    }
+  }, [selectedMatchId, players.length, formData.lineup]);
 
   // Auto-select today's live/scheduled match and open live tracking
   useEffect(() => {
@@ -220,50 +253,19 @@ const MatchDayPage: React.FC = () => {
         }
       });
     } else {
-      // Add logic
-      const isGK = ['GK', 'G', 'GARDIEN'].includes(player.position?.toUpperCase() || '');
-      
-      if (isGK && startingXI[0] === '') {
+      const roles = getFormationPositions(currentLineup.formation);
+      const bestSlot = findBestEmptySlotForPlayer(player.position, roles, startingXI, 11);
+
+      if (bestSlot !== -1) {
         const nextXI = [...startingXI];
-        nextXI[0] = player.id;
-        setFormData({ ...formData, lineup: { ...currentLineup, startingXI: nextXI } });
+        while (nextXI.length < 11) nextXI.push('');
+        nextXI[bestSlot] = player.id;
+        setFormData({ ...formData, lineup: { ...currentLineup, startingXI: nextXI.slice(0, 11) } });
       } else {
-        const roles = getFormationPositions(currentLineup.formation);
-        let placed = false;
-        const nextXI = [...startingXI];
-        
-        const matchingSlot = roles.findIndex((r, idx) => 
-          idx > 0 && r.label === player.position?.toUpperCase() && nextXI[idx] === ''
-        );
-
-        if (matchingSlot !== -1) {
-           nextXI[matchingSlot] = player.id;
-           setFormData({ ...formData, lineup: { ...currentLineup, startingXI: nextXI } });
-           placed = true;
-        } else {
-           const emptySlot = nextXI.findIndex((id, idx) => idx > 0 && id === '');
-           if (emptySlot !== -1) {
-             nextXI[emptySlot] = player.id;
-             setFormData({ ...formData, lineup: { ...currentLineup, startingXI: nextXI } });
-             placed = true;
-           }
-        }
-
-        if (!placed) {
-          const filledStartersCount = startingXI.filter(id => id !== '').length;
-          if (filledStartersCount >= 11) {
-            setFormData({
-              ...formData,
-              lineup: { ...currentLineup, substitutes: [...substitutes, player.id] }
-            });
-          } else {
-             const firstFree = nextXI.indexOf('');
-             if (firstFree !== -1) {
-                nextXI[firstFree] = player.id;
-                setFormData({ ...formData, lineup: { ...currentLineup, startingXI: nextXI } });
-             }
-          }
-        }
+        setFormData({
+          ...formData,
+          lineup: { ...currentLineup, substitutes: [...substitutes, player.id] }
+        });
       }
     }
   };
@@ -272,7 +274,7 @@ const MatchDayPage: React.FC = () => {
     const currentLineup = formData.lineup!;
     const nextXI = [...(currentLineup.startingXI || [])];
     const oldIndex = nextXI.indexOf(draggedPlayerId);
-    
+
     if (oldIndex !== -1) {
       const playerAtTarget = nextXI[slotIndex];
       nextXI[slotIndex] = draggedPlayerId;
@@ -280,17 +282,17 @@ const MatchDayPage: React.FC = () => {
     } else if (currentLineup.substitutes.includes(draggedPlayerId)) {
       const playerAtTarget = nextXI[slotIndex];
       nextXI[slotIndex] = draggedPlayerId;
-      
-      let nextSubs = currentLineup.substitutes.filter(id => id !== draggedPlayerId);
+
+      const nextSubs = currentLineup.substitutes.filter(id => id !== draggedPlayerId);
       if (playerAtTarget) nextSubs.push(playerAtTarget);
-      
+
       setFormData({
         ...formData,
-        lineup: { ...currentLineup, startingXI: nextXI, substitutes: nextSubs }
+        lineup: { ...currentLineup, startingXI: nextXI, substitutes: nextSubs, manual_positions: true } as any
       });
       return;
     }
-    setFormData({ ...formData, lineup: { ...currentLineup, startingXI: nextXI } });
+    setFormData({ ...formData, lineup: { ...currentLineup, startingXI: nextXI, manual_positions: true } as any });
   };
 
   const goNext = () => {
@@ -677,7 +679,25 @@ const MatchDayPage: React.FC = () => {
                                   </h4>
                                   <div className="flex flex-wrap gap-2">
                                      {FORMATIONS.map(f => (
-                                         <button key={f} onClick={() => updateField('lineup', {...currentLineup, formation: f})} className={`h-10 px-4 rounded-xl text-[10px] font-black uppercase border-2 transition-all ${currentLineup.formation === f ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-secondary text-muted-foreground hover:border-primary/20'}`}>{f}</button>
+                                         <button
+                                           key={f}
+                                           onClick={() => {
+                                             const manual = Boolean((currentLineup as any).manual_positions);
+                                             const nextXI = !manual && currentLineup.startingXI.some(Boolean) && players.length > 0
+                                               ? alignEntriesToFormation(
+                                                   currentLineup.startingXI,
+                                                   f,
+                                                   11,
+                                                   (pid) => getPlayerById(pid)?.position || null,
+                                                   ''
+                                                 )
+                                               : currentLineup.startingXI;
+                                             updateField('lineup', { ...currentLineup, formation: f, startingXI: nextXI });
+                                           }}
+                                           className={`h-10 px-4 rounded-xl text-[10px] font-black uppercase border-2 transition-all ${currentLineup.formation === f ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white border-secondary text-muted-foreground hover:border-primary/20'}`}
+                                         >
+                                           {f}
+                                         </button>
                                      ))}
                                   </div>
                                </div>
@@ -737,12 +757,44 @@ const MatchDayPage: React.FC = () => {
                             </div>
 
                             <div className="lg:col-span-8 flex flex-col items-center">
-                               <div className="w-full flex justify-between items-center mb-6 px-10">
-                                  <div className="flex items-center gap-4">
+                               <div className="w-full flex flex-wrap justify-between items-center gap-3 mb-6 px-4 md:px-10">
+                                  <div className="flex flex-wrap items-center gap-2.5">
                                      <Badge className="bg-emerald-500 text-white font-black px-4 py-2 rounded-xl text-[10px]">Starters: {currentLineup.startingXI.filter(id => id !== '').length}/11</Badge>
                                      <Badge className="bg-blue-500 text-white font-black px-4 py-2 rounded-xl text-[10px]">Subs: {currentLineup.substitutes.length}</Badge>
+                                     {matchPlayers.length > 0 && (
+                                       <button
+                                         type="button"
+                                         onClick={() => {
+                                           const { startingXI: autoXI, substitutes: autoSubs } = pickBestLineupFromSquad(matchPlayers, currentLineup.formation, 11, true);
+                                           updateField('lineup', { ...currentLineup, startingXI: autoXI, substitutes: autoSubs, manual_positions: false } as any);
+                                           toast.success(`11 titulaires alignés automatiquement (${currentLineup.formation})`);
+                                         }}
+                                         className="h-8 px-3 rounded-xl bg-primary text-white hover:bg-primary/90 font-black text-[9px] uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm"
+                                       >
+                                         <Sparkles className="w-3 h-3" /> Aligner 11
+                                       </button>
+                                     )}
+                                     {currentLineup.startingXI.filter(id => id !== '').length >= 2 && (
+                                       <button
+                                         type="button"
+                                         onClick={() => {
+                                           const alignedXI = alignEntriesToFormation(
+                                             currentLineup.startingXI,
+                                             currentLineup.formation,
+                                             11,
+                                             (pid) => getPlayerById(pid)?.position || null,
+                                             ''
+                                           );
+                                           updateField('lineup', { ...currentLineup, startingXI: alignedXI, manual_positions: false } as any);
+                                           toast.success(`Joueurs replacés à leurs postes exacts (${currentLineup.formation})`);
+                                         }}
+                                         className="h-8 px-3 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-black text-[9px] uppercase tracking-wider transition-all flex items-center gap-1.5"
+                                       >
+                                         <ArrowUpDown className="w-3 h-3" /> Replacer aux postes
+                                       </button>
+                                     )}
                                   </div>
-                                  <div className="flex items-center gap-2 opacity-30 italic text-[10px] font-bold uppercase">
+                                  <div className="flex items-center gap-2 opacity-40 italic text-[10px] font-bold uppercase">
                                      <Filter className="w-3.5 h-3.5" /> Glisser pour ajuster
                                   </div>
                                </div>

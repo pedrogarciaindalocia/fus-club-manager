@@ -64,6 +64,7 @@ interface MatchOverviewPanelProps {
 
 // Tactical Formation Coordinates imported from centralized module
 import { getFormationPositions, inferMatchFormat } from './tacticalFormations';
+import { resolveDisplayLineupEntries } from './utils/lineupPositionHelper';
 
 const getInitials = (name: string) => {
   if (!name) return '';
@@ -423,10 +424,10 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   const stadium = stadiums.find(s => s.id === match.stadium_id);
   const stadiumName = stadium?.name || match.stadium || mainClub?.stadium || 'Stade Prince Moulay El Hassan';
 
-  const startingXI: string[] = Array.isArray(match.lineup?.startingXI) ? match.lineup.startingXI : [];
+  const rawStartingXI: any[] = Array.isArray(match.lineup?.startingXI) ? match.lineup.startingXI : [];
   const subs: string[] = Array.isArray(match.lineup?.substitutes) ? match.lineup.substitutes : [];
   const formationKey = match.formation || match.lineup?.formation || '4-3-3';
-  const opponentStartingXI: string[] = Array.isArray(match.opponent_lineup) ? match.opponent_lineup : [];
+  const rawOpponentStartingXI: any[] = Array.isArray(match.opponent_lineup) ? match.opponent_lineup : [];
   const opponentSubs: string[] = Array.isArray(match.opponent_subs) ? match.opponent_subs : [];
   const opponentFormationKey = match.opponent_formation || '4-3-3';
 
@@ -494,7 +495,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
 
   // Real event stats directly from Supabase match_events & match
   const ourPlayerIds = new Set(
-    [...startingXI, ...subs].map(item => (typeof item === 'object' ? (item.id || item.player_id) : item)).filter(Boolean).map(String)
+    [...rawStartingXI, ...subs].map(item => (item && typeof item === 'object' ? (item.id || item.player_id) : item)).filter(Boolean).map(String)
   );
 
   const isEventOurTeam = (e: any): boolean => {
@@ -924,6 +925,41 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   const bottomFormation = isHome ? opponentFormationKey : formationKey;
   const topTeamPositions = getFormationPositions(topFormation, matchFormat);
   const bottomTeamPositions = getFormationPositions(bottomFormation, matchFormat);
+
+  // Alignement intelligent des titulaires à leur poste réel (corrige les compos importées/désalignées tout en respectant le Drag & Drop manuel)
+  const startingXI = useMemo(
+    () =>
+      resolveDisplayLineupEntries(
+        rawStartingXI,
+        formationKey,
+        matchFormat,
+        (rawPid) => {
+          const p = getPlayer(rawPid);
+          return p?.position || (rawPid && typeof rawPid === 'object' ? rawPid.position : null) || null;
+        },
+        '',
+        Boolean((match.lineup as any)?.manual_positions)
+      ),
+    [rawStartingXI, formationKey, matchFormat, players, matchLineupPlayers, (match.lineup as any)?.manual_positions]
+  );
+
+  const opponentStartingXI = useMemo(
+    () =>
+      resolveDisplayLineupEntries(
+        rawOpponentStartingXI,
+        opponentFormationKey,
+        matchFormat,
+        (rawOpp) => {
+          if (!rawOpp) return null;
+          if (typeof rawOpp === 'object' && rawOpp.position) return rawOpp.position;
+          const p = getPlayer(rawOpp);
+          return p?.position || null;
+        },
+        null as any,
+        Boolean((match.lineup as any)?.opponent_manual_positions)
+      ),
+    [rawOpponentStartingXI, opponentFormationKey, matchFormat, players, matchLineupPlayers, (match.lineup as any)?.opponent_manual_positions]
+  );
 
 
   // ── Render Individual Reorderable Block Content ──
@@ -1601,8 +1637,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                 } else {
                   // Opponent is Home (Top Goal)
                   const rawOpp = opponentStartingXI[idx];
-                  const oppPid = typeof rawOpp === 'object' ? (rawOpp.id || rawOpp.player_id) : rawOpp;
-                  const jerseyVal = typeof rawOpp === 'object' ? (rawOpp.jersey_number || rawOpp.number || (idx + 1)) : (rawOpp || (idx + 1));
+                  const isOppObj = Boolean(rawOpp && typeof rawOpp === 'object');
+                  const oppPid = isOppObj ? (rawOpp.id || rawOpp.player_id) : rawOpp;
+                  const jerseyVal = isOppObj ? (rawOpp.jersey_number || rawOpp.number || (idx + 1)) : (rawOpp || (idx + 1));
                   const jerseyText = String(jerseyVal);
 
                   const hasOppGoal = (events || []).some(e => (e.type === 'goal' || e.type === 'penalty') && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
@@ -1656,8 +1693,9 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                 if (isHome) {
                   // Opponent is Away (Bottom Goal)
                   const rawOpp = opponentStartingXI[idx];
-                  const oppPid = typeof rawOpp === 'object' ? (rawOpp.id || rawOpp.player_id) : rawOpp;
-                  const jerseyVal = typeof rawOpp === 'object' ? (rawOpp.jersey_number || rawOpp.number || (idx + 1)) : (rawOpp || (idx + 1));
+                  const isOppObj = Boolean(rawOpp && typeof rawOpp === 'object');
+                  const oppPid = isOppObj ? (rawOpp.id || rawOpp.player_id) : rawOpp;
+                  const jerseyVal = isOppObj ? (rawOpp.jersey_number || rawOpp.number || (idx + 1)) : (rawOpp || (idx + 1));
                   const jerseyText = String(jerseyVal);
 
                   const hasOppGoal = (events || []).some(e => (e.type === 'goal' || e.type === 'penalty') && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));

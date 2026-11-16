@@ -665,17 +665,21 @@ export interface PillarScoreSummary {
 }
 
 /**
- * Sélectionne le lot dynamique le plus pertinent pour une rubrique ('match' ou 'training').
+ * Sélectionne le lot dynamique le plus pertinent pour une rubrique ('player', 'match' ou 'training').
  */
 export function resolveMetricSetForRubric(
   sets: MetricSet[],
-  rubric: 'match' | 'training'
+  rubric: 'player' | 'match' | 'training'
 ): MetricSet | null {
   const active = (sets || []).filter(s => s.is_active !== false);
   if (active.length === 0) return null;
 
   const preferredScope: MetricSetScope =
-    rubric === 'match' ? 'match_performance' : 'training_performance';
+    rubric === 'match'
+      ? 'match_performance'
+      : rubric === 'training'
+        ? 'training_performance'
+        : 'player_performance';
 
   return (
     active.find(s => s.scope === preferredScope) ||
@@ -792,10 +796,10 @@ export function computePillarAveragesFromCriteria(
 ): PillarScoreSummary {
   const pillars: MetricPillar[] = ['technique', 'tactique', 'physique', 'mental'];
   const averages: Record<MetricPillar, number> = {
-    technique: fallbackScores?.technique ?? 7,
-    tactique: fallbackScores?.tactique ?? 7,
-    physique: fallbackScores?.physique ?? 7,
-    mental: fallbackScores?.mental ?? 7,
+    technique: fallbackScores?.technique ?? 0,
+    tactique: fallbackScores?.tactique ?? 0,
+    physique: fallbackScores?.physique ?? 0,
+    mental: fallbackScores?.mental ?? 0,
   };
 
   let ratedCriteriaCount = 0;
@@ -809,8 +813,8 @@ export function computePillarAveragesFromCriteria(
     for (const crit of list) {
       const scopedKey = `${pillar}:${crit}`;
       const rawVal = criteriaScores[scopedKey] ?? criteriaScores[crit];
-      if (typeof rawVal === 'number' && Number.isFinite(rawVal) && rawVal > 0) {
-        scoredValues.push(Math.min(10, Math.max(1, rawVal)));
+      if (typeof rawVal === 'number' && Number.isFinite(rawVal) && rawVal >= 0) {
+        scoredValues.push(Math.min(10, Math.max(0, rawVal)));
       }
     }
 
@@ -903,5 +907,59 @@ export function parseMatchEvaluationComment(comment?: string | null): {
     },
   };
 }
+
+/**
+ * Extrait le titre lisible et un éventuel détail d'infobulle depuis un libellé de critère.
+ */
+export function parseMetricCriterionLabel(criterion: string): {
+  title: string;
+  detail: string | null;
+} {
+  const openIdx = criterion.indexOf('(');
+  const closeIdx = criterion.lastIndexOf(')');
+  if (openIdx !== -1 && closeIdx > openIdx) {
+    return {
+      title: criterion.substring(0, openIdx).trim(),
+      detail: criterion.substring(openIdx + 1, closeIdx).trim() || null,
+    };
+  }
+  const colonIdx = criterion.indexOf(':');
+  if (colonIdx > 1 && colonIdx < criterion.length - 2) {
+    return {
+      title: criterion.substring(0, colonIdx).trim(),
+      detail: criterion.substring(colonIdx + 1).trim() || null,
+    };
+  }
+  return { title: criterion.trim(), detail: null };
+}
+
+/**
+ * Calcule les moyennes entières (0 à 10, sans décimales) des 4 piliers et de la note globale.
+ */
+export function computeIntegerPillarAveragesFromCriteria(
+  position: MetricSetPosition | null,
+  criteriaScores: Record<string, number>,
+  fallbackScores?: Partial<Record<MetricPillar, number>>
+): PillarScoreSummary {
+  const raw = computePillarAveragesFromCriteria(position, criteriaScores, fallbackScores);
+  const technique = Math.min(10, Math.max(0, Math.round(raw.technique)));
+  const tactique = Math.min(10, Math.max(0, Math.round(raw.tactique)));
+  const physique = Math.min(10, Math.max(0, Math.round(raw.physique)));
+  const mental = Math.min(10, Math.max(0, Math.round(raw.mental)));
+  const global = Math.min(
+    10,
+    Math.max(0, Math.round((technique + tactique + physique + mental) / 4))
+  );
+  return {
+    technique,
+    tactique,
+    physique,
+    mental,
+    global,
+    ratedCriteriaCount: raw.ratedCriteriaCount,
+    totalCriteriaCount: raw.totalCriteriaCount,
+  };
+}
+
 
 

@@ -130,14 +130,21 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
   );
 
   const { getPositionByCode, positions, updatePosition } = useMetrics();
+  const [evaluatedPosition, setEvaluatedPosition] = useState<string>(
+    () => existingEvaluation?.position_evaluated || candidate.primary_position || 'CM'
+  );
 
-  // Configuration dynamique des critères selon le poste du joueur (9 profils de la gestion des métriques)
+  useEffect(() => {
+    setEvaluatedPosition(existingEvaluation?.position_evaluated || candidate.primary_position || 'CM');
+  }, [existingEvaluation?.id, existingEvaluation?.position_evaluated, candidate.id, candidate.primary_position]);
+
+  // Configuration dynamique des critères selon le poste choisi pour l'évaluation (9 profils de la gestion des métriques)
   const positionConfig = React.useMemo(() => {
-    const targetPos = existingEvaluation?.position_evaluated || candidate.primary_position;
+    const targetPos = evaluatedPosition || candidate.primary_position;
     const config = getPositionByCode(targetPos);
     if (config) return config;
     return { name: targetPos || 'CM', code: targetPos || 'CM', emoji: '👤', category: 'MF', criteria: { technique: [], tactique: [], physique: [], mental: [] } };
-  }, [existingEvaluation?.position_evaluated, candidate.primary_position, positions, getPositionByCode]);
+  }, [evaluatedPosition, candidate.primary_position, positions, getPositionByCode]);
 
   // Notes des critères dynamiques par nom de critère (Échelle 1–10)
   const [criterionScores, setCriterionScores] = useState<Record<string, number>>({});
@@ -387,6 +394,7 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
         evaluator_name: evaluatorName.trim() || 'Hassan Benabicha',
         evaluator_role: evaluatorRole.trim() || 'Directeur du Recrutement',
         evaluation_date: evaluationDate,
+        position_evaluated: positionConfig.code || evaluatedPosition || candidate.primary_position,
 
         tech_report: techReport.trim() || undefined,
         tact_report: tactReport.trim() || undefined,
@@ -891,10 +899,52 @@ export const EvaluationModal: React.FC<EvaluationModalProps> = ({
                   <span>Évaluation 1–10 : {candidate.first_name} {candidate.last_name}</span>
                 </h3>
 
-                {/* Badge du Poste Spécifique Détecté */}
-                <span className="text-xs font-black px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5 shadow-xs">
-                  <span>{getMetricPositionFrenchName(positionConfig)}</span>
-                </span>
+                {/* Sélecteur libre du Poste à Évaluer */}
+                <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 bg-primary/5 border border-primary/20 rounded-full px-2.5 py-1">
+                  <span className="text-slate-500">Poste évalué :</span>
+                  <select
+                    value={positionConfig.code || evaluatedPosition}
+                    onChange={(e) => {
+                      const nextPos = e.target.value;
+                      setEvaluatedPosition(nextPos);
+                      const nextCfg = getPositionByCode(nextPos);
+                      if (nextCfg?.criteria) {
+                        setCriterionScores(prev => {
+                          const updated = { ...prev };
+                          (['technique', 'tactique', 'physique', 'mental'] as ScoutPillarKey[]).forEach(pillar => {
+                            (nextCfg.criteria[pillar] || []).forEach(c => {
+                              const lbl = typeof c === 'string' ? c : (c as any)?.label;
+                              if (lbl && updated[`${pillar}-${lbl}`] === undefined) {
+                                updated[`${pillar}-${lbl}`] = 0;
+                              }
+                            });
+                          });
+                          return updated;
+                        });
+                        setCriterionEnabled(prev => {
+                          const updated = { ...prev };
+                          (['technique', 'tactique', 'physique', 'mental'] as ScoutPillarKey[]).forEach(pillar => {
+                            (nextCfg.criteria[pillar] || []).forEach(c => {
+                              const lbl = typeof c === 'string' ? c : (c as any)?.label;
+                              if (lbl && updated[`${pillar}-${lbl}`] === undefined) {
+                                updated[`${pillar}-${lbl}`] = true;
+                              }
+                            });
+                          });
+                          return updated;
+                        });
+                      }
+                    }}
+                    className="bg-transparent text-xs font-black text-primary focus:outline-none cursor-pointer"
+                    aria-label="Choisir le poste avec lequel évaluer"
+                  >
+                    {positions.map(pos => (
+                      <option key={pos.id || pos.code} value={pos.code} className="text-slate-900">
+                        {pos.emoji ? `${pos.emoji} ` : ''}{getMetricPositionFrenchName(pos)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
                 {isSuperAdmin && (
                   <button

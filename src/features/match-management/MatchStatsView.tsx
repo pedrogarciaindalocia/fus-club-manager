@@ -17,6 +17,7 @@ import PlayerMatchEvaluationModal from './components/PlayerMatchEvaluationModal'
 import PlayerActionHubModal from './components/PlayerActionHubModal';
 import type { PlayerActionTarget } from './components/PlayerActionHubModal';
 import { inferMatchFormat, getHorizontalFormationPositions, FORMATIONS_BY_FORMAT } from './tacticalFormations';
+import { resolveDisplayLineupEntries } from './utils/lineupPositionHelper';
 import {
   Trophy,
   Target,
@@ -1018,8 +1019,32 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                            const oppFormation = currentMatch.opponent_formation || (FORMATIONS_BY_FORMAT[matchFormat]?.[0] || '4-3-3');
                            const homePositions = getHorizontalFormationPositions(homeFormation, matchFormat, 'home');
                            const awayPositions = getHorizontalFormationPositions(oppFormation, matchFormat, 'away');
-                           const startingList = (currentMatch.lineup?.startingXI || []).slice(0, matchFormat);
-                           const oppLineupList = Array.isArray(currentMatch.opponent_lineup) ? currentMatch.opponent_lineup : [];
+                           const rawStartingList = (currentMatch.lineup?.startingXI || []).slice(0, matchFormat);
+                           const startingList = resolveDisplayLineupEntries(
+                             rawStartingList,
+                             homeFormation,
+                             matchFormat,
+                             (pId) => players.find(p => p.id === pId)?.position || null,
+                             '',
+                             Boolean((currentMatch.lineup as any)?.manual_positions)
+                           );
+                           const rawOppLineupList = Array.isArray(currentMatch.opponent_lineup) ? currentMatch.opponent_lineup : [];
+                           const oppLineupList = resolveDisplayLineupEntries<any>(
+                             rawOppLineupList,
+                             oppFormation,
+                             matchFormat,
+                             (rawOpp) => {
+                               if (!rawOpp) return null;
+                               if (typeof rawOpp === 'object') {
+                                 if (rawOpp.position) return rawOpp.position;
+                                 const pid = rawOpp.id || rawOpp.player_id;
+                                 return opponentPlayers.find(op => op.id === pid)?.position || players.find(p => p.id === pid)?.position || null;
+                               }
+                               return opponentPlayers.find(op => op.id === rawOpp)?.position || players.find(p => p.id === rawOpp)?.position || null;
+                             },
+                             null,
+                             Boolean((currentMatch.lineup as any)?.opponent_manual_positions)
+                           );
 
                            return (
                               <>
@@ -1096,12 +1121,20 @@ const MatchStatsView: React.FC<MatchStatsViewProps> = ({ matchId, match: initial
                                  {[...Array(matchFormat)].map((_, idx) => {
                                     const pos = awayPositions[idx] || { right: `${8 + idx * 4}%`, top: '50%' };
                                     const rawOpp = oppLineupList[idx];
-                                    const oppPlayerObj = rawOpp ? (players.find(p => p.id === rawOpp || (typeof rawOpp === 'object' && p.id === (rawOpp.id || rawOpp.player_id))) || null) : null;
+                                    const isOppObj = Boolean(rawOpp && typeof rawOpp === 'object');
+                                    const rawOppPid = isOppObj ? (rawOpp.id || rawOpp.player_id) : rawOpp;
+                                    const oppPlayerObj = rawOpp
+                                      ? (
+                                          opponentPlayers.find(p => p.id === rawOppPid) ||
+                                          players.find(p => p.id === rawOppPid) ||
+                                          null
+                                        )
+                                      : null;
                                     const oppName = oppPlayerObj
                                        ? (oppPlayerObj.full_name.split(' ').pop() || oppPlayerObj.full_name)
-                                       : (typeof rawOpp === 'object' ? (rawOpp.full_name || rawOpp.name) : (rawOpp && isNaN(Number(rawOpp)) ? String(rawOpp) : `ADV N°${idx + 1}`));
-                                    const oppJersey = oppPlayerObj?.jersey_number ?? (typeof rawOpp === 'object' ? (rawOpp.jersey_number || rawOpp.number) : (rawOpp && !isNaN(Number(rawOpp)) ? Number(rawOpp) : (idx + 1)));
-                                    const oppRef = oppPlayerObj ? oppPlayerObj.id : (typeof rawOpp === 'object' && rawOpp?.id ? rawOpp.id : `OPPONENT-${idx + 1}`);
+                                       : (isOppObj ? (rawOpp.full_name || rawOpp.name || `ADV N°${idx + 1}`) : (rawOpp && isNaN(Number(rawOpp)) ? String(rawOpp) : `ADV N°${idx + 1}`));
+                                    const oppJersey = oppPlayerObj?.jersey_number ?? (isOppObj ? (rawOpp.jersey_number || rawOpp.number) : (rawOpp && !isNaN(Number(rawOpp)) ? Number(rawOpp) : (idx + 1)));
+                                    const oppRef = oppPlayerObj ? oppPlayerObj.id : (isOppObj && rawOpp?.id ? rawOpp.id : `OPPONENT-${idx + 1}`);
                                     const oppEvents = events.filter(e => e.extra?.opponent_ref === oppRef || e.player_id === oppRef || (e.extra?.opponent_ref && e.extra.opponent_ref.split('-')[1] === (idx + 1).toString()));
 
                                     return (

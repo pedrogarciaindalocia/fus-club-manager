@@ -6,6 +6,7 @@ import {
   resolveClubAbbreviation,
 } from '../features/match-management/utils/frmfMatchSheetParser';
 import { DEFAULT_CLUB_LOGOS } from './clubLogos';
+import { isHigherCategory, isLowerCategory } from './categoryRank';
 
 export interface PreferredFootDisplay {
   code: 'G' | 'D' | 'G/D' | '—';
@@ -147,12 +148,15 @@ export interface PlayerRecentFormItem {
   dateStr: string;
   compLabel: string;
   statusLabel: string;
+  matchCategory: string;
+  isSurclasse: boolean;
 }
 
 export interface PlayerLastMatchDetail {
   id: string;
   compName: string;
   category: string;
+  isSurclasse?: boolean;
   timeAgoStr: string;
   statusLabel: string;
   isHome: boolean;
@@ -328,6 +332,197 @@ function resolvePlayerMatchParticipation(
   };
 }
 
+export interface PlayerPlayedMatchLinkInfo {
+  played: boolean;
+  roleLabel: string;
+  isStarter: boolean;
+  isSubEntered: boolean;
+  minutesPlayed: number | null;
+}
+
+/**
+ * Détermine strictement si un joueur a réellement joué (ou participé) dans un match donné,
+ * afin de ne proposer que ses matchs joués lors de la liaison d'une évaluation de performance.
+ */
+export function resolvePlayerPlayedMatchForPerformance(
+  playerId: string,
+  match: any,
+  opts?: {
+    playerEvents?: any[];
+    playerMatchStat?: {
+      minutes_played?: number | null;
+      goals?: number | null;
+      assists?: number | null;
+      rating?: number | null;
+    } | null;
+    matchHasTrackedSubstitutions?: boolean;
+    matchHasTrackedMinutes?: boolean;
+    includeInternalOpponentSide?: boolean;
+    forceIncludeMatchId?: boolean;
+  }
+): PlayerPlayedMatchLinkInfo {
+  const notPlayed: PlayerPlayedMatchLinkInfo = {
+    played: false,
+    roleLabel: '',
+    isStarter: false,
+    isSubEntered: false,
+    minutesPlayed: null,
+  };
+
+  if (!playerId || !match) return notPlayed;
+  const pid = String(playerId);
+
+  const status = String(match.status || '').trim().toLowerCase();
+  if (
+    !opts?.forceIncludeMatchId &&
+    (status === 'cancelled' || status === 'canceled' || status === 'postponed' || status === 'draft')
+  ) {
+    return notPlayed;
+  }
+
+  const mpRecord = Array.isArray(match.match_players)
+    ? match.match_players.find((p: any) => String(p?.player_id) === pid)
+    : undefined;
+
+  const lineup = match.lineup as { startingXI?: string[]; substitutes?: string[] } | null;
+  const startingXI = Array.isArray(lineup?.startingXI) ? lineup!.startingXI.map(String) : [];
+  const substitutes = Array.isArray(lineup?.substitutes) ? lineup!.substitutes.map(String) : [];
+  const oppLineup =
+    opts?.includeInternalOpponentSide && Array.isArray(match.opponent_lineup)
+      ? match.opponent_lineup.map(String)
+      : [];
+  const oppSubs =
+    opts?.includeInternalOpponentSide && Array.isArray(match.opponent_subs)
+      ? match.opponent_subs.map(String)
+      : [];
+
+  const matchEvents = (opts?.playerEvents || []).filter(
+    (e: any) => String(e?.match_id) === String(match.id)
+  );
+  const subInEvent = matchEvents.find(
+    (e: any) =>
+      e?.type === 'substitution' &&
+      (String(e?.related_player_id) === pid || String(e?.extra?.player_in_id) === pid)
+  );
+  const subOutEvent = matchEvents.find(
+    (e: any) => e?.type === 'substitution' && String(e?.player_id) === pid
+  );
+  const hasOtherAction = matchEvents.some(
+    (e: any) =>
+      String(e?.player_id) === pid ||
+      String(e?.related_player_id) === pid ||
+      String(e?.extra?.player_in_id) === pid
+  );
+
+  const stat = opts?.playerMatchStat;
+  const explicitMinutes =
+    stat?.minutes_played != null && Number.isFinite(Number(stat.minutes_played))
+      ? Number(stat.minutes_played)
+      : null;
+  const hasPositiveStats = Boolean(
+    stat &&
+      ((explicitMinutes != null && explicitMinutes > 0) ||
+        Number(stat.goals || 0) > 0 ||
+        Number(stat.assists || 0) > 0 ||
+        stat.rating != null)
+  );
+  const hasZeroMinutesExplicitly =
+    explicitMinutes === 0 && !subInEvent && !subOutEvent && !hasOtherAction && mpRecord?.rating == null;
+
+  const hasDirectAction = Boolean(
+    subInEvent || subOutEvent || hasOtherAction || hasPositiveStats || mpRecord?.rating != null
+  );
+
+  const isStarter = Boolean(
+    mpRecord?.is_starting ||
+      startingXI.includes(pid) ||
+      (opts?.includeInternalOpponentSide && oppLineup.includes(pid))
+  );
+  const isSubListed = Boolean(
+    !isStarter &&
+      ((mpRecord && !mpRecord.is_starting) ||
+        substitutes.includes(pid) ||
+        (opts?.includeInternalOpponentSide && oppSubs.includes(pid)))
+  );
+
+  const hasNonDefaultScore =
+    Number(match.score_home || 0) > 0 || Number(match.score_away || 0) > 0;
+  const isMatchActiveOrPlayed =
+    isMatchPlayedOrLive(match) || hasNonDefaultScore || hasDirectAction;
+
+  if (!isMatchActiveOrPlayed) {
+    if (opts?.forceIncludeMatchId) {
+      return {
+        played: true,
+        roleLabel: isStarter ? 'Titulaire' : 'Match lié',
+        isStarter,
+        isSubEntered: Boolean(subInEvent),
+        minutesPlayed: explicitMinutes,
+      };
+    }
+    return notPlayed;
+  }
+
+  if (isStarter) {
+    const mins = explicitMinutes ?? (subOutEvent?.minute ? Number(subOutEvent.minute) : null);
+    return {
+      played: true,
+      roleLabel: mins != null && mins > 0 ? `Titulaire (${mins}')` : 'Titulaire',
+      isStarter: true,
+      isSubEntered: false,
+      minutesPlayed: mins,
+    };
+  }
+
+  if (hasDirectAction) {
+    const mins = explicitMinutes;
+    return {
+      played: true,
+      roleLabel: subInEvent
+        ? mins != null && mins > 0
+          ? `Entré en jeu (${mins}')`
+          : subInEvent?.minute
+            ? `Entré à ${subInEvent.minute}'`
+            : 'Entré en jeu'
+        : mins != null && mins > 0
+          ? `A participé (${mins}')`
+          : 'A participé',
+      isStarter: false,
+      isSubEntered: Boolean(subInEvent || (mins != null && mins > 0)),
+      minutesPlayed: mins,
+    };
+  }
+
+  if (isSubListed) {
+    const subsTrackedWithoutEntry = Boolean(
+      hasZeroMinutesExplicitly ||
+        opts?.matchHasTrackedSubstitutions ||
+        opts?.matchHasTrackedMinutes
+    );
+    if (!subsTrackedWithoutEntry) {
+      return {
+        played: true,
+        roleLabel: 'Remplaçant (Convoqué)',
+        isStarter: false,
+        isSubEntered: false,
+        minutesPlayed: null,
+      };
+    }
+  }
+
+  if (opts?.forceIncludeMatchId) {
+    return {
+      played: true,
+      roleLabel: 'Match lié',
+      isStarter: false,
+      isSubEntered: false,
+      minutesPlayed: explicitMinutes,
+    };
+  }
+
+  return notPlayed;
+}
+
 function resolveClubMetaForMatch(
   match: any,
   opponentClubs: Club[],
@@ -383,13 +578,78 @@ function resolveClubMetaForMatch(
  * à partir des seules rencontres réellement disputées par ce joueur.
  * Garantit qu'aucun match d'un autre joueur/catégorie et qu'aucun marqueur fictif ne s'affiche.
  */
+export interface MatchSurclassementInput {
+  category?: string | null;
+  lineup?: {
+    surclasses?: Record<
+      string,
+      | {
+        original_category?: string | null;
+        mobility_type?: string | null;
+      }
+      | undefined
+    > | null;
+  } | null;
+}
+
+export interface MatchSurclassementInfo {
+  matchCategory: string;
+  isSurclasse: boolean;
+}
+
+/**
+ * Détermine la catégorie normalisée d'un match et si un joueur y a pris part
+ * en situation de surclassement (catégorie du match strictement supérieure
+ * à sa catégorie officielle, ou marquage explicite dans `lineup.surclasses`).
+ */
+export function resolveMatchSurclassement(
+  match: MatchSurclassementInput | null | undefined,
+  playerId?: string | null,
+  playerBaseCategory?: string | null
+): MatchSurclassementInfo {
+  const rawMatchCat = (match?.category || '').trim();
+  const matchCategory = rawMatchCat ? normalizeAgeCategory(rawMatchCat) : '';
+  const rawPlayerCat = (playerBaseCategory || '').trim();
+  const normPlayerCat =
+    rawPlayerCat && rawPlayerCat.toUpperCase() !== 'ALL'
+      ? normalizeAgeCategory(rawPlayerCat)
+      : '';
+
+  const surclassEntry = playerId ? match?.lineup?.surclasses?.[playerId] : undefined;
+  const explicitOrigRaw = (surclassEntry?.original_category || '').trim();
+  const explicitOrig = explicitOrigRaw ? normalizeAgeCategory(explicitOrigRaw) : '';
+
+  const isExplicitSousClasse =
+    surclassEntry?.mobility_type === 'sous_classement' ||
+    (!!explicitOrig && !!matchCategory && isLowerCategory(explicitOrig, matchCategory)) ||
+    (!!normPlayerCat && !!matchCategory && isLowerCategory(normPlayerCat, matchCategory));
+
+  if (isExplicitSousClasse || !matchCategory) {
+    return { matchCategory, isSurclasse: false };
+  }
+
+  const isHigherThanPlayerCat =
+    !!normPlayerCat && isHigherCategory(normPlayerCat, matchCategory);
+  const isExplicitSurclasse =
+    !!surclassEntry &&
+    (surclassEntry.mobility_type === 'surclassement' ||
+      (!!explicitOrig && isHigherCategory(explicitOrig, matchCategory)) ||
+      (!explicitOrig && surclassEntry.mobility_type !== 'sous_classement'));
+
+  return {
+    matchCategory,
+    isSurclasse: isHigherThanPlayerCat || isExplicitSurclasse,
+  };
+}
+
 export function computePlayerMatchSummary(
   playerId: string | undefined | null,
   rawMatches: any[] = [],
   rawEvents: any[] = [],
   opponentClubs: Club[] = [],
   leagues: League[] = [],
-  mainClub?: MyClubSettings | null
+  mainClub?: MyClubSettings | null,
+  playerBaseCategory?: string | null
 ): {
   stats: PlayerMatchStatsSummary;
   recentFormMatches: PlayerRecentFormItem[];
@@ -464,6 +724,7 @@ export function computePlayerMatchSummary(
 
   const recentFormMatches: PlayerRecentFormItem[] = participatedEntries.slice(0, 4).map(({ match, resolved }) => {
     const clubMeta = resolveClubMetaForMatch(match, opponentClubs, leagues, mainClub);
+    const { matchCategory, isSurclasse } = resolveMatchSurclassement(match, playerId, playerBaseCategory);
     const isHome = match.is_home ?? true;
     const hasScore = match.score_home != null && match.score_away != null;
     const sHome = hasScore ? Number(match.score_home) : 0;
@@ -496,6 +757,8 @@ export function computePlayerMatchSummary(
       dateStr,
       compLabel: clubMeta.compLabel,
       statusLabel: formatMatchStatusFrench(match.status, hasScore),
+      matchCategory,
+      isSurclasse,
     };
   });
 
@@ -506,6 +769,7 @@ export function computePlayerMatchSummary(
 
   const { match: lastMatch, resolved: lastResolved } = latest;
   const clubMeta = resolveClubMetaForMatch(lastMatch, opponentClubs, leagues, mainClub);
+  const lastMatchSurc = resolveMatchSurclassement(lastMatch, playerId, playerBaseCategory);
   const isHome = lastMatch.is_home ?? true;
   const hasScore = lastMatch.score_home != null && lastMatch.score_away != null;
   const sHome = hasScore ? Number(lastMatch.score_home) : 0;
@@ -520,7 +784,8 @@ export function computePlayerMatchSummary(
   const lastMatchData: PlayerLastMatchDetail = {
     id: lastMatch.id,
     compName: clubMeta.compName,
-    category: normalizeAgeCategory(lastMatch.category || '') || '',
+    category: lastMatchSurc.matchCategory,
+    isSurclasse: lastMatchSurc.isSurclasse,
     timeAgoStr,
     statusLabel: formatMatchStatusFrench(lastMatch.status, hasScore),
     isHome,

@@ -49,6 +49,8 @@ import AddReportPage from './features/recruitment_v2/AddReportPage';
 import TrainingsPage from './features/trainings/TrainingsPage';
 import OfficialShortlistPage from './features/match-management/OfficialShortlistPage';
 import ChampionshipPerformancesPage from './features/match-management/ChampionshipPerformancesPage';
+import PlayerMatchPerformancePage from './features/match-management/PlayerMatchPerformancePage';
+import PlayerPerformanceMetricsPage from './features/match-management/PlayerPerformanceMetricsPage';
 import ClassementResultatsPage from './features/match-management/ClassementResultatsPage';
 import PluginsPage from './features/plugins/PluginsPage';
 import PluginDisabledView from './features/plugins/PluginDisabledView';
@@ -70,6 +72,8 @@ const pageTitles: Record<string, string> = {
   '/classements-resultats': 'Classement & Résultats FRMF',
   '/championship-performances': 'Championnat & Performances',
   '/championnat-performances': 'Championnat & Performances',
+  '/player-performance': 'Performance Joueur — Compétition & Matchs',
+  '/performance-metrics': 'Gestion des Métriques — Performance Joueur',
   '/matches/new': 'Planifier un Match (Stepper)',
   '/matchday': 'Match Day',
   '/official-shortlist': 'Shortlist Officielle — Placement Tactique',
@@ -160,6 +164,12 @@ const AppContent: React.FC = () => {
       return <Navigate to="/" replace />;
     }
     if (location.pathname === '/championship-performances' && !hasSubModuleAccess('championship_performances', 'read')) {
+      return <Navigate to="/" replace />;
+    }
+    if (location.pathname === '/player-performance' && (!hasSubModuleAccess('player_performance', 'read') || isScout)) {
+      return <Navigate to="/" replace />;
+    }
+    if (location.pathname === '/performance-metrics' && (!hasSubModuleAccess('player_performance_metrics', 'read') || isScout)) {
       return <Navigate to="/" replace />;
     }
     if (location.pathname === '/official-shortlist' && !hasSubModuleAccess('official_shortlist', 'read')) {
@@ -267,6 +277,8 @@ const AppContent: React.FC = () => {
             } />
             <Route path="/arbitres" element={<ArbitresPage />} />
             <Route path="/official-shortlist" element={<OfficialShortlistPage />} />
+            <Route path="/player-performance" element={<PlayerMatchPerformancePage />} />
+            <Route path="/performance-metrics" element={<PlayerPerformanceMetricsPage />} />
             <Route path="/championship-performances" element={<ChampionshipPerformancesPage />} />
             <Route path="/championnat-performances" element={<Navigate to="/championship-performances" replace />} />
             <Route path="/classement-resultats" element={<ClassementResultatsPage />} />

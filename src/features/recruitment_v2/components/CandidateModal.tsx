@@ -279,6 +279,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
   // Sportif
   const [primaryPosition, setPrimaryPosition] = useState(positions?.[0]?.code || 'ST / CF');
+  const [evaluatedPosition, setEvaluatedPosition] = useState(positions?.[0]?.code || 'ST / CF');
+  const hasUserPickedEvalPosRef = React.useRef(false);
 
   // Synchronisation dynamique du poste initial avec la liste des postes
   useEffect(() => {
@@ -286,15 +288,25 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       const exists = positions.some(p => p.code === primaryPosition || p.name === primaryPosition);
       if (!exists) {
         setPrimaryPosition(positions[0].code);
+        if (!hasUserPickedEvalPosRef.current) {
+          setEvaluatedPosition(positions[0].code);
+        }
       }
     }
   }, [positions, candidate, primaryPosition]);
 
   const positionConfig = React.useMemo(() => {
-    const config = getPositionByCode(primaryPosition);
+    const targetCode = evaluatedPosition || primaryPosition;
+    const config = getPositionByCode(targetCode);
     if (config) return config;
-    return { name: primaryPosition, code: primaryPosition, emoji: '👤', category: 'MF', criteria: { technique: [], tactique: [], physique: [], mental: [] } };
-  }, [primaryPosition, positions, getPositionByCode]);
+    return { name: targetCode, code: targetCode, emoji: '👤', category: 'MF', criteria: { technique: [], tactique: [], physique: [], mental: [] } };
+  }, [evaluatedPosition, primaryPosition, positions, getPositionByCode]);
+
+  useEffect(() => {
+    if (!hasUserPickedEvalPosRef.current && primaryPosition) {
+      setEvaluatedPosition(primaryPosition);
+    }
+  }, [primaryPosition]);
 
   // Initialisation automatique des critères quand on change de poste
   useEffect(() => {
@@ -566,7 +578,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setRepresentativeName(candidate.guardian_name || candidate.agent_name || '');
 
       const resolved = getPositionByCode(candidate.primary_position);
-      setPrimaryPosition(resolved?.code || candidate.primary_position);
+      const basePrimaryCode = resolved?.code || candidate.primary_position;
+      setPrimaryPosition(basePrimaryCode);
+      hasUserPickedEvalPosRef.current = Boolean(evaluation?.position_evaluated && evaluation.position_evaluated !== basePrimaryCode);
+      const evalPosResolved = evaluation?.position_evaluated ? getPositionByCode(evaluation.position_evaluated) : null;
+      setEvaluatedPosition(evalPosResolved?.code || evaluation?.position_evaluated || basePrimaryCode);
       setSecondaryPosition(candidate.secondary_position || '');
       setPreferredFoot(candidate.preferred_foot || 'Droitier');
       setHeightCm(candidate.height_cm ?? 150);
@@ -704,10 +720,13 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
         const targetPos = evalToLoad.position_evaluated || evalToLoad.report_data?.primary_position || candidate.primary_position;
         const targetConfig = getPositionByCode(targetPos);
+        if (evalToLoad.position_evaluated && evalToLoad.position_evaluated !== candidate.primary_position) {
+          hasUserPickedEvalPosRef.current = true;
+        }
         if (targetConfig) {
-          setPrimaryPosition(targetConfig.code);
+          setEvaluatedPosition(targetConfig.code);
         } else if (targetPos) {
-          setPrimaryPosition(targetPos);
+          setEvaluatedPosition(targetPos);
         }
 
         if (evalToLoad.tech_report) setTechReport(evalToLoad.tech_report);
@@ -899,8 +918,10 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       const matched = positions.find(pos => pos.code.toLowerCase() === p.position?.toLowerCase() || pos.name.toLowerCase() === p.position?.toLowerCase());
       if (matched) {
         setPrimaryPosition(matched.code);
+        if (!hasUserPickedEvalPosRef.current) setEvaluatedPosition(matched.code);
       } else {
         setPrimaryPosition(p.position);
+        if (!hasUserPickedEvalPosRef.current) setEvaluatedPosition(p.position);
       }
     }
 
@@ -3438,8 +3459,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-800">Potentiel du Joueur</span>
                         <span className={`px-2 py-0.5 rounded-md font-black text-xs border ${potentialRating > 0
-                            ? 'bg-amber-100 text-amber-900 border-amber-200'
-                            : 'bg-slate-100 text-slate-400 border-slate-200'
+                          ? 'bg-amber-100 text-amber-900 border-amber-200'
+                          : 'bg-slate-100 text-slate-400 border-slate-200'
                           }`}>
                           {potentialRating === 0 ? '0 / 10' : `${potentialRating.toFixed(1)} / 10`}
                         </span>
@@ -3466,8 +3487,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-800">Niveau de Performance Observé</span>
                         <span className={`px-2 py-0.5 rounded-md font-black text-xs border ${performanceRating > 0
-                            ? 'bg-emerald-100 text-emerald-900 border-emerald-200'
-                            : 'bg-slate-100 text-slate-400 border-slate-200'
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-200'
+                          : 'bg-slate-100 text-slate-400 border-slate-200'
                           }`}>
                           {performanceRating === 0 ? '0 / 10' : `${performanceRating.toFixed(1)} / 10`}
                         </span>
@@ -3565,15 +3586,32 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                 {/* Bloc Métriques Configurées selon le Poste */}
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/80">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-3">
                       <div>
-                        <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                          <span>Métriques configurées pour le poste {getMetricPositionFrenchName(positionConfig)}</span>
+                        <div className="text-xs font-bold text-slate-800 flex items-center gap-2 flex-wrap">
+                          <span>Métriques configurées pour le poste :</span>
+                          <select
+                            value={positionConfig.code || evaluatedPosition || primaryPosition}
+                            onChange={(e) => {
+                              hasUserPickedEvalPosRef.current = true;
+                              setEvaluatedPosition(e.target.value);
+                            }}
+                            aria-label="Choisir le poste avec lequel évaluer"
+                            className="px-2.5 py-1 rounded-xl border border-primary/30 bg-white text-xs font-black text-primary focus:outline-none focus:ring-2 focus:ring-primary/25 cursor-pointer shadow-2xs"
+                          >
+                            {positions.map(pos => (
+                              <option key={pos.id || pos.code} value={pos.code}>
+                                {pos.emoji ? `${pos.emoji} ` : ''}{getMetricPositionFrenchName(pos)}
+                              </option>
+                            ))}
+                          </select>
                           <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
                             {positionConfig.category ? getMetricCategoryFrenchLabel(positionConfig.category) : 'Poste'}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500">Critères dynamiques configurés selon le profil recherché au FUS</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Choisissez librement le poste utilisé pour noter le joueur (poste fiche : {primaryPosition})
+                        </p>
                       </div>
                     </div>
 

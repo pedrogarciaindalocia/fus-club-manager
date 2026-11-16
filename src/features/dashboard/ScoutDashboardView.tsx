@@ -52,22 +52,6 @@ const ScoutDashboardView: React.FC = () => {
   const canViewSessions = isSuperAdmin || hasSubModuleAccess('sessions', 'read', 'recruitment_v2');
   const canViewShortlist = isSuperAdmin || hasSubModuleAccess('shortlist', 'read', 'recruitment_v2');
 
-  if (!canViewRecruitment) {
-    return (
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 p-12 text-center space-y-4 shadow-xs">
-        <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-100">
-          <ShieldCheck className="w-8 h-8" />
-        </div>
-        <div>
-          <h2 className="text-lg font-black text-slate-800 dark:text-white">Bonjour, {displayName}</h2>
-          <p className="text-sm text-slate-500 max-w-md mx-auto mt-1">
-            Aucune rubrique de détection n'est activée sur votre compte. Utilisez le menu latéral pour accéder à vos rubriques autorisées ou contactez un administrateur.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   // Identifier le scout correspondant à l'utilisateur connecté
   const userEmail = currentUser?.email?.toLowerCase().trim();
   const userName = (currentUser?.full_name || '').toLowerCase().trim();
@@ -112,6 +96,22 @@ const ScoutDashboardView: React.FC = () => {
   const activeMissions = React.useMemo(() => {
     return scopedCandidates.filter(c => Boolean(c.active_mission));
   }, [scopedCandidates]);
+
+  if (!canViewRecruitment) {
+    return (
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 p-12 text-center space-y-4 shadow-xs">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-100">
+          <ShieldCheck className="w-8 h-8" />
+        </div>
+        <div>
+          <h2 className="text-lg font-black text-slate-800 dark:text-white">Bonjour, {displayName}</h2>
+          <p className="text-sm text-slate-500 max-w-md mx-auto mt-1">
+            Aucune rubrique de détection n'est activée sur votre compte. Utilisez le menu latéral pour accéder à vos rubriques autorisées ou contactez un administrateur.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // Calcul des statistiques réelles de détection (sur le portefeuille cloisonné)
   const totalCandidates = scopedCandidates.length;

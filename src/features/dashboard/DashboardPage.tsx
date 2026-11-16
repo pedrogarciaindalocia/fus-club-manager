@@ -16,29 +16,7 @@ import ScoutDashboardView from './ScoutDashboardView';
 import { isScoutBranch } from '../../constants/roles';
 import type { Player } from '../../types';
 
-const DashboardPage: React.FC = () => {
-  const { authState, hasSubModuleAccess } = usePermissions();
-  const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
-  const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
-  const isScout = isScoutBranch(currentRole, authState.user?.job_title);
-
-  if (isScout) {
-    return <ScoutDashboardView />;
-  }
-
-  const canViewDashboardMetrics = isSuperAdmin || hasSubModuleAccess('players', 'read') || hasSubModuleAccess('matches', 'read');
-  if (!canViewDashboardMetrics) {
-    return (
-      <div className="min-h-[420px] flex items-center justify-center">
-        <ErrorEmptyState
-          type="empty"
-          title="Espace Utilisateur"
-          message="Utilisez le menu latéral pour accéder uniquement aux rubriques qui vous ont été autorisées."
-        />
-      </div>
-    );
-  }
-
+const DashboardMetricsContent: React.FC = () => {
   const { isLoading: matchesLoading, isError: matchesError, matches } = useMatches();
   const { isLoading: playersLoading, isError: playersError, players } = usePlayers();
 
@@ -113,6 +91,32 @@ const DashboardPage: React.FC = () => {
       />
     </div>
   );
+};
+
+const DashboardPage: React.FC = () => {
+  const { authState, hasSubModuleAccess } = usePermissions();
+  const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
+  const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
+  const isScout = isScoutBranch(currentRole, authState.user?.job_title);
+
+  if (isScout) {
+    return <ScoutDashboardView />;
+  }
+
+  const canViewDashboardMetrics = isSuperAdmin || hasSubModuleAccess('players', 'read') || hasSubModuleAccess('matches', 'read');
+  if (!canViewDashboardMetrics) {
+    return (
+      <div className="min-h-[420px] flex items-center justify-center">
+        <ErrorEmptyState
+          type="empty"
+          title="Espace Utilisateur"
+          message="Utilisez le menu latéral pour accéder uniquement aux rubriques qui vous ont été autorisées."
+        />
+      </div>
+    );
+  }
+
+  return <DashboardMetricsContent />;
 };
 
 export default DashboardPage;

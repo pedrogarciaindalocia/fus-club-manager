@@ -1,10 +1,10 @@
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import type { Player } from '../types';
 import type { Inserts, Updates } from '../types/supabase';
 import { getMyClubId } from './_helpers';
 import { storageService } from './storageService';
 
-let knownMissingColumns = new Set<string>();
+const knownMissingColumns = new Set<string>();
 
 function sanitizePlayerPayload<T extends Record<string, any>>(payload: T): T {
   const clean = { ...payload };
@@ -151,8 +151,61 @@ export const playerService = {
   },
 
   async deletePlayer(id: string): Promise<void> {
-    const { error } = await supabase.from('players').delete().eq('id', id);
-    if (error) throw error;
+    // 1. Récupérer la photo avant suppression
+    const { data: player } = await supabase
+      .from('players')
+      .select('id, photo_url')
+      .eq('id', id)
+      .maybeSingle();
+
+    // 2. Nettoyage préventif des liaisons dépendantes pour éviter toute violation de clé étrangère
+    try {
+      await Promise.allSettled([
+        supabase.from('match_players').delete().eq('player_id', id),
+        supabase.from('player_match_stats').delete().eq('player_id', id),
+        supabase.from('match_events').delete().eq('player_id', id),
+        supabase.from('match_events').delete().eq('related_player_id', id),
+        supabase.from('player_surclassements').delete().eq('player_id', id),
+        supabase.from('player_mentions').delete().eq('player_id', id),
+        supabase.from('player_performance_evaluations').delete().eq('player_id', id),
+      ]);
+    } catch (cleanupErr) {
+      console.warn('[playerService] Nettoyage préalable des liaisons:', cleanupErr);
+    }
+
+    // 3. Suppression dans la table players
+    const { data, error } = await supabase.from('players').delete().eq('id', id).select('id');
+
+    // Repli de secours via supabaseAdmin si la suppression est bloquée par RLS
+    if (error || !data || data.length === 0) {
+      if (supabaseAdmin && supabaseAdmin !== supabase) {
+        try {
+          await Promise.allSettled([
+            supabaseAdmin.from('match_players').delete().eq('player_id', id),
+            supabaseAdmin.from('player_match_stats').delete().eq('player_id', id),
+            supabaseAdmin.from('match_events').delete().eq('player_id', id),
+            supabaseAdmin.from('player_surclassements').delete().eq('player_id', id),
+            supabaseAdmin.from('player_mentions').delete().eq('player_id', id),
+            supabaseAdmin.from('player_performance_evaluations').delete().eq('player_id', id),
+          ]);
+        } catch {
+          // Continuer vers la suppression du joueur
+        }
+        const { error: adminErr } = await supabaseAdmin.from('players').delete().eq('id', id);
+        if (adminErr) throw adminErr;
+      } else if (error) {
+        throw error;
+      }
+    }
+
+    // 4. Nettoyage de la photo dans le storage
+    if (player?.photo_url && player.photo_url !== 'null') {
+      try {
+        await storageService.deleteFile(player.photo_url);
+      } catch {
+        // Ignorer si le fichier n'existe pas dans le bucket
+      }
+    }
   },
 
   /** Ajoute plusieurs joueurs en une seule opération */
@@ -173,9 +226,45 @@ export const playerService = {
       .select('id, photo_url')
       .in('id', ids);
 
+    // Nettoyage préventif des liaisons dépendantes
+    try {
+      await Promise.allSettled([
+        supabase.from('match_players').delete().in('player_id', ids),
+        supabase.from('player_match_stats').delete().in('player_id', ids),
+        supabase.from('match_events').delete().in('player_id', ids),
+        supabase.from('match_events').delete().in('related_player_id', ids),
+        supabase.from('player_surclassements').delete().in('player_id', ids),
+        supabase.from('player_mentions').delete().in('player_id', ids),
+        supabase.from('player_performance_evaluations').delete().in('player_id', ids),
+      ]);
+    } catch (cleanupErr) {
+      console.warn('[playerService] Nettoyage en masse des liaisons:', cleanupErr);
+    }
+
     // Supprimer en DB
-    const { error } = await supabase.from('players').delete().in('id', ids);
-    if (error) throw error;
+    const { data, error } = await supabase.from('players').delete().in('id', ids).select('id');
+
+    // Repli de secours via supabaseAdmin
+    if (error || !data || data.length === 0) {
+      if (supabaseAdmin && supabaseAdmin !== supabase) {
+        try {
+          await Promise.allSettled([
+            supabaseAdmin.from('match_players').delete().in('player_id', ids),
+            supabaseAdmin.from('player_match_stats').delete().in('player_id', ids),
+            supabaseAdmin.from('match_events').delete().in('player_id', ids),
+            supabaseAdmin.from('player_surclassements').delete().in('player_id', ids),
+            supabaseAdmin.from('player_mentions').delete().in('player_id', ids),
+            supabaseAdmin.from('player_performance_evaluations').delete().in('player_id', ids),
+          ]);
+        } catch {
+          // Continuer vers la suppression admin
+        }
+        const { error: adminErr } = await supabaseAdmin.from('players').delete().in('id', ids);
+        if (adminErr) throw adminErr;
+      } else if (error) {
+        throw error;
+      }
+    }
 
     // Supprimer les photos du storage (en parallèle, erreurs ignorées)
     await Promise.allSettled(

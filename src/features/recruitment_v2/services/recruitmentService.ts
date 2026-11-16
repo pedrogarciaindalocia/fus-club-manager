@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { supabase } from '../../../lib/supabase';
+import { supabase, supabaseAdmin } from '../../../lib/supabase';
 import { getMyClubId } from '../../../services/_helpers';
 import { AuditLogger } from '../../../services/auditLogger';
 import type {
@@ -616,7 +616,7 @@ export const recruitmentService = {
     fullName: string;
     phone?: string;
     roleTitle?: string;
-  }): Promise<{ success: boolean; message?: string }> {
+  }): Promise<{ success: boolean; message?: string; userId?: string }> {
     const { scoutId, login, tempPassword, fullName, phone, roleTitle } = params;
     const cleanEmail = login.trim().toLowerCase();
     const mapRoleTitleToSystemRole = (title?: string): string => {
@@ -629,61 +629,30 @@ export const recruitmentService = {
       return 'scout_manager';
     };
     const systemRole = mapRoleTitleToSystemRole(roleTitle);
+    const resolvedTitle = roleTitle || (systemRole === 'scout_admin' ? 'Scout Admin' : 'Scout Manager');
 
-    // 1. Tenter la gestion via l'Edge Function sécurisée create-user
-    try {
-      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('create-user', {
-        body: {
-          action: 'create',
-          email: cleanEmail,
-          password: tempPassword,
-          full_name: fullName,
-          system_role: systemRole,
-          job_title: roleTitle || (systemRole === 'scout_admin' ? 'Scout Admin' : 'Scout Manager'),
-          phone_number: phone || null,
-        }
-      });
+    const res = await this.provisionUserCredentials({
+      userId: scoutId,
+      login: cleanEmail,
+      tempPassword,
+      fullName,
+      phone,
+      systemRole,
+      jobTitle: resolvedTitle,
+    });
 
-      if (!edgeErr && edgeData?.user?.id) {
-        const finalUserId = edgeData.user.id;
-        if (isValidUuid(scoutId)) {
-          await supabase.from('scouts').update({
-            email: cleanEmail,
-            phone: phone || null,
-            full_name: fullName,
-            role_title: roleTitle || (systemRole === 'scout_admin' ? 'Scout Admin' : 'Scout Manager'),
-            updated_at: new Date().toISOString()
-          }).eq('id', scoutId);
-        }
-        return { success: true, message: 'Compte scout configuré avec succès via Edge Function', userId: finalUserId };
-      }
-    } catch (edgeEx) {
-      console.warn('[RecruitmentService] Exception via Edge Function create-user, repli sur RPC:', edgeEx);
+    if (res.success && isValidUuid(scoutId)) {
+      const dbClient = (supabaseAdmin && supabaseAdmin !== supabase) ? supabaseAdmin : supabase;
+      await dbClient.from('scouts').update({
+        email: cleanEmail,
+        phone: phone || null,
+        full_name: fullName,
+        role_title: resolvedTitle,
+        updated_at: new Date().toISOString()
+      }).eq('id', scoutId);
     }
 
-    // 2. Repli : Tenter la procédure RPC sécurisée admin_provision_scout_credentials
-    try {
-      const targetUuid = isValidUuid(scoutId) ? scoutId : null;
-      const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)('admin_provision_scout_credentials', {
-        target_user_id: targetUuid,
-        temp_password: tempPassword,
-        target_email: cleanEmail,
-        target_full_name: fullName,
-        target_phone: phone || null,
-        target_role: systemRole
-      });
-
-      if (!rpcErr && rpcData?.success) {
-        return { success: true, message: rpcData.message };
-      }
-      if (rpcErr) {
-        console.warn('[RecruitmentService] admin_provision_scout_credentials RPC error:', rpcErr.message || rpcErr);
-      }
-    } catch (e) {
-      console.warn('[RecruitmentService] Exception RPC provision scout:', e);
-    }
-
-    return { success: true };
+    return res;
   },
 
   /**
@@ -704,11 +673,16 @@ export const recruitmentService = {
     const finalRole = systemRole || 'viewer';
     const finalTitle = jobTitle || 'Collaborateur';
 
-    // 1. Tenter via service_role si disponible
-    // 1. Tenter en priorité absolue la RPC universelle admin_provision_user_credentials (directe, atomique et 100% fiable)
+    const { data: sessionData } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+    const hasRealSession = Boolean(sessionData?.session?.access_token);
+    const hasServiceRoleClient = Boolean(supabaseAdmin && supabaseAdmin !== supabase);
+    const rpcClient = (!hasRealSession && hasServiceRoleClient) ? supabaseAdmin : supabase;
+    const dbClient = hasServiceRoleClient ? supabaseAdmin : supabase;
+
+    // 1. Tenter en priorité absolue la RPC universelle admin_provision_user_credentials
     try {
       const targetUuid = isValidUuid(userId) ? userId : null;
-      const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)('admin_provision_user_credentials', {
+      const { data: rpcData, error: rpcErr } = await (rpcClient.rpc as any)('admin_provision_user_credentials', {
         target_user_id: targetUuid,
         temp_password: tempPassword,
         target_email: cleanEmail,
@@ -722,37 +696,16 @@ export const recruitmentService = {
         return { success: true, message: rpcData.message, userId: rpcData.user_id };
       }
       if (rpcErr) {
-        console.warn('[RecruitmentService] RPC admin_provision_user_credentials notice, fallback service_role:', rpcErr);
+        console.warn('[RecruitmentService] RPC admin_provision_user_credentials notice:', rpcErr);
       }
     } catch (e) {
       console.warn('[RecruitmentService] RPC admin_provision_user_credentials exception:', e);
     }
 
-    // 2. Repli secondaire via Edge Function sécurisée create-user
-    try {
-      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('create-user', {
-        body: {
-          action: 'create',
-          email: cleanEmail,
-          password: tempPassword,
-          full_name: fullName,
-          system_role: finalRole,
-          job_title: finalTitle,
-          phone_number: phone || null,
-        }
-      });
-
-      if (!edgeErr && edgeData?.user?.id) {
-        return { success: true, message: 'Compte utilisateur configuré avec succès via Edge Function', userId: edgeData.user.id };
-      }
-    } catch (edgeErr) {
-      console.warn('[RecruitmentService] Exception via Edge Function pour user:', edgeErr);
-    }
-
-    // 3. Fallback sur admin_provision_scout_credentials + mise à jour du profil
+    // 2. Fallback sur admin_provision_scout_credentials + mise à jour du profil
     try {
       const targetUuid = isValidUuid(userId) ? userId : null;
-      const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)('admin_provision_scout_credentials', {
+      const { data: rpcData, error: rpcErr } = await (rpcClient.rpc as any)('admin_provision_scout_credentials', {
         target_user_id: targetUuid,
         temp_password: tempPassword,
         target_email: cleanEmail,
@@ -764,7 +717,7 @@ export const recruitmentService = {
       if (!rpcErr && rpcData?.success) {
         const returnedId = rpcData.user_id || targetUuid;
         if (returnedId) {
-          await supabase.from('user_profiles').upsert({
+          await dbClient.from('user_profiles').upsert({
             id: returnedId,
             full_name: fullName,
             phone_number: phone || null,
@@ -781,22 +734,93 @@ export const recruitmentService = {
       console.warn('[RecruitmentService] Fallback RPC provision notice:', e2);
     }
 
+    // 3. Fallback GoTrue Admin direct si service_role est configuré, sinon Edge Function uniquement si session active
+    if (hasServiceRoleClient) {
+      try {
+        const targetUuid = isValidUuid(userId) ? userId : null;
+        if (targetUuid) {
+          const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(targetUuid, {
+            email: cleanEmail,
+            password: tempPassword,
+            email_confirm: true,
+            user_metadata: { full_name: fullName, system_role: finalRole }
+          });
+          if (!updErr) {
+            await supabaseAdmin.from('user_profiles').upsert({
+              id: targetUuid,
+              full_name: fullName,
+              phone_number: phone || null,
+              system_role: finalRole,
+              job_title: finalTitle,
+              force_password_change: true,
+              is_active: true,
+              updated_at: new Date().toISOString()
+            });
+            return { success: true, message: 'Identifiants mis à jour via admin API', userId: targetUuid };
+          }
+        }
+        const { data: createdAuth, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+          email: cleanEmail,
+          password: tempPassword,
+          email_confirm: true,
+          user_metadata: { full_name: fullName, system_role: finalRole }
+        });
+        if (!createErr && createdAuth?.user?.id) {
+          await supabaseAdmin.from('user_profiles').upsert({
+            id: createdAuth.user.id,
+            full_name: fullName,
+            phone_number: phone || null,
+            system_role: finalRole,
+            job_title: finalTitle,
+            force_password_change: true,
+            is_active: true,
+            updated_at: new Date().toISOString()
+          });
+          return { success: true, message: 'Compte utilisateur créé via admin API', userId: createdAuth.user.id };
+        }
+      } catch (admErr) {
+        console.warn('[RecruitmentService] Admin GoTrue fallback notice:', admErr);
+      }
+    } else if (hasRealSession) {
+      try {
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('create-user', {
+          body: {
+            action: 'create',
+            email: cleanEmail,
+            password: tempPassword,
+            full_name: fullName,
+            system_role: finalRole,
+            job_title: finalTitle,
+            phone_number: phone || null,
+          }
+        });
+
+        if (!edgeErr && edgeData?.user?.id) {
+          return { success: true, message: 'Compte utilisateur configuré avec succès via Edge Function', userId: edgeData.user.id };
+        }
+      } catch (edgeErr) {
+        console.warn('[RecruitmentService] Exception via Edge Function pour user:', edgeErr);
+      }
+    }
+
     // 4. Si déjà existant, tenter admin_update_user_password
     if (isValidUuid(userId)) {
       try {
-        const { data: updPwdData, error: updPwdErr } = await (supabase.rpc as any)('admin_update_user_password', {
+        const { data: updPwdData, error: updPwdErr } = await (rpcClient.rpc as any)('admin_update_user_password', {
           target_user_id: userId,
           new_password: tempPassword
         });
         if (!updPwdErr && updPwdData?.success) {
-          await supabase.from('user_profiles').update({
+          await dbClient.from('user_profiles').upsert({
+            id: userId,
             force_password_change: true,
             system_role: finalRole,
             job_title: finalTitle,
             full_name: fullName,
             phone_number: phone || null,
+            is_active: true,
             updated_at: new Date().toISOString()
-          }).eq('id', userId);
+          });
           return { success: true, message: 'Mot de passe mis à jour', userId };
         }
       } catch (e3) {

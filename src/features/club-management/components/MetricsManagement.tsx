@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMetrics, type MetricPosition, type MetricPillar } from '../../../hooks/useMetrics';
 import { useMetricSets } from '../../../hooks/useMetricSets';
 import {
@@ -6,6 +6,7 @@ import {
   SCOUTING_LOCKED_SET_ID,
   getMetricCategoryFrenchLabel,
   getMetricPositionFrenchName,
+  resolveMetricSetForRubric,
   sanitizeCriteriaPayload,
   slugifyMetricSetCode,
   type MetricPositionCategory,
@@ -52,7 +53,20 @@ interface EditablePositionItem {
   };
 }
 
-export const MetricsManagement: React.FC = () => {
+export interface MetricsManagementProps {
+  /** Restreint l'interface aux métriques non-Scouts "Performance Joueur" */
+  onlyPlayerPerformance?: boolean;
+  canCreate?: boolean;
+  canUpdate?: boolean;
+  canDelete?: boolean;
+}
+
+export const MetricsManagement: React.FC<MetricsManagementProps> = ({
+  onlyPlayerPerformance = false,
+  canCreate = true,
+  canUpdate = true,
+  canDelete = true,
+}) => {
   // Lot 1 (verrouillé) : Panier historique Scouting / Détection V2 (metric_positions)
   const {
     positions: scoutPositions,
@@ -78,17 +92,50 @@ export const MetricsManagement: React.FC = () => {
     deleteSetPosition,
   } = useMetricSets();
 
-  // Sélecteur de lot actif : par défaut on préserve l'affichage sur le lot Scouting ou bascule librement (si non-scout)
-  const [selectedSetId, setSelectedSetId] = useState<string>(SCOUTING_LOCKED_SET_ID);
+  // Lots dédiés selon le mode (Scouting + tous lots dans Paramètres vs Performance Joueur uniquement dans Compétition & Matchs)
+  const displayedSets = useMemo(() => {
+    if (!onlyPlayerPerformance) return metricSets;
+    const perfOnly = metricSets.filter(s => s.scope === 'player_performance');
+    return perfOnly.length > 0 ? perfOnly : metricSets;
+  }, [onlyPlayerPerformance, metricSets]);
 
-  // Sécurité : si un compte Scout est détecté, forcer strictement l'onglet Scouting verrouillé
-  const effectiveSetId = isScoutUser ? SCOUTING_LOCKED_SET_ID : selectedSetId;
+  const preferredPlayerPerfSet = useMemo(
+    () => resolveMetricSetForRubric(displayedSets, 'player_performance') || displayedSets[0] || null,
+    [displayedSets]
+  );
+
+  // Sélecteur de lot actif : par défaut on préserve l'affichage sur le lot Scouting (ou Performance Joueur si dédié)
+  const [selectedSetId, setSelectedSetId] = useState<string>(() =>
+    onlyPlayerPerformance
+      ? preferredPlayerPerfSet?.id || SCOUTING_LOCKED_SET_ID
+      : SCOUTING_LOCKED_SET_ID
+  );
+
+  useEffect(() => {
+    if (!onlyPlayerPerformance) return;
+    if (
+      preferredPlayerPerfSet &&
+      (selectedSetId === SCOUTING_LOCKED_SET_ID ||
+        !displayedSets.some(s => s.id === selectedSetId))
+    ) {
+      setSelectedSetId(preferredPlayerPerfSet.id);
+    }
+  }, [onlyPlayerPerformance, preferredPlayerPerfSet, selectedSetId, displayedSets]);
+
+  // Sécurité : si un compte Scout est détecté (hors mode Performance Joueur), forcer l'onglet Scouting verrouillé
+  const effectiveSetId =
+    !onlyPlayerPerformance && isScoutUser
+      ? SCOUTING_LOCKED_SET_ID
+      : selectedSetId;
   const activeCustomSet: MetricSet | null = useMemo(() => {
+    if (onlyPlayerPerformance) {
+      return displayedSets.find(s => s.id === effectiveSetId) || preferredPlayerPerfSet || null;
+    }
     if (effectiveSetId === SCOUTING_LOCKED_SET_ID || isScoutUser) return null;
     return metricSets.find(s => s.id === effectiveSetId) || null;
-  }, [effectiveSetId, isScoutUser, metricSets]);
+  }, [onlyPlayerPerformance, displayedSets, effectiveSetId, preferredPlayerPerfSet, isScoutUser, metricSets]);
 
-  const isScoutingActive = !activeCustomSet;
+  const isScoutingActive = !onlyPlayerPerformance && !activeCustomSet;
 
   // États UI communs (zéro duplication pour cartes & modale d'édition)
   const [isEditing, setIsEditing] = useState<string | null>(null);
@@ -114,7 +161,7 @@ export const MetricsManagement: React.FC = () => {
     if (isScoutingActive) {
       return scoutPositions;
     }
-    return getPositionsForSet(activeCustomSet!.id);
+    return activeCustomSet ? getPositionsForSet(activeCustomSet.id) : [];
   }, [isScoutingActive, scoutPositions, getPositionsForSet, activeCustomSet]);
 
   const isLoadingActive = isScoutingActive
@@ -311,22 +358,26 @@ export const MetricsManagement: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* BANDEAU MULTI-LOTS : LOT SCOUTING VERROUILLÉ + LOTS DYNAMIQUES HORS-SCOUTS */}
+      {/* BANDEAU MULTI-LOTS : LOT SCOUTING VERROUILLÉ + LOTS DYNAMIQUES (OU FOCUS PERFORMANCE JOUEUR) */}
       <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-              Lots de Métriques Dynamiques
+              {onlyPlayerPerformance
+                ? 'Gestion des Métriques — Performance Joueur'
+                : 'Lots de Métriques Dynamiques'}
               <Badge variant="outline" className="text-[10px] font-bold border-slate-200 text-slate-600">
-                Séparation stricte Scouting / Club
+                {onlyPlayerPerformance ? '4 Piliers · Club' : 'Séparation stricte Scouting / Club'}
               </Badge>
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-              Le lot actuel reste dédié aux Scouts &amp; Détection V2. Créez des lots séparés (ex : Performance Joueur) sans jamais affecter les scouts.
+              {onlyPlayerPerformance
+                ? 'Paramétrez les postes et les critères des 4 piliers utilisés dans Performance Joueur (dashboard & application mobile).'
+                : 'Le lot actuel reste dédié aux Scouts & Détection V2. Créez des lots séparés (ex : Performance Joueur) sans jamais affecter les scouts.'}
             </p>
           </div>
 
-          {!isScoutUser && (
+          {!isScoutUser && !onlyPlayerPerformance && canCreate && (
             <Button
               type="button"
               onClick={() => {
@@ -343,61 +394,65 @@ export const MetricsManagement: React.FC = () => {
         </div>
 
         {/* Sélecteur d'onglets par lot */}
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          {/* Onglet 1 : Lot Scouting Historique (Intact) */}
-          <button
-            type="button"
-            onClick={() => handleSelectSet(SCOUTING_LOCKED_SET_ID)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border text-xs font-bold transition-all ${
-              isScoutingActive
-                ? 'bg-slate-900 text-white border-slate-900 shadow-md'
-                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-            }`}
-          >
-            <Compass className={`w-4 h-4 ${isScoutingActive ? 'text-amber-400' : 'text-amber-600'}`} />
-            <span>Scouting / Détection V2 (Actuel)</span>
-            <span
-              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold ${
-                isScoutingActive
-                  ? 'bg-amber-400/20 text-amber-200'
-                  : 'bg-amber-100 text-amber-800'
-              }`}
-            >
-              Scouts uniquement
-            </span>
-          </button>
-
-          {/* Onglets 2..N : Lots dynamiques isolés (Totalement masqués aux Scouts) */}
-          {!isScoutUser &&
-            metricSets.map(set => {
-              const isSelected = activeCustomSet?.id === set.id;
-              return (
-                <button
-                  key={set.id}
-                  type="button"
-                  onClick={() => handleSelectSet(set.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border text-xs font-bold transition-all ${
-                    isSelected
-                      ? 'bg-sky-700 text-white border-sky-700 shadow-md'
-                      : 'bg-white text-slate-700 border-slate-200 hover:border-sky-300 hover:bg-sky-50/40'
+        {(!onlyPlayerPerformance || displayedSets.length > 1) && (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {/* Onglet 1 : Lot Scouting Historique (uniquement hors mode Performance Joueur) */}
+            {!onlyPlayerPerformance && (
+              <button
+                type="button"
+                onClick={() => handleSelectSet(SCOUTING_LOCKED_SET_ID)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border text-xs font-bold transition-all ${
+                  isScoutingActive
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-md'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <Compass className={`w-4 h-4 ${isScoutingActive ? 'text-amber-400' : 'text-amber-600'}`} />
+                <span>Scouting / Détection V2 (Actuel)</span>
+                <span
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold ${
+                    isScoutingActive
+                      ? 'bg-amber-400/20 text-amber-200'
+                      : 'bg-amber-100 text-amber-800'
                   }`}
                 >
-                  <span className="text-sm">{set.emoji || '📈'}</span>
-                  <span>{set.name}</span>
-                  <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold ${
+                  Scouts uniquement
+                </span>
+              </button>
+            )}
+
+            {/* Lots dynamiques isolés */}
+            {!isScoutUser &&
+              displayedSets.map(set => {
+                const isSelected = activeCustomSet?.id === set.id;
+                return (
+                  <button
+                    key={set.id}
+                    type="button"
+                    onClick={() => handleSelectSet(set.id)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border text-xs font-bold transition-all ${
                       isSelected
-                        ? 'bg-white/20 text-white'
-                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        ? 'bg-sky-700 text-white border-sky-700 shadow-md'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-sky-300 hover:bg-sky-50/40'
                     }`}
                   >
-                    <Lock className="w-2.5 h-2.5" />
-                    Hors-Scout
-                  </span>
-                </button>
-              );
-            })}
-        </div>
+                    <span className="text-sm">{set.emoji || '📈'}</span>
+                    <span>{set.name}</span>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold ${
+                        isSelected
+                          ? 'bg-white/20 text-white'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}
+                    >
+                      <Lock className="w-2.5 h-2.5" />
+                      Hors-Scout
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+        )}
 
         {/* Statut d'isolation du lot actif */}
         {isScoutingActive ? (
@@ -434,31 +489,37 @@ export const MetricsManagement: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEditingSetMeta(activeCustomSet);
-                    setIsSetModalOpen(true);
-                  }}
-                  className="h-8 rounded-xl text-xs border-slate-300 bg-white"
-                >
-                  <Edit2 className="w-3.5 h-3.5 mr-1.5" />
-                  Modifier le lot
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setConfirmDeleteSetId(activeCustomSet.id)}
-                  className="h-8 rounded-xl text-xs border-rose-200 text-rose-700 hover:bg-rose-50 bg-white"
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                  Supprimer le lot
-                </Button>
-              </div>
+              {!onlyPlayerPerformance && (
+                <div className="flex items-center gap-2 shrink-0">
+                  {canUpdate && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEditingSetMeta(activeCustomSet);
+                        setIsSetModalOpen(true);
+                      }}
+                      className="h-8 rounded-xl text-xs border-slate-300 bg-white"
+                    >
+                      <Edit2 className="w-3.5 h-3.5 mr-1.5" />
+                      Modifier le lot
+                    </Button>
+                  )}
+                  {canDelete && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConfirmDeleteSetId(activeCustomSet.id)}
+                      className="h-8 rounded-xl text-xs border-rose-200 text-rose-700 hover:bg-rose-50 bg-white"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                      Supprimer le lot
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           )
         )}
@@ -548,10 +609,12 @@ export const MetricsManagement: React.FC = () => {
               </button>
             ))}
           </div>
-          <Button type="button" onClick={handleAddNewPosition} size="sm" className="rounded-xl shadow">
-            <Plus className="w-4 h-4 mr-2" />
-            Nouveau Poste
-          </Button>
+          {canCreate && (
+            <Button type="button" onClick={handleAddNewPosition} size="sm" className="rounded-xl shadow">
+              <Plus className="w-4 h-4 mr-2" />
+              Nouveau Poste
+            </Button>
+          )}
         </div>
       </div>
 
@@ -565,10 +628,12 @@ export const MetricsManagement: React.FC = () => {
           <p className="text-xs text-slate-500 max-w-md mx-auto">
             Ajoutez votre premier poste et définissez vos critères sur les 4 piliers (Technique, Tactique, Physique, Mental).
           </p>
-          <Button type="button" onClick={handleAddNewPosition} size="sm" className="rounded-xl">
-            <Plus className="w-4 h-4 mr-2" />
-            Ajouter un poste
-          </Button>
+          {canCreate && (
+            <Button type="button" onClick={handleAddNewPosition} size="sm" className="rounded-xl">
+              <Plus className="w-4 h-4 mr-2" />
+              Ajouter un poste
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -591,24 +656,28 @@ export const MetricsManagement: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex gap-1 shrink-0">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-slate-400 hover:text-primary rounded-lg"
-                          onClick={() => handleEditClick(pos)}
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-slate-400 hover:text-rose-600 rounded-lg"
-                          onClick={() => setIsDeletingId(pos.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        {canUpdate && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-slate-400 hover:text-primary rounded-lg"
+                            onClick={() => handleEditClick(pos)}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-slate-400 hover:text-rose-600 rounded-lg"
+                            onClick={() => setIsDeletingId(pos.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </CardHeader>
@@ -670,18 +739,20 @@ export const MetricsManagement: React.FC = () => {
                         </div>
                       ))}
                     </div>
-                    <div className="pt-3 mt-auto border-t border-slate-100 flex justify-end">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEditClick(pos)}
-                        className="text-xs font-bold text-primary hover:bg-primary/10 rounded-xl gap-1.5"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                        Modifier les critères
-                      </Button>
-                    </div>
+                    {canUpdate && (
+                      <div className="pt-3 mt-auto border-t border-slate-100 flex justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditClick(pos)}
+                          className="text-xs font-bold text-primary hover:bg-primary/10 rounded-xl gap-1.5"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          Modifier les critères
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>

@@ -18,6 +18,8 @@ import {
   normalizeSeasonFormat,
   normalizeTimeHHMM,
 } from '../features/match-management/utils/frmfMatchSheetParser';
+import { alignEntriesToFormation } from '../features/match-management/utils/lineupPositionHelper';
+import { inferMatchFormat } from '../features/match-management/tacticalFormations';
 import type { ParsedMatchSheet, FRMFMatchContext, FRMFPlayer } from '../features/match-management/types/matchSheetTypes';
 import type { Club, League, Player, Team } from '../types';
 import type { AgeCategory, MatchEventType } from '../types/supabase';
@@ -541,10 +543,11 @@ export const matchSheetIngestionService = {
     opponentId: string,
     oppPlayers: FRMFPlayer[],
     category: string
-  ): Promise<{ idByJersey: Map<number, string>; idByName: Map<string, string>; createdCount: number }> {
+  ): Promise<{ idByJersey: Map<number, string>; idByName: Map<string, string>; positionById: Map<string, string | null>; createdCount: number }> {
     const existing = await opponentPlayerService.getOpponentPlayers(opponentId);
     const idByJersey = new Map<number, string>();
     const idByName = new Map<string, string>();
+    const positionById = new Map<string, string | null>();
     let createdCount = 0;
 
     for (const player of oppPlayers) {
@@ -572,6 +575,7 @@ export const matchSheetIngestionService = {
         player.isNewOpponent = false;
         if (player.jerseyNumber > 0) idByJersey.set(player.jerseyNumber, found.id);
         idByName.set(normalizeName(player.name), found.id);
+        positionById.set(found.id, player.isGoalkeeper ? 'GK' : (found.position || null));
       } else {
         try {
           const inserted = await opponentPlayerService.addOpponentPlayer({
@@ -587,6 +591,7 @@ export const matchSheetIngestionService = {
             player.matchedOpponentPlayerId = inserted.id;
             if (player.jerseyNumber > 0) idByJersey.set(player.jerseyNumber, inserted.id);
             idByName.set(normalizeName(player.name), inserted.id);
+            positionById.set(inserted.id, player.isGoalkeeper ? 'GK' : null);
             createdCount++;
           }
         } catch (err) {
@@ -595,7 +600,7 @@ export const matchSheetIngestionService = {
       }
     }
 
-    return { idByJersey, idByName, createdCount };
+    return { idByJersey, idByName, positionById, createdCount };
   },
 
   /**
@@ -756,6 +761,7 @@ export const matchSheetIngestionService = {
     const {
       idByJersey: oppIdByJersey,
       idByName: oppIdByName,
+      positionById: oppPositionById,
       createdCount: opponentPlayersCreated,
     } = await this.syncOpponentPlayers(opponent.id, oppPlayers, parsed.category);
 
@@ -782,23 +788,86 @@ export const matchSheetIngestionService = {
       teamId = matchedTeam ? matchedTeam.id : (teams?.[0]?.id || clubId);
     }
 
-    // 6. Préparer les compositions (slot 0 = unique gardien titulaire, banc = 'R' incluant entrants)
-    const myClubStarters = myClubPlayers
+    // 6. Vérifier si le match est DÉJÀ PLANIFIÉ (Date, Heure, Adversaire, Catégorie, Journée)
+    const plannedCheck = await this.checkExistingPlannedMatch({
+      clubId,
+      opponentId: opponent.id,
+      matchDate: parsed.date,
+      matchTime: parsed.time,
+      category: parsed.category,
+      roundName: parsed.round,
+    });
+    const existing = plannedCheck.exists ? plannedCheck.match : null;
+
+    // 7. Préparer et aligner les compositions sur les postes exacts de la formation (slot 0 = GK)
+    const targetFormation = (existing?.lineup as any)?.formation || (existing as any)?.formation || '4-3-3';
+    const targetOppFormation = (existing as any)?.opponent_formation || '4-3-3';
+    const matchFormat = inferMatchFormat(existing || { category: parsed.category, formation: targetFormation });
+
+    const rawMyClubStarterIds = myClubPlayers
       .filter(p => p.type === 'T' && p.matchedPlayerId)
       .map(p => p.matchedPlayerId as string);
+
+    const playerPositionMap = new Map<string, string | null>();
+    if (rawMyClubStarterIds.length > 0) {
+      try {
+        const { data: playerPosRows } = await supabase
+          .from('players')
+          .select('id, position')
+          .in('id', rawMyClubStarterIds);
+        (playerPosRows || []).forEach((row: any) => {
+          playerPositionMap.set(String(row.id), row.position || null);
+        });
+      } catch (posErr) {
+        console.warn('[matchSheetIngestionService] Erreur lecture postes joueurs:', posErr);
+      }
+    }
+    myClubPlayers.forEach(p => {
+      if (p.matchedPlayerId && p.isGoalkeeper && !playerPositionMap.get(p.matchedPlayerId)) {
+        playerPositionMap.set(p.matchedPlayerId, 'GK');
+      }
+    });
+
+    const myClubStarters = rawMyClubStarterIds.length > 0
+      ? alignEntriesToFormation(
+        rawMyClubStarterIds,
+        targetFormation,
+        matchFormat,
+        (pid) => playerPositionMap.get(String(pid)) || null,
+        ''
+      )
+      : [];
+
+    const alignedStarterIndexMap = new Map<string, number>();
+    myClubStarters.forEach((pid, idx) => {
+      if (pid) alignedStarterIndexMap.set(String(pid), idx);
+    });
 
     const myClubSubs = myClubPlayers
       .filter(p => p.type === 'R' && p.matchedPlayerId)
       .map(p => p.matchedPlayerId as string);
 
-    const toOpponentLineupEntry = (p: FRMFPlayer) => ({
-      id: p.matchedOpponentPlayerId || `OPP-${p.jerseyNumber || normalizeName(p.name)}`,
-      full_name: p.name,
-      jersey_number: p.jerseyNumber > 0 ? p.jerseyNumber : null,
-      position: p.isGoalkeeper ? 'GK' : null,
-    });
+    const toOpponentLineupEntry = (p: FRMFPlayer) => {
+      const oppId = p.matchedOpponentPlayerId || `OPP-${p.jerseyNumber || normalizeName(p.name)}`;
+      const resolvedPos = p.isGoalkeeper ? 'GK' : (p.matchedOpponentPlayerId ? oppPositionById.get(p.matchedOpponentPlayerId) || null : null);
+      return {
+        id: oppId,
+        full_name: p.name,
+        jersey_number: p.jerseyNumber > 0 ? p.jerseyNumber : null,
+        position: resolvedPos,
+      };
+    };
 
-    const oppStarters = oppPlayers.filter(p => p.type === 'T').map(toOpponentLineupEntry);
+    const rawOppStarters = oppPlayers.filter(p => p.type === 'T').map(toOpponentLineupEntry);
+    const oppStarters = rawOppStarters.length > 0
+      ? alignEntriesToFormation<any>(
+        rawOppStarters,
+        targetOppFormation,
+        matchFormat,
+        (entry) => entry?.position || null,
+        null
+      )
+      : [];
     const oppSubs = oppPlayers.filter(p => p.type === 'R').map(toOpponentLineupEntry);
 
     const myClubSurclassements = myClubPlayers.filter(p => p.isSurclasse && p.matchedPlayerId);
@@ -809,17 +878,6 @@ export const matchSheetIngestionService = {
       original_team_id: p.matchedPlayerTeamId || teamId,
       target_team_id: teamId,
     }));
-
-    // 7. Vérifier si le match est DÉJÀ PLANIFIÉ (Date, Heure, Adversaire, Catégorie, Journée)
-    const plannedCheck = await this.checkExistingPlannedMatch({
-      clubId,
-      opponentId: opponent.id,
-      matchDate: parsed.date,
-      matchTime: parsed.time,
-      category: parsed.category,
-      roundName: parsed.round,
-    });
-    const existing = plannedCheck.exists ? plannedCheck.match : null;
 
     let matchId: string;
     let isExistingMatch = false;
@@ -936,12 +994,14 @@ export const matchSheetIngestionService = {
       (existingMatchPlayers || []).map((p: any) => [String(p.player_id), String(p.id)])
     );
     const matchPlayersInserts: any[] = [];
-    let starterPosIdx = 0;
+    let fallbackPosIdx = myClubStarters.length;
 
     for (const p of myClubPlayers) {
       const pId = p.matchedPlayerId;
       const isStarter = p.type === 'T';
-      const posIdx = isStarter ? starterPosIdx++ : null;
+      const posIdx = isStarter
+        ? (alignedStarterIndexMap.has(String(pId)) ? alignedStarterIndexMap.get(String(pId))! : fallbackPosIdx++)
+        : null;
       if (!pId) continue;
 
       const existingRowId = existingPlayerMap.get(String(pId));

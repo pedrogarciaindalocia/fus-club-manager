@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useClubData } from '../../hooks/useClubData';
 import { useCompetitions } from '../../hooks/useCompetitions';
 import { usePlayers } from '../../hooks/usePlayers';
@@ -60,6 +60,13 @@ export {
   getFormationPositions,
   inferMatchFormat
 } from './tacticalFormations';
+import {
+  alignEntriesToFormation,
+  findBestEmptySlotForPlayer,
+  isPlayerMatchingTacticalSlot,
+  pickBestLineupFromSquad,
+  resolveDisplayLineupEntries,
+} from './utils/lineupPositionHelper';
 
 const FORMATIONS = FORMATIONS_BY_FORMAT[11];
 const CATEGORIES = PLAYER_CATEGORIES;
@@ -120,15 +127,7 @@ export const classifyPosition = (position?: string | null): 'Gardiens' | 'Défen
 };
 
 export const isPlayerMatchingRole = (playerPosition?: string | null, roleLabel?: string): boolean => {
-  if (!playerPosition || !roleLabel) return false;
-  const raw = String(playerPosition).toUpperCase().trim();
-  const target = String(roleLabel).toUpperCase().trim();
-  if (raw === target) return true;
-
-  const tokens = raw.split(/[\/\s,\-\+]+/).filter(Boolean);
-  if (tokens.includes(target)) return true;
-
-  return classifyPosition(raw) === classifyPosition(target);
+  return isPlayerMatchingTacticalSlot(playerPosition, roleLabel);
 };
 
 const POSITION_GROUPS = [
@@ -248,11 +247,13 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
   const [formation, setFormation] = useState('4-3-3');
   const [startingXI, setStartingXI] = useState<string[]>(Array(11).fill(''));
   const [substitutes, setSubstitutes] = useState<string[]>([]);
+  const [manualPositions, setManualPositions] = useState(false);
 
   // Step 4 (Opponent)
   const [opponentFormation, setOpponentFormation] = useState('4-4-2');
   const [opponentLineup, setOpponentLineup] = useState<string[]>(Array(11).fill(''));
   const [opponentSubs, setOpponentSubs] = useState<string[]>([]);
+  const [opponentManualPositions, setOpponentManualPositions] = useState(false);
 
   // Opponent Squad Management
   const [showFullOpponentSquadModal, setShowFullOpponentSquadModal] = useState(false);
@@ -492,6 +493,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
       }
 
       // Starting XI
+      setManualPositions(Boolean(rawLineup?.manual_positions));
+      setOpponentManualPositions(Boolean(rawLineup?.opponent_manual_positions));
       const rawStarting = initialMatch.starting_eleven || rawLineup?.startingXI;
       if (rawStarting && Array.isArray(rawStarting)) {
         const sanitizedXI = rawStarting.map(item => {
@@ -500,7 +503,18 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
           return String(item);
         });
         while (sanitizedXI.length < initialFormat) sanitizedXI.push('');
-        setStartingXI(sanitizedXI.slice(0, initialFormat));
+        const sliced = sanitizedXI.slice(0, initialFormat);
+        const resolvedXI = players.length > 0
+          ? resolveDisplayLineupEntries(
+              sliced,
+              rawLineup?.formation || initialMatch.formation || defaultForm,
+              initialFormat,
+              (pid) => players.find(p => p.id === pid)?.position || null,
+              '',
+              Boolean(rawLineup?.manual_positions)
+            )
+          : sliced;
+        setStartingXI(resolvedXI);
       } else {
         setStartingXI(Array(initialFormat).fill(''));
       }
@@ -638,46 +652,17 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
       setStartingXI(prev => prev.map(id => id === player.id ? '' : id));
       setSubstitutes(prev => prev.filter(id => id !== player.id));
     } else {
-      const isGK = ['GK', 'G', 'GARDIEN'].includes(player.position?.toUpperCase() || '');
+      const format = setup.match_format || 11;
+      const roles = getFormationPositions(formation, format);
+      const bestSlot = findBestEmptySlotForPlayer(player.position, roles, startingXI, format);
 
-      if (isGK && startingXI[0] === '') {
+      if (bestSlot !== -1) {
         const nextXI = [...startingXI];
-        nextXI[0] = player.id;
-        setStartingXI(nextXI);
+        while (nextXI.length < format) nextXI.push('');
+        nextXI[bestSlot] = player.id;
+        setStartingXI(nextXI.slice(0, format));
       } else {
-        const roles = getFormationPositions(formation);
-        let placed = false;
-        const nextXI = [...startingXI];
-
-        const matchingSlot = roles.findIndex((r, idx) =>
-          idx > 0 && r.label === player.position?.toUpperCase() && nextXI[idx] === ''
-        );
-
-        if (matchingSlot !== -1) {
-          nextXI[matchingSlot] = player.id;
-          setStartingXI(nextXI);
-          placed = true;
-        } else {
-          const emptySlot = nextXI.findIndex((id, idx) => idx > 0 && id === '');
-          if (emptySlot !== -1) {
-            nextXI[emptySlot] = player.id;
-            setStartingXI(nextXI);
-            placed = true;
-          }
-        }
-
-        if (!placed) {
-          const filledStartersCount = startingXI.filter(id => id !== '').length;
-          if (filledStartersCount >= setup.match_format) {
-            setSubstitutes(prev => [...prev, player.id]);
-          } else {
-            const firstFree = nextXI.indexOf('');
-            if (firstFree !== -1) {
-              nextXI[firstFree] = player.id;
-              setStartingXI(nextXI);
-            }
-          }
-        }
+        setSubstitutes(prev => [...prev, player.id]);
       }
     }
   };
@@ -694,11 +679,12 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
       const playerAtTarget = nextXI[slotIndex];
       nextXI[slotIndex] = draggedPlayerId;
 
-      let nextSubs = substitutes.filter(id => id !== draggedPlayerId);
+      const nextSubs = substitutes.filter(id => id !== draggedPlayerId);
       if (playerAtTarget) nextSubs.push(playerAtTarget);
 
       setSubstitutes(nextSubs);
     }
+    setManualPositions(true);
     setStartingXI(nextXI);
   };
 
@@ -717,6 +703,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
     nextLineup[targetIdx] = nextLineup[sourceIdx];
     nextLineup[sourceIdx] = targetJersey;
 
+    setOpponentManualPositions(true);
     setOpponentLineup(nextLineup);
   };
 
@@ -746,9 +733,14 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         setSubstitutes(prev => prev.filter(id => id !== playerId));
       }
       setOpponentSubs(prev => prev.filter(id => id !== playerId && (!jerseyStr || id !== jerseyStr)));
-      const emptySlot = opponentLineup.findIndex(slot => slot === '');
-      if (emptySlot !== -1) {
-        updateOpponentJersey(emptySlot, playerId);
+      const format = setup.match_format || 11;
+      const roles = getFormationPositions(opponentFormation, format);
+      const bestSlot = findBestEmptySlotForPlayer(playerObj?.position, roles, opponentLineup, format);
+      if (bestSlot !== -1) {
+        const next = [...opponentLineup];
+        while (next.length < format) next.push('');
+        next[bestSlot] = playerId;
+        setOpponentLineup(next.slice(0, format));
       } else {
         toast.error(`Tous les ${setup.match_format} postes de titulaires sont déjà occupés.`);
       }
@@ -756,118 +748,38 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
   };
 
   // Auto-position players for home team
-  const autoPositionPlayers = () => {
+  const autoPositionPlayers = (targetFormation?: string) => {
     const format = setup.match_format || 11;
+    const effectiveForm = targetFormation || formation;
     const isIntraSquad = setup.match_type === 'internal_scrimmage' && setup.internal_opposition_type === 'intra_squad';
-    // Use allGroupPlayers so that search query filter in step 3 doesn't exclude valid squad players from auto-aligning
-    const availablePlayers = [...allGroupPlayers].sort((a, b) => {
-      const priorityA = getPositionPriority(a.position);
-      const priorityB = getPositionPriority(b.position);
-      return priorityA - priorityB;
-    });
+    const sortedSquad = [...allGroupPlayers].sort((a, b) => getPositionPriority(a.position) - getPositionPriority(b.position));
 
-    const newXI = Array(format).fill('');
-    const newSubs: string[] = [];
+    const { startingXI: newXI, substitutes: newSubs } = pickBestLineupFromSquad(
+      sortedSquad,
+      effectiveForm,
+      format,
+      !isIntraSquad
+    );
 
-    // First, place the goalkeeper
-    const gk = availablePlayers.find(p => classifyPosition(p.position) === 'Gardiens');
-    if (gk) {
-      newXI[0] = gk.id;
-    }
-
-    // Get formation positions
-    const roles = getFormationPositions(formation, format);
-
-    // Place remaining players by matching position
-    const remainingPlayers = availablePlayers.filter(p => p.id !== gk?.id);
-
-    for (let i = 1; i < format; i++) {
-      if (newXI[i]) continue;
-
-      const positionLabel = roles[i]?.label;
-      const matchingPlayer = remainingPlayers.find(p =>
-        !newXI.includes(p.id) &&
-        !newSubs.includes(p.id) &&
-        isPlayerMatchingRole(p.position, positionLabel)
-      );
-
-      if (matchingPlayer) {
-        newXI[i] = matchingPlayer.id;
-      }
-    }
-
-    // Fill remaining slots with any available player
-    for (let i = 1; i < format; i++) {
-      if (!newXI[i]) {
-        const anyPlayer = remainingPlayers.find(p => !newXI.includes(p.id) && !newSubs.includes(p.id));
-        if (anyPlayer) {
-          newXI[i] = anyPlayer.id;
-        }
-      }
-    }
-
-    // Only dump remaining players into substitutes if NOT an internal scrimmage intra-squad!
-    // In intra-squad scrimmage, remaining players MUST stay available for Team B (Chasubles / Reste du groupe)
-    if (!isIntraSquad) {
-      remainingPlayers.forEach(p => {
-        if (!newXI.includes(p.id) && !newSubs.includes(p.id)) {
-          newSubs.push(p.id);
-        }
-      });
-    }
-
+    setManualPositions(false);
     setStartingXI(newXI);
     setSubstitutes(newSubs);
   };
 
   // Auto-position opponent players with real squad players
-  const autoPositionOpponent = () => {
+  const autoPositionOpponent = (targetFormation?: string) => {
     const format = setup.match_format || 11;
-    const availablePlayers = [...effectiveOpponentSquad].sort((a, b) => {
-      const priorityA = getPositionPriority(a.position);
-      const priorityB = getPositionPriority(b.position);
-      return priorityA - priorityB;
-    });
-    const newLineup = Array(format).fill('');
-    const newSubs: string[] = [];
+    const effectiveForm = targetFormation || opponentFormation;
+    const sortedSquad = [...effectiveOpponentSquad].sort((a, b) => getPositionPriority(a.position) - getPositionPriority(b.position));
 
-    // First, place the goalkeeper
-    const gk = availablePlayers.find(p => classifyPosition(p.position) === 'Gardiens');
-    if (gk) {
-      newLineup[0] = gk.id;
-    }
+    const { startingXI: newLineup, substitutes: newSubs } = pickBestLineupFromSquad(
+      sortedSquad,
+      effectiveForm,
+      format,
+      true
+    );
 
-    const roles = getFormationPositions(opponentFormation, format);
-    const remainingPlayers = availablePlayers.filter(p => p.id !== gk?.id);
-
-    for (let i = 1; i < format; i++) {
-      if (newLineup[i]) continue;
-      const positionLabel = roles[i]?.label;
-      const matchingPlayer = remainingPlayers.find(p =>
-        !newLineup.includes(p.id) &&
-        !newSubs.includes(p.id) &&
-        isPlayerMatchingRole(p.position, positionLabel)
-      );
-      if (matchingPlayer) {
-        newLineup[i] = matchingPlayer.id;
-      }
-    }
-
-    for (let i = 1; i < format; i++) {
-      if (!newLineup[i]) {
-        const anyPlayer = remainingPlayers.find(p => !newLineup.includes(p.id) && !newSubs.includes(p.id));
-        if (anyPlayer) {
-          newLineup[i] = anyPlayer.id;
-        }
-      }
-    }
-
-    remainingPlayers.forEach(p => {
-      if (!newLineup.includes(p.id) && !newSubs.includes(p.id)) {
-        newSubs.push(p.id);
-      }
-    });
-
+    setOpponentManualPositions(false);
     setOpponentLineup(newLineup);
     setOpponentSubs(newSubs);
 
@@ -942,6 +854,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
           pitch_number: pitch_number || null,
           internal_opposition: internalMeta,
           live_operator: (initialMatch?.lineup as any)?.live_operator ?? null,
+          manual_positions: manualPositions,
+          opponent_manual_positions: opponentManualPositions,
           jerseyOverrides: Object.fromEntries(
             Array.from(surclassedTargetMap.entries())
               .filter(([_, s]) => s.target_jersey_number != null)
@@ -1171,6 +1085,57 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
     }
     return rawOpponentSquad;
   }, [setup.match_type, setup.internal_opposition_type, setup.internal_target_category, setup.internal_opponent_team_id, allGroupPlayers, players, startingXI, substitutes, mainClub, rawOpponentSquad, setup.category]);
+
+  const alignedHomeMatchIdRef = useRef<string | null>(null);
+  const alignedOppMatchIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!initialMatch?.id) {
+      alignedHomeMatchIdRef.current = null;
+      alignedOppMatchIdRef.current = null;
+      return;
+    }
+    const rawLineup = initialMatch.lineup as any;
+    const matchFmt = setup.match_format || inferMatchFormat(initialMatch);
+    if (!rawLineup?.manual_positions && !manualPositions && players.length > 0 && alignedHomeMatchIdRef.current !== initialMatch.id && startingXI.some(Boolean)) {
+      alignedHomeMatchIdRef.current = initialMatch.id;
+      const resolved = resolveDisplayLineupEntries(
+        startingXI,
+        formation,
+        matchFmt,
+        (pid) => players.find(p => p.id === pid)?.position || null,
+        '',
+        false
+      );
+      if (JSON.stringify(resolved) !== JSON.stringify(startingXI)) {
+        setStartingXI(resolved);
+      }
+    }
+  }, [initialMatch?.id, players.length, formation, manualPositions, startingXI]);
+
+  useEffect(() => {
+    if (!initialMatch?.id) return;
+    const rawLineup = initialMatch.lineup as any;
+    const matchFmt = setup.match_format || inferMatchFormat(initialMatch);
+    const hasOppData = effectiveOpponentSquad.length > 0 || players.length > 0;
+    if (!rawLineup?.opponent_manual_positions && !opponentManualPositions && hasOppData && alignedOppMatchIdRef.current !== initialMatch.id && opponentLineup.some(Boolean)) {
+      alignedOppMatchIdRef.current = initialMatch.id;
+      const resolvedOpp = resolveDisplayLineupEntries(
+        opponentLineup,
+        opponentFormation,
+        matchFmt,
+        (ref) =>
+          effectiveOpponentSquad.find(op => op.id === ref || String(op.jersey_number) === String(ref))?.position ||
+          players.find(p => p.id === ref)?.position ||
+          null,
+        '',
+        false
+      );
+      if (JSON.stringify(resolvedOpp) !== JSON.stringify(opponentLineup)) {
+        setOpponentLineup(resolvedOpp);
+      }
+    }
+  }, [initialMatch?.id, effectiveOpponentSquad.length, players.length, opponentFormation, opponentManualPositions, opponentLineup]);
 
   const groupedPlayers = useMemo(() => {
     const map: Record<'Gardiens' | 'Défenseurs' | 'Milieux' | 'Attaquants', Player[]> = {
@@ -2004,7 +1969,26 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                     </h4>
                     <div className="grid grid-cols-3 gap-2">
                       {(FORMATIONS_BY_FORMAT[setup.match_format] || FORMATIONS).map(f => (
-                        <button key={f} onClick={() => setFormation(f)} className={`h-11 rounded-xl text-[10px] font-black border-2 transition-all ${formation === f ? 'border-primary bg-primary text-white shadow-lg' : 'border-secondary text-muted-foreground bg-white hover:border-primary/10'}`}>{f}</button>
+                        <button
+                          key={f}
+                          onClick={() => {
+                            setFormation(f);
+                            if (!manualPositions && startingXI.some(id => id !== '')) {
+                              setStartingXI(
+                                alignEntriesToFormation(
+                                  startingXI,
+                                  f,
+                                  setup.match_format || 11,
+                                  (pid) => getPlayerById(pid)?.position || null,
+                                  ''
+                                )
+                              );
+                            }
+                          }}
+                          className={`h-11 rounded-xl text-[10px] font-black border-2 transition-all ${formation === f ? 'border-primary bg-primary text-white shadow-lg' : 'border-secondary text-muted-foreground bg-white hover:border-primary/10'}`}
+                        >
+                          {f}
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -2034,8 +2018,8 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
 
                     {/* Generate Lineup Button */}
                     <button
-                      onClick={autoPositionPlayers}
-                      className="mb-3 w-full h-14 rounded-2xl bg-gradient-to-r from-primary to-blue-600 text-white font-black text-xs uppercase tracking-widest shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 relative overflow-hidden"
+                      onClick={() => autoPositionPlayers()}
+                      className="mb-2.5 w-full h-14 rounded-2xl bg-gradient-to-r from-primary to-blue-600 text-white font-black text-xs uppercase tracking-widest shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 relative overflow-hidden"
                     >
                       <Users className="w-4 h-4" />
                       ⚡ Aligner {setup.match_format} Titulaires
@@ -2047,10 +2031,32 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       </span>
                     </button>
 
+                    {startingXI.filter(id => id !== '').length >= 2 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualPositions(false);
+                          setStartingXI(
+                            alignEntriesToFormation(
+                              startingXI,
+                              formation,
+                              setup.match_format || 11,
+                              (pid) => getPlayerById(pid)?.position || null,
+                              ''
+                            )
+                          );
+                          toast.success(`Titulaires replacés à leurs postes exacts (${formation})`);
+                        }}
+                        className="mb-2.5 w-full h-9 rounded-xl bg-emerald-50 text-emerald-700 border-2 border-emerald-200 hover:bg-emerald-100 font-black text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <ArrowUpDown className="w-3.5 h-3.5" /> Replacer aux postes exacts
+                      </button>
+                    )}
+
                     {/* Reset Button */}
                     {(startingXI.some(id => id !== '') || substitutes.length > 0) && (
                       <button
-                        onClick={() => { setStartingXI(Array(setup.match_format).fill('')); setSubstitutes([]); }}
+                        onClick={() => { setManualPositions(false); setStartingXI(Array(setup.match_format).fill('')); setSubstitutes([]); }}
                         className="mb-3 w-full h-9 rounded-xl bg-red-50 text-red-500 border-2 border-red-100 hover:bg-red-100 font-black text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5"
                       >
                         <Trash2 className="w-3.5 h-3.5" /> Réinitialiser la sélection
@@ -2305,6 +2311,20 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                         type="button"
                         onClick={() => {
                           setOpponentFormation(formation);
+                          if (!opponentManualPositions && opponentLineup.some(Boolean)) {
+                            setOpponentLineup(
+                              alignEntriesToFormation(
+                                opponentLineup,
+                                formation,
+                                setup.match_format || 11,
+                                (ref) =>
+                                  effectiveOpponentSquad.find(op => op.id === ref || String(op.jersey_number) === String(ref))?.position ||
+                                  players.find(p => p.id === ref)?.position ||
+                                  null,
+                                ''
+                              )
+                            );
+                          }
                           toast.success(`🪄 Système adverse aligné sur mon club : ${formation}`);
                         }}
                         className={`w-full py-2.5 px-3 mb-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 border-2 transition-all ${opponentFormation === formation
@@ -2319,18 +2339,40 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
 
                       <div className="grid grid-cols-4 gap-2">
                         {(FORMATIONS_BY_FORMAT[setup.match_format] || FORMATIONS).map(f => (
-                          <button key={f} onClick={() => setOpponentFormation(f)} className={`h-9 rounded-lg text-[9px] font-black border-2 transition-all ${opponentFormation === f ? 'bg-primary border-primary text-white shadow-lg' : 'bg-slate-50 border-transparent text-muted-foreground hover:border-primary/20'}`}>{f}</button>
+                          <button
+                            key={f}
+                            onClick={() => {
+                              setOpponentFormation(f);
+                              if (!opponentManualPositions && opponentLineup.some(Boolean)) {
+                                setOpponentLineup(
+                                  alignEntriesToFormation(
+                                    opponentLineup,
+                                    f,
+                                    setup.match_format || 11,
+                                    (ref) =>
+                                      effectiveOpponentSquad.find(op => op.id === ref || String(op.jersey_number) === String(ref))?.position ||
+                                      players.find(p => p.id === ref)?.position ||
+                                      null,
+                                    ''
+                                  )
+                                );
+                              }
+                            }}
+                            className={`h-9 rounded-lg text-[9px] font-black border-2 transition-all ${opponentFormation === f ? 'bg-primary border-primary text-white shadow-lg' : 'bg-slate-50 border-transparent text-muted-foreground hover:border-primary/20'}`}
+                          >
+                            {f}
+                          </button>
                         ))}
                       </div>
                     </CardContent>
                   </Card>
 
                   {/* Auto-position & Reset buttons with Magic Wand */}
-                  <div className="grid grid-cols-3 gap-2 mb-4">
+                  <div className="grid grid-cols-3 gap-2 mb-3">
                     <button
                       onClick={() => {
                         setOpponentFormation(formation);
-                        autoPositionOpponent();
+                        autoPositionOpponent(formation);
                         toast.success(`🪄 Système (${formation}) et titulaires adverses alignés automatiquement`);
                       }}
                       className="h-12 rounded-2xl bg-gradient-to-r from-amber-500 to-primary text-white font-black text-[11px] uppercase tracking-wider shadow-md hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-1.5"
@@ -2340,20 +2382,45 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       <span>🪄 Même que club</span>
                     </button>
                     <button
-                      onClick={autoPositionOpponent}
+                      onClick={() => autoPositionOpponent()}
                       className="h-12 rounded-2xl bg-gradient-to-r from-primary to-blue-600 text-white font-black text-[11px] uppercase tracking-wider shadow-md hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-1.5"
                     >
                       <Users className="w-4 h-4 shrink-0" />
                       <span>⚡ Auto ({setup.match_format})</span>
                     </button>
                     <button
-                      onClick={() => { setOpponentLineup(Array(setup.match_format).fill('')); setOpponentSubs([]); }}
+                      onClick={() => { setOpponentManualPositions(false); setOpponentLineup(Array(setup.match_format).fill('')); setOpponentSubs([]); }}
                       className="h-12 rounded-2xl bg-red-50 text-red-500 border border-red-200 hover:bg-red-100 font-black text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
                     >
                       <Trash2 className="w-4 h-4 shrink-0" />
                       <span>Vider</span>
                     </button>
                   </div>
+
+                  {opponentLineup.filter(Boolean).length >= 2 && effectiveOpponentSquad.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpponentManualPositions(false);
+                        setOpponentLineup(
+                          alignEntriesToFormation(
+                            opponentLineup,
+                            opponentFormation,
+                            setup.match_format || 11,
+                            (ref) =>
+                              effectiveOpponentSquad.find(op => op.id === ref || String(op.jersey_number) === String(ref))?.position ||
+                              players.find(p => p.id === ref)?.position ||
+                              null,
+                            ''
+                          )
+                        );
+                        toast.success(`Titulaires adverses replacés à leurs postes exacts (${opponentFormation})`);
+                      }}
+                      className="mb-3 w-full h-9 rounded-xl bg-emerald-50 text-emerald-700 border-2 border-emerald-200 hover:bg-emerald-100 font-black text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" /> Replacer adversaire aux postes exacts
+                    </button>
+                  )}
 
                   {/* Boutons d'action pour joueurs adverses */}
                   <div className="flex items-center gap-2 mb-3">

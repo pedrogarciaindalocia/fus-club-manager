@@ -3,6 +3,7 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
+  ArrowLeft,
   Plus,
   Search,
   Clock,
@@ -22,12 +23,22 @@ import {
   Square,
   X,
   AlertTriangle,
+  Building2,
+  Eye,
+  UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PlayerTest, TrialCandidate, SessionStatus, CandidateEvaluation } from '../types/recruitment';
-import { RECRUITMENT_AGE_CATEGORIES, groupCategoriesByPole } from '../types/recruitment';
+import { RECRUITMENT_AGE_CATEGORIES, groupCategoriesByPole, calculateCandidateAge } from '../types/recruitment';
+import { getFrenchPositionLabel } from '../constants/scoutCriteriaByPosition';
 import { cn } from '../../../lib/utils';
 import { TrialSessionPlannerForm } from './TrialSessionPlannerForm';
+import {
+  formatCompactFrenchDate,
+  formatTestDateIntervalLabel,
+  getTestCandidateIds,
+  groupConsecutiveTestDateRanges,
+} from '../utils/testDateIntervals';
 
 interface TestCalendarViewProps {
   tests: PlayerTest[];
@@ -43,6 +54,16 @@ interface TestCalendarViewProps {
   onDeleteTests?: (ids: string[]) => Promise<void>;
   onMoveTest: (testId: string, newDate: string) => Promise<void>;
   onOpenEvaluationForTest?: (candidate: TrialCandidate, test: PlayerTest) => void;
+  initialSelectedDates?: string[];
+  initialMonthDate?: string;
+  initialRightPanelTab?: 'invited' | 'plan' | 'sessions';
+  focusedCandidateId?: string | null;
+  defaultPlannerCandidateId?: string;
+  onBack?: () => void;
+  backLabel?: string;
+  contextTitle?: string;
+  contextSubtitle?: string;
+  onOpenCandidateDetail?: (candidate: TrialCandidate) => void;
 }
 
 const TEST_TYPE_LABELS: Record<string, { label: string; color: string; badge: string }> = {
@@ -90,16 +111,66 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
   onDeleteTests,
   onMoveTest,
   onOpenEvaluationForTest,
+  initialSelectedDates,
+  initialMonthDate,
+  initialRightPanelTab,
+  focusedCandidateId = null,
+  defaultPlannerCandidateId,
+  onBack,
+  backLabel = 'Retour à la Database',
+  contextTitle,
+  contextSubtitle,
+  onOpenCandidateDetail,
 }) => {
   // Mode d'affichage
   const [viewMode, setViewMode] = useState<'calendar' | 'cards'>('calendar');
 
+  const resolveMonthDate = (dateStr?: string): Date => {
+    if (dateStr) {
+      const parsed = new Date(`${dateStr}T12:00:00`);
+      if (!Number.isNaN(parsed.getTime())) {
+        return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+      }
+    }
+    return new Date();
+  };
+
   // Navigation mois & sélection multi-jours
-  const [currentDate, setCurrentDate] = useState(() => new Date());
-  const [selectedDates, setSelectedDates] = useState<string[]>([]);
-  const [lastClickedDate, setLastClickedDate] = useState<string | null>(null);
+  const [currentDate, setCurrentDate] = useState(() =>
+    resolveMonthDate(initialMonthDate || initialSelectedDates?.[0])
+  );
+  const [selectedDates, setSelectedDates] = useState<string[]>(() =>
+    initialSelectedDates ? [...initialSelectedDates].sort() : []
+  );
+  const [lastClickedDate, setLastClickedDate] = useState<string | null>(() =>
+    initialSelectedDates && initialSelectedDates.length > 0
+      ? initialSelectedDates[initialSelectedDates.length - 1]
+      : null
+  );
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
+
+  // Panneau droit (joueurs invités / formulaire d'invitation / sessions des jours sélectionnés)
+  const [rightPanelTab, setRightPanelTab] = useState<'invited' | 'plan' | 'sessions'>(
+    initialRightPanelTab ?? 'plan'
+  );
+  const [panelEditingTest, setPanelEditingTest] = useState<PlayerTest | null>(null);
+
+  const initialDatesKey = (initialSelectedDates || []).join(',');
+  useEffect(() => {
+    if (!initialSelectedDates) return;
+    const sorted = [...initialSelectedDates].sort();
+    setSelectedDates(sorted);
+    setLastClickedDate(sorted.length > 0 ? sorted[sorted.length - 1] : null);
+    if (initialMonthDate || sorted[0]) {
+      setCurrentDate(resolveMonthDate(initialMonthDate || sorted[0]));
+    }
+    if (initialRightPanelTab) {
+      setRightPanelTab(initialRightPanelTab);
+    }
+    setPanelEditingTest(null);
+    setViewMode('calendar');
+  }, [initialDatesKey, initialMonthDate, initialRightPanelTab, focusedCandidateId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -125,10 +196,6 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
     return new Set(getDateRangeStrings(lastClickedDate, hoveredDate));
   }, [isShiftPressed, lastClickedDate, hoveredDate]);
 
-  // Panneau droit (formulaire d'invitation / édition / sessions des jours sélectionnés)
-  const [rightPanelTab, setRightPanelTab] = useState<'plan' | 'sessions'>('plan');
-  const [panelEditingTest, setPanelEditingTest] = useState<PlayerTest | null>(null);
-
   // Sélection multiple pour suppression groupée
   const [isBulkSelectMode, setIsBulkSelectMode] = useState(false);
   const [selectedTestIds, setSelectedTestIds] = useState<string[]>([]);
@@ -145,12 +212,16 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
   const [draggedTestId, setDraggedTestId] = useState<string | null>(null);
 
+  const candidateById = useMemo(
+    () => new Map(candidates.map(c => [c.id, c])),
+    [candidates]
+  );
+
   const getTestCandidates = (test: PlayerTest): TrialCandidate[] => {
-    const ids = new Set<string>([
-      ...(test.candidate_ids || []),
-      ...(test.candidate_id ? [test.candidate_id] : []),
-    ]);
-    return candidates.filter(c => ids.has(c.id));
+    const ids = getTestCandidateIds(test);
+    return ids
+      .map(id => candidateById.get(id))
+      .filter((c): c is TrialCandidate => Boolean(c));
   };
 
   // Sessions filtrées
@@ -172,7 +243,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
 
       return matchesSearch && matchesCat && matchesType && matchesStatus;
     });
-  }, [tests, candidates, searchQuery, categoryFilter, typeFilter, statusFilter]);
+  }, [tests, candidateById, searchQuery, categoryFilter, typeFilter, statusFilter]);
 
   // Grille du calendrier mensuel
   const calendarDays = useMemo(() => {
@@ -226,7 +297,62 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
     return filteredTests.filter(t => set.has(t.test_date));
   }, [filteredTests, selectedDates]);
 
-  const isSplitPanelOpen = viewMode === 'calendar' && (selectedDates.length > 0 || panelEditingTest !== null);
+  // Joueurs invités agrégés pour les jours sélectionnés (joueur ciblé mis en tête)
+  const invitedPlayersForSelectedDates = useMemo(() => {
+    const grouped = new Map<string, { candidate: TrialCandidate; sessions: PlayerTest[] }>();
+
+    selectedDaysTests.forEach((test) => {
+      const ids = getTestCandidateIds(test);
+      ids.forEach((candId) => {
+        const candidate = candidateById.get(candId);
+        if (!candidate) return;
+        const existing = grouped.get(candId);
+        if (existing) {
+          if (!existing.sessions.some(s => s.id === test.id)) {
+            existing.sessions.push(test);
+          }
+        } else {
+          grouped.set(candId, { candidate, sessions: [test] });
+        }
+      });
+    });
+
+    const list = Array.from(grouped.values());
+    list.forEach((entry) => {
+      entry.sessions.sort((a, b) => {
+        const dateCmp = a.test_date.localeCompare(b.test_date);
+        if (dateCmp !== 0) return dateCmp;
+        return (a.start_time || '').localeCompare(b.start_time || '');
+      });
+    });
+
+    list.sort((a, b) => {
+      if (focusedCandidateId) {
+        if (a.candidate.id === focusedCandidateId && b.candidate.id !== focusedCandidateId) return -1;
+        if (b.candidate.id === focusedCandidateId && a.candidate.id !== focusedCandidateId) return 1;
+      }
+      const nameA = `${a.candidate.first_name} ${a.candidate.last_name}`.toLowerCase();
+      const nameB = `${b.candidate.first_name} ${b.candidate.last_name}`.toLowerCase();
+      return nameA.localeCompare(nameB, 'fr');
+    });
+
+    return list;
+  }, [selectedDaysTests, candidateById, focusedCandidateId]);
+
+  const focusedCandidate = useMemo(
+    () => (focusedCandidateId ? candidateById.get(focusedCandidateId) || null : null),
+    [focusedCandidateId, candidateById]
+  );
+
+  const selectedDatesSummary = useMemo(() => {
+    const intervals = groupConsecutiveTestDateRanges(selectedDates);
+    if (intervals.length === 0) return 'Aucune date sélectionnée';
+    return intervals.map(formatTestDateIntervalLabel).join(' · ');
+  }, [selectedDates]);
+
+  const isSplitPanelOpen =
+    viewMode === 'calendar' &&
+    (selectedDates.length > 0 || panelEditingTest !== null || Boolean(onBack));
 
   // Navigation mois
   const handlePrevMonth = () => {
@@ -242,13 +368,17 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
     setSelectedDates(prev => (prev.includes(tStr) ? prev : [...prev, tStr].sort()));
     setLastClickedDate(tStr);
     setPanelEditingTest(null);
-    setRightPanelTab('plan');
+    if (rightPanelTab !== 'invited' && rightPanelTab !== 'sessions') {
+      setRightPanelTab('plan');
+    }
   };
 
   // Clic sur une case jour (sélection multi-jours + Shift+clic pour plage jour début -> jour fin)
   const handleDayClick = (e: React.MouseEvent, formattedDate: string) => {
     setPanelEditingTest(null);
-    setRightPanelTab('plan');
+    if (rightPanelTab !== 'invited' && rightPanelTab !== 'sessions') {
+      setRightPanelTab('plan');
+    }
 
     if (e.shiftKey && lastClickedDate) {
       const range = getDateRangeStrings(lastClickedDate, formattedDate);
@@ -385,6 +515,40 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
 
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
+      {/* ── Barre de retour contextuelle (lorsque ouvert depuis Database) ── */}
+      {onBack && (
+        <div className="bg-white rounded-2xl border shadow-sm px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors text-xs font-black cursor-pointer shrink-0 active:scale-95"
+              title={backLabel}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>{backLabel}</span>
+            </button>
+
+            <div className="h-6 w-px bg-slate-200 hidden sm:block shrink-0" />
+
+            <div className="min-w-0">
+              <h2 className="text-sm font-black text-slate-900 truncate">
+                {contextTitle || 'Calendrier & Joueurs Invités'}
+              </h2>
+              {contextSubtitle && (
+                <p className="text-[11px] text-slate-500 font-medium truncate">
+                  {contextSubtitle}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <span className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 text-xs font-black shrink-0">
+            {invitedPlayersForSelectedDates.length} joueur{invitedPlayersForSelectedDates.length > 1 ? 's' : ''} invité{invitedPlayersForSelectedDates.length > 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
+
       {/* ── Top Controls & Filter Bar ──────────────────────────────────────── */}
       <div className="bg-white rounded-3xl p-5 border shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -397,7 +561,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
               Sessions de Test & Convocations
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {filteredTests.length} session(s) programmée(s) • Cliquez sur plusieurs jours pour ouvrir le formulaire d'invitation à droite.
+              {filteredTests.length} session(s) programmée(s) • Cliquez sur des jours du calendrier pour afficher les joueurs invités et planifier à droite.
             </p>
           </div>
 
@@ -805,69 +969,96 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
             </div>
           </div>
 
-          {/* COLONNE DROITE : FORMULAIRE D'INVITATION MULTI-JOURS & SESSIONS DES JOURS COCHÉS */}
+          {/* COLONNE DROITE : JOUEURS INVITÉS, FORMULAIRE D'INVITATION MULTI-JOURS & SESSIONS */}
           {isSplitPanelOpen && (
             <div className="lg:col-span-5 lg:sticky lg:top-4 bg-white rounded-3xl border shadow-lg overflow-hidden animate-in fade-in slide-in-from-right-3 duration-200">
               {/* En-tête Panneau Droit */}
               <div className="p-4 border-b bg-slate-50/90 flex items-center justify-between gap-2">
-                <div>
-                  <h4 className="text-sm font-black text-slate-900">
+                <div className="min-w-0">
+                  <h4 className="text-sm font-black text-slate-900 truncate">
                     {panelEditingTest
                       ? `Modifier : ${panelEditingTest.test_name}`
-                      : `Inviter & Planifier (${selectedDates.length} jour${selectedDates.length > 1 ? 's' : ''})`}
+                      : rightPanelTab === 'invited'
+                        ? `Joueurs invités (${invitedPlayersForSelectedDates.length})`
+                        : rightPanelTab === 'sessions'
+                          ? `Sessions prévues (${selectedDaysTests.length})`
+                          : `Inviter & Planifier (${selectedDates.length} jour${selectedDates.length > 1 ? 's' : ''})`}
                   </h4>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-slate-500 truncate">
                     {panelEditingTest
-                      ? `Session du ${panelEditingTest.test_date}`
-                      : 'Sélectionnez les joueurs à convoquer sur ces journées'}
+                      ? `Session du ${formatCompactFrenchDate(panelEditingTest.test_date)}`
+                      : rightPanelTab === 'plan'
+                        ? 'Sélectionnez les joueurs à convoquer sur ces journées'
+                        : selectedDatesSummary}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedDates([]);
-                    setLastClickedDate(null);
-                    setPanelEditingTest(null);
-                  }}
-                  className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 cursor-pointer"
-                  title="Fermer le panneau"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                {!onBack && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDates([]);
+                      setLastClickedDate(null);
+                      setPanelEditingTest(null);
+                    }}
+                    className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-200/70 hover:text-slate-700 cursor-pointer shrink-0"
+                    title="Fermer le panneau"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
               {/* Onglets Panneau Droit (si pas en édition directe) */}
               {!panelEditingTest && (
-                <div className="px-4 pt-3 flex items-center gap-2 border-b bg-white pb-2.5">
+                <div className="px-4 pt-3 flex items-center gap-1.5 border-b bg-white pb-2.5">
                   <button
                     type="button"
-                    onClick={() => setRightPanelTab('plan')}
+                    onClick={() => setRightPanelTab('invited')}
                     className={cn(
-                      "flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer",
-                      rightPanelTab === 'plan'
-                        ? "bg-primary text-white shadow-xs"
+                      "flex-1 py-1.5 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                      rightPanelTab === 'invited'
+                        ? "bg-blue-600 text-white shadow-xs"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200/70"
                     )}
                   >
-                    + Formulaire d'invitation
+                    <Users className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Joueurs invités</span>
+                    <span className={cn(
+                      "px-1.5 py-0.2 rounded-full text-[10px] font-black shrink-0",
+                      rightPanelTab === 'invited' ? "bg-white/20 text-white" : "bg-white text-slate-700"
+                    )}>
+                      {invitedPlayersForSelectedDates.length}
+                    </span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setRightPanelTab('sessions')}
                     className={cn(
-                      "flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                      "py-1.5 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1",
                       rightPanelTab === 'sessions'
                         ? "bg-slate-900 text-white shadow-xs"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200/70"
                     )}
                   >
-                    <span>Sessions prévues</span>
+                    <span>Sessions</span>
                     <span className={cn(
                       "px-1.5 py-0.2 rounded-full text-[10px] font-black",
                       rightPanelTab === 'sessions' ? "bg-white/20 text-white" : "bg-white text-slate-700"
                     )}>
                       {selectedDaysTests.length}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRightPanelTab('plan')}
+                    className={cn(
+                      "py-1.5 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0",
+                      rightPanelTab === 'plan'
+                        ? "bg-primary text-white shadow-xs"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200/70"
+                    )}
+                  >
+                    + Inviter
                   </button>
                 </div>
               )}
@@ -880,6 +1071,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                     selectedDates={selectedDates}
                     onSelectedDatesChange={setSelectedDates}
                     initialTest={panelEditingTest}
+                    defaultCandidateId={defaultPlannerCandidateId || focusedCandidateId || undefined}
                     candidates={candidates}
                     scouts={scouts}
                     onSaveBatch={async (testsPayload) => {
@@ -892,11 +1084,208 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                       if (panelEditingTest) {
                         setPanelEditingTest(null);
                       } else {
-                        setRightPanelTab('sessions');
+                        setRightPanelTab(onBack ? 'invited' : 'sessions');
                       }
                     }}
                     onCancel={panelEditingTest ? () => setPanelEditingTest(null) : undefined}
                   />
+                ) : rightPanelTab === 'invited' ? (
+                  <div className="space-y-3">
+                    {selectedDates.length === 0 ? (
+                      <div className="p-6 rounded-2xl bg-slate-50 border text-center space-y-2 text-xs text-slate-500">
+                        <p>Sélectionnez un ou plusieurs jours sur le calendrier pour afficher les joueurs invités.</p>
+                      </div>
+                    ) : invitedPlayersForSelectedDates.length === 0 ? (
+                      <div className="p-6 rounded-2xl bg-slate-50 border text-center space-y-3 text-xs text-slate-500">
+                        <p>
+                          Aucun joueur invité sur {selectedDates.length > 1 ? 'cette période' : 'cette journée'}.
+                        </p>
+                        {onSaveBatchTests && (
+                          <button
+                            type="button"
+                            onClick={() => setRightPanelTab('plan')}
+                            className="px-3.5 py-2 rounded-xl bg-primary text-white font-bold text-xs cursor-pointer shadow-xs hover:bg-primary/95 transition-all"
+                          >
+                            {focusedCandidate
+                              ? `+ Planifier un test pour ${focusedCandidate.first_name} ${focusedCandidate.last_name}`
+                              : `+ Planifier sur ces ${selectedDates.length} jour(s)`}
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      invitedPlayersForSelectedDates.map(({ candidate, sessions }) => {
+                        const isFocused = Boolean(focusedCandidateId && candidate.id === focusedCandidateId);
+                        const candAge = calculateCandidateAge(candidate.birth_date);
+                        const clubName = candidate.current_club || candidate.origin_club;
+
+                        return (
+                          <div
+                            key={candidate.id}
+                            className={cn(
+                              "p-3.5 rounded-2xl border transition-all space-y-2.5",
+                              isFocused
+                                ? "bg-blue-50/70 border-blue-400 ring-2 ring-blue-400/25 shadow-sm"
+                                : "bg-slate-50/70 border-slate-200 hover:bg-white"
+                            )}
+                          >
+                            {/* En-tête Joueur Invité */}
+                            <div className="flex items-start justify-between gap-2.5">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-11 h-11 rounded-xl bg-white border border-slate-200 overflow-hidden flex items-center justify-center shrink-0 text-xs font-black text-slate-600 shadow-2xs">
+                                  {candidate.photo_url ? (
+                                    <img
+                                      src={candidate.photo_url}
+                                      alt={`${candidate.first_name} ${candidate.last_name}`}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        const target = e.currentTarget;
+                                        if (!target.src.endsWith('/assets/avatar.svg')) {
+                                          target.src = '/assets/avatar.svg';
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <span>
+                                      {candidate.first_name?.[0] || ''}
+                                      {candidate.last_name?.[0] || ''}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="min-w-0 space-y-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {onOpenCandidateDetail ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => onOpenCandidateDetail(candidate)}
+                                        className="font-black text-xs text-slate-900 hover:text-primary text-left cursor-pointer transition-colors truncate"
+                                        title={`Ouvrir la fiche de ${candidate.first_name} ${candidate.last_name}`}
+                                      >
+                                        {candidate.first_name} {candidate.last_name}
+                                      </button>
+                                    ) : (
+                                      <span className="font-black text-xs text-slate-900 truncate">
+                                        {candidate.first_name} {candidate.last_name}
+                                      </span>
+                                    )}
+                                    {isFocused && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-600 text-white text-[9px] font-black uppercase tracking-wider shrink-0">
+                                        <UserCheck className="w-2.5 h-2.5" />
+                                        Sélectionné
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <p className="text-[11px] font-semibold text-slate-600 truncate">
+                                    {getFrenchPositionLabel(candidate.primary_position)}
+                                    {candidate.age_category ? ` · ${candidate.age_category}` : ''}
+                                    {candAge != null ? ` (${candAge} ans)` : ''}
+                                  </p>
+
+                                  {clubName && (
+                                    <p className="text-[10px] text-slate-500 flex items-center gap-1 truncate">
+                                      <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                                      <span className="truncate">{clubName}</span>
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              {onOpenCandidateDetail && (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenCandidateDetail(candidate)}
+                                  className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:border-primary hover:text-primary text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
+                                  title="Consulter la fiche complète"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  <span>Fiche</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Sessions planifiées pour ce joueur sur les jours sélectionnés */}
+                            <div className="space-y-1.5 pt-2 border-t border-slate-200/70">
+                              {sessions.map((session) => {
+                                const typeConfig = TEST_TYPE_LABELS[session.test_type] || TEST_TYPE_LABELS.comprehensive;
+                                const statusConfig = STATUS_CONFIG[session.status] || STATUS_CONFIG.scheduled;
+                                const canEvalThis = Boolean(onOpenEvaluationForTest && session.test_date <= todayStr);
+                                const linkedEval = evaluations.find(
+                                  e => e.test_id === session.id || (e.candidate_id === candidate.id && e.evaluation_date === session.test_date)
+                                );
+
+                                return (
+                                  <div
+                                    key={session.id}
+                                    className="p-2.5 rounded-xl bg-white border border-slate-200/80 space-y-1.5"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className={cn("text-[9px] font-black uppercase px-1.5 py-0.5 rounded border shrink-0", typeConfig.badge)}>
+                                          {typeConfig.label}
+                                        </span>
+                                        <span className="text-[11px] font-bold text-slate-800 truncate">
+                                          {session.test_name}
+                                        </span>
+                                      </div>
+                                      <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0", statusConfig.badge)}>
+                                        {statusConfig.label}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500">
+                                      <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+                                        <span className="flex items-center gap-1 font-semibold text-slate-700">
+                                          <CalendarIcon className="w-3 h-3 text-blue-600 shrink-0" />
+                                          {formatCompactFrenchDate(session.test_date)}
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                          <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                          {session.start_time || '09:30'} - {session.end_time || '12:00'}
+                                        </span>
+                                        <span className="flex items-center gap-1 truncate">
+                                          <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                                          <span className="truncate">{session.location}</span>
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {onOpenEvaluationForTest && (
+                                          canEvalThis ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => onOpenEvaluationForTest(candidate, session)}
+                                              className="px-2 py-0.5 rounded-md bg-primary/10 text-primary hover:bg-primary hover:text-white text-[10px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                                            >
+                                              <Award className="w-2.5 h-2.5" />
+                                              <span>{linkedEval ? 'Modifier Éval' : 'Évaluer'}</span>
+                                            </button>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-400 text-[10px] font-semibold inline-flex items-center gap-1">
+                                              <Lock className="w-2.5 h-2.5" />
+                                              À venir
+                                            </span>
+                                          )
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenEditSession(session)}
+                                          className="p-1 rounded-md border border-slate-200 text-slate-500 hover:text-primary hover:border-primary/40 cursor-pointer"
+                                          title="Modifier la session"
+                                        >
+                                          <Edit2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 ) : (
                   <div className="space-y-3">
                     {selectedDaysTests.length === 0 ? (
