@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, UserPlus, CheckCircle2, ClipboardList, Database } from 'lucide-react';
 import { useRecruitment } from './hooks/useRecruitment';
 import { usePermissions } from '../../context/PermissionsContext';
+import { isScoutAdminRole } from '../../constants/roles';
 import CandidateModal from './components/CandidateModal';
 
 import { toast } from 'sonner';
@@ -48,7 +49,13 @@ const AddPlayerPage: React.FC = () => {
   ].map(r => r.toLowerCase().trim());
   const hasExplicitPerms = Boolean(authState?.permissions && authState.permissions.length > 0);
   const isSuperAdmin = Boolean(!authState?.isImpersonating && userRoles.includes('super_admin'));
-  const isAdmin = isSuperAdmin || (!hasExplicitPerms && (userRoles.includes('admin') || userRoles.includes('scout_admin')));
+  const isScoutAdmin = isScoutAdminRole(
+    authState?.user,
+    authState?.roles,
+    authState?.isImpersonating,
+    authState?.impersonatedUser
+  );
+  const isAdmin = isSuperAdmin || isScoutAdmin || (!hasExplicitPerms && userRoles.includes('admin'));
   const isScoutManager = !isAdmin && (
     userRoles.includes('scout_manager') ||
     userRoles.includes('manager') ||
@@ -57,8 +64,8 @@ const AddPlayerPage: React.FC = () => {
 
   const canCreateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'create'));
   const canUpdateCandidate = Boolean(
-    isSuperAdmin || 
-    hasSubModuleAccess('candidates', 'edit_player') || 
+    isSuperAdmin ||
+    hasSubModuleAccess('candidates', 'edit_player') ||
     hasSubModuleAccess('candidates', 'update')
   );
 
@@ -173,7 +180,11 @@ const AddPlayerPage: React.FC = () => {
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors text-xs font-bold cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            {returnTab === 'scouts' ? 'Retour au Personnel' : 'Retour à la Database'}
+            {returnTab === 'sessions'
+              ? 'Retour au Planning'
+              : returnTab === 'scouts'
+                ? 'Retour au Personnel'
+                : 'Retour à la Database'}
           </button>
 
           <div className="h-6 w-px bg-slate-200 hidden sm:block" />
@@ -187,7 +198,7 @@ const AddPlayerPage: React.FC = () => {
                 {candidateToEdit ? `Modifier Joueur : ${candidateToEdit.first_name} ${candidateToEdit.last_name}` : 'Nouveau Joueur'}
               </h1>
               <p className="text-[11px] text-slate-500">
-                Recrutement & Détection V2 — {returnTab === 'scouts' ? 'Personnel & Scouts' : 'Base de données'}
+                Recrutement & Détection V2 — {returnTab === 'sessions' ? 'Planning des Tests' : returnTab === 'scouts' ? 'Personnel & Scouts' : 'Base de données'}
               </p>
             </div>
           </div>

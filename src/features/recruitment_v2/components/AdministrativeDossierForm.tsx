@@ -32,6 +32,7 @@ export const DOC_CATEGORY_LABELS: Record<NonNullable<AdministrativeDocument['cat
   identity: { label: 'Pièce d\'identité / Passeport', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
   medical: { label: 'Certificat médical', badge: 'bg-rose-50 text-rose-700 border-rose-200' },
   parental_consent: { label: 'Autorisation parentale', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+  honor_declaration: { label: 'Déclaration sur l\'honneur', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   other: { label: 'Pièce justificative', badge: 'bg-slate-100 text-slate-700 border-slate-200' },
 };
 

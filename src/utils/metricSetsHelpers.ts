@@ -1,4 +1,5 @@
 import { isScoutBranch } from '../constants/roles';
+import { isGoalkeeperPosition } from '../features/match-management/utils/lineupPositionHelper';
 
 export type MetricPillar = 'technique' | 'tactique' | 'physique' | 'mental';
 
@@ -783,6 +784,30 @@ export function resolveMetricSetPositionForPlayer(
   }
 
   return positions.find(p => p.code.toUpperCase() === 'CM') || positions[0];
+}
+
+export function isMetricPositionGoalkeeper(
+  pos?: { code?: string | null; name?: string | null; category?: string | null } | null
+): boolean {
+  if (!pos) return false;
+  if (String(pos.category || '').toUpperCase() === 'GK') return true;
+  return isGoalkeeperPosition(pos.code) || isGoalkeeperPosition(pos.name);
+}
+
+/**
+ * Si un joueur occupe le poste de gardien, restreint strictement les postes proposés
+ * aux postes gardien (en masquant tous les autres postes).
+ */
+export function filterMetricPositionsForPlayer(
+  positions: MetricSetPosition[],
+  playerPosition?: string | null
+): MetricSetPosition[] {
+  if (!Array.isArray(positions) || positions.length === 0) return [];
+  if (!isGoalkeeperPosition(playerPosition)) {
+    return positions;
+  }
+  const gkOnly = positions.filter(pos => isMetricPositionGoalkeeper(pos));
+  return gkOnly.length > 0 ? gkOnly : positions;
 }
 
 /**

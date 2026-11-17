@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Scout } from '../types/recruitment';
 import { cn } from '../../../lib/utils';
-import { User } from 'lucide-react';
+import { User, Phone } from 'lucide-react';
 
 export interface ScoutAvatarProps {
   scout?: Scout | null;
@@ -9,11 +9,13 @@ export interface ScoutAvatarProps {
   scoutName?: string | null;
   scouts?: Scout[] | null;
   photoUrl?: string | null;
+  phone?: string | null;
   role?: string | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showBadge?: boolean;
   badgePrefix?: string;
   showRole?: boolean;
+  showPhone?: boolean;
   className?: string;
   avatarClassName?: string;
   title?: string;
@@ -26,11 +28,13 @@ export const ScoutAvatar: React.FC<ScoutAvatarProps> = ({
   scoutName,
   scouts = [],
   photoUrl,
+  phone,
   role,
   size = 'sm',
   showBadge = false,
   badgePrefix,
   showRole = false,
+  showPhone = false,
   className,
   avatarClassName,
   title,
@@ -45,13 +49,13 @@ export const ScoutAvatar: React.FC<ScoutAvatarProps> = ({
 
     const trimmedId = scoutId?.trim();
     if (trimmedId) {
-      const match = scouts.find(s => s.id === trimmedId);
+      const match = scouts.find(s => s.id === trimmedId || (s as { user_id?: string }).user_id === trimmedId);
       if (match) return match;
     }
 
-    const trimmedName = scoutName?.trim().toLowerCase();
+    const trimmedName = scoutName?.trim().toLowerCase().replace(/\s+/g, ' ');
     if (trimmedName) {
-      const match = scouts.find(s => s.full_name?.trim().toLowerCase() === trimmedName);
+      const match = scouts.find(s => s.full_name?.trim().toLowerCase().replace(/\s+/g, ' ') === trimmedName);
       if (match) return match;
     }
 
@@ -61,6 +65,12 @@ export const ScoutAvatar: React.FC<ScoutAvatarProps> = ({
   const effectivePhoto = photoUrl || resolvedScout?.photo_url || null;
   const effectiveName = scoutName || resolvedScout?.full_name || 'Scout FUS';
   const effectiveRole = role || resolvedScout?.role_title || 'Scout';
+  const effectivePhone = (
+    phone ||
+    resolvedScout?.phone ||
+    (resolvedScout as { phone_number?: string } | null)?.phone_number ||
+    ''
+  ).trim() || null;
 
   // Calcul des initiales (2 caractères max)
   const initials = useMemo(() => {
@@ -96,7 +106,9 @@ export const ScoutAvatar: React.FC<ScoutAvatarProps> = ({
 
   const currentSize = sizeMap[size] || sizeMap.sm;
 
-  const tooltipText = title || `${effectiveName}${effectiveRole ? ` (${effectiveRole})` : ''}`;
+  const tooltipText =
+    title ||
+    `${effectiveName}${effectiveRole ? ` (${effectiveRole})` : ''}${effectivePhone ? ` • Tél : ${effectivePhone}` : ''}`;
 
   const avatarElement = (
     <div
@@ -130,7 +142,7 @@ export const ScoutAvatar: React.FC<ScoutAvatarProps> = ({
     return avatarElement;
   }
 
-  return (
+  const badgePill = (
     <div
       onClick={onClick}
       className={cn(
@@ -148,6 +160,32 @@ export const ScoutAvatar: React.FC<ScoutAvatarProps> = ({
       {showRole && effectiveRole && (
         <span className="text-[10px] opacity-75 font-semibold">
           ({effectiveRole})
+        </span>
+      )}
+    </div>
+  );
+
+  if (!showPhone) {
+    return badgePill;
+  }
+
+  return (
+    <div className="inline-flex flex-col items-start gap-1">
+      {badgePill}
+      {effectivePhone ? (
+        <a
+          href={`tel:${effectivePhone.replace(/\s+/g, '')}`}
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100/80 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200/80 text-[10px] font-bold transition-colors whitespace-nowrap"
+          title={`Appeler ${effectiveName} (${effectivePhone})`}
+        >
+          <Phone className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+          <span>{effectivePhone}</span>
+        </a>
+      ) : (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-50 text-slate-400 border border-slate-200/60 text-[10px] font-medium italic whitespace-nowrap">
+          <Phone className="w-2.5 h-2.5 shrink-0" />
+          <span>Tél. non renseigné</span>
         </span>
       )}
     </div>

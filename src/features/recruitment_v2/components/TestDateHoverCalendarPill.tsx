@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Calendar, ChevronLeft, ChevronRight, Clock, MapPin } from 'lucide-react';
-import type { PlayerTest } from '../types/recruitment';
+import { Calendar, ChevronLeft, ChevronRight, Clock, MapPin, CheckCircle2, CalendarClock } from 'lucide-react';
+import type { PlayerTest, TestSlotValidationInfo } from '../types/recruitment';
 import {
   formatCompactFrenchDate,
   formatTestDateIntervalLabel,
@@ -14,7 +14,14 @@ interface TestDateHoverCalendarPillProps {
   interval: TestDateInterval;
   allCandidateTestDates?: string[];
   sessions?: PlayerTest[];
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  readOnly?: boolean;
+  slotValidation?: TestSlotValidationInfo | null;
+  canValidateSlot?: boolean;
+  canOpenSlotModal?: boolean;
+  isAdminSlotEditor?: boolean;
+  onValidateSlot?: () => void;
+  onOpenSlotModal?: () => void;
 }
 
 const WEEKDAYS_FR = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -90,6 +97,13 @@ export const TestDateHoverCalendarPill: React.FC<TestDateHoverCalendarPillProps>
   allCandidateTestDates = [],
   sessions = [],
   onClick,
+  readOnly = false,
+  slotValidation,
+  canValidateSlot = false,
+  canOpenSlotModal = false,
+  isAdminSlotEditor = false,
+  onValidateSlot,
+  onOpenSlotModal,
 }) => {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -119,10 +133,12 @@ export const TestDateHoverCalendarPill: React.FC<TestDateHoverCalendarPillProps>
 
   const popoverWidth = spansTwoMonths ? 520 : 288;
 
+  const hasSlotFooter = Boolean(canValidateSlot || canOpenSlotModal || slotValidation);
+
   const updatePopoverPosition = useCallback(() => {
     if (!triggerRef.current || typeof window === 'undefined') return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const estimatedHeight = 315;
+    const estimatedHeight = hasSlotFooter ? 385 : 315;
     const margin = 10;
 
     let left = rect.left + rect.width / 2 - popoverWidth / 2;
@@ -137,7 +153,7 @@ export const TestDateHoverCalendarPill: React.FC<TestDateHoverCalendarPillProps>
     }
 
     setPopoverPos({ top, left });
-  }, [popoverWidth]);
+  }, [popoverWidth, hasSlotFooter]);
 
   const clearCloseTimer = () => {
     if (closeTimerRef.current) {
@@ -153,6 +169,9 @@ export const TestDateHoverCalendarPill: React.FC<TestDateHoverCalendarPillProps>
     updatePopoverPosition();
     setIsOpen(true);
   };
+
+  const isSlotValidated = slotValidation?.status === 'validated';
+  const isSlotChangeRequested = slotValidation?.status === 'change_requested';
 
   const handleScheduleClose = () => {
     clearCloseTimer();
@@ -207,6 +226,8 @@ export const TestDateHoverCalendarPill: React.FC<TestDateHoverCalendarPillProps>
 
   const label = formatTestDateIntervalLabel(interval);
 
+  const isInteractive = Boolean(onClick && !readOnly);
+
   return (
     <>
       <button
@@ -218,15 +239,28 @@ export const TestDateHoverCalendarPill: React.FC<TestDateHoverCalendarPillProps>
         onBlur={handleScheduleClose}
         onClick={(e) => {
           e.stopPropagation();
+          if (!isInteractive) {
+            return;
+          }
           clearCloseTimer();
           setIsOpen(false);
-          onClick(e);
+          onClick?.(e);
         }}
+        title={
+          isInteractive
+            ? 'Survoler pour voir le planning • Cliquer pour planifier'
+            : 'Survoler pour voir le planning des tests (lecture seule)'
+        }
         className={cn(
-          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold shadow-2xs transition-all cursor-pointer active:scale-95 whitespace-nowrap group/date",
+          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold shadow-2xs transition-all whitespace-nowrap group/date",
+          isInteractive
+            ? "cursor-pointer active:scale-95"
+            : "cursor-default",
           isOpen
             ? "bg-blue-600 text-white border-blue-600 ring-2 ring-blue-300/60"
-            : "border-blue-200 bg-white hover:bg-blue-600 hover:text-white hover:border-blue-600 text-blue-800"
+            : isInteractive
+              ? "border-blue-200 bg-white hover:bg-blue-600 hover:text-white hover:border-blue-600 text-blue-800"
+              : "border-blue-200 bg-blue-50/70 hover:bg-blue-600 hover:text-white hover:border-blue-600 text-blue-800"
         )}
       >
         <Calendar
@@ -400,6 +434,87 @@ export const TestDateHoverCalendarPill: React.FC<TestDateHoverCalendarPillProps>
                 </span>
               )}
             </div>
+
+            {(canValidateSlot || canOpenSlotModal || slotValidation) && (
+              <div className="pt-2 mt-1 border-t border-slate-100 space-y-2">
+                {isSlotValidated ? (
+                  <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold">
+                    <span className="inline-flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Créneau validé</span>
+                    </span>
+                    {isAdminSlotEditor && canOpenSlotModal && onOpenSlotModal && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearCloseTimer();
+                          setIsOpen(false);
+                          onOpenSlotModal();
+                        }}
+                        className="px-2 py-0.5 rounded-lg bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-600 hover:text-white text-[10px] font-bold cursor-pointer transition-colors"
+                      >
+                        Changer créneau
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {isSlotChangeRequested && slotValidation?.requested_start_date && (
+                      <div className="px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[10px] space-y-0.5">
+                        <p className="font-black">
+                          Autre créneau demandé : {formatCompactFrenchDate(slotValidation.requested_start_date, false)}
+                          {slotValidation.requested_end_date &&
+                          slotValidation.requested_end_date !== slotValidation.requested_start_date
+                            ? ` → ${formatCompactFrenchDate(slotValidation.requested_end_date, false)}`
+                            : ''}
+                          {slotValidation.requested_start_time ? ` (${slotValidation.requested_start_time})` : ''}
+                        </p>
+                        {slotValidation.request_note && (
+                          <p className="text-[10px] text-amber-800 italic truncate">
+                            {slotValidation.request_note}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {(canValidateSlot || canOpenSlotModal) && (
+                      <div className="flex items-center gap-1.5">
+                        {canValidateSlot && onValidateSlot && (!isSlotChangeRequested || isAdminSlotEditor) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              clearCloseTimer();
+                              setIsOpen(false);
+                              onValidateSlot();
+                            }}
+                            className="flex-1 py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black inline-flex items-center justify-center gap-1 shadow-2xs cursor-pointer transition-all"
+                          >
+                            <CheckCircle2 className="w-3 h-3 shrink-0" />
+                            <span>
+                              {isSlotChangeRequested && isAdminSlotEditor ? 'Valider demande' : 'Valider'}
+                            </span>
+                          </button>
+                        )}
+                        {canOpenSlotModal && onOpenSlotModal && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              clearCloseTimer();
+                              setIsOpen(false);
+                              onOpenSlotModal();
+                            }}
+                            className="flex-1 py-1.5 px-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[10px] font-bold inline-flex items-center justify-center gap-1 cursor-pointer transition-all"
+                          >
+                            <CalendarClock className="w-3 h-3 shrink-0 text-amber-600" />
+                            <span>{isAdminSlotEditor ? 'Changer créneau' : 'Autre créneau'}</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>,
         document.body

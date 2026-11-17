@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { PlayerTest, TrialCandidate } from '../types/recruitment';
+import type { CandidateEvaluation, PlayerTest, TrialCandidate } from '../types/recruitment';
 import { X, Calendar } from 'lucide-react';
 import { TrialSessionPlannerForm } from './TrialSessionPlannerForm';
 
@@ -14,6 +14,7 @@ interface TrialSessionModalProps {
   defaultDates?: string[];
   defaultCandidateId?: string;
   candidates?: TrialCandidate[];
+  evaluations?: CandidateEvaluation[];
   scouts?: any[];
 }
 
@@ -28,6 +29,7 @@ export const TrialSessionModal: React.FC<TrialSessionModalProps> = ({
   defaultDates,
   defaultCandidateId,
   candidates,
+  evaluations,
   scouts,
 }) => {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
@@ -89,6 +91,7 @@ export const TrialSessionModal: React.FC<TrialSessionModalProps> = ({
           initialTest={initialTest}
           defaultCandidateId={defaultCandidateId}
           candidates={candidates}
+          evaluations={evaluations}
           scouts={scouts}
           onSaveBatch={handleSaveBatch}
           onUpdate={onUpdate}

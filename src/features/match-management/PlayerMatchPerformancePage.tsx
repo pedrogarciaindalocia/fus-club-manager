@@ -38,6 +38,7 @@ import {
 } from '../../services/playerPerformanceService';
 import {
   computeIntegerPillarAveragesFromCriteria,
+  filterMetricPositionsForPlayer,
   getMetricPositionFrenchName,
   parseMetricCriterionLabel,
   resolveMetricSetForRubric,
@@ -287,19 +288,24 @@ export const PlayerMatchPerformancePage: React.FC = () => {
     return dayEvaluations.find(e => e.id === activeEvalId) || null;
   }, [dayEvaluations, activeEvalId]);
 
+  const selectablePositions: MetricSetPosition[] = useMemo(
+    () => filterMetricPositionsForPlayer(positionsInSet, selectedPlayer?.position),
+    [positionsInSet, selectedPlayer?.position]
+  );
+
   const activePosition: MetricSetPosition | null = useMemo(() => {
-    if (positionsInSet.length === 0) return null;
+    if (selectablePositions.length === 0) return null;
     if (selectedPosCode) {
-      const matched = positionsInSet.find(
+      const matched = selectablePositions.find(
         p => p.code.toUpperCase() === selectedPosCode.toUpperCase()
       );
       if (matched) return matched;
     }
     return (
-      resolveMetricSetPositionForPlayer(positionsInSet, selectedPlayer?.position) ||
-      positionsInSet[0]
+      resolveMetricSetPositionForPlayer(selectablePositions, selectedPlayer?.position) ||
+      selectablePositions[0]
     );
-  }, [positionsInSet, selectedPosCode, selectedPlayer?.position]);
+  }, [selectablePositions, selectedPosCode, selectedPlayer?.position]);
 
   const buildInitialCriteriaForPosition = useCallback(
     (
@@ -337,12 +343,13 @@ export const PlayerMatchPerformancePage: React.FC = () => {
       setIsCreatingNew(false);
       setConfirmDelete(false);
 
-      let targetPositions = positionsInSet;
+      let rawTargetPositions = positionsInSet;
       if (ev.metric_set_id && playerPerfSets.some(s => s.id === ev.metric_set_id)) {
         setSelectedSetId(ev.metric_set_id);
         const setPos = getPositionsForSet(ev.metric_set_id);
-        if (setPos.length > 0) targetPositions = setPos;
+        if (setPos.length > 0) rawTargetPositions = setPos;
       }
+      const targetPositions = filterMetricPositionsForPlayer(rawTargetPositions, player?.position);
 
       const resolvedPos =
         targetPositions.find(
@@ -382,8 +389,8 @@ export const PlayerMatchPerformancePage: React.FC = () => {
 
   const startNewEvaluation = useCallback(() => {
     const resolvedPos =
-      resolveMetricSetPositionForPlayer(positionsInSet, selectedPlayer?.position) ||
-      positionsInSet[0] ||
+      resolveMetricSetPositionForPlayer(selectablePositions, selectedPlayer?.position) ||
+      selectablePositions[0] ||
       null;
     const baseScores: Record<MetricPillar, number> = {
       technique: DEFAULT_SCORE,
@@ -400,7 +407,7 @@ export const PlayerMatchPerformancePage: React.FC = () => {
     setCriteriaScores(buildInitialCriteriaForPosition(resolvedPos, baseScores));
     setActivePillarTab('technique');
     setRadarViewMode('technique');
-  }, [positionsInSet, selectedPlayer?.position, buildInitialCriteriaForPosition]);
+  }, [selectablePositions, selectedPlayer?.position, buildInitialCriteriaForPosition]);
 
   // Synchroniser les critères manquants si le poste ou le lot de métriques change
   useEffect(() => {
@@ -1044,20 +1051,21 @@ export const PlayerMatchPerformancePage: React.FC = () => {
                   </div>
                 )}
 
-                {positionsInSet.length > 0 && (
+                {selectablePositions.length > 0 && (
                   <div className="space-y-1.5">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
                       <Shield className="w-3 h-3 text-[#FF3737]" />
                       <span>Choix du poste (Métriques Perf. Joueur)</span>
                     </span>
                     <div className="flex flex-wrap gap-1.5">
-                      {positionsInSet.map(pos => {
+                      {selectablePositions.map(pos => {
                         const isActive = activePosition?.code === pos.code;
                         return (
                           <button
                             key={pos.id}
                             type="button"
                             onClick={() => {
+                              if (isActive) return;
                               setSelectedPosCode(pos.code);
                               if (activeEval && !isEditing && canUpdate) {
                                 setConfirmDelete(false);

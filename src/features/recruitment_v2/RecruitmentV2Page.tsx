@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
-  Users, Calendar, Swords, Plus, Search, Filter,
+  Users, Swords, Plus, Search, Filter,
   Award, Shield, ChevronRight,
   TrendingUp, Trash2, Edit3, CheckCircle2, Clock, AlertCircle,
   Eye, UserCheck, LayoutList, Kanban, HeartHandshake, Briefcase, User, RotateCcw, X, Lock, MapPin, Trophy,
@@ -21,7 +21,9 @@ import type {
   Scout,
   ScoutObservation,
   ScoutMission,
-  PlayerRecruitmentStatus
+  PlayerRecruitmentStatus,
+  AdministrativeDocument,
+  TestSlotValidationInfo
 } from './types/recruitment';
 import {
   RECRUITMENT_AGE_CATEGORIES,
@@ -30,9 +32,11 @@ import {
   getAgeCategoryFromBirthDate,
   calculateCandidateAge,
   getPoleFromCategory,
-  resolveReportOrCandidateSurclassement
+  resolveReportOrCandidateSurclassement,
+  getHonorDeclarationDocument
 } from './types/recruitment';
 import { PLAYER_POSITIONS, normalizeAgeCategory } from '../../constants';
+import { isScoutAdminRole } from '../../constants/roles';
 import { getCountryFlag } from '../../constants/geography';
 
 // Subcomponents
@@ -59,6 +63,8 @@ import { getFrenchPositionLabel } from './constants/scoutCriteriaByPosition';
 import { CandidatePillarsScorecard } from './components/CandidatePillarsScorecard';
 import { PreferredFootIcon } from './components/PreferredFootIcon';
 import { TestDateHoverCalendarPill } from './components/TestDateHoverCalendarPill';
+import { HonorDeclarationStatusPill } from './components/HonorDeclarationControl';
+import { TestSlotChangeModal } from './components/TestSlotChangeModal';
 import {
   formatTestDateIntervalLabel,
   getTestCandidateIds,
@@ -179,13 +185,15 @@ export const RecruitmentV2Page: React.FC = () => {
       userRole === 'super_admin'
     )
   );
-  // Rôle scout_admin (reste soumis à la matrice explicite de permissions sauf Super Admin)
-  const isScoutAdmin = Boolean(
-    userRoles.includes('scout_admin') ||
-    userRole === 'scout_admin'
+  // Rôle scout_admin (supervision cellule sur les rubriques et actions cochées)
+  const isScoutAdmin = isScoutAdminRole(
+    authState?.user,
+    authState?.roles,
+    authState?.isImpersonating,
+    authState?.impersonatedUser
   );
-  // Seul le Super Admin a les pleins pouvoirs sans passer par les cases cochées
-  const isAdmin = isSuperAdmin;
+  // Super Admin & Scout Admin disposent des droits d'administration sur les fiches & rapports autorisés
+  const isAdmin = isSuperAdmin || isScoutAdmin;
 
   // US-DASH: Scout Manager (responsable opérationnel de scouts, mais non administrateur de direction)
   const isScoutManager = Boolean(
@@ -198,10 +206,10 @@ export const RecruitmentV2Page: React.FC = () => {
     )
   );
 
-  // Admin du recrutement effectif (Super Admin uniquement par défaut, ou Scout Admin avec accès Scouts explicite)
+  // Admin du recrutement effectif (Super Admin ou Scout Admin)
   const isRecruitmentAdmin = Boolean(
     isSuperAdmin ||
-    (isScoutAdmin && !isScoutManager && hasSubModuleAccess('scouts', 'read', 'recruitment_v2'))
+    (isScoutAdmin && !isScoutManager)
   );
 
   // Assigner des missions : dépend strictement d'être Super Admin ou d'avoir la permission cochée
@@ -224,7 +232,7 @@ export const RecruitmentV2Page: React.FC = () => {
     hasSubModuleAccess('candidates', 'recruit_now')
   );
 
-  // US-DASH-60: Permission spécifique de gestion des rapports d'observation
+  // US-DASH-60: Permission spécifique de gestion des rapports d'observation (strictement contrôlée par case cochée)
   const canManageReports = Boolean(
     isSuperAdmin ||
     hasSubModuleAccess('candidates', 'manage_reports') ||
@@ -267,6 +275,12 @@ export const RecruitmentV2Page: React.FC = () => {
       setSearchParams(nextParams, { replace: true });
     }
   }, [rawTab, availableV2Tabs, firstAvailableTab, searchParams, setSearchParams]);
+
+  const goToTab = React.useCallback((tabKey: string) => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', tabKey);
+    setSearchParams(nextParams);
+  }, [searchParams, setSearchParams]);
 
   const {
     scouts,
@@ -320,24 +334,45 @@ export const RecruitmentV2Page: React.FC = () => {
   }, [evaluations]);
 
   const getCandidateLatestDecision = React.useCallback((c: TrialCandidate): 'recruit_now' | 'invitation_test' | 'to_follow' | null => {
+    const normalizedCandDecision =
+      (c as any).scout_state_decision === 'recruit_standby'
+        ? 'recruit_now'
+        : c.scout_state_decision;
+    const latestEval = getCandidateLatestEvaluation(c);
+    const candMs = c.updated_at ? new Date(c.updated_at).getTime() : 0;
+    const evalMs = latestEval
+      ? new Date((latestEval as any).updated_at || latestEval.created_at || latestEval.evaluation_date || 0).getTime()
+      : 0;
+
+    // Si la fiche joueur a été mise à jour explicitement après le dernier rapport (ex. liste déroulante Database ou Formulaire), le statut de la fiche prime
+    if (
+      latestEval &&
+      candMs > evalMs &&
+      (normalizedCandDecision === 'to_follow' ||
+        normalizedCandDecision === 'invitation_test' ||
+        normalizedCandDecision === 'recruit_now')
+    ) {
+      return normalizedCandDecision;
+    }
+
     // Si explicitement validé recrutement immédiat ou statut recruit_now / selected
     if (
       (c as any).is_recruit_now_validated ||
-      c.scout_state_decision === 'recruit_now' ||
-      c.scout_state_decision === 'recruit_standby' ||
+      normalizedCandDecision === 'recruit_now' ||
       (c as any).status === 'recruit_now' ||
       (c as any).status === 'selected' ||
       (c as any).pipeline_stage === 'recruit_now'
     ) {
       return 'recruit_now';
     }
-    const latestEval = getCandidateLatestEvaluation(c);
+    if (normalizedCandDecision === 'invitation_test' || (c as any).status === 'in_trial') {
+      return 'invitation_test';
+    }
     if (!latestEval) {
-      if (c.scout_state_decision === 'recruit_standby') return 'recruit_now';
-      return (c.scout_state_decision as any) || null;
+      return (normalizedCandDecision as any) || null;
     }
     const dec = (latestEval as any).scout_state_decision || latestEval.report_data?.scout_state_decision;
-    if (dec === 'recruit_now' || dec === 'recruit_standby' || c.scout_state_decision === 'recruit_standby') {
+    if (dec === 'recruit_now' || dec === 'recruit_standby') {
       return 'recruit_now';
     }
     if (dec === 'invitation_test' || dec === 'to_follow') {
@@ -346,7 +381,7 @@ export const RecruitmentV2Page: React.FC = () => {
     if (latestEval.verdict === 'sign' || latestEval.verdict === 'sign_immediately') return 'recruit_now';
     if (latestEval.verdict === 'trial') return 'invitation_test';
     if (latestEval.verdict === 'follow') return 'to_follow';
-    return (c.scout_state_decision as any) || null;
+    return (normalizedCandDecision as any) || null;
   }, [getCandidateLatestEvaluation]);
 
   // Helper pour vérifier si un candidat est en recrutement immédiat
@@ -449,10 +484,19 @@ export const RecruitmentV2Page: React.FC = () => {
     return summaryMap;
   }, [tests]);
 
+  // Seuls l'Admin (scout_admin / admin / direction) et le Super Admin peuvent planifier ou modifier des sessions de test
+  const canScheduleTests = Boolean(
+    !isScoutManager && (isSuperAdmin || isAdmin || isScoutAdmin || isRecruitmentAdmin)
+  );
+
   const handleOpenInvitedCalendar = (
     cand: TrialCandidate,
     interval?: TestDateInterval
   ) => {
+    if (!canScheduleTests) {
+      toast.error("Seul l'Admin ou le Super Admin peut planifier ou gérer les sessions de test.");
+      return;
+    }
     const fullName = `${cand.first_name} ${cand.last_name}`.trim();
     if (interval && interval.dates.length > 0) {
       setInvitedCalendarFocus({
@@ -564,10 +608,289 @@ export const RecruitmentV2Page: React.FC = () => {
     return 'to_follow';
   }, [getCandidateLatestDecision, isCandidateRecruitNow]);
 
+  const [slotModalTarget, setSlotModalTarget] = useState<{
+    candidate: TrialCandidate;
+    startDate: string;
+    endDate: string;
+    startTime: string;
+  } | null>(null);
+
+  const canUploadHonorDeclarationForCandidate = (cand: TrialCandidate): boolean =>
+    Boolean(canScheduleTests || isCandidateIntroducedByScout(cand));
+
+  const canValidateCandidateSlot = (cand: TrialCandidate): boolean =>
+    Boolean(canScheduleTests || isScoutManager || isCandidateIntroducedByScout(cand));
+
+  const handleHonorDeclarationChange = async (
+    cand: TrialCandidate,
+    doc: AdministrativeDocument | null
+  ) => {
+    const existingAdminDocs = cand.administrative_documents || [];
+    const syncedAdminDocs = [
+      ...existingAdminDocs.filter((d) => d.category !== 'honor_declaration'),
+      ...(doc ? [doc] : []),
+    ];
+    await updateCandidate(cand.id, {
+      honor_declaration_document: doc,
+      administrative_documents: syncedAdminDocs,
+      updated_at: new Date().toISOString(),
+    });
+  };
+
+  const enumerateIsoDates = (startIso: string, endIso: string): string[] => {
+    const dates: string[] = [];
+    const [sy, sm, sd] = startIso.split('-').map(Number);
+    const resolvedEnd = endIso >= startIso ? endIso : startIso;
+    const [ey, em, ed] = resolvedEnd.split('-').map(Number);
+    const cur = new Date(Date.UTC(sy, sm - 1, sd));
+    const end = new Date(Date.UTC(ey, em - 1, ed));
+    let guard = 0;
+    while (cur <= end && guard < 31) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+      guard += 1;
+    }
+    return dates;
+  };
+
+  const handleAdminChangeAndValidateTestSlot = async (
+    cand: TrialCandidate,
+    payload: { startDate: string; endDate: string; startTime: string; note: string }
+  ) => {
+    if (!canScheduleTests) {
+      toast.error("Seul l'Admin ou le Super Admin peut modifier les dates d'un créneau de test.");
+      return;
+    }
+    const dateList = enumerateIsoDates(payload.startDate, payload.endDate);
+    const existingSummary = candidateTestSummaryMap.get(cand.id);
+    const existingSessions = (existingSummary?.sessions || []).filter((s) => s.status !== 'cancelled');
+    const template = existingSessions[0];
+
+    const exclusiveSessionIds: string[] = [];
+    const sharedSessions: Array<{ session: PlayerTest; remainingIds: string[] }> = [];
+
+    existingSessions.forEach((s) => {
+      const remainingIds = getTestCandidateIds(s).filter((id) => id !== cand.id);
+      if (remainingIds.length > 0) {
+        sharedSessions.push({ session: s, remainingIds });
+      } else {
+        exclusiveSessionIds.push(s.id);
+      }
+    });
+
+    for (const item of sharedSessions) {
+      await updateTest({
+        id: item.session.id,
+        updates: {
+          candidate_ids: item.remainingIds,
+          candidate_id: item.remainingIds[0],
+        },
+      });
+    }
+
+    if (exclusiveSessionIds.length > 0) {
+      await deleteTests(exclusiveSessionIds);
+    }
+
+    const baseCategory = cand.age_category || template?.age_category || 'U19';
+    const newSessionsPayload = dateList.map((dateIso) => ({
+      candidate_id: cand.id,
+      candidate_ids: [cand.id],
+      test_name: template?.test_name || `Session Détection (${baseCategory})`,
+      test_date: dateIso,
+      start_time: payload.startTime || template?.start_time || '09:30',
+      end_time: template?.end_time || '12:00',
+      location: template?.location || 'Complexe Sportif FUS',
+      training_ground: template?.training_ground || 'Terrain Synthétique 1',
+      target_team: template?.target_team || 'Académie FUS',
+      age_category: baseCategory,
+      test_type: template?.test_type || 'comprehensive',
+      status: 'confirmed' as const,
+      notes: payload.note || template?.notes || '',
+    }));
+
+    await createTestsBatch(newSessionsPayload);
+
+    const validationInfo: TestSlotValidationInfo = {
+      status: 'validated',
+      validated_by: authState?.user?.full_name || 'Direction',
+      validated_at: new Date().toISOString(),
+      validated_dates: dateList,
+      request_note: payload.note || undefined,
+    };
+
+    await updateCandidate(cand.id, {
+      test_slot_validation: validationInfo,
+      updated_at: new Date().toISOString(),
+    });
+
+    toast.success(`Créneau de test mis à jour et validé pour ${cand.first_name} ${cand.last_name}`);
+  };
+
+  const handleValidateCandidateTestSlot = async (cand: TrialCandidate) => {
+    if (!canValidateCandidateSlot(cand)) {
+      toast.error("Vous n'avez pas l'autorisation de valider ce créneau.");
+      return;
+    }
+
+    // Si une demande d'autre créneau existe et qu'un Admin/Super Admin clique sur Valider -> appliquer le créneau demandé
+    if (
+      canScheduleTests &&
+      cand.test_slot_validation?.status === 'change_requested' &&
+      cand.test_slot_validation.requested_start_date
+    ) {
+      await handleAdminChangeAndValidateTestSlot(cand, {
+        startDate: cand.test_slot_validation.requested_start_date,
+        endDate: cand.test_slot_validation.requested_end_date || cand.test_slot_validation.requested_start_date,
+        startTime: cand.test_slot_validation.requested_start_time || '09:30',
+        note: cand.test_slot_validation.request_note || '',
+      });
+      return;
+    }
+
+    const summary = candidateTestSummaryMap.get(cand.id);
+    const activeSessions = (summary?.sessions || []).filter((s) => s.status !== 'cancelled');
+    for (const s of activeSessions) {
+      if (s.status !== 'confirmed') {
+        await updateTest({ id: s.id, updates: { status: 'confirmed' } });
+      }
+    }
+
+    const validationInfo: TestSlotValidationInfo = {
+      status: 'validated',
+      validated_by: authState?.user?.full_name || currentScout?.full_name || 'Scout Manager',
+      validated_at: new Date().toISOString(),
+      validated_dates: summary?.allDates || [],
+    };
+
+    await updateCandidate(cand.id, {
+      test_slot_validation: validationInfo,
+      updated_at: new Date().toISOString(),
+    });
+
+    toast.success(`Créneau de test validé pour ${cand.first_name} ${cand.last_name}`);
+  };
+
+  const handleScoutRequestAnotherSlot = async (
+    cand: TrialCandidate,
+    payload: { startDate: string; endDate: string; startTime: string; note: string }
+  ) => {
+    const requestInfo: TestSlotValidationInfo = {
+      status: 'change_requested',
+      requested_start_date: payload.startDate,
+      requested_end_date: payload.endDate,
+      requested_start_time: payload.startTime,
+      request_note: payload.note || undefined,
+      requested_by: authState?.user?.full_name || currentScout?.full_name || 'Scout Manager',
+      requested_at: new Date().toISOString(),
+    };
+
+    await updateCandidate(cand.id, {
+      test_slot_validation: requestInfo,
+      updated_at: new Date().toISOString(),
+    });
+
+    toast.success(`Demande d'autre créneau envoyée à l'Admin pour ${cand.first_name} ${cand.last_name}`);
+  };
+
+  const openSlotModalForCandidate = (cand: TrialCandidate, interval?: TestDateInterval) => {
+    const summary = candidateTestSummaryMap.get(cand.id);
+    const targetInterval = interval || summary?.intervals?.[0];
+    const startDate = targetInterval?.startDate || todayStr;
+    const endDate = targetInterval?.endDate || startDate;
+    const startTime = summary?.sessions?.[0]?.start_time || '09:30';
+    setSlotModalTarget({
+      candidate: cand,
+      startDate,
+      endDate,
+      startTime,
+    });
+  };
+
+  const handleDatabaseStatusChange = async (
+    cand: TrialCandidate,
+    nextStatus: PlayerRecruitmentStatus
+  ) => {
+    const currentStatus = resolveCandidateStatus(cand);
+    const isOwner = isCandidateIntroducedByScout(cand);
+
+    if (!canScheduleTests) {
+      if (!isScoutManager || !isOwner) {
+        toast.error("Vous pouvez modifier le statut uniquement pour vos propres joueurs.");
+        return;
+      }
+      if (currentStatus === 'invitation_test') {
+        toast.error("Le statut « Inviter à un test » est verrouillé. Seul un Admin ou Super Admin peut le modifier.");
+        return;
+      }
+    }
+
+    if (nextStatus === currentStatus) return;
+
+    const mappedDbStatus =
+      nextStatus === 'recruit_now'
+        ? 'selected'
+        : nextStatus === 'invitation_test'
+          ? 'in_trial'
+          : 'registered';
+
+    const nextPipelineStage =
+      (cand.pipeline_stage as string) === 'recruit_now' && nextStatus !== 'recruit_now'
+        ? 'shortlisted'
+        : cand.pipeline_stage;
+
+    try {
+      // Si Admin sort le joueur du statut « Inviter à un test », nettoyer ses créneaux actifs non évalués & validation
+      // afin qu'un éventuel retour ultérieur vers « Inviter à un test » reparte d'un état vierge sans créneau résiduel.
+      const leavingInvitationTest = currentStatus === 'invitation_test' && nextStatus !== 'invitation_test';
+      if (leavingInvitationTest) {
+        const candSessions = (candidateTestSummaryMap.get(cand.id)?.sessions || []).filter(
+          (s) => s.status !== 'cancelled' && s.status !== 'completed'
+        );
+        const exclusiveSessionIds: string[] = [];
+        for (const s of candSessions) {
+          const remainingIds = getTestCandidateIds(s).filter((id) => id !== cand.id);
+          if (remainingIds.length > 0) {
+            await updateTest({
+              id: s.id,
+              updates: {
+                candidate_ids: remainingIds,
+                candidate_id: remainingIds[0],
+              },
+            });
+          } else {
+            exclusiveSessionIds.push(s.id);
+          }
+        }
+        if (exclusiveSessionIds.length > 0) {
+          await deleteTests(exclusiveSessionIds);
+        }
+      }
+
+      await updateCandidate(cand.id, {
+        scout_state_decision: nextStatus,
+        status: mappedDbStatus as any,
+        pipeline_stage: nextPipelineStage,
+        is_recruit_now_validated: nextStatus === 'recruit_now',
+        ...(leavingInvitationTest ? { test_slot_validation: null } : {}),
+        updated_at: new Date().toISOString(),
+      });
+      const label =
+        nextStatus === 'recruit_now'
+          ? 'Recrutement immédiatement'
+          : nextStatus === 'invitation_test'
+            ? 'Inviter à un test'
+            : 'À suivre';
+      toast.success(`Statut de ${cand.first_name} ${cand.last_name} mis à jour : ${label}`);
+    } catch (err: any) {
+      toast.error(`Erreur lors du changement de statut : ${err?.message || 'Erreur inconnue'}`);
+    }
+  };
+
   // Rendu unifié de la cellule/ligne Statut :
-  // - Si "Recrutement immédiatement" et habilité -> afficher uniquement le bouton d'action à la place du statut (sans icône)
-  // - Si "Inviter à un test" -> afficher la date ou l'intervalle de date cliquable (ou "À planifier") juste en dessous
-  // - Sinon -> affichage purement informatif sans liste déroulante ni icône
+  // - Admin / Super Admin -> liste déroulante toujours active (même si « Inviter à un test » / créneau validé) + « Dossier Admin » si Recrutement immédiatement ou pastille de dates si Inviter à un test
+  // - Scout Manager propriétaire (hors « Inviter à un test ») -> liste déroulante des 3 statuts autorisés
+  // - « Inviter à un test » -> uniquement la pastille si planifié (Capture 2 : survol calendrier pour Valider / Autre créneau / Changer créneau) ou « En attente de planning » (Scout Manager)
   const renderCandidateStatusControl = (
     c: TrialCandidate,
     fullWidthButton = false,
@@ -575,7 +898,7 @@ export const RecruitmentV2Page: React.FC = () => {
   ) => {
     const currentStatus = resolveCandidateStatus(c);
 
-    if (currentStatus === 'recruit_now' && (canProcessRecruitNow || isOnlyRecruitNowUser)) {
+    if (currentStatus === 'recruit_now' && !isScoutManager && isOnlyRecruitNowUser) {
       return (
         <button
           type="button"
@@ -594,8 +917,13 @@ export const RecruitmentV2Page: React.FC = () => {
       );
     }
 
+    const isOwner = isCandidateIntroducedByScout(c);
+    const canChangeStatusInDb = Boolean(
+      canScheduleTests || (isScoutManager && isOwner && currentStatus !== 'invitation_test')
+    );
+
     const statusLabel =
-      currentStatus === 'recruit_now' ? 'Recrutement immédiat' :
+      currentStatus === 'recruit_now' ? 'Recrutement immédiatement' :
         currentStatus === 'invitation_test' ? 'Inviter à un test' :
           'À suivre';
 
@@ -606,22 +934,85 @@ export const RecruitmentV2Page: React.FC = () => {
           ? "bg-blue-50 text-blue-800 border-blue-200"
           : "bg-indigo-50 text-indigo-800 border-indigo-200";
 
+    const selectToneClass =
+      currentStatus === 'recruit_now'
+        ? "bg-emerald-50 text-emerald-900 border-emerald-300 focus:ring-emerald-400/30"
+        : currentStatus === 'invitation_test'
+          ? "bg-blue-50 text-blue-900 border-blue-200 focus:ring-blue-400/30"
+          : "bg-indigo-50 text-indigo-900 border-indigo-200 focus:ring-indigo-400/30";
+
     const candTestSummary = currentStatus === 'invitation_test'
       ? candidateTestSummaryMap.get(c.id)
       : undefined;
     const testIntervals = candTestSummary?.intervals || [];
+    const slotValidation = c.test_slot_validation;
+    const allowSlotAction = canValidateCandidateSlot(c);
 
     return (
-      <div className={cn(
-        "flex flex-col gap-1.5",
-        align === 'end' ? "items-end" : "items-start"
-      )}>
-        <span className={cn(
-          "inline-flex items-center px-2.5 py-1 rounded-xl border text-[11px] font-black uppercase tracking-wider select-none whitespace-nowrap",
-          statusBadgeClass
-        )}>
-          {statusLabel}
-        </span>
+      <div
+        className={cn(
+          "flex flex-col gap-1.5",
+          fullWidthButton ? "w-full" : "",
+          align === 'end' ? "items-end" : "items-start"
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {canChangeStatusInDb ? (
+          <select
+            aria-label={`Statut de ${c.first_name} ${c.last_name}`}
+            value={currentStatus}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              e.stopPropagation();
+              handleDatabaseStatusChange(c, e.target.value as PlayerRecruitmentStatus);
+            }}
+            className={cn(
+              "px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer focus:outline-none focus:ring-2",
+              selectToneClass,
+              fullWidthButton ? "w-full" : "max-w-[205px]"
+            )}
+            title={
+              canScheduleTests
+                ? "Changer le statut du joueur (y compris après validation d'un créneau)"
+                : "Changer le statut de votre joueur (une fois « Inviter à un test », seul un Admin / Super Admin peut le modifier)"
+            }
+          >
+            <option value="to_follow">À suivre</option>
+            <option value="invitation_test">Inviter à un test</option>
+            <option value="recruit_now">Recrutement immédiatement</option>
+          </select>
+        ) : (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border text-[11px] font-black uppercase tracking-wider select-none whitespace-nowrap",
+              statusBadgeClass
+            )}
+            title={
+              !canScheduleTests && currentStatus === 'invitation_test'
+                ? "Statut verrouillé — Seul un Admin ou Super Admin peut modifier « Inviter à un test »"
+                : undefined
+            }
+          >
+            {!canScheduleTests && currentStatus === 'invitation_test' && (
+              <Lock className="w-3 h-3 shrink-0 opacity-75" />
+            )}
+            <span>{statusLabel}</span>
+          </span>
+        )}
+
+        {currentStatus === 'recruit_now' && canScheduleTests && canProcessRecruitNow && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenAdminProcedure(c);
+            }}
+            className="h-7 px-3 rounded-lg bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-[11px] inline-flex items-center justify-center shadow-xs cursor-pointer active:scale-95 transition-all whitespace-nowrap"
+            title="Ouvrir la procédure administrative et contractuelle"
+          >
+            Dossier Admin
+          </button>
+        )}
 
         {currentStatus === 'invitation_test' && (
           testIntervals.length > 0 ? (
@@ -636,24 +1027,26 @@ export const RecruitmentV2Page: React.FC = () => {
                   interval={interval}
                   allCandidateTestDates={candTestSummary?.allDates}
                   sessions={candTestSummary?.sessions}
-                  onClick={() => handleOpenInvitedCalendar(c, interval)}
+                  readOnly={!canScheduleTests}
+                  slotValidation={slotValidation}
+                  canValidateSlot={allowSlotAction}
+                  canOpenSlotModal={allowSlotAction}
+                  isAdminSlotEditor={canScheduleTests}
+                  onValidateSlot={() => handleValidateCandidateTestSlot(c)}
+                  onOpenSlotModal={() => openSlotModalForCandidate(c, interval)}
+                  onClick={canScheduleTests ? () => handleOpenInvitedCalendar(c, interval) : undefined}
                 />
               ))}
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenInvitedCalendar(c);
-              }}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-dashed border-blue-300 bg-blue-50/70 hover:bg-blue-600 hover:text-white hover:border-blue-600 text-blue-700 text-[11px] font-bold transition-all cursor-pointer active:scale-95 whitespace-nowrap group/date"
-              title={`Planifier ou consulter le calendrier pour ${c.first_name} ${c.last_name}`}
+          ) : !canScheduleTests ? (
+            <span
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-100 text-slate-600 text-[11px] font-semibold cursor-default whitespace-nowrap"
+              title="En attente de planification par l'Admin ou le Super Admin"
             >
-              <Calendar className="w-3 h-3 text-blue-600 group-hover/date:text-white shrink-0 transition-colors" />
-              <span>À planifier</span>
-            </button>
-          )
+              <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+              <span>En attente de planning</span>
+            </span>
+          ) : null
         )}
       </div>
     );
@@ -1221,8 +1614,11 @@ export const RecruitmentV2Page: React.FC = () => {
     hasSubModuleAccess('candidates', 'drive_link')
   );
 
-  // Vérifie si l'utilisateur a le droit de créer un candidat ou un rapport (CRUD create)
-  const canCreateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'create'));
+  // Vérifie si l'utilisateur a le droit de créer un candidat (strictement contrôlé par case cochée)
+  const canCreateCandidate = Boolean(
+    isSuperAdmin ||
+    hasSubModuleAccess('candidates', 'create')
+  );
 
   // Vérifie si un candidat a été introduit / découvert par le scout connecté
   const isCandidateIntroducedByScout = (cand: TrialCandidate): boolean => {
@@ -1304,33 +1700,36 @@ export const RecruitmentV2Page: React.FC = () => {
   };
 
   // Règle d'ajout de rapport (US-DASH-100) :
-  // Tout scout ou scout manager habilité aux rapports peut rédiger un rapport
-  // sur n'importe quel joueur existant dans la base de données.
+  // Requiert la permission cochée Gestion de rapport (sauf Super Admin).
   const canAddReportForCandidate = (cand: TrialCandidate): boolean => {
     if (!cand) return false;
-    if (isSuperAdmin || isAdmin || isRecruitmentAdmin) return true;
+    if (isSuperAdmin) return true;
     if (!canManageReports) return false;
+    if (isAdmin || isRecruitmentAdmin) return true;
     if (!canManageCategory(cand.age_category)) return false;
     return true;
   };
 
   // Règle de modification d'un rapport :
-  // On ne peut modifier QUE ses propres rapports (sauf Super Admin / Admin)
+  // Requiert la permission cochée Gestion de rapport (sauf Super Admin).
+  // Le Scout Admin peut modifier tous les rapports ; les autres scouts uniquement les leurs.
   const canEditEvaluation = (ev: CandidateEvaluation): boolean => {
     if (!ev) return false;
-    if (isSuperAdmin || isAdmin) return true;
+    if (isSuperAdmin) return true;
     if (!canManageReports) return false;
+    if (isAdmin || isRecruitmentAdmin) return true;
     if (!hasSubModuleAccess('candidates', 'update')) return false;
     return isEvaluationAuthoredByScout(ev);
   };
 
   // Règle de suppression d'un rapport :
-  // On ne peut supprimer QUE ses propres rapports (sauf Super Admin / Admin)
+  // Requiert Gestion de rapport + Delete cochés (sauf Super Admin).
   const canDeleteEvaluation = (ev: CandidateEvaluation): boolean => {
     if (!ev) return false;
-    if (isSuperAdmin || isAdmin) return true;
+    if (isSuperAdmin) return true;
     if (!canManageReports) return false;
     if (!hasSubModuleAccess('candidates', 'delete')) return false;
+    if (isAdmin || isRecruitmentAdmin) return true;
     return isEvaluationAuthoredByScout(ev);
   };
 
@@ -1363,6 +1762,7 @@ export const RecruitmentV2Page: React.FC = () => {
     if (!cand) return false;
     if (isSuperAdmin) return true;
     if (!canEditDriveLink) return false;
+    if (isAdmin || isRecruitmentAdmin) return true;
     if (!canManageCategory(cand.age_category)) return false;
     return true;
   };
@@ -1376,7 +1776,7 @@ export const RecruitmentV2Page: React.FC = () => {
     const hasEditPermission = hasSubModuleAccess('candidates', 'edit_player') || hasSubModuleAccess('candidates', 'update');
     if (!hasEditPermission) return false;
 
-    if (isAdmin) return true;
+    if (isAdmin || isRecruitmentAdmin) return true;
 
     // Si le joueur a été introduit par le scout connecté : modification autorisée
     if (isCandidateIntroducedByScout(cand)) {
@@ -1393,7 +1793,7 @@ export const RecruitmentV2Page: React.FC = () => {
     // Règle stricte : la permission de suppression candidates:delete est impérativement requise
     if (!hasSubModuleAccess('candidates', 'delete')) return false;
 
-    if (isAdmin) return true;
+    if (isAdmin || isRecruitmentAdmin) return true;
 
     // Ne peut supprimer QUE les joueurs qu'il a introduits lui-même
     if (isCandidateIntroducedByScout(cand)) {
@@ -1423,6 +1823,10 @@ export const RecruitmentV2Page: React.FC = () => {
   };
 
   const handleOpenScheduleTestForCandidate = (cand: TrialCandidate, defaultDate?: string) => {
+    if (!canScheduleTests) {
+      toast.error("Seul l'Admin ou le Super Admin peut planifier ou gérer les sessions de test.");
+      return;
+    }
     setEditingTest(null);
     setSchedulingCandidate(cand);
     setNewTestDefaultDate(defaultDate || todayStr);
@@ -1865,7 +2269,7 @@ export const RecruitmentV2Page: React.FC = () => {
           currentScout={currentScout}
           currentUserId={authState?.user?.id}
           currentUserName={authState?.user?.full_name}
-          onScheduleTest={canCreateCandidate ? (cand) => {
+          onScheduleTest={canScheduleTests ? (cand) => {
             handleOpenScheduleTestForCandidate(cand);
           } : undefined}
           onOpenEvaluation={canAddReportForCandidate(activeCandidate) ? (options) => {
@@ -1988,7 +2392,7 @@ export const RecruitmentV2Page: React.FC = () => {
         )}
 
         {/* MODAL SESSION / TEST */}
-        {isSessionModalOpen && (
+        {isSessionModalOpen && canScheduleTests && (
           <TrialSessionModal
             isOpen={isSessionModalOpen}
             onClose={() => {
@@ -1998,6 +2402,7 @@ export const RecruitmentV2Page: React.FC = () => {
               setNewTestDefaultDate(undefined);
             }}
             candidates={scopedCandidates}
+            evaluations={evaluations}
             scouts={scopedScouts}
             initialTest={editingTest}
             defaultDate={newTestDefaultDate}
@@ -2071,6 +2476,10 @@ export const RecruitmentV2Page: React.FC = () => {
               defaultPlannerCandidateId={invitedCalendarFocus.candidateId}
               onBack={() => setInvitedCalendarFocus(null)}
               backLabel="Retour à la Database"
+              onOpenFullPlanning={canAccessTab('sessions') ? () => {
+                setInvitedCalendarFocus(null);
+                goToTab('sessions');
+              } : undefined}
               contextTitle={`Convocations Test — ${invitedCalendarFocus.candidateName}`}
               contextSubtitle={invitedCalendarFocus.contextSubtitle}
               onOpenCandidateDetail={(cand) => {
@@ -2078,38 +2487,39 @@ export const RecruitmentV2Page: React.FC = () => {
                   openCandidateDetail(cand);
                 }
               }}
-              onOpenNewTest={(defaultDate) => {
+              canManageSchedule={canScheduleTests}
+              onOpenNewTest={canScheduleTests ? (defaultDate) => {
                 setEditingTest(null);
                 setSchedulingCandidate(
                   activeScopedCandidates.find(c => c.id === invitedCalendarFocus.candidateId) || null
                 );
                 setNewTestDefaultDate(defaultDate);
                 setIsSessionModalOpen(true);
-              }}
-              onSaveBatchTests={(canCreateCandidate || isRecruitmentAdmin || canAccessTab('sessions'))
+              } : undefined}
+              onSaveBatchTests={canScheduleTests
                 ? async (testsPayload) => {
                   await createTestsBatch(testsPayload);
                 }
                 : undefined}
-              onUpdateTest={(canCreateCandidate || isRecruitmentAdmin || canAccessTab('sessions'))
+              onUpdateTest={canScheduleTests
                 ? async (id, updates) => {
                   await updateTest({ id, updates });
                 }
                 : undefined}
-              onEditTest={(test) => {
+              onEditTest={canScheduleTests ? (test) => {
                 setEditingTest(test);
                 setNewTestDefaultDate(undefined);
                 setIsSessionModalOpen(true);
-              }}
-              onDeleteTest={async (testId) => {
+              } : undefined}
+              onDeleteTest={canScheduleTests ? async (testId) => {
                 await deleteTest(testId);
-              }}
-              onDeleteTests={async (testIds) => {
+              } : undefined}
+              onDeleteTests={canScheduleTests ? async (testIds) => {
                 await deleteTests(testIds);
-              }}
-              onMoveTest={async (testId, newDate) => {
+              } : undefined}
+              onMoveTest={canScheduleTests ? async (testId, newDate) => {
                 await updateTest({ id: testId, updates: { test_date: newDate } });
-              }}
+              } : undefined}
               onOpenEvaluationForTest={canManageReports ? (candidate, test) => {
                 if (!canAddReportForCandidate(candidate)) {
                   toast.error("Vous n'avez pas la permission d'évaluer ce joueur.");
@@ -2173,32 +2583,30 @@ export const RecruitmentV2Page: React.FC = () => {
                   </div>
 
                   {canCreateCandidate && (
-                    <>
-                      <button
-                        onClick={() => {
-                          if (isScoutRestricted && currentScout) {
-                            navigate(`/recruitment-v2/add-player?scoutId=${currentScout.id}&returnTab=${activeTab}`);
-                          } else {
-                            navigate('/recruitment-v2/add-player');
-                          }
-                        }}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow-md shadow-primary/25 hover:bg-primary/90 active:scale-95 transition-all"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Ajouter Joueur
-                      </button>
+                    <button
+                      onClick={() => {
+                        if (isScoutRestricted && currentScout) {
+                          navigate(`/recruitment-v2/add-player?scoutId=${currentScout.id}&returnTab=${activeTab}`);
+                        } else {
+                          navigate('/recruitment-v2/add-player');
+                        }
+                      }}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow-md shadow-primary/25 hover:bg-primary/90 active:scale-95 transition-all"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Ajouter Joueur
+                    </button>
+                  )}
 
-                      {canManageReports && (
-                        <button
-                          onClick={() => navigate('/recruitment-v2/add-report')}
-                          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md hover:bg-indigo-500 active:scale-95 transition-all cursor-pointer"
-                          title="Rédiger un rapport scout pour un candidat"
-                        >
-                          <ClipboardList className="w-4 h-4" />
-                          Ajouter un rapport
-                        </button>
-                      )}
-                    </>
+                  {canManageReports && (
+                    <button
+                      onClick={() => navigate('/recruitment-v2/add-report')}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md hover:bg-indigo-500 active:scale-95 transition-all cursor-pointer"
+                      title="Rédiger un rapport scout pour un candidat"
+                    >
+                      <ClipboardList className="w-4 h-4" />
+                      Ajouter un rapport
+                    </button>
                   )}
                 </div>
               </div>
@@ -2690,6 +3098,7 @@ export const RecruitmentV2Page: React.FC = () => {
                             <th className="py-3.5 px-3 text-center">Scores Détecteur (5 Piliers)</th>
                           )}
                           <th className="py-3.5 px-3">Statut</th>
+                          <th className="py-3.5 px-3 text-center whitespace-nowrap">Déclaration sur l'honneur</th>
                           {!isOnlyRecruitNowUser && (
                             <th className="py-3.5 px-4 text-right min-w-[360px]">Actions</th>
                           )}
@@ -2825,6 +3234,7 @@ export const RecruitmentV2Page: React.FC = () => {
                                       scouts={scouts}
                                       size="xs"
                                       showBadge
+                                      showPhone
                                       badgePrefix={(isRecruitmentAdmin || isScoutManager) ? "Détecteur :" : undefined}
                                       className="bg-slate-50 text-slate-800 border border-slate-200 shadow-2xs"
                                     />
@@ -2888,6 +3298,17 @@ export const RecruitmentV2Page: React.FC = () => {
                               {/* Colonne Statut du joueur : Bouton action si 'Recrutement immédiatement', sinon information seule sans icône */}
                               <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
                                 {renderCandidateStatusControl(c)}
+                              </td>
+
+                              {/* Colonne Déclaration sur l'honneur : Voyant Rouge par défaut -> Vert si PDF/Image déposé */}
+                              <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                <HonorDeclarationStatusPill
+                                  candidateName={`${c.first_name} ${c.last_name}`.trim()}
+                                  document={getHonorDeclarationDocument(c)}
+                                  isRequired={resolveCandidateStatus(c) === 'invitation_test'}
+                                  canUpload={canUploadHonorDeclarationForCandidate(c)}
+                                  onDocumentChange={(doc) => handleHonorDeclarationChange(c, doc)}
+                                />
                               </td>
 
                               {/* Actions : masqué si utilisateur recrutement immédiat exclusif (bouton déjà affiché à la place du statut) */}
@@ -3145,6 +3566,7 @@ export const RecruitmentV2Page: React.FC = () => {
                                     scouts={scouts}
                                     size="xs"
                                     showBadge
+                                    showPhone
                                     badgePrefix="Scout :"
                                     className="bg-blue-50/90 text-blue-800 border border-blue-200/80 shadow-2xs"
                                   />
@@ -3160,6 +3582,7 @@ export const RecruitmentV2Page: React.FC = () => {
                                       scouts={scouts}
                                       size="xs"
                                       showBadge
+                                      showPhone
                                       badgePrefix="Scout A :"
                                       className="bg-blue-50/90 text-blue-800 border border-blue-200/80 shadow-2xs"
                                     />
@@ -3214,6 +3637,22 @@ export const RecruitmentV2Page: React.FC = () => {
                           <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider shrink-0 mt-1.5">Statut</span>
                           {renderCandidateStatusControl(c, false, 'end')}
                         </div>
+
+                        {/* Déclaration sur l'honneur (automatique dès « Inviter à un test ») */}
+                        {(resolveCandidateStatus(c) === 'invitation_test' || Boolean(getHonorDeclarationDocument(c))) && (
+                          <div className="pt-2 border-t flex items-center justify-between gap-2">
+                            <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider shrink-0">
+                              Déclaration sur l'honneur
+                            </span>
+                            <HonorDeclarationStatusPill
+                              candidateName={`${c.first_name} ${c.last_name}`.trim()}
+                              document={getHonorDeclarationDocument(c)}
+                              isRequired={resolveCandidateStatus(c) === 'invitation_test'}
+                              canUpload={canUploadHonorDeclarationForCandidate(c)}
+                              onDocumentChange={(doc) => handleHonorDeclarationChange(c, doc)}
+                            />
+                          </div>
+                        )}
 
                         {/* Actions en mode Grid */}
                         {!isOnlyRecruitNowUser && (
@@ -3361,31 +3800,32 @@ export const RecruitmentV2Page: React.FC = () => {
             evaluations={filteredEvaluations}
             scouts={scopedScouts}
             isLoading={isLoadingTests}
-            onOpenNewTest={(defaultDate) => {
+            canManageSchedule={canScheduleTests}
+            onOpenNewTest={canScheduleTests ? (defaultDate) => {
               setEditingTest(null);
               setNewTestDefaultDate(defaultDate);
               setIsSessionModalOpen(true);
-            }}
-            onSaveBatchTests={async (testsPayload) => {
+            } : undefined}
+            onSaveBatchTests={canScheduleTests ? async (testsPayload) => {
               await createTestsBatch(testsPayload);
-            }}
-            onUpdateTest={async (id, updates) => {
+            } : undefined}
+            onUpdateTest={canScheduleTests ? async (id, updates) => {
               await updateTest({ id, updates });
-            }}
-            onEditTest={(test) => {
+            } : undefined}
+            onEditTest={canScheduleTests ? (test) => {
               setEditingTest(test);
               setNewTestDefaultDate(undefined);
               setIsSessionModalOpen(true);
-            }}
-            onDeleteTest={async (testId) => {
+            } : undefined}
+            onDeleteTest={canScheduleTests ? async (testId) => {
               await deleteTest(testId);
-            }}
-            onDeleteTests={async (testIds) => {
+            } : undefined}
+            onDeleteTests={canScheduleTests ? async (testIds) => {
               await deleteTests(testIds);
-            }}
-            onMoveTest={async (testId, newDate) => {
+            } : undefined}
+            onMoveTest={canScheduleTests ? async (testId, newDate) => {
               await updateTest({ id: testId, updates: { test_date: newDate } });
-            }}
+            } : undefined}
             onOpenEvaluationForTest={(candidate, test) => {
               setEvaluatingCandidate(candidate);
               const hasExisting = evaluations.some(e => e.candidate_id === candidate.id);
@@ -3605,9 +4045,9 @@ export const RecruitmentV2Page: React.FC = () => {
             }
             await deleteEvaluation(evalId);
           }}
-          onOpenScheduleTest={(cand) => {
+          onOpenScheduleTest={canScheduleTests ? (cand) => {
             handleOpenScheduleTestForCandidate(cand);
-          }}
+          } : undefined}
         />
       )}
 
@@ -3626,7 +4066,7 @@ export const RecruitmentV2Page: React.FC = () => {
         />
       )}
 
-      {isSessionModalOpen && (
+      {isSessionModalOpen && canScheduleTests && (
         <TrialSessionModal
           isOpen={isSessionModalOpen}
           onClose={() => {
@@ -3636,6 +4076,7 @@ export const RecruitmentV2Page: React.FC = () => {
             setNewTestDefaultDate(undefined);
           }}
           candidates={scopedCandidates}
+          evaluations={evaluations}
           scouts={scopedScouts}
           initialTest={editingTest}
           defaultDate={newTestDefaultDate}
@@ -3648,6 +4089,30 @@ export const RecruitmentV2Page: React.FC = () => {
           }}
           onUpdate={async (id, updates) => {
             await updateTest({ id, updates });
+          }}
+        />
+      )}
+
+      {slotModalTarget && (
+        <TestSlotChangeModal
+          isOpen={Boolean(slotModalTarget)}
+          onClose={() => setSlotModalTarget(null)}
+          candidateName={`${slotModalTarget.candidate.first_name} ${slotModalTarget.candidate.last_name}`.trim()}
+          currentStartDate={slotModalTarget.startDate}
+          currentEndDate={slotModalTarget.endDate}
+          currentStartTime={slotModalTarget.startTime}
+          slotValidation={slotModalTarget.candidate.test_slot_validation}
+          isAdminMode={canScheduleTests}
+          onOpenPlanning={canAccessTab('sessions') ? () => {
+            setSlotModalTarget(null);
+            goToTab('sessions');
+          } : undefined}
+          onSubmit={async (payload) => {
+            if (canScheduleTests) {
+              await handleAdminChangeAndValidateTestSlot(slotModalTarget.candidate, payload);
+            } else {
+              await handleScoutRequestAnotherSlot(slotModalTarget.candidate, payload);
+            }
           }}
         />
       )}

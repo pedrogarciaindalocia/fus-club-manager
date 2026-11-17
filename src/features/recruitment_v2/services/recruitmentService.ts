@@ -14,7 +14,8 @@ import type {
   EvaluationVerdict,
   ScoutMission,
   SavedShortlistConfig,
-  AdministrativeDocument
+  AdministrativeDocument,
+  TestSlotValidationInfo
 } from '../types/recruitment';
 import {
   initialMockScouts,
@@ -47,9 +48,9 @@ export function ensureUuid(id?: string | null): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = Math.random() * 16 | 0;
-        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-      });
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
 }
 
 /**
@@ -151,9 +152,13 @@ export function parseMissionsMetadata(notes?: string): {
   mission_history?: ScoutMission[];
   reference_player_style?: string;
   administrative_documents?: AdministrativeDocument[];
+  honor_declaration_document?: AdministrativeDocument | null;
+  test_slot_validation?: TestSlotValidationInfo | null;
   contract_type?: string;
   administrative_status?: string;
   admin_notes?: string;
+  surclassement?: string;
+  surclassement_category?: string;
 } {
   if (!notes || !notes.includes('[MISSIONS_METADATA]:')) return {};
   try {
@@ -225,6 +230,8 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
   const admin_notes = candidate.admin_notes;
   const surclassement = candidate.surclassement;
   const surclassement_category = candidate.surclassement_category;
+  const honor_declaration_document = candidate.honor_declaration_document;
+  const test_slot_validation = candidate.test_slot_validation;
 
   const hasExtraMeta = activeMission ||
     (missionHistory && missionHistory.length > 0) ||
@@ -234,7 +241,9 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
     administrative_status ||
     admin_notes ||
     surclassement ||
-    surclassement_category;
+    surclassement_category ||
+    honor_declaration_document !== undefined ||
+    test_slot_validation !== undefined;
 
   if (hasExtraMeta) {
     const metaBlock = `\n[MISSIONS_METADATA]:` + JSON.stringify({
@@ -242,6 +251,8 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
       mission_history: missionHistory || [],
       reference_player_style: reference_player_style || null,
       administrative_documents: administrative_documents || [],
+      honor_declaration_document: honor_declaration_document ?? null,
+      test_slot_validation: test_slot_validation ?? null,
       contract_type: contract_type || null,
       administrative_status: administrative_status || null,
       admin_notes: admin_notes || null,
@@ -460,8 +471,8 @@ export const recruitmentService = {
         const nameKey = s.full_name?.toLowerCase().trim().replace(/\s+/g, ' ');
 
         const existing = (idKey ? byId.get(idKey) : null) ||
-                         (emailKey ? byEmail.get(emailKey) : null) ||
-                         (nameKey ? byName.get(nameKey) : null);
+          (emailKey ? byEmail.get(emailKey) : null) ||
+          (nameKey ? byName.get(nameKey) : null);
 
         if (!existing) {
           if (idKey) byId.set(idKey, s);
@@ -478,10 +489,24 @@ export const recruitmentService = {
           if (isMoreOfficial) {
             const idx = result.indexOf(existing);
             if (idx !== -1) {
-              result[idx] = { ...existing, ...s };
+              result[idx] = {
+                ...existing,
+                ...s,
+                phone: s.phone || existing.phone || '',
+                photo_url: s.photo_url || existing.photo_url,
+              };
               if (idKey) byId.set(idKey, result[idx]);
               if (emailKey) byEmail.set(emailKey, result[idx]);
               if (nameKey) byName.set(nameKey, result[idx]);
+            }
+          } else {
+            const idx = result.indexOf(existing);
+            if (idx !== -1) {
+              result[idx] = {
+                ...existing,
+                phone: existing.phone || s.phone || '',
+                photo_url: existing.photo_url || s.photo_url,
+              };
             }
           }
         }
@@ -507,13 +532,15 @@ export const recruitmentService = {
 
       // Map des emails de session réels
       const sessionEmailMap = new Map<string, string>();
+      const sessionUserIdByEmail = new Map<string, string>();
       sessionsRes.data?.forEach((s: any) => {
         if (s?.user_id && s?.user_email && s.user_email !== 'invite@fus.ma') {
           sessionEmailMap.set(s.user_id, s.user_email);
+          sessionUserIdByEmail.set(s.user_email.toLowerCase().trim(), s.user_id);
         }
       });
 
-      // Map des profils utilisateurs pour enrichir les scouts avec leur rôle réel (Scout Admin / Scout Manager)
+      // Map des profils utilisateurs pour enrichir les scouts avec leur rôle réel et leur téléphone
       const profileMap = new Map<string, any>();
       const profileByEmail = new Map<string, any>();
       const profileByName = new Map<string, any>();
@@ -524,12 +551,16 @@ export const recruitmentService = {
         if (p.full_name) profileByName.set(p.full_name.toLowerCase().trim().replace(/\s+/g, ' '), p);
       });
 
-      // Enrichir les scouts de la cellule avec leur rôle réel (Scout Admin / Scout Manager)
+      // Enrichir les scouts de la cellule avec leur rôle réel (Scout Admin / Scout Manager) et téléphone
       combined = combined.map(s => {
-        const p = profileMap.get(s.id) || 
-                  (s.email ? profileByEmail.get(s.email.toLowerCase().trim()) : null) || 
-                  (s.full_name ? profileByName.get(s.full_name.toLowerCase().trim().replace(/\s+/g, ' ')) : null);
-        
+        const emailLower = s.email ? s.email.toLowerCase().trim() : '';
+        const sessionUid = emailLower ? sessionUserIdByEmail.get(emailLower) : undefined;
+        const p = profileMap.get(s.id) ||
+          profileMap.get((s as any).user_id) ||
+          (sessionUid ? profileMap.get(sessionUid) : null) ||
+          (emailLower ? profileByEmail.get(emailLower) : null) ||
+          (s.full_name ? profileByName.get(s.full_name.toLowerCase().trim().replace(/\s+/g, ' ')) : null);
+
         if (!p) return s;
 
         const sysRole = (p.system_role || '').toLowerCase().trim();
@@ -543,7 +574,7 @@ export const recruitmentService = {
         return {
           ...s,
           photo_url: s.photo_url || p.avatar_url || undefined,
-          phone: s.phone || p.phone_number || '',
+          phone: s.phone || (s as any).phone_number || p.phone_number || '',
           role_title: roleTitle,
           system_role: sysRole || (s as any).system_role,
         };
@@ -565,10 +596,10 @@ export const recruitmentService = {
 
           if (!isScoutPersonnel) return;
 
-          const roleTitle = sysRole === 'scout_admin' 
-            ? 'Scout Admin' 
-            : sysRole === 'scout_manager' 
-              ? 'Scout Manager' 
+          const roleTitle = sysRole === 'scout_admin'
+            ? 'Scout Admin'
+            : sysRole === 'scout_manager'
+              ? 'Scout Manager'
               : p.job_title;
 
           const email = (p as any).email || sessionEmailMap.get(p.id) || '';
@@ -1062,12 +1093,12 @@ export const recruitmentService = {
         for (const uid of validUuids) {
           try {
             await supabase.rpc('admin_delete_user', { target_user_id: uid });
-          } catch (e) {}
+          } catch (e) { }
         }
         try {
           await supabase.from('user_profiles').delete().in('id', validUuids);
           await supabase.from('user_profiles').update({ is_active: false }).in('id', validUuids);
-        } catch (e) {}
+        } catch (e) { }
 
         await supabase.from('scouts').update({ status: 'inactive' }).in('id', validUuids);
         const { error } = await supabase.from('scouts').delete().in('id', validUuids);
@@ -1095,7 +1126,7 @@ export const recruitmentService = {
    * - Synchronise le cache local et Supabase
    */
   async releaseCandidatesByScout(
-    scoutIdOrIds: string | string[], 
+    scoutIdOrIds: string | string[],
     scoutName?: string
   ): Promise<{ releasedCount: number; candidateNames: string[] }> {
     const ids = (Array.isArray(scoutIdOrIds) ? scoutIdOrIds : [scoutIdOrIds]).filter(Boolean);
@@ -1115,10 +1146,10 @@ export const recruitmentService = {
     }
 
     const localCandidates = getLocal<TrialCandidate[]>(KEY_CANDIDATES, []);
-    
+
     // Identifier tous les candidats liés au scout (découverte, assignation, recruteur, mission)
     const affectedCandidates = localCandidates.filter(c => {
-      const matchesId = 
+      const matchesId =
         (c.assigned_scout_id && idsSet.has(c.assigned_scout_id)) ||
         (c.active_mission?.assigned_to_id && idsSet.has(c.active_mission.assigned_to_id)) ||
         (c.recruiter_id && idsSet.has(c.recruiter_id)) ||
@@ -1154,15 +1185,15 @@ export const recruitmentService = {
       const existingHistory = c.mission_history || [];
       const updatedHistory = c.active_mission
         ? [
-            {
-              ...c.active_mission,
-              status: 'cancelled' as const,
-              completed_at: nowIso,
-              notes: ((c.active_mission.notes ? `${c.active_mission.notes} | ` : '')) + 
-                `Mission interrompue : scout ${resolvedName} retiré/supprimé. Joueur dissocié et reversé au vivier Cellule FUS.`
-            },
-            ...existingHistory
-          ]
+          {
+            ...c.active_mission,
+            status: 'cancelled' as const,
+            completed_at: nowIso,
+            notes: ((c.active_mission.notes ? `${c.active_mission.notes} | ` : '')) +
+              `Mission interrompue : scout ${resolvedName} retiré/supprimé. Joueur dissocié et reversé au vivier Cellule FUS.`
+          },
+          ...existingHistory
+        ]
         : existingHistory;
 
       return {
@@ -1237,20 +1268,20 @@ export const recruitmentService = {
           const parsedMeta = parseMissionsMetadata((d as any).notes);
           const cleanedNotes = cleanNotesForDisplay((d as any).notes);
 
-          const assignedId = (loc && 'assigned_scout_id' in loc) 
-            ? loc.assigned_scout_id 
+          const assignedId = (loc && 'assigned_scout_id' in loc)
+            ? loc.assigned_scout_id
             : ((d as any).assigned_scout_id || (d as any).recruiter_id || parsedMeta.active_mission?.assigned_to_id);
 
-          const assignedName = (loc && 'assigned_scout_name' in loc) 
-            ? loc.assigned_scout_name 
+          const assignedName = (loc && 'assigned_scout_name' in loc)
+            ? loc.assigned_scout_name
             : ((d as any).assigned_scout_name || (d as any).recruiter_name || parsedMeta.active_mission?.assigned_to_name);
 
-          const activeMission = (loc && 'active_mission' in loc) 
-            ? loc.active_mission 
+          const activeMission = (loc && 'active_mission' in loc)
+            ? loc.active_mission
             : ((d as any).active_mission || parsedMeta.active_mission);
 
-          const missionHistory = (loc && 'mission_history' in loc) 
-            ? loc.mission_history 
+          const missionHistory = (loc && 'mission_history' in loc)
+            ? loc.mission_history
             : ((d as any).mission_history || parsedMeta.mission_history || []);
 
           return {
@@ -1259,6 +1290,12 @@ export const recruitmentService = {
             notes: cleanedNotes || loc?.notes || '',
             reference_player_style: loc?.reference_player_style || (d as any).reference_player_style || parsedMeta.reference_player_style,
             administrative_documents: loc?.administrative_documents || (d as any).administrative_documents || parsedMeta.administrative_documents || [],
+            honor_declaration_document: (loc && 'honor_declaration_document' in loc)
+              ? loc.honor_declaration_document
+              : ((d as any).honor_declaration_document !== undefined ? (d as any).honor_declaration_document : (parsedMeta.honor_declaration_document ?? null)),
+            test_slot_validation: (loc && 'test_slot_validation' in loc)
+              ? loc.test_slot_validation
+              : ((d as any).test_slot_validation !== undefined ? (d as any).test_slot_validation : (parsedMeta.test_slot_validation ?? null)),
             contract_type: loc?.contract_type || (d as any).contract_type || parsedMeta.contract_type,
             administrative_status: loc?.administrative_status || (d as any).administrative_status || parsedMeta.administrative_status,
             admin_notes: loc?.admin_notes || (d as any).admin_notes || parsedMeta.admin_notes,
@@ -1409,14 +1446,70 @@ export const recruitmentService = {
   ): Promise<TrialCandidate> {
     const id = typeof idOrParams === 'object' ? idOrParams.id : idOrParams;
     const updates = typeof idOrParams === 'object' ? idOrParams.updates : maybeUpdates || {};
+    const META_KEYS = [
+      'active_mission', 'mission_history', 'reference_player_style',
+      'administrative_documents', 'contract_type', 'administrative_status',
+      'admin_notes', 'surclassement', 'surclassement_category',
+      'honor_declaration_document', 'test_slot_validation', 'notes',
+    ];
+    const touchesMetadata = META_KEYS.some(k => k in updates);
+    const localListBefore = getLocal<TrialCandidate[]>(KEY_CANDIDATES, []);
+    const existingLocal = localListBefore.find(c => c.id === id);
+
+    let payloadInput: Record<string, any> = { ...updates };
+    if (touchesMetadata) {
+      let existingNotesMeta: Record<string, any> = {};
+      let existingBaseNotes = '';
+      if (existingLocal) {
+        existingBaseNotes = cleanNotesForDisplay(existingLocal.notes || '');
+        existingNotesMeta = {
+          ...(parseMissionsMetadata(existingLocal.notes)),
+          ...(existingLocal.active_mission !== undefined ? { active_mission: existingLocal.active_mission } : {}),
+          ...(existingLocal.mission_history !== undefined ? { mission_history: existingLocal.mission_history } : {}),
+          ...(existingLocal.reference_player_style !== undefined ? { reference_player_style: existingLocal.reference_player_style } : {}),
+          ...(existingLocal.administrative_documents !== undefined ? { administrative_documents: existingLocal.administrative_documents } : {}),
+          ...(existingLocal.honor_declaration_document !== undefined ? { honor_declaration_document: existingLocal.honor_declaration_document } : {}),
+          ...(existingLocal.test_slot_validation !== undefined ? { test_slot_validation: existingLocal.test_slot_validation } : {}),
+          ...(existingLocal.contract_type !== undefined ? { contract_type: existingLocal.contract_type } : {}),
+          ...(existingLocal.administrative_status !== undefined ? { administrative_status: existingLocal.administrative_status } : {}),
+          ...(existingLocal.admin_notes !== undefined ? { admin_notes: existingLocal.admin_notes } : {}),
+          ...(existingLocal.surclassement !== undefined ? { surclassement: existingLocal.surclassement } : {}),
+          ...(existingLocal.surclassement_category !== undefined ? { surclassement_category: existingLocal.surclassement_category } : {}),
+        };
+      } else if (isValidUuid(id)) {
+        try {
+          const { data: row } = await supabase.from('trial_candidates').select('notes').eq('id', id).maybeSingle();
+          if (row?.notes) {
+            existingBaseNotes = cleanNotesForDisplay(row.notes);
+            existingNotesMeta = parseMissionsMetadata(row.notes);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      payloadInput = {
+        ...existingNotesMeta,
+        ...(existingBaseNotes ? { notes: existingBaseNotes } : {}),
+        ...updates,
+      };
+    }
+
     try {
-      const supabaseUpdates = toSupabasePayload(updates as any);
+      const supabaseUpdates = toSupabasePayload(payloadInput);
       const { data, error } = await supabase.from('trial_candidates').update(supabaseUpdates).eq('id', id).select().single();
       if (error) {
         console.warn(`[RecruitmentService] Erreur Supabase updateCandidate (${id}):`, error.message);
       } else if (data) {
         const list = getLocal<TrialCandidate[]>(KEY_CANDIDATES, []);
-        const updatedCandidate = { ...(list.find(c => c.id === id) || {}), ...data, ...updates };
+        const existing = list.find(c => c.id === id);
+        const parsedReturnedMeta = parseMissionsMetadata((data as any).notes);
+        const updatedCandidate = {
+          ...(existing || {}),
+          ...data,
+          ...parsedReturnedMeta,
+          notes: cleanNotesForDisplay((data as any).notes || existing?.notes || ''),
+          ...updates,
+        };
         const exists = list.some(c => c.id === id);
         const nextList = exists
           ? list.map(c => c.id === id ? updatedCandidate : c)
@@ -1453,11 +1546,11 @@ export const recruitmentService = {
     await this.addTimelineEvent({
       candidate_id: id,
       event_type: stage,
-      event_title: isShortlist 
-        ? '⭐ Joueur Shortlisté & Intégré au Onze Idéal' 
+      event_title: isShortlist
+        ? '⭐ Joueur Shortlisté & Intégré au Onze Idéal'
         : `Transition Pipeline : ${stage.replace('_', ' ').toUpperCase()}`,
-      event_description: reason || (isShortlist 
-        ? 'Le joueur a été validé en Shortlist officielle et est désormais déployé sur la pelouse tactique du Onze Idéal.' 
+      event_description: reason || (isShortlist
+        ? 'Le joueur a été validé en Shortlist officielle et est désormais déployé sur la pelouse tactique du Onze Idéal.'
         : `Le joueur est passé à l'étape ${stage}.`),
       performed_by: 'Staff Recrutement',
       event_date: new Date().toISOString().split('T')[0],
@@ -1585,8 +1678,8 @@ export const recruitmentService = {
           const candidateIds: string[] = Array.isArray(parsedNotesData.candidate_ids)
             ? parsedNotesData.candidate_ids
             : (s.notes && s.notes.includes('candidate_id:')
-                ? [s.notes.split('candidate_id:')[1]?.split(';')[0]?.trim()].filter(Boolean)
-                : []);
+              ? [s.notes.split('candidate_id:')[1]?.split(';')[0]?.trim()].filter(Boolean)
+              : []);
 
           return {
             id: s.id,
@@ -1785,11 +1878,11 @@ export const recruitmentService = {
           cachedCandidates.map(c =>
             allCandidateIds.has(c.id)
               ? {
-                  ...c,
-                  status: 'in_trial',
-                  pipeline_stage: evalSet.has(c.id) ? 'under_evaluation' : 'test_scheduled',
-                  updated_at: nowIso,
-                }
+                ...c,
+                status: 'in_trial',
+                pipeline_stage: evalSet.has(c.id) ? 'under_evaluation' : 'test_scheduled',
+                updated_at: nowIso,
+              }
               : c
           )
         );
@@ -2252,7 +2345,16 @@ export const recruitmentService = {
         const updates: Record<string, any> = {};
 
         if (evDecision) {
-          updates.scout_state_decision = evDecision;
+          const normalizedDecision = evDecision === 'recruit_standby' ? 'recruit_now' : evDecision;
+          updates.scout_state_decision = normalizedDecision;
+          updates.status =
+            normalizedDecision === 'recruit_now'
+              ? 'selected'
+              : normalizedDecision === 'invitation_test'
+                ? 'in_trial'
+                : 'registered';
+          updates.is_recruit_now_validated = normalizedDecision === 'recruit_now';
+          updates.updated_at = new Date().toISOString();
         }
 
         if (cand && !['signed', 'academy', 'rejected', 'archived'].includes(cand.pipeline_stage)) {
@@ -2334,14 +2436,14 @@ export const recruitmentService = {
         cachedCandidates.map(c =>
           resetSet.has(c.id)
             ? {
-                ...c,
-                potential_rating: 0,
-                performance_rating: 0,
-                is_upgraded_category: false,
-                upgraded_categories_count: 0,
-                surclassement: '0C',
-                surclassement_category: undefined,
-              }
+              ...c,
+              potential_rating: 0,
+              performance_rating: 0,
+              is_upgraded_category: false,
+              upgraded_categories_count: 0,
+              surclassement: '0C',
+              surclassement_category: undefined,
+            }
             : c
         )
       );
@@ -2628,7 +2730,7 @@ export const recruitmentService = {
       return { success: false, message: err.message || 'Erreur lors de l\'intégration' };
     }
   },
-  
+
   async syncCandidateToSquad(candidateId: string, teamId?: string): Promise<{ success: boolean; message: string; player?: any }> {
     return this.integrateCandidateToSquad(candidateId, teamId);
   },

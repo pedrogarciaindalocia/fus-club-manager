@@ -433,7 +433,101 @@ export interface AdministrativeDocument {
   file_type?: string;
   file_size?: number;
   uploaded_at: string;
-  category?: 'contract' | 'identity' | 'medical' | 'parental_consent' | 'other';
+  category?: 'contract' | 'identity' | 'medical' | 'parental_consent' | 'honor_declaration' | 'other';
+}
+
+export interface TestSlotValidationInfo {
+  status: 'pending' | 'validated' | 'change_requested';
+  validated_by?: string;
+  validated_at?: string;
+  validated_dates?: string[];
+  requested_start_date?: string;
+  requested_end_date?: string;
+  requested_start_time?: string;
+  request_note?: string;
+  requested_by?: string;
+  requested_at?: string;
+}
+
+export function getHonorDeclarationDocument(
+  candidate?: Pick<TrialCandidate, 'honor_declaration_document' | 'administrative_documents'> | null
+): AdministrativeDocument | null {
+  if (!candidate) return null;
+  if (candidate.honor_declaration_document && candidate.honor_declaration_document.url) {
+    return candidate.honor_declaration_document;
+  }
+  const fromAdminDocs = (candidate.administrative_documents || []).find(
+    (doc) => doc?.category === 'honor_declaration' && Boolean(doc.url)
+  );
+  return fromAdminDocs || null;
+}
+
+/**
+ * Résout de manière unifiée le statut officiel de recrutement d'un candidat
+ * ('to_follow' | 'invitation_test' | 'recruit_now') en priorisant la fiche
+ * candidat lorsqu'elle a été mise à jour explicitement après le dernier rapport.
+ */
+export function resolveCandidateRecruitmentStatus(
+  c: TrialCandidate,
+  evaluations: CandidateEvaluation[] = []
+): PlayerRecruitmentStatus {
+  const candEvals = [
+    ...evaluations.filter((e) => e.candidate_id === c.id),
+    ...(c.evaluations || []),
+  ]
+    .filter((e, idx, arr) => arr.findIndex((x) => x.id === e.id) === idx)
+    .sort((a, b) => {
+      const tA = new Date(a.evaluation_date || a.created_at || (a as any).updated_at || 0).getTime();
+      const tB = new Date(b.evaluation_date || b.created_at || (b as any).updated_at || 0).getTime();
+      return tB - tA;
+    });
+
+  const latestEval = candEvals[0];
+  const rawCandDec = (c as any).scout_state_decision;
+  const normalizedCandDecision =
+    rawCandDec === 'recruit_standby' ? 'recruit_now' : rawCandDec;
+
+  const candMs = c.updated_at ? new Date(c.updated_at).getTime() : 0;
+  const evalMs = latestEval
+    ? new Date((latestEval as any).updated_at || latestEval.created_at || latestEval.evaluation_date || 0).getTime()
+    : 0;
+
+  if (
+    latestEval &&
+    candMs > evalMs &&
+    (normalizedCandDecision === 'to_follow' ||
+      normalizedCandDecision === 'invitation_test' ||
+      normalizedCandDecision === 'recruit_now')
+  ) {
+    return normalizedCandDecision;
+  }
+
+  if (
+    (c as any).is_recruit_now_validated ||
+    normalizedCandDecision === 'recruit_now' ||
+    (c as any).status === 'recruit_now' ||
+    c.status === 'selected' ||
+    (c.pipeline_stage as string) === 'recruit_now'
+  ) {
+    return 'recruit_now';
+  }
+
+  if (normalizedCandDecision === 'invitation_test' || c.status === 'in_trial') {
+    return 'invitation_test';
+  }
+
+  if (latestEval) {
+    const dec = (latestEval as any).scout_state_decision || latestEval.report_data?.scout_state_decision;
+    if (dec === 'recruit_now' || dec === 'recruit_standby') return 'recruit_now';
+    if (dec === 'invitation_test' || dec === 'to_follow') return dec;
+    if ((latestEval.verdict as any) === 'sign' || latestEval.verdict === 'sign_immediately') return 'recruit_now';
+    if ((latestEval.verdict as any) === 'trial') return 'invitation_test';
+    if ((latestEval.verdict as any) === 'follow') return 'to_follow';
+  }
+
+  return normalizedCandDecision === 'invitation_test' || normalizedCandDecision === 'recruit_now'
+    ? normalizedCandDecision
+    : 'to_follow';
 }
 
 export interface ReferencePlayerGroup {
@@ -515,8 +609,10 @@ export interface TrialCandidate {
   // Style de jeu de référence (Lions de l'Atlas)
   reference_player_style?: string;
 
-  // Dossier Administratif & Contrat (Recrutement immédiat)
+  // Dossier Administratif & Contrat (Recrutement immédiat) + Déclaration sur l'honneur & Validation créneau test
   administrative_documents?: AdministrativeDocument[];
+  honor_declaration_document?: AdministrativeDocument | null;
+  test_slot_validation?: TestSlotValidationInfo | null;
   contract_type?: string;
   administrative_status?: string;
   admin_notes?: string;

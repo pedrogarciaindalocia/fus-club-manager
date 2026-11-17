@@ -351,6 +351,27 @@ export const isScoutBranch = (role?: string | null, jobTitle?: string | null): b
 };
 
 /**
+ * Détermine si le compte effectif possède le rôle Scout Admin (`scout_admin`),
+ * y compris lors d'une impersonation, indépendamment de la matrice de cases cochées.
+ */
+export const isScoutAdminRole = (
+  user?: { system_role?: string | null; role?: string | null } | null,
+  roles?: string[] | null,
+  isImpersonating?: boolean,
+  impersonatedUser?: { system_role?: string | null; role?: string | null } | null
+): boolean => {
+  if (isImpersonating && impersonatedUser) {
+    const impSys = (impersonatedUser.system_role || '').toLowerCase().trim();
+    const impRole = (impersonatedUser.role || '').toLowerCase().trim();
+    return impSys === 'scout_admin' || impRole === 'scout_admin';
+  }
+  const sysRole = (user?.system_role || '').toLowerCase().trim();
+  const userRole = (user?.role || '').toLowerCase().trim();
+  const normRoles = (roles || []).map(r => (r || '').toLowerCase().trim());
+  return sysRole === 'scout_admin' || userRole === 'scout_admin' || normRoles.includes('scout_admin');
+};
+
+/**
  * Liste officielle et stricte des 6 intitulés de postes autorisés dans FUSC
  * Utilisée dans la gestion des utilisateurs et les filtres des logs d'audit.
  */

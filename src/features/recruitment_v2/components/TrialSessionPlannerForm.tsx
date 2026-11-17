@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { PlayerTest, SessionStatus, TrialCandidate } from '../types/recruitment';
-import { RECRUITMENT_AGE_CATEGORIES } from '../types/recruitment';
+import type { CandidateEvaluation, PlayerTest, SessionStatus, TrialCandidate } from '../types/recruitment';
+import { RECRUITMENT_AGE_CATEGORIES, resolveCandidateRecruitmentStatus } from '../types/recruitment';
 import {
   X,
   Calendar,
@@ -23,6 +23,7 @@ export interface TrialSessionPlannerFormProps {
   initialTest?: PlayerTest | null;
   defaultCandidateId?: string;
   candidates?: TrialCandidate[];
+  evaluations?: CandidateEvaluation[];
   scouts?: any[];
   onSaveBatch: (tests: Omit<PlayerTest, 'id' | 'created_at' | 'updated_at'>[]) => Promise<any>;
   onUpdate?: (id: string, updates: Partial<PlayerTest>) => Promise<any>;
@@ -37,6 +38,7 @@ export const TrialSessionPlannerForm: React.FC<TrialSessionPlannerFormProps> = (
   initialTest,
   defaultCandidateId,
   candidates: propCandidates,
+  evaluations: propEvaluations,
   scouts: propScouts,
   onSaveBatch,
   onUpdate,
@@ -44,9 +46,22 @@ export const TrialSessionPlannerForm: React.FC<TrialSessionPlannerFormProps> = (
   onCancel,
   variant = 'panel',
 }) => {
-  const { candidates: hookCandidates = [], scouts: hookScouts = [] } = useRecruitment();
+  const { candidates: hookCandidates = [], evaluations: hookEvaluations = [], scouts: hookScouts = [] } = useRecruitment();
   const candidates = propCandidates && propCandidates.length > 0 ? propCandidates : hookCandidates;
+  const evaluations = propEvaluations && propEvaluations.length > 0 ? propEvaluations : hookEvaluations;
   const scouts = propScouts && propScouts.length > 0 ? propScouts : hookScouts;
+
+  // Planification de tests réservée uniquement aux joueurs au statut « Inviter à un test »
+  const invitedCandidates = useMemo(
+    () =>
+      candidates.filter(
+        (c) =>
+          c.pipeline_stage !== 'archived' &&
+          c.status !== 'archived' &&
+          resolveCandidateRecruitmentStatus(c, evaluations) === 'invitation_test'
+      ),
+    [candidates, evaluations]
+  );
 
   // Multi-sélection des candidats + barre de recherche
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
@@ -89,11 +104,15 @@ export const TrialSessionPlannerForm: React.FC<TrialSessionPlannerFormProps> = (
       setStatus(initialTest.status || 'scheduled');
       setNotes(initialTest.notes || '');
     } else {
-      const activeCandIds = defaultCandidateId ? [defaultCandidateId] : [];
+      const validDefaultId =
+        defaultCandidateId && invitedCandidates.some(c => c.id === defaultCandidateId)
+          ? defaultCandidateId
+          : undefined;
+      const activeCandIds = validDefaultId ? [validDefaultId] : [];
       setSelectedCandidateIds(activeCandIds);
       setHasCustomTitle(false);
 
-      const primaryCand = candidates.find(c => c.id === defaultCandidateId);
+      const primaryCand = validDefaultId ? invitedCandidates.find(c => c.id === validDefaultId) : undefined;
       const normCat = primaryCand ? normalizeAgeCategory(primaryCand.age_category || 'U13') : 'U13';
       setAgeCategory(normCat);
       setTargetTeam(`Académie FUS ${normCat}`);
@@ -114,11 +133,10 @@ export const TrialSessionPlannerForm: React.FC<TrialSessionPlannerFormProps> = (
     }
   }, [initialTest?.id, defaultCandidateId]);
 
-  // Liste des joueurs filtrée par la barre de recherche (tout en conservant les IDs sélectionnés)
+  // Liste des joueurs filtrée : UNIQUEMENT ceux ayant le statut « Inviter à un test »
   const filteredCandidates = useMemo(() => {
     const q = candidateSearchQuery.toLowerCase().trim();
-    return candidates.filter(c => {
-      if (c.pipeline_stage === 'archived' || c.status === 'archived') return false;
+    return invitedCandidates.filter(c => {
       if (candidateCategoryFilter !== 'ALL') {
         if (normalizeAgeCategory(c.age_category || '') !== normalizeAgeCategory(candidateCategoryFilter)) {
           return false;
@@ -131,7 +149,7 @@ export const TrialSessionPlannerForm: React.FC<TrialSessionPlannerFormProps> = (
       const cat = (c.age_category || '').toLowerCase();
       return fullName.includes(q) || pos.includes(q) || club.includes(q) || cat.includes(q);
     });
-  }, [candidates, candidateSearchQuery, candidateCategoryFilter]);
+  }, [invitedCandidates, candidateSearchQuery, candidateCategoryFilter]);
 
   const buildAutoTitle = (candIds: string[], cat: string) => {
     const selectedNames = candidates
@@ -443,7 +461,9 @@ export const TrialSessionPlannerForm: React.FC<TrialSessionPlannerFormProps> = (
         <div className="max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-xl p-1.5 space-y-1 custom-scrollbar">
           {filteredCandidates.length === 0 ? (
             <div className="py-4 text-center text-[11px] text-slate-400 italic">
-              Aucun joueur trouvé pour cette recherche.
+              {invitedCandidates.length === 0
+                ? 'Aucun joueur au statut « Inviter à un test » disponible pour la planification.'
+                : 'Aucun joueur invité ne correspond à cette recherche.'}
             </div>
           ) : (
             filteredCandidates.map(c => {

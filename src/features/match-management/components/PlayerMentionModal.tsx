@@ -35,6 +35,7 @@ import { useMetricSets } from '../../../hooks/useMetricSets';
 import { usePermissions } from '../../../context/PermissionsContext';
 import {
   computeIntegerPillarAveragesFromCriteria,
+  filterMetricPositionsForPlayer,
   getMetricPositionFrenchName,
   parseMetricCriterionLabel,
   resolveMetricSetForRubric,
@@ -315,19 +316,24 @@ export const PlayerMentionModal: React.FC<PlayerMentionModalProps> = ({
     return dayEvaluations[0] || null;
   }, [dayEvaluations, selectedEvalId]);
 
+  const selectablePositions: MetricSetPosition[] = useMemo(
+    () => filterMetricPositionsForPlayer(positionsInSet, player?.position),
+    [positionsInSet, player?.position]
+  );
+
   const activePositionObj: MetricSetPosition | null = useMemo(() => {
-    if (positionsInSet.length === 0) return null;
+    if (selectablePositions.length === 0) return null;
     if (selectedPosCode) {
-      const matched = positionsInSet.find(
+      const matched = selectablePositions.find(
         p => p.code.toUpperCase() === selectedPosCode.toUpperCase()
       );
       if (matched) return matched;
     }
     return (
-      resolveMetricSetPositionForPlayer(positionsInSet, player?.position) ||
-      positionsInSet[0]
+      resolveMetricSetPositionForPlayer(selectablePositions, player?.position) ||
+      selectablePositions[0]
     );
-  }, [positionsInSet, selectedPosCode, player?.position]);
+  }, [selectablePositions, selectedPosCode, player?.position]);
 
   const buildInitialPerfCriteria = useCallback(
     (
@@ -365,12 +371,13 @@ export const PlayerMentionModal: React.FC<PlayerMentionModalProps> = ({
       setIsCreatingPerf(false);
       setConfirmDeletePerf(false);
 
-      let targetPositions = positionsInSet;
+      let rawTargetPositions = positionsInSet;
       if (ev.metric_set_id && playerPerfSets.some(s => s.id === ev.metric_set_id)) {
         setSelectedSetId(ev.metric_set_id);
         const setPos = getPositionsForSet(ev.metric_set_id);
-        if (setPos.length > 0) targetPositions = setPos;
+        if (setPos.length > 0) rawTargetPositions = setPos;
       }
+      const targetPositions = filterMetricPositionsForPlayer(rawTargetPositions, player?.position);
 
       const resolvedPos =
         targetPositions.find(
@@ -652,8 +659,8 @@ export const PlayerMentionModal: React.FC<PlayerMentionModalProps> = ({
 
   const startNewPerfEvaluation = () => {
     const resolvedPos =
-      resolveMetricSetPositionForPlayer(positionsInSet, player?.position) ||
-      positionsInSet[0] ||
+      resolveMetricSetPositionForPlayer(selectablePositions, player?.position) ||
+      selectablePositions[0] ||
       null;
     const baseScores: Record<MetricPillar, number> = {
       technique: 5,
@@ -1277,20 +1284,21 @@ export const PlayerMentionModal: React.FC<PlayerMentionModalProps> = ({
                         </div>
 
                         {/* Choix du poste (Métriques Perf. Joueur) */}
-                        {positionsInSet.length > 0 && (
+                        {selectablePositions.length > 0 && (
                           <div className="space-y-1.5">
                             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
                               <Shield className="w-3 h-3 text-[#FF3737]" />
                               <span>Choix du poste (Métriques Perf. Joueur)</span>
                             </span>
                             <div className="flex flex-wrap gap-1.5">
-                              {positionsInSet.map(pos => {
+                              {selectablePositions.map(pos => {
                                 const isActPos = activePositionObj?.code === pos.code;
                                 return (
                                   <button
                                     key={pos.id}
                                     type="button"
                                     onClick={() => {
+                                      if (isActPos) return;
                                       setSelectedPosCode(pos.code);
                                       if (activeEvaluation && !isEditingPerf) {
                                         setConfirmDeletePerf(false);

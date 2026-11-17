@@ -4,7 +4,7 @@ import {
   HeartHandshake, AlertCircle, Sparkles, Building2, Plus, Briefcase,
   Edit3, ShieldCheck, ShieldAlert, Clock, UserCheck, Zap, Star, XCircle,
   Target, Globe, Compass, Video, ExternalLink, Camera, Upload, Trash2, Loader2, Image as ImageIcon, Check, Users,
-  FileSpreadsheet, Search, CheckCircle2, Flame, Eye, Trophy, RotateCcw, Info, Calendar
+  FileSpreadsheet, Search, CheckCircle2, Flame, Eye, Trophy, RotateCcw, Info, Calendar, Lock
 } from 'lucide-react';
 import type { TrialCandidate, CandidateStatus, FootType, RecommendationPriority, Scout, CandidateEvaluation, AdministrativeDocument, PlayerRecruitmentStatus } from '../types/recruitment';
 import {
@@ -15,9 +15,11 @@ import {
   groupCategoriesByPole,
   getAgeCategoryFromBirthDate,
   getPoleFromCategory,
-  getSurclassementTargetCategory
+  getSurclassementTargetCategory,
+  getHonorDeclarationDocument
 } from '../types/recruitment';
 import { AdministrativeDossierForm } from './AdministrativeDossierForm';
+import { HonorDeclarationFormField } from './HonorDeclarationControl';
 import { cn } from '../../../lib/utils';
 import { usePlayers } from '../../../hooks/usePlayers';
 import { NATIONALITIES, normalizeAgeCategory } from '../../../constants';
@@ -27,6 +29,7 @@ import { getMetricCategoryFrenchLabel, getMetricPositionFrenchName } from '../..
 import { GEOGRAPHY_DATA, getContinentForCountry, getCountryForNationality, getCountryFlag, getCountryNationality } from '../../../constants/geography';
 import { PlayerGeographyFields } from '../../../components/PlayerGeographyFields';
 import { usePermissions } from '../../../context/PermissionsContext';
+import { isScoutAdminRole } from '../../../constants/roles';
 import {
   getScoutPositionConfig,
   addScoutCriterion,
@@ -109,7 +112,12 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   ].map(r => r.toLowerCase().trim());
   const hasExplicitPerms = Boolean(authState?.permissions && authState.permissions.length > 0);
   const isSuperAdmin = Boolean(!authState?.isImpersonating && userRoles.includes('super_admin'));
-  const isScoutAdmin = userRoles.includes('scout_admin');
+  const isScoutAdmin = isScoutAdminRole(
+    authState?.user,
+    authState?.roles,
+    authState?.isImpersonating,
+    authState?.impersonatedUser
+  );
   const isAdmin = isSuperAdmin || isScoutAdmin || (!hasExplicitPerms && userRoles.includes('admin'));
 
   const canCreateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'create'));
@@ -142,35 +150,104 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   );
 
   const currentUserId = authState?.user?.id;
+  const currentUserEmail = (authState?.user?.email || '').trim().toLowerCase();
+  const currentUserName = (authState?.user?.full_name || '').trim().toLowerCase();
+  const currentUserScout = useMemo(() => {
+    return scouts.find((s) =>
+      (currentUserId && (s.id === currentUserId || (s as any).user_id === currentUserId)) ||
+      (currentUserEmail && (s.email || '').trim().toLowerCase() === currentUserEmail) ||
+      (currentUserName && (s.full_name || '').trim().toLowerCase() === currentUserName)
+    );
+  }, [scouts, currentUserId, currentUserEmail, currentUserName]);
+  const effectiveCurrentScoutId = currentUserScout?.id || currentUserId;
+
   const isCandidateOwner = Boolean(
     !candidate ||
-    candidate.discovering_scout === currentUserId ||
-    candidate.discovering_scout_id === currentUserId ||
-    candidate.created_by === currentUserId ||
-    (candidate as any)?.scout_id === currentUserId
+    (currentUserId && (
+      candidate.discovering_scout === currentUserId ||
+      candidate.discovering_scout_id === currentUserId ||
+      candidate.created_by === currentUserId ||
+      (candidate as any)?.scout_id === currentUserId
+    )) ||
+    (effectiveCurrentScoutId && (
+      candidate.discovering_scout === effectiveCurrentScoutId ||
+      candidate.discovering_scout_id === effectiveCurrentScoutId ||
+      (candidate as any)?.scout_id === effectiveCurrentScoutId
+    )) ||
+    (currentUserName && (candidate.discovering_scout_name || '').trim().toLowerCase() === currentUserName)
   );
 
-  // Le scout / Scout Manager ne peut modifier le statut QUE pour ses propres joueurs
+  // Admin ou Super Admin : seul habilité à modifier un joueur déjà en « Inviter à un test » ou à planifier un test
+  const isModalAdminOrSuperAdmin = Boolean(
+    !isModalScoutManager && (isSuperAdmin || isScoutAdmin || isAdmin)
+  );
+
+  const persistedCandidateStatus: PlayerRecruitmentStatus | null = useMemo(() => {
+    if (!candidate) return null;
+    const rawCandDec = (candidate as any).scout_state_decision;
+    const normalizedCandDec: PlayerRecruitmentStatus | null =
+      rawCandDec === 'recruit_standby' || rawCandDec === 'recruit_now'
+        ? 'recruit_now'
+        : rawCandDec === 'invitation_test'
+          ? 'invitation_test'
+          : rawCandDec === 'to_follow'
+            ? 'to_follow'
+            : null;
+    const evalToCheck =
+      evaluation ||
+      (candidate.evaluations && candidate.evaluations.length > 0 ? candidate.evaluations[0] : null);
+    const candMs = candidate.updated_at ? new Date(candidate.updated_at).getTime() : 0;
+    const evalMs = evalToCheck
+      ? new Date((evalToCheck as any).updated_at || evalToCheck.created_at || evalToCheck.evaluation_date || 0).getTime()
+      : 0;
+
+    if (candMs > evalMs && normalizedCandDec) {
+      return normalizedCandDec;
+    }
+    if (
+      (candidate as any).is_recruit_now_validated ||
+      normalizedCandDec === 'recruit_now' ||
+      candidate.status === 'selected'
+    ) {
+      return 'recruit_now';
+    }
+    if (normalizedCandDec === 'invitation_test' || candidate.status === 'in_trial') {
+      return 'invitation_test';
+    }
+    if (evalToCheck) {
+      const dec = (evalToCheck as any).scout_state_decision || evalToCheck.report_data?.scout_state_decision;
+      if (dec === 'recruit_now' || dec === 'recruit_standby') return 'recruit_now';
+      if (dec === 'invitation_test' || dec === 'to_follow') return dec;
+      if ((evalToCheck.verdict as any) === 'sign' || evalToCheck.verdict === 'sign_immediately') return 'recruit_now';
+      if ((evalToCheck.verdict as any) === 'trial') return 'invitation_test';
+      if ((evalToCheck.verdict as any) === 'follow') return 'to_follow';
+    }
+    return normalizedCandDec || 'to_follow';
+  }, [candidate, evaluation]);
+
+  // Scout Manager : verrouillé dès que le statut enregistré du joueur est « Inviter à un test »
+  const isStatusLockedForNonAdmin = Boolean(
+    !isModalAdminOrSuperAdmin &&
+    persistedCandidateStatus === 'invitation_test'
+  );
+
+  // Le scout / Scout Manager ne peut modifier le statut QUE pour ses propres joueurs (et jamais si déjà « Inviter à un test »)
   const canChangeStatus = Boolean(
-    isSuperAdmin ||
-    isAdmin ||
-    isScoutAdmin ||
-    canProcessRecruitNow ||
-    isCandidateOwner
+    isModalAdminOrSuperAdmin ||
+    (!isStatusLockedForNonAdmin && (canProcessRecruitNow || isCandidateOwner))
   );
 
   // Options de statuts disponibles selon les droits :
-  // - Jamais de 'recruit_standby'
-  // - 'recruit_now' disponible pour Direction (canProcessRecruitNow) OU pour le scout découvreur (isCandidateOwner)
+  // - 3 statuts : À suivre, Inviter à un test, Recrutement immédiatement (jamais de 'recruit_standby')
   const availableStatusOptions = useMemo(() => {
     return PLAYER_RECRUITMENT_STATUS_OPTIONS.filter(opt => {
-      if (opt.value === 'recruit_standby') return false;
+      if ((opt.value as string) === 'recruit_standby') return false;
       if (opt.value === 'recruit_now') {
-        return canProcessRecruitNow || isCandidateOwner;
+        return canProcessRecruitNow || isCandidateOwner || persistedCandidateStatus === 'recruit_now';
       }
       return true;
     });
-  }, [canProcessRecruitNow, isCandidateOwner]);
+  }, [canProcessRecruitNow, isCandidateOwner, persistedCandidateStatus]);
 
   const allowedCategories = useMemo(() => {
     if (isSuperAdmin || isAdmin) return RECRUITMENT_AGE_CATEGORIES;
@@ -435,8 +512,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   // Style de jeu de référence (Lions de l'Atlas)
   const [referencePlayerStyle, setReferencePlayerStyle] = useState<string>(candidate?.reference_player_style || '');
 
-  // Dossier Administratif & Documents PDF (Recrutement Immédiat)
+  // Dossier Administratif & Documents PDF (Recrutement Immédiat) + Déclaration sur l'honneur (Inviter à un test)
   const [administrativeDocuments, setAdministrativeDocuments] = useState<AdministrativeDocument[]>(candidate?.administrative_documents || []);
+  const [honorDeclarationDoc, setHonorDeclarationDoc] = useState<AdministrativeDocument | null>(() => getHonorDeclarationDocument(candidate));
   const [contractType, setContractType] = useState<string>(candidate?.contract_type || 'Convention de formation');
   const [adminNotes, setAdminNotes] = useState<string>(candidate?.admin_notes || '');
 
@@ -645,7 +723,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setSubInHalf('2nd');
       setSubInMinute(60);
       setTeamFormation(candidate.team_formation || '4-3-3');
-      setScoutStateDecision(candidate.scout_state_decision || 'to_follow');
+      setScoutStateDecision(persistedCandidateStatus || candidate.scout_state_decision || 'to_follow');
       setInformationSource(candidate.information_source || 'terrain');
       setInformationSourcePerson(candidate.information_source_person || '');
 
@@ -654,6 +732,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
       setReferencePlayerStyle(candidate.reference_player_style || '');
       setAdministrativeDocuments(candidate.administrative_documents || []);
+      setHonorDeclarationDoc(getHonorDeclarationDocument(candidate));
       setContractType(candidate.contract_type || 'Convention de formation');
       setAdminNotes(candidate.admin_notes || '');
 
@@ -750,8 +829,24 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
           if (rd.sub_in_half) setSubInHalf(rd.sub_in_half);
           if (rd.sub_in_minute !== undefined) setSubInMinute(rd.sub_in_minute);
           if (rd.team_formation) setTeamFormation(rd.team_formation);
-          if (rd.scout_state_decision) setScoutStateDecision(rd.scout_state_decision as any);
-          else if (evalToLoad.verdict) setScoutStateDecision(evalToLoad.verdict as any);
+          const candMs = candidate.updated_at ? new Date(candidate.updated_at).getTime() : 0;
+          const evalMs = evalToLoad
+            ? new Date((evalToLoad as any).updated_at || evalToLoad.created_at || evalToLoad.evaluation_date || 0).getTime()
+            : 0;
+          const shouldLoadEvalDecision =
+            mode === 'report_only' ||
+            (!candidate.scout_state_decision || (candMs <= evalMs && candidate.scout_state_decision === 'to_follow' && (candidate.status === 'registered' || !candidate.status)));
+          if (shouldLoadEvalDecision) {
+            if (rd.scout_state_decision) {
+              setScoutStateDecision(rd.scout_state_decision === 'recruit_standby' ? 'recruit_now' : (rd.scout_state_decision as PlayerRecruitmentStatus));
+            } else if ((evalToLoad.verdict as any) === 'sign' || evalToLoad.verdict === 'sign_immediately') {
+              setScoutStateDecision('recruit_now');
+            } else if ((evalToLoad.verdict as any) === 'trial' || evalToLoad.verdict === 'second_trial' || evalToLoad.verdict === 'additional_test') {
+              setScoutStateDecision('invitation_test');
+            } else if ((evalToLoad.verdict as any) === 'follow') {
+              setScoutStateDecision('to_follow');
+            }
+          }
           if (rd.information_source) setInformationSource(rd.information_source as any);
           if (rd.information_source_person) setInformationSourcePerson(rd.information_source_person);
           if (rd.current_club) setCurrentClub(rd.current_club);
@@ -820,6 +915,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       }
     } else {
       setPhotoUrl('');
+      setHonorDeclarationDoc(null);
       setTechReport('');
       setTactReport('');
       setPhysReport('');
@@ -1451,11 +1547,19 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       scouts.find(s => s.full_name?.toLowerCase().trim() === recruiterId?.toLowerCase().trim()) ||
       selectedScout;
 
+    // Protection serveur/client : empêcher un non-Admin de déverrouiller « Inviter à un test » ou modifier le statut d'un autre scout
+    const effectiveScoutStateDecision: PlayerRecruitmentStatus =
+      isStatusLockedForNonAdmin
+        ? 'invitation_test'
+        : (!canChangeStatus && persistedCandidateStatus)
+          ? persistedCandidateStatus
+          : scoutStateDecision;
+
     // En mode player_only (Ajouter / Modifier un joueur), AUCUN rapport/évaluation ne doit être généré.
     // L'évaluation n'est incluse que si on est en mode 'report_only', si 'À recruter immédiatement' est coché, ou si un vrai titre/contenu de rapport a été renseigné.
     const hasEvalData = mode === 'player_only' ? false : (
       mode === 'report_only' ||
-      scoutStateDecision === 'recruit_now' ||
+      effectiveScoutStateDecision === 'recruit_now' ||
       Boolean(
         reportTitle.trim() ||
         techReport.trim() ||
@@ -1481,11 +1585,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       evaluation_date: new Date().toISOString().split('T')[0],
       created_at: evaluation?.created_at || new Date().toISOString(),
       potential_rating: Number(potentialRating || 0),
-      scout_state_decision: scoutStateDecision,
-      report_title: reportTitle.trim() || (scoutStateDecision === 'recruit_now' ? 'Signalement : À recruter immédiatement' : undefined),
+      scout_state_decision: effectiveScoutStateDecision,
+      report_title: reportTitle.trim() || (effectiveScoutStateDecision === 'recruit_now' ? 'Signalement : À recruter immédiatement' : undefined),
       position_evaluated: positionConfig.code || primaryPosition,
       report_data: {
-        scout_state_decision: scoutStateDecision,
+        scout_state_decision: effectiveScoutStateDecision,
         observation_status: isFirstTimeSeen ? 'seen' : 'already_seen',
         is_first_time_seen: isFirstTimeSeen,
         match_observed: matchObserved.trim() || undefined,
@@ -1601,8 +1705,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
           : Number(performanceRating || 0),
         is_starter: isStarter,
         team_formation: teamFormation.trim() || undefined,
-        scout_state_decision: scoutStateDecision,
-        is_recruit_now_validated: scoutStateDecision === 'recruit_now',
+        scout_state_decision: effectiveScoutStateDecision,
+        is_recruit_now_validated: effectiveScoutStateDecision === 'recruit_now',
+        updated_at: new Date().toISOString(),
         information_source: informationSource,
         information_source_person: informationSourcePerson.trim() || undefined,
 
@@ -1630,14 +1735,25 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         video_url: mode === 'player_only' ? (candidate?.video_url || undefined) : (videoUrl.trim() || undefined),
 
         reference_player_style: referencePlayerStyle || undefined,
-        administrative_documents: administrativeDocuments.length > 0 ? administrativeDocuments : undefined,
+        administrative_documents: (() => {
+          const withoutHonor = administrativeDocuments.filter(d => d.category !== 'honor_declaration');
+          const synced = honorDeclarationDoc ? [...withoutHonor, honorDeclarationDoc] : withoutHonor;
+          return synced.length > 0 ? synced : undefined;
+        })(),
+        honor_declaration_document: honorDeclarationDoc,
+        ...(persistedCandidateStatus === 'invitation_test' && effectiveScoutStateDecision !== 'invitation_test'
+          ? { test_slot_validation: null }
+          : {}),
         contract_type: contractType || undefined,
         admin_notes: adminNotes.trim() || undefined,
 
         preferred_locations: preferredLocations.length > 0 ? preferredLocations : undefined,
 
-        pipeline_stage: candidate?.pipeline_stage || 'shortlisted',
-        status: (scoutStateDecision === 'recruit_now' ? 'selected' : scoutStateDecision === 'invitation_test' ? 'in_trial' : 'registered') as CandidateStatus,
+        pipeline_stage:
+          (candidate?.pipeline_stage as string) === 'recruit_now' && effectiveScoutStateDecision !== 'recruit_now'
+            ? 'shortlisted'
+            : (candidate?.pipeline_stage || 'shortlisted'),
+        status: (effectiveScoutStateDecision === 'recruit_now' ? 'selected' : effectiveScoutStateDecision === 'invitation_test' ? 'in_trial' : 'registered') as CandidateStatus,
       }, evaluationPayload);
       onClose();
     } finally {
@@ -2139,19 +2255,28 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between gap-2 flex-wrap">
                       <span>Statut Officiel du Joueur <span className="text-rose-500">*</span></span>
-                      {isModalScoutManager && !isCandidateOwner && (
+                      {isStatusLockedForNonAdmin ? (
+                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 inline-flex items-center gap-1">
+                          <Lock className="w-3 h-3 shrink-0" />
+                          Verrouillé (« Inviter à un test » modifiable par Admin / Super Admin)
+                        </span>
+                      ) : isModalScoutManager && !isCandidateOwner ? (
                         <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                           Modification réservée au scout créateur
                         </span>
-                      )}
+                      ) : null}
                     </label>
                     <select
                       value={scoutStateDecision}
                       disabled={!canChangeStatus}
                       onChange={(e) => {
                         const val = e.target.value as PlayerRecruitmentStatus;
+                        if (isStatusLockedForNonAdmin) {
+                          toast.error("Le statut « Inviter à un test » est verrouillé pour les Scout Managers. Seul un Admin ou Super Admin peut le modifier.");
+                          return;
+                        }
                         if (!canChangeStatus) {
                           toast.error("Vous pouvez modifier le statut uniquement pour vos propres joueurs.");
                           return;
@@ -2166,7 +2291,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     >
                       <option value="to_follow">À suivre</option>
                       <option value="invitation_test">Inviter à un test</option>
-                      {(canProcessRecruitNow || isCandidateOwner) && (
+                      {(canProcessRecruitNow || isCandidateOwner || scoutStateDecision === 'recruit_now') && (
                         <option value="recruit_now">
                           Recrutement immédiatement
                         </option>
@@ -2175,9 +2300,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
                     {!canProcessRecruitNow && (
                       <p className="mt-1.5 text-[10px] text-slate-500">
-                        {isCandidateOwner
-                          ? "En tant que scout découvreur, vous pouvez orienter votre joueur vers « À suivre », « Inviter à un test » ou « Recrutement immédiatement »."
-                          : "Ce joueur a été détecté par un autre scout. La modification de statut est réservée à son découvreur ou à la Direction."}
+                        {isStatusLockedForNonAdmin
+                          ? "Ce joueur a déjà le statut « Inviter à un test ». Seul un Admin ou Super Admin peut modifier ce statut ou planifier ses tests."
+                          : isCandidateOwner
+                            ? "En tant que scout découvreur, vous pouvez orienter votre joueur vers « À suivre », « Inviter à un test » ou « Recrutement immédiatement » (le statut « Inviter à un test » devient ensuite verrouillé)."
+                            : "Ce joueur a été détecté par un autre scout. La modification de statut est réservée à son découvreur ou à la Direction."}
                       </p>
                     )}
                   </div>
@@ -2196,7 +2323,13 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                           type="button"
                           disabled={isOptDisabled && !isSelected}
                           onClick={() => { if (!isOptDisabled) setScoutStateDecision(opt.value); }}
-                          title={isOptDisabled ? "Modification de statut non autorisée" : undefined}
+                          title={
+                            isStatusLockedForNonAdmin
+                              ? "Statut « Inviter à un test » verrouillé — Seul l'Admin ou le Super Admin peut le modifier"
+                              : isOptDisabled
+                                ? "Modification de statut non autorisée"
+                                : undefined
+                          }
                           className={cn(
                             "p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-1",
                             isOptDisabled ? "cursor-not-allowed" : "cursor-pointer",
@@ -2221,6 +2354,16 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                       );
                     })}
                   </div>
+
+                  {/* Upload automatique de la Déclaration sur l'honneur dès « Inviter à un test » */}
+                  {(scoutStateDecision === 'invitation_test' || Boolean(honorDeclarationDoc)) && (
+                    <HonorDeclarationFormField
+                      candidateName={`${firstName} ${lastName}`.trim() || 'le joueur'}
+                      document={honorDeclarationDoc}
+                      canUpload={Boolean(isModalAdminOrSuperAdmin || isCandidateOwner || !candidate)}
+                      onDocumentChange={(doc) => setHonorDeclarationDoc(doc)}
+                    />
+                  )}
                 </div>
 
                 {/* ── CARTE 4 : POSTE, PIED FORT & CLUB ACTUEL ── */}

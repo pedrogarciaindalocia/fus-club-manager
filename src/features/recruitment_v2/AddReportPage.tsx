@@ -5,6 +5,7 @@ import { useRecruitment } from './hooks/useRecruitment';
 import CandidateModal from './components/CandidateModal';
 import PlayerSelect from './components/PlayerSelect';
 import { usePermissions } from '../../context/PermissionsContext';
+import { isScoutAdminRole } from '../../constants/roles';
 import { toast } from 'sonner';
 
 /**
@@ -34,7 +35,15 @@ const AddReportPage: React.FC = () => {
   ].map(r => r.toLowerCase().trim());
   const hasExplicitPerms = Boolean(authState?.permissions && authState.permissions.length > 0);
   const isSuperAdmin = Boolean(!authState?.isImpersonating && userRoles.includes('super_admin'));
-  const isScoutAdmin = isSuperAdmin || (!hasExplicitPerms && (userRoles.includes('scout_admin') || authState?.user?.system_role === 'scout_admin'));
+  const isScoutAdmin = Boolean(
+    isSuperAdmin ||
+    isScoutAdminRole(
+      authState?.user,
+      authState?.roles,
+      authState?.isImpersonating,
+      authState?.impersonatedUser
+    )
+  );
   const isScoutManager = Boolean(
     !isSuperAdmin && !isScoutAdmin && (
       userRoles.includes('scout_manager') ||
@@ -42,10 +51,10 @@ const AddReportPage: React.FC = () => {
       (authState?.user?.job_title && authState.user.job_title.toLowerCase().includes('scout manager'))
     )
   );
-  const isRecruitmentAdmin = Boolean(isSuperAdmin || (!hasExplicitPerms && isScoutAdmin && !isScoutManager));
-  const isAdmin = isSuperAdmin || (!hasExplicitPerms && (userRoles.includes('admin') || isScoutAdmin));
+  const isRecruitmentAdmin = Boolean(isSuperAdmin || (isScoutAdmin && !isScoutManager));
+  const isAdmin = isSuperAdmin || isScoutAdmin || (!hasExplicitPerms && userRoles.includes('admin'));
 
-  // Permission spécifique de gestion de rapport
+  // Permission spécifique de gestion de rapport : strictement contrôlée par la case cochée (sauf Super Admin)
   const canManageReports = Boolean(
     isSuperAdmin ||
     (!hasExplicitPerms && (isAdmin || isScoutManager)) ||
@@ -111,8 +120,9 @@ const AddReportPage: React.FC = () => {
   // rapports d'observation sur n'importe quel joueur de la base (dans le respect de ses catégories assignées).
   const canAddReportForCandidate = (cand: any): boolean => {
     if (!cand) return false;
-    if (isSuperAdmin || isAdmin || isRecruitmentAdmin) return true;
+    if (isSuperAdmin) return true;
     if (!canManageReports) return false;
+    if (isAdmin || isRecruitmentAdmin) return true;
     if (canManageCategory && !canManageCategory(cand.age_category)) return false;
     return true;
   };
@@ -222,7 +232,11 @@ const AddReportPage: React.FC = () => {
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors text-xs font-bold cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            {returnTab === 'scouts' ? 'Retour au Personnel' : 'Retour à la Database'}
+            {returnTab === 'sessions'
+              ? 'Retour au Planning'
+              : returnTab === 'scouts'
+                ? 'Retour au Personnel'
+                : 'Retour à la Database'}
           </button>
 
           <div className="h-6 w-px bg-slate-200 hidden sm:block" />

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePermissions } from '../../context/PermissionsContext';
 import { useRecruitment } from '../recruitment_v2/hooks/useRecruitment';
-import { getRoleConfig } from '../../constants/roles';
+import { getRoleConfig, isScoutAdminRole } from '../../constants/roles';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -44,7 +44,13 @@ const ScoutDashboardView: React.FC = () => {
 
   const userRole = currentUser?.system_role?.toLowerCase() || '';
   const isSuperAdmin = !authState.isImpersonating && userRole === 'super_admin';
-  const isAdmin = isSuperAdmin;
+  const isScoutAdmin = isScoutAdminRole(
+    authState.user,
+    authState.roles,
+    authState.isImpersonating,
+    authState.impersonatedUser
+  );
+  const isAdmin = isSuperAdmin || isScoutAdmin;
   const canViewRecruitment = isSuperAdmin || hasModuleAccess('recruitment_v2', 'read');
   const canViewCandidates = isSuperAdmin || hasSubModuleAccess('candidates', 'read', 'recruitment_v2');
   const canCreateCandidate = isSuperAdmin || hasSubModuleAccess('candidates', 'create', 'recruitment_v2');

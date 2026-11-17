@@ -8,7 +8,12 @@ import type {
   Scout,
   AdministrativeDocument
 } from '../types/recruitment';
-import { getAgeCategoryFromBirthDate, getPoleFromCategory, resolveReportOrCandidateSurclassement } from '../types/recruitment';
+import {
+  getAgeCategoryFromBirthDate,
+  getPoleFromCategory,
+  resolveReportOrCandidateSurclassement,
+  getHonorDeclarationDocument
+} from '../types/recruitment';
 
 const resolvePotentialValue = (evalPot?: number | null, candPot?: number | null): number => {
   const raw = evalPot != null && !isNaN(Number(evalPot))
@@ -49,6 +54,7 @@ import { useClubData } from '../../../hooks/useClubData';
 import type { Club } from '../../../types';
 import { OpponentClubFormModal } from '../../club-management/components/OpponentClubFormModal';
 import { AdministrativeDossierForm } from './AdministrativeDossierForm';
+import { HonorDeclarationFormField } from './HonorDeclarationControl';
 import { PlayerVideoModal } from './PlayerVideoModal';
 import { usePermissions } from '../../../context/PermissionsContext';
 
@@ -249,15 +255,36 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
 
   const [currentAdminDocs, setCurrentAdminDocs] = useState<AdministrativeDocument[]>(candidate?.administrative_documents || []);
+  const [honorDeclarationDoc, setHonorDeclarationDoc] = useState<AdministrativeDocument | null>(() => getHonorDeclarationDocument(candidate));
   const [currentContractType, setCurrentContractType] = useState<string>(candidate?.contract_type || '');
   const [currentAdminNotes, setCurrentAdminNotes] = useState<string>(candidate?.admin_notes || '');
   const [showAdminForm, setShowAdminForm] = useState(false);
 
   React.useEffect(() => {
     setCurrentAdminDocs(candidate?.administrative_documents || []);
+    setHonorDeclarationDoc(getHonorDeclarationDocument(candidate));
     setCurrentContractType(candidate?.contract_type || '');
     setCurrentAdminNotes(candidate?.admin_notes || '');
   }, [candidate]);
+
+  const handleHonorDocChange = async (doc: AdministrativeDocument | null) => {
+    setHonorDeclarationDoc(doc);
+    const nextAdminDocs = [
+      ...currentAdminDocs.filter(d => d.category !== 'honor_declaration'),
+      ...(doc ? [doc] : []),
+    ];
+    setCurrentAdminDocs(nextAdminDocs);
+    const payload = {
+      honor_declaration_document: doc,
+      administrative_documents: nextAdminDocs,
+      updated_at: new Date().toISOString(),
+    };
+    if (onUpdateCandidate && candidate?.id) {
+      await onUpdateCandidate(candidate.id, payload);
+    } else if (candidate?.id) {
+      await recruitmentService.updateCandidate(candidate.id, payload);
+    }
+  };
 
   const handleDocsChange = async (newDocs: AdministrativeDocument[]) => {
     setCurrentAdminDocs(newDocs);
@@ -473,9 +500,45 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
     return candidateEvals.filter(ev => !canDeleteEvaluation || canDeleteEvaluation(ev));
   }, [candidateEvals, canDeleteEvaluation]);
   const latestEval = candidateEvals[0];
-  const latestDecision = latestEval
-    ? ((latestEval as any).scout_state_decision || latestEval.report_data?.scout_state_decision || (latestEval.verdict === 'sign' ? 'recruit_now' : latestEval.verdict === 'trial' ? 'invitation_test' : latestEval.verdict === 'follow' ? 'to_follow' : null))
-    : (candidate.scout_state_decision || null);
+  const latestDecision = useMemo(() => {
+    const rawCandDecision = (candidate as any).scout_state_decision;
+    const normalizedCandDecision =
+      rawCandDecision === 'recruit_standby' ? 'recruit_now' : rawCandDecision;
+    const candMs = candidate.updated_at ? new Date(candidate.updated_at).getTime() : 0;
+    const evalMs = latestEval
+      ? new Date((latestEval as any).updated_at || latestEval.created_at || latestEval.evaluation_date || 0).getTime()
+      : 0;
+
+    if (
+      latestEval &&
+      candMs > evalMs &&
+      (normalizedCandDecision === 'to_follow' ||
+        normalizedCandDecision === 'invitation_test' ||
+        normalizedCandDecision === 'recruit_now')
+    ) {
+      return normalizedCandDecision;
+    }
+
+    if (
+      normalizedCandDecision === 'recruit_now' ||
+      candidate.status === 'selected' ||
+      (candidate as any).is_recruit_now_validated
+    ) {
+      return 'recruit_now';
+    }
+    if (normalizedCandDecision === 'invitation_test' || candidate.status === 'in_trial') {
+      return 'invitation_test';
+    }
+    if (latestEval) {
+      const dec = (latestEval as any).scout_state_decision || latestEval.report_data?.scout_state_decision;
+      if (dec === 'recruit_standby' || dec === 'recruit_now') return 'recruit_now';
+      if (dec) return dec;
+      if (latestEval.verdict === 'sign' || (latestEval.verdict as any) === 'sign_immediately') return 'recruit_now';
+      if (latestEval.verdict === 'trial') return 'invitation_test';
+      if (latestEval.verdict === 'follow') return 'to_follow';
+    }
+    return normalizedCandDecision || null;
+  }, [candidate, latestEval]);
   const candidateObs = observations.filter(o => o.candidate_id === candidate.id);
   const candidateTests = tests.filter(t => t.candidate_id === candidate.id || t.candidate_ids?.includes(candidate.id));
   const candidateTimeline = timeline.filter(t => t.candidate_id === candidate.id);
@@ -575,11 +638,11 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               )}
               {latestDecision === 'recruit_now' || latestDecision === 'recruit_standby' ? (
                 <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-bold shadow-2xs">
-                  Recrutement Immédiat
+                  Recrutement immédiatement
                 </span>
               ) : latestDecision === 'invitation_test' ? (
                 <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-200 border border-blue-400/30 text-[10px] font-bold shadow-2xs">
-                  Convocation Test
+                  Inviter à un test
                 </span>
               ) : latestDecision === 'to_follow' ? (
                 <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-200 border border-amber-400/30 text-[10px] font-bold shadow-2xs">
@@ -2480,6 +2543,34 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               </div>
             </div>
 
+            {/* Déclaration sur l'honneur (automatique dès « Inviter à un test ») */}
+            {(latestDecision === 'invitation_test' || Boolean(honorDeclarationDoc)) && (() => {
+              const currentScoutId = currentScout?.id;
+              const normUserName = (currentUserName || '').trim().toLowerCase();
+              const isDetailOwner = Boolean(
+                (currentUserId && (
+                  candidate.discovering_scout_id === currentUserId ||
+                  (candidate as any).discovering_scout === currentUserId ||
+                  (candidate as any).created_by === currentUserId
+                )) ||
+                (currentScoutId && candidate.discovering_scout_id === currentScoutId) ||
+                (normUserName && (candidate.discovering_scout_name || '').trim().toLowerCase() === normUserName)
+              );
+              const canUploadHonor = Boolean(
+                isSuperAdminUser ||
+                isRecruitmentAdmin ||
+                isDetailOwner
+              );
+              return (
+                <HonorDeclarationFormField
+                  candidateName={`${candidate.first_name} ${candidate.last_name}`.trim()}
+                  document={honorDeclarationDoc}
+                  canUpload={canUploadHonor}
+                  onDocumentChange={handleHonorDocChange}
+                />
+              );
+            })()}
+
             {/* 3. Détails Administratifs & Documents (affichés dans l'onglet État Civil) */}
             {(currentAdminDocs.length > 0 || currentContractType || currentAdminNotes || candidate.contract_type || candidate.admin_notes || showAdminForm) ? (
               <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
@@ -3044,8 +3135,8 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                     : "bg-indigo-600 text-white border-indigo-700"
                               )}>
                                 <span>
-                                  {(dispDecision === 'recruit_now' || dispDecision === 'recruit_standby') ? 'Recrutement Immédiat' :
-                                    dispDecision === 'invitation_test' ? 'Invitation Test' : 'À suivre'}
+                                  {(dispDecision === 'recruit_now' || dispDecision === 'recruit_standby') ? 'Recrutement immédiatement' :
+                                    dispDecision === 'invitation_test' ? 'Inviter à un test' : 'À suivre'}
                                 </span>
                               </span>
 
