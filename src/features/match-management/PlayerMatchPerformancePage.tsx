@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { format, parseISO, subMonths } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
+  ArrowLeft,
   Brain,
   Calendar,
   Check,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { usePlayers } from '../../hooks/usePlayers';
+import { useTeams } from '../../hooks/useTeams';
 import { useMetricSets } from '../../hooks/useMetricSets';
 import { usePermissions } from '../../context/PermissionsContext';
 import { AuditLogger } from '../../services/auditLogger';
@@ -30,8 +32,6 @@ import {
   type RadarEvaluationSnapshot,
   type RadarViewMode,
 } from '../../components/metrics/PlayerPerformanceRadarChart';
-import { PlayerPerformanceEvolutionChart } from '../../components/metrics/PlayerPerformanceEvolutionChart';
-import { PerformanceDateCalendarPicker } from './components/PerformanceDateCalendarPicker';
 import {
   playerPerformanceService,
   type PlayerPerformanceEvaluation,
@@ -49,19 +49,10 @@ import {
 } from '../../utils/metricSetsHelpers';
 import { normalizeAgeCategory } from '../../constants';
 import type { Player } from '../../types';
+import { calculateAge } from '../../types/arbitre';
 import { cn } from '../../lib/utils';
 
-type EvolutionPeriodMode = 'quarterly' | 'semiannual' | 'annual';
-
-const EVOLUTION_PERIOD_OPTIONS: Array<{
-  id: EvolutionPeriodMode;
-  label: string;
-  months: number;
-}> = [
-  { id: 'quarterly', label: 'Trimestriel', months: 3 },
-  { id: 'semiannual', label: 'Semestriel', months: 6 },
-  { id: 'annual', label: 'Annuel', months: 12 },
-];
+type PlayerWithCategory = Player & { category?: string | null };
 
 const DEFAULT_SCORE = 5;
 
@@ -70,11 +61,11 @@ const PILLAR_CONFIG: Array<{
   label: string;
   icon: React.FC<{ className?: string }>;
 }> = [
-  { key: 'technique', label: 'Technique', icon: Footprints },
-  { key: 'tactique', label: 'Tactique', icon: Compass },
-  { key: 'physique', label: 'Physique', icon: Zap },
-  { key: 'mental', label: 'Mental', icon: Brain },
-];
+    { key: 'technique', label: 'Technique', icon: Footprints },
+    { key: 'tactique', label: 'Tactique', icon: Compass },
+    { key: 'physique', label: 'Physique', icon: Zap },
+    { key: 'mental', label: 'Mental', icon: Brain },
+  ];
 
 function formatDateFr(dateStr?: string | null): string {
   if (!dateStr) return '—';
@@ -96,9 +87,56 @@ function formatDateTimeFr(isoStr?: string | null): string | null {
   }
 }
 
+function getPlayerAge(player: Player | null | undefined): number | null {
+  if (!player) return null;
+  const exact = calculateAge(player.birth_date);
+  if (exact !== null && exact > 0 && exact < 100) return exact;
+  if (
+    player.birth_year &&
+    player.birth_year > 1950 &&
+    player.birth_year <= new Date().getFullYear()
+  ) {
+    return new Date().getFullYear() - player.birth_year;
+  }
+  return null;
+}
+
+function getPlayerNameDisplay(player: Player): {
+  lastName: string;
+  firstName: string;
+  fullName: string;
+  hasSplit: boolean;
+} {
+  const first = (player.first_name || '').trim();
+  const last = (player.last_name || '').trim();
+  if (first && last) {
+    return {
+      lastName: last,
+      firstName: first,
+      fullName: `${first} ${last}`,
+      hasSplit: true,
+    };
+  }
+  const full = (player.full_name || first || last || 'Joueur').trim();
+  return {
+    lastName: full,
+    firstName: '',
+    fullName: full,
+    hasSplit: false,
+  };
+}
+
+function getPlayerPhotoUrl(player: Player): string {
+  if (player.photo_url && player.photo_url !== 'null') {
+    return player.photo_url;
+  }
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(player.full_name || 'Joueur')}&background=0D0D0F&color=fff&size=256`;
+}
+
 export const PlayerMatchPerformancePage: React.FC = () => {
   const { authState, hasSubModuleAccess, canManageCategory } = usePermissions();
   const { players = [], isLoading: playersLoading } = usePlayers();
+  const { teams = [] } = useTeams();
   const { metricSets, allSetPositions, getPositionsForSet, isScoutUser } = useMetricSets();
 
   const currentRole = authState.user?.system_role || authState.roles?.[0] || null;
@@ -108,12 +146,12 @@ export const PlayerMatchPerformancePage: React.FC = () => {
   const canUpdate = hasSubModuleAccess('player_performance', 'update');
   const canDelete = hasSubModuleAccess('player_performance', 'delete');
 
-  // Filtres : Catégorie, Date (Calendrier), Joueur
+  // Filtre unique par catégorie + joueur cliqué + date de l'évaluation affichée/créée
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [filterDate, setFilterDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
 
-  // Chargement automatique des performances du joueur sélectionné (alimente aussi les indicateurs du calendrier)
+  // Chargement automatique des performances du joueur sélectionné
   const [allPlayerEvaluations, setAllPlayerEvaluations] = useState<PlayerPerformanceEvaluation[]>([]);
   const [isLoadingPlayerEvals, setIsLoadingPlayerEvals] = useState<boolean>(false);
 
@@ -138,7 +176,6 @@ export const PlayerMatchPerformancePage: React.FC = () => {
   const [criteriaScores, setCriteriaScores] = useState<Record<string, number>>({});
   const [activePillarTab, setActivePillarTab] = useState<MetricPillar>('technique');
   const [radarViewMode, setRadarViewMode] = useState<RadarViewMode>('technique');
-  const [evolutionPeriod, setEvolutionPeriod] = useState<EvolutionPeriodMode>('quarterly');
 
   // Actions Enregistrer / Mettre à jour / Supprimer
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -167,21 +204,37 @@ export const PlayerMatchPerformancePage: React.FC = () => {
     return setPositions.length > 0 ? setPositions : allSetPositions;
   }, [activeSet, allSetPositions, getPositionsForSet]);
 
+  const teamCategoryById = useMemo(() => {
+    const map = new Map<string, string>();
+    teams.forEach(t => {
+      if (t.id && t.category) map.set(t.id, t.category);
+    });
+    return map;
+  }, [teams]);
+
+  const resolvePlayerCategory = useCallback(
+    (p: PlayerWithCategory): string => {
+      const rawCat = p.category || (p.team_id ? teamCategoryById.get(p.team_id) : null) || 'PRO';
+      return normalizeAgeCategory(rawCat) || rawCat;
+    },
+    [teamCategoryById]
+  );
+
   // Catégories disponibles
   const availableCategories = useMemo(() => {
     const cats = new Set<string>();
     players.forEach(p => {
-      const cat = normalizeAgeCategory(p.category || 'PRO') || p.category || 'PRO';
+      const cat = resolvePlayerCategory(p as PlayerWithCategory);
       if (canManageCategory(cat)) cats.add(cat);
     });
     return Array.from(cats).sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }));
-  }, [players, canManageCategory]);
+  }, [players, canManageCategory, resolvePlayerCategory]);
 
   // Joueurs filtrés par la catégorie choisie
   const filteredPlayers = useMemo(() => {
     return players
       .filter(p => {
-        const cat = normalizeAgeCategory(p.category || 'PRO') || p.category || 'PRO';
+        const cat = resolvePlayerCategory(p as PlayerWithCategory);
         if (!canManageCategory(cat)) return false;
         if (categoryFilter !== 'ALL' && cat !== categoryFilter) return false;
         return true;
@@ -189,16 +242,12 @@ export const PlayerMatchPerformancePage: React.FC = () => {
       .sort((a, b) =>
         (a.full_name || '').localeCompare(b.full_name || '', 'fr', { sensitivity: 'base' })
       );
-  }, [players, canManageCategory, categoryFilter]);
+  }, [players, canManageCategory, categoryFilter, resolvePlayerCategory]);
 
-  // Maintenir un joueur valide sélectionné lorsque la catégorie change
+  // Si la catégorie change et que le joueur sélectionné n'en fait plus partie, revenir à la liste
   useEffect(() => {
-    if (filteredPlayers.length === 0) {
-      if (selectedPlayerId) setSelectedPlayerId('');
-      return;
-    }
-    if (!selectedPlayerId || !filteredPlayers.some(p => p.id === selectedPlayerId)) {
-      setSelectedPlayerId(filteredPlayers[0].id);
+    if (selectedPlayerId && !filteredPlayers.some(p => p.id === selectedPlayerId)) {
+      setSelectedPlayerId('');
     }
   }, [filteredPlayers, selectedPlayerId]);
 
@@ -253,27 +302,16 @@ export const PlayerMatchPerformancePage: React.FC = () => {
     };
   }, [selectedPlayerId, isScoutUser, refreshPlayerEvaluations]);
 
-  // Carte des dates ayant au moins une performance enregistrée pour le calendrier
-  const recordedDateCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const ev of allPlayerEvaluations) {
-      if (String(ev.player_id) !== String(selectedPlayerId)) continue;
-      const d = String(ev.evaluation_date || '').slice(0, 10);
-      if (d) counts[d] = (counts[d] || 0) + 1;
-    }
-    return counts;
-  }, [allPlayerEvaluations, selectedPlayerId]);
-
-  // Évaluations correspondant automatiquement à la date filtrée
-  const dayEvaluations = useMemo(() => {
-    if (!filterDate || !selectedPlayerId) return [];
+  // Liste triée des évaluations enregistrées (de la plus récente à la plus ancienne) pour la liste déroulante
+  const sortedPlayerEvaluations = useMemo(() => {
+    if (!selectedPlayerId) return [];
     return allPlayerEvaluations
-      .filter(
-        ev =>
-          String(ev.player_id) === String(selectedPlayerId) &&
-          String(ev.evaluation_date || '').slice(0, 10) === filterDate
-      )
+      .filter(ev => String(ev.player_id) === String(selectedPlayerId))
       .sort((a, b) => {
+        const dateCmp = String(b.evaluation_date || '')
+          .slice(0, 10)
+          .localeCompare(String(a.evaluation_date || '').slice(0, 10));
+        if (dateCmp !== 0) return dateCmp;
         const aManual = a.source_type === 'manual' ? 0 : 1;
         const bManual = b.source_type === 'manual' ? 0 : 1;
         if (aManual !== bManual) return aManual - bManual;
@@ -281,12 +319,39 @@ export const PlayerMatchPerformancePage: React.FC = () => {
           String(a.updated_at || a.created_at || '')
         );
       });
-  }, [allPlayerEvaluations, selectedPlayerId, filterDate]);
+  }, [allPlayerEvaluations, selectedPlayerId]);
+
+  // Libellés formatés des dates d'enregistrement pour la liste déroulante
+  const savedDateDropdownOptions = useMemo(() => {
+    const totalsByDate: Record<string, number> = {};
+    for (const ev of sortedPlayerEvaluations) {
+      const d = String(ev.evaluation_date || '').slice(0, 10);
+      if (d) totalsByDate[d] = (totalsByDate[d] || 0) + 1;
+    }
+    const seenByDate: Record<string, number> = {};
+
+    return sortedPlayerEvaluations.map(ev => {
+      const d = String(ev.evaluation_date || '').slice(0, 10);
+      seenByDate[d] = (seenByDate[d] || 0) + 1;
+      const indexSuffix = (totalsByDate[d] || 0) > 1 ? ` (#${seenByDate[d]})` : '';
+      const sourceTag =
+        ev.source_type === 'match'
+          ? ` · ${ev.match_label || 'Match'}`
+          : ev.source_type === 'training'
+            ? ' · Entraînement'
+            : '';
+      const posTag = ev.position_code ? ` · ${ev.position_code}` : '';
+      return {
+        id: ev.id,
+        label: `${formatDateFr(d)}${indexSuffix} — ${Math.round(ev.global_score)}/10${posTag}${sourceTag}`,
+      };
+    });
+  }, [sortedPlayerEvaluations]);
 
   const activeEval: PlayerPerformanceEvaluation | null = useMemo(() => {
     if (!activeEvalId) return null;
-    return dayEvaluations.find(e => e.id === activeEvalId) || null;
-  }, [dayEvaluations, activeEvalId]);
+    return sortedPlayerEvaluations.find(e => e.id === activeEvalId) || null;
+  }, [sortedPlayerEvaluations, activeEvalId]);
 
   const selectablePositions: MetricSetPosition[] = useMemo(
     () => filterMetricPositionsForPlayer(positionsInSet, selectedPlayer?.position),
@@ -339,6 +404,9 @@ export const PlayerMatchPerformancePage: React.FC = () => {
   const loadEvaluationIntoEditor = useCallback(
     (ev: PlayerPerformanceEvaluation, player: Player | null) => {
       setActiveEvalId(ev.id);
+      setFilterDate(
+        String(ev.evaluation_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+      );
       setIsEditing(false);
       setIsCreatingNew(false);
       setConfirmDelete(false);
@@ -373,19 +441,69 @@ export const PlayerMatchPerformancePage: React.FC = () => {
     [positionsInSet, playerPerfSets, getPositionsForSet, buildInitialCriteriaForPosition]
   );
 
-  // Mise à jour automatique du résultat dès qu'un filtre change ou que les données arrivent
+  // Dès qu'un joueur est sélectionné et ses évaluations chargées, afficher automatiquement la dernière date enregistrée
   useEffect(() => {
-    setConfirmDelete(false);
-    setIsEditing(false);
-    setIsCreatingNew(false);
-
-    if (dayEvaluations.length > 0) {
-      loadEvaluationIntoEditor(dayEvaluations[0], selectedPlayer);
-    } else {
+    if (!selectedPlayerId) {
       setActiveEvalId(null);
+      setIsEditing(false);
+      setIsCreatingNew(false);
+      setConfirmDelete(false);
+      return;
+    }
+
+    if (isCreatingNew) return;
+
+    if (sortedPlayerEvaluations.length === 0) {
+      setActiveEvalId(null);
+      setIsEditing(false);
+      return;
+    }
+
+    const currentValid = activeEvalId
+      ? sortedPlayerEvaluations.find(e => e.id === activeEvalId)
+      : null;
+
+    if (!currentValid) {
+      loadEvaluationIntoEditor(sortedPlayerEvaluations[0], selectedPlayer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPlayerId, filterDate, dayEvaluations]);
+  }, [selectedPlayerId, sortedPlayerEvaluations, isCreatingNew]);
+
+  const handleSelectPlayer = useCallback((player: Player) => {
+    setSelectedPlayerId(player.id);
+    setActiveEvalId(null);
+    setIsEditing(false);
+    setIsCreatingNew(false);
+    setConfirmDelete(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleBackToPlayers = useCallback(() => {
+    setSelectedPlayerId('');
+    setActiveEvalId(null);
+    setIsEditing(false);
+    setIsCreatingNew(false);
+    setConfirmDelete(false);
+  }, []);
+
+  const handleCategoryChange = useCallback((nextCategory: string) => {
+    setCategoryFilter(nextCategory);
+    setSelectedPlayerId('');
+    setActiveEvalId(null);
+    setIsEditing(false);
+    setIsCreatingNew(false);
+    setConfirmDelete(false);
+  }, []);
+
+  const handleSelectSavedDateEval = useCallback(
+    (evalId: string) => {
+      const target = sortedPlayerEvaluations.find(e => e.id === evalId);
+      if (target) {
+        loadEvaluationIntoEditor(target, selectedPlayer);
+      }
+    },
+    [sortedPlayerEvaluations, loadEvaluationIntoEditor, selectedPlayer]
+  );
 
   const startNewEvaluation = useCallback(() => {
     const resolvedPos =
@@ -399,6 +517,7 @@ export const PlayerMatchPerformancePage: React.FC = () => {
       mental: DEFAULT_SCORE,
     };
     setActiveEvalId(null);
+    setFilterDate(new Date().toISOString().slice(0, 10));
     setIsCreatingNew(true);
     setIsEditing(false);
     setConfirmDelete(false);
@@ -495,6 +614,9 @@ export const PlayerMatchPerformancePage: React.FC = () => {
       setIsEditing(false);
     } else {
       setIsCreatingNew(false);
+      if (sortedPlayerEvaluations.length > 0 && selectedPlayer) {
+        loadEvaluationIntoEditor(sortedPlayerEvaluations[0], selectedPlayer);
+      }
     }
   };
 
@@ -520,46 +642,6 @@ export const PlayerMatchPerformancePage: React.FC = () => {
     const global = Math.round((technique + tactique + physique + mental) / 4);
     return { technique, tactique, physique, mental, global };
   }, [activePosition, integerSummary, pillarSliders]);
-
-  // Filtrage de la courbe d'évolution par période (Trimestriel 3m / Semestriel 6m / Annuel 12m)
-  const evolutionBoundsByPeriod = useMemo(() => {
-    const today = new Date();
-    let selectedDt = today;
-    try {
-      if (filterDate && /^\d{4}-\d{2}-\d{2}$/.test(filterDate)) {
-        const parsed = parseISO(filterDate);
-        if (!Number.isNaN(parsed.getTime())) selectedDt = parsed;
-      }
-    } catch {
-      selectedDt = today;
-    }
-    const anchorDate = selectedDt > today ? selectedDt : today;
-    const endIso = format(anchorDate, 'yyyy-MM-dd');
-
-    const playerEvals = allPlayerEvaluations.filter(
-      ev => String(ev.player_id) === String(selectedPlayerId)
-    );
-
-    const byMode: Record<EvolutionPeriodMode, PlayerPerformanceEvaluation[]> = {
-      quarterly: [],
-      semiannual: [],
-      annual: [],
-    };
-
-    for (const opt of EVOLUTION_PERIOD_OPTIONS) {
-      const startIso = format(subMonths(anchorDate, opt.months), 'yyyy-MM-dd');
-      byMode[opt.id] = playerEvals.filter(ev => {
-        const d = String(ev.evaluation_date || '').slice(0, 10);
-        return d >= startIso && d <= endIso;
-      });
-    }
-
-    return byMode;
-  }, [allPlayerEvaluations, selectedPlayerId, filterDate]);
-
-  const evolutionEvaluations = evolutionBoundsByPeriod[evolutionPeriod];
-  const activePeriodMeta =
-    EVOLUTION_PERIOD_OPTIONS.find(o => o.id === evolutionPeriod) || EVOLUTION_PERIOD_OPTIONS[0];
 
   const radarSnapshot: RadarEvaluationSnapshot | null = useMemo(() => {
     if (!selectedPlayer || !filterDate) return null;
@@ -680,8 +762,7 @@ export const PlayerMatchPerformancePage: React.FC = () => {
             ? freshList
             : allPlayerEvaluations.map(item => (item.id === activeEval.id ? updated : item))
         );
-        setActiveEvalId(updated.id);
-        setIsEditing(false);
+        loadEvaluationIntoEditor(updated, selectedPlayer);
         toast.success(
           `Mise à jour enregistrée pour ${selectedPlayer.full_name} (${effectiveScores.global}/10)`
         );
@@ -733,6 +814,7 @@ export const PlayerMatchPerformancePage: React.FC = () => {
           freshList.length > 0 ? freshList : [...allPlayerEvaluations, created]
         );
         setActiveEvalId(created.id);
+        setFilterDate(String(created.evaluation_date || filterDate).slice(0, 10));
         setIsCreatingNew(false);
         setIsEditing(false);
         toast.success(
@@ -780,6 +862,7 @@ export const PlayerMatchPerformancePage: React.FC = () => {
       setAllPlayerEvaluations(
         freshList.filter(item => item.id !== activeEval.id)
       );
+      setActiveEvalId(null);
       setConfirmDelete(false);
       setIsEditing(false);
       setIsCreatingNew(false);
@@ -810,93 +893,200 @@ export const PlayerMatchPerformancePage: React.FC = () => {
   const lastUpdatedLabel = activeEval
     ? formatDateTimeFr(activeEval.updated_at || activeEval.created_at)
     : null;
+  const selectedPlayerAge = getPlayerAge(selectedPlayer);
+  const selectedPlayerCategory = selectedPlayer
+    ? resolvePlayerCategory(selectedPlayer as PlayerWithCategory)
+    : null;
+  const selectedPlayerName = selectedPlayer ? getPlayerNameDisplay(selectedPlayer) : null;
 
   return (
     <div className="space-y-6 pb-14">
-      {/* Filtres automatiques (sans bannière) : Catégorie, Joueur & Calendrier avec indicateur */}
+      {/* Barre supérieure : Filtre unique par Catégorie (+ retour & liste déroulante des dates si joueur sélectionné) */}
       <div className="rounded-3xl bg-white border border-slate-200/80 shadow-sm p-4 sm:p-5">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-          {/* Filtre Catégorie */}
-          <div className="md:col-span-3 space-y-1.5 min-w-0">
-            <label
-              htmlFor="perf-filter-category"
-              className="text-[11px] font-black uppercase tracking-wider text-[#0D0D0F] flex items-center gap-1.5"
-            >
-              <Shield className="w-3.5 h-3.5 text-[#FF3737]" />
-              <span>Catégorie</span>
-            </label>
-            <select
-              id="perf-filter-category"
-              value={categoryFilter}
-              onChange={e => setCategoryFilter(e.target.value)}
-              disabled={playersLoading}
-              className="w-full h-11 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 text-xs sm:text-sm font-bold text-[#0D0D0F] focus:outline-none focus:ring-2 focus:ring-[#FF3737]/30 transition"
-            >
-              <option value="ALL">Toutes les catégories</option>
-              {availableCategories.map(cat => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+          <div className="flex flex-wrap items-end gap-3 min-w-0">
+            {selectedPlayer && (
+              <button
+                type="button"
+                onClick={handleBackToPlayers}
+                className="h-11 px-4 rounded-xl bg-[#0D0D0F] hover:bg-[#1e1e26] text-white text-xs font-black uppercase tracking-wider inline-flex items-center gap-2 transition cursor-pointer shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4 text-[#FF3737]" />
+                <span>Tous les joueurs</span>
+              </button>
+            )}
+
+            {/* Filtre unique par Catégorie */}
+            <div className="w-full sm:w-64 space-y-1.5 min-w-0">
+              <label
+                htmlFor="perf-filter-category"
+                className="text-[11px] font-black uppercase tracking-wider text-[#0D0D0F] flex items-center gap-1.5"
+              >
+                <Shield className="w-3.5 h-3.5 text-[#FF3737]" />
+                <span>Catégorie</span>
+              </label>
+              <select
+                id="perf-filter-category"
+                value={categoryFilter}
+                onChange={e => handleCategoryChange(e.target.value)}
+                disabled={playersLoading}
+                className="w-full h-11 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 text-xs sm:text-sm font-bold text-[#0D0D0F] focus:outline-none focus:ring-2 focus:ring-[#FF3737]/30 transition cursor-pointer"
+              >
+                <option value="ALL">Toutes les catégories</option>
+                {availableCategories.map(cat => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Filtre Joueur */}
-          <div className="md:col-span-5 space-y-1.5 min-w-0">
-            <label
-              htmlFor="perf-filter-player"
-              className="text-[11px] font-black uppercase tracking-wider text-[#0D0D0F] flex items-center gap-1.5"
-            >
-              <Users className="w-3.5 h-3.5 text-[#FF3737]" />
-              <span>Joueur ({filteredPlayers.length})</span>
-            </label>
-            <select
-              id="perf-filter-player"
-              value={selectedPlayerId}
-              onChange={e => setSelectedPlayerId(e.target.value)}
-              disabled={playersLoading || filteredPlayers.length === 0}
-              className="w-full h-11 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 text-xs sm:text-sm font-bold text-[#0D0D0F] focus:outline-none focus:ring-2 focus:ring-[#FF3737]/30 disabled:opacity-60 transition"
-            >
-              {filteredPlayers.length === 0 ? (
-                <option value="">Aucun joueur dans cette catégorie</option>
-              ) : (
-                filteredPlayers.map(p => {
-                  const cat = normalizeAgeCategory(p.category || 'PRO') || p.category || 'PRO';
-                  const posLabel = p.position ? ` · ${p.position}` : '';
-                  const catLabel = categoryFilter === 'ALL' ? ` (${cat})` : '';
-                  return (
-                    <option key={p.id} value={p.id}>
-                      {p.full_name}
-                      {posLabel}
-                      {catLabel}
-                    </option>
-                  );
-                })
+          {!selectedPlayer ? (
+            <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 text-xs font-black text-[#0D0D0F] self-start lg:self-end">
+              <Users className="w-4 h-4 text-[#FF3737]" />
+              <span>
+                {filteredPlayers.length} joueur{filteredPlayers.length > 1 ? 's' : ''}
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-end gap-3 w-full lg:w-auto">
+              {/* Liste déroulante des dates d'enregistrement */}
+              <div className="flex-1 sm:flex-initial sm:min-w-[290px] space-y-1.5 min-w-0">
+                <label
+                  htmlFor="perf-saved-dates"
+                  className="text-[11px] font-black uppercase tracking-wider text-[#0D0D0F] flex items-center gap-1.5"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-[#FF3737]" />
+                  <span>Dates d&apos;enregistrement ({sortedPlayerEvaluations.length})</span>
+                </label>
+                <select
+                  id="perf-saved-dates"
+                  value={isCreatingNew ? '' : activeEval?.id || ''}
+                  onChange={e => {
+                    if (e.target.value) handleSelectSavedDateEval(e.target.value);
+                  }}
+                  disabled={isLoadingPlayerEvals || sortedPlayerEvaluations.length === 0}
+                  className="w-full h-11 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 text-xs sm:text-sm font-bold text-[#0D0D0F] focus:outline-none focus:ring-2 focus:ring-[#FF3737]/30 disabled:opacity-60 transition cursor-pointer"
+                >
+                  {isLoadingPlayerEvals ? (
+                    <option value="">Chargement des dates...</option>
+                  ) : sortedPlayerEvaluations.length === 0 ? (
+                    <option value="">Aucune date enregistrée</option>
+                  ) : (
+                    <>
+                      {isCreatingNew && (
+                        <option value="">
+                          Nouvelle saisie ({formatDateFr(filterDate)})
+                        </option>
+                      )}
+                      {savedDateDropdownOptions.map(opt => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {canCreate && !isCreatingNew && (
+                <button
+                  type="button"
+                  onClick={startNewEvaluation}
+                  disabled={isLoadingPlayerEvals}
+                  className="h-11 px-4 rounded-xl bg-[#FF3737] hover:bg-[#dc2626] text-white text-xs font-black uppercase tracking-wider inline-flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Nouvelle date</span>
+                </button>
               )}
-            </select>
-          </div>
-
-          {/* Filtre Date avec Calendrier & Indicateurs */}
-          <div className="md:col-span-4 space-y-1.5 min-w-0">
-            <label
-              htmlFor="perf-filter-date"
-              className="text-[11px] font-black uppercase tracking-wider text-[#0D0D0F] flex items-center gap-1.5"
-            >
-              <Calendar className="w-3.5 h-3.5 text-[#FF3737]" />
-              <span>Calendrier / Date</span>
-            </label>
-            <PerformanceDateCalendarPicker
-              value={filterDate}
-              onChange={setFilterDate}
-              recordedDateCounts={recordedDateCounts}
-              isLoadingDates={isLoadingPlayerEvals}
-            />
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Résultat mis à jour automatiquement selon les filtres */}
-      {selectedPlayer && (
+      {/* Vue 1 : Grille de tous les joueurs (Photo + Nom + Prénom + Âge) */}
+      {!selectedPlayer ? (
+        playersLoading ? (
+          <div className="rounded-3xl bg-white border border-slate-200/80 shadow-sm p-12 flex items-center justify-center gap-2.5 text-xs font-black text-[#0D0D0F]">
+            <Loader2 className="w-5 h-5 animate-spin text-[#FF3737]" />
+            <span>Chargement des joueurs...</span>
+          </div>
+        ) : filteredPlayers.length === 0 ? (
+          <div className="rounded-3xl bg-white border border-slate-200/80 shadow-sm p-10 text-center space-y-2">
+            <div className="mx-auto w-12 h-12 rounded-2xl bg-[#0D0D0F] text-white flex items-center justify-center">
+              <Users className="w-6 h-6 text-[#FF3737]" />
+            </div>
+            <h2 className="text-base font-black text-[#0D0D0F]">Aucun joueur trouvé</h2>
+            <p className="text-xs sm:text-sm text-slate-600">
+              Aucun joueur disponible dans cette catégorie.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {filteredPlayers.map(player => {
+              const nameInfo = getPlayerNameDisplay(player);
+              const age = getPlayerAge(player);
+              const cat = resolvePlayerCategory(player as PlayerWithCategory);
+
+              return (
+                <button
+                  key={player.id}
+                  type="button"
+                  onClick={() => handleSelectPlayer(player)}
+                  className="group rounded-3xl bg-white border border-slate-200/80 hover:border-[#FF3737] hover:shadow-lg transition-all p-4 flex flex-col items-center text-center gap-3 cursor-pointer"
+                >
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden bg-[#0D0D0F] ring-2 ring-slate-100 group-hover:ring-[#FF3737]/30 transition shrink-0">
+                    <img
+                      src={getPlayerPhotoUrl(player)}
+                      alt={nameInfo.fullName}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      onError={e => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = '/assets/avatar.svg';
+                      }}
+                    />
+                  </div>
+
+                  <div className="w-full min-w-0 space-y-0.5">
+                    {nameInfo.hasSplit ? (
+                      <>
+                        <div className="text-xs sm:text-sm font-black uppercase tracking-tight text-[#0D0D0F] group-hover:text-[#FF3737] transition-colors truncate">
+                          {nameInfo.lastName}
+                        </div>
+                        <div className="text-xs font-bold text-slate-600 truncate">
+                          {nameInfo.firstName}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-xs sm:text-sm font-black uppercase tracking-tight text-[#0D0D0F] group-hover:text-[#FF3737] transition-colors line-clamp-2">
+                        {nameInfo.fullName}
+                      </div>
+                    )}
+                  </div>
+
+                  {(age !== null || categoryFilter === 'ALL') && (
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 mt-auto">
+                      {age !== null && (
+                        <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-[10px] font-black text-[#0D0D0F] tabular-nums">
+                          {age} ans
+                        </span>
+                      )}
+                      {categoryFilter === 'ALL' && (
+                        <span className="px-2 py-0.5 rounded-lg bg-[#0D0D0F] text-[10px] font-black text-white">
+                          {cat}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )
+      ) : (
+        /* Vue 2 : Tableau de bord Performance du joueur sélectionné */
         <>
           {isLoadingPlayerEvals ? (
             <div className="rounded-3xl bg-white border border-slate-200/80 shadow-sm p-10 flex items-center justify-center gap-2.5 text-xs font-black text-[#0D0D0F]">
@@ -910,9 +1100,6 @@ export const PlayerMatchPerformancePage: React.FC = () => {
                   <Check className="w-3.5 h-3.5" />
                   <span>{isEditing ? 'Modification en cours' : 'Performance enregistrée'}</span>
                 </span>
-                <span className="text-xs font-bold text-white/85">
-                  {formatDateFr(filterDate)}
-                </span>
                 {activeSet && (
                   <span className="px-2.5 py-1 rounded-lg bg-[#1C1C22] text-white/85 text-[11px] font-bold">
                     {activeSet.name}
@@ -925,44 +1112,61 @@ export const PlayerMatchPerformancePage: React.FC = () => {
                   </span>
                 )}
               </div>
-
-              {dayEvaluations.length > 1 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  {dayEvaluations.map((ev, idx) => {
-                    const isSelected = ev.id === activeEval.id;
-                    return (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        onClick={() => loadEvaluationIntoEditor(ev, selectedPlayer)}
-                        className={cn(
-                          'px-3 py-1 rounded-lg text-[11px] font-black transition cursor-pointer',
-                          isSelected
-                            ? 'bg-[#FF3737] text-white'
-                            : 'bg-[#1C1C22] text-white/80 hover:bg-[#2a2a32]'
-                        )}
-                      >
-                        Éval #{idx + 1} ({Math.round(ev.global_score)}/10)
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
             </div>
-          ) : !isCreatingNew ? (
+          ) : isCreatingNew ? (
+            <div className="rounded-2xl bg-[#0D0D0F] text-white px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FF3737] text-white text-[11px] font-black uppercase tracking-wider shrink-0">
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Nouvelle performance</span>
+                </span>
+                {activeSet && (
+                  <span className="px-2.5 py-1 rounded-lg bg-[#1C1C22] text-white/85 text-[11px] font-bold">
+                    {activeSet.name}
+                  </span>
+                )}
+              </div>
+
+              <label className="inline-flex items-center gap-2 text-xs font-bold text-white/85">
+                <span>Date :</span>
+                <input
+                  type="date"
+                  value={filterDate}
+                  onChange={e => setFilterDate(e.target.value)}
+                  className="h-9 px-3 rounded-xl bg-[#1C1C22] border border-white/15 text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-[#FF3737]/50"
+                />
+              </label>
+            </div>
+          ) : (
             <div className="rounded-3xl bg-white border border-slate-200/80 shadow-sm p-8 sm:p-10 text-center space-y-4">
-              <div className="mx-auto w-12 h-12 rounded-2xl bg-[#0D0D0F] text-white flex items-center justify-center">
-                <Calendar className="w-6 h-6 text-[#FF3737]" />
+              <div className="mx-auto w-20 h-20 rounded-2xl overflow-hidden bg-[#0D0D0F] ring-2 ring-slate-100 shadow-sm">
+                <img
+                  src={getPlayerPhotoUrl(selectedPlayer)}
+                  alt={selectedPlayerName?.fullName || selectedPlayer.full_name}
+                  className="w-full h-full object-cover"
+                  onError={e => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = '/assets/avatar.svg';
+                  }}
+                />
               </div>
               <div className="space-y-1 max-w-lg mx-auto">
                 <h2 className="text-base sm:text-lg font-black text-[#0D0D0F]">
-                  Aucune performance enregistrée
+                  {selectedPlayerName?.hasSplit
+                    ? `${selectedPlayerName.lastName} ${selectedPlayerName.firstName}`
+                    : selectedPlayer.full_name}
                 </h2>
-                <p className="text-xs sm:text-sm text-slate-600">
-                  Il n&apos;existe pas encore de performance enregistrée pour{' '}
-                  <span className="font-bold text-[#0D0D0F]">{selectedPlayer.full_name}</span> à la
-                  date du{' '}
-                  <span className="font-bold text-[#0D0D0F]">{formatDateFr(filterDate)}</span>.
+                <p className="text-xs font-bold text-slate-500">
+                  {[
+                    selectedPlayer.position || 'Poste non défini',
+                    selectedPlayerAge !== null ? `${selectedPlayerAge} ans` : null,
+                    selectedPlayerCategory,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                <p className="text-xs sm:text-sm text-slate-600 pt-2">
+                  Aucune performance enregistrée pour ce joueur pour le moment.
                 </p>
               </div>
               {canCreate && (
@@ -978,36 +1182,41 @@ export const PlayerMatchPerformancePage: React.FC = () => {
                 </div>
               )}
             </div>
-          ) : null}
+          )}
 
           {/* Espace 2 Colonnes : 4 Piliers en Onglets + Critères à gauche | Radar à droite */}
           {!isLoadingPlayerEvals && showEditorWorkspace && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               {/* COLONNE GAUCHE : 4 ONGLETS PILIER & CRITÈRES MÉTRIQUES PERF. JOUEUR */}
               <div className="lg:col-span-6 rounded-3xl bg-white border border-slate-200/80 shadow-sm p-5 sm:p-6 space-y-5 min-w-0">
-                {/* En-tête Joueur & Note Globale */}
+                {/* En-tête Joueur (Photo, Nom & Prénom, Âge, Poste) & Note Globale */}
                 <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3.5 min-w-0">
                     <img
-                      src={
-                        selectedPlayer.photo_url ||
-                        `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedPlayer.full_name)}&background=0D0D0F&color=fff&size=128`
-                      }
-                      alt={selectedPlayer.full_name}
-                      className="w-12 h-12 rounded-2xl object-cover bg-[#0D0D0F] shrink-0"
+                      src={getPlayerPhotoUrl(selectedPlayer)}
+                      alt={selectedPlayerName?.fullName || selectedPlayer.full_name}
+                      className="w-16 h-16 rounded-2xl object-cover bg-[#0D0D0F] border border-slate-200/80 shadow-xs shrink-0"
                       onError={e => {
                         e.currentTarget.onerror = null;
                         e.currentTarget.src = '/assets/avatar.svg';
                       }}
                     />
-                    <div className="min-w-0">
-                      <h2 className="text-base font-black text-[#0D0D0F] truncate">
-                        {selectedPlayer.full_name}
+                    <div className="min-w-0 space-y-0.5">
+                      <h2 className="text-base sm:text-lg font-black uppercase tracking-tight text-[#0D0D0F] truncate">
+                        {selectedPlayerName?.hasSplit
+                          ? `${selectedPlayerName.lastName} ${selectedPlayerName.firstName}`
+                          : selectedPlayer.full_name}
                       </h2>
                       <p className="text-xs font-bold text-slate-600 truncate">
-                        {activePosition
-                          ? `${activePosition.emoji} ${getMetricPositionFrenchName(activePosition)}`
-                          : selectedPlayer.position || 'Poste non défini'}
+                        {[
+                          activePosition
+                            ? `${activePosition.emoji} ${getMetricPositionFrenchName(activePosition)}`
+                            : selectedPlayer.position || 'Poste non défini',
+                          selectedPlayerAge !== null ? `${selectedPlayerAge} ans` : null,
+                          selectedPlayerCategory,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </p>
                     </div>
                   </div>
@@ -1414,8 +1623,8 @@ export const PlayerMatchPerformancePage: React.FC = () => {
                 </div>
               </div>
 
-              {/* COLONNE DROITE : RADAR EN TEMPS RÉEL + COURBE D'ÉVOLUTION EN FONCTION DE LA DATE */}
-              <div className="lg:col-span-6 space-y-6 min-w-0">
+              {/* COLONNE DROITE : RADAR EN TEMPS RÉEL (SANS COURBE D'ÉVOLUTION) */}
+              <div className="lg:col-span-6 min-w-0">
                 <PlayerPerformanceRadarChart
                   variant="default"
                   theme="fus"
@@ -1427,55 +1636,7 @@ export const PlayerMatchPerformancePage: React.FC = () => {
                   activePosition={activePosition}
                   viewMode={radarViewMode}
                   onViewModeChange={handleRadarViewChange}
-                  height={380}
-                />
-
-                <PlayerPerformanceEvolutionChart
-                  theme="fus"
-                  hideSourceFilter
-                  integerOnly
-                  title="Courbe d'évolution en fonction de la date"
-                  subtitle={`Période ${activePeriodMeta.label} (${activePeriodMeta.months} mois) · Cliquez sur un point pour afficher la date`}
-                  evaluations={evolutionEvaluations}
-                  selectedEvaluationId={activeEval?.id || null}
-                  onSelectEvaluation={ev => {
-                    const targetDate = String(ev.evaluation_date || '').slice(0, 10);
-                    if (targetDate) setFilterDate(targetDate);
-                  }}
-                  headerExtra={
-                    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtre de période">
-                      {EVOLUTION_PERIOD_OPTIONS.map(opt => {
-                        const isActive = evolutionPeriod === opt.id;
-                        const count = evolutionBoundsByPeriod[opt.id].length;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => setEvolutionPeriod(opt.id)}
-                            className={cn(
-                              'px-3 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer flex items-center gap-1.5',
-                              isActive
-                                ? 'bg-[#FF3737] text-white shadow-xs'
-                                : 'bg-[#161619] hover:bg-[#26262c] text-white/85'
-                            )}
-                          >
-                            <span>{opt.label}</span>
-                            <span
-                              className={cn(
-                                'px-1.5 py-0.5 rounded-md text-[10px] font-black tabular-nums',
-                                isActive ? 'bg-[#0D0D0F] text-white' : 'bg-white/10 text-white/80'
-                              )}
-                            >
-                              {count}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  }
-                  emptyTitle={`Aucune évaluation en mode ${activePeriodMeta.label}`}
-                  emptyDescription={`Aucune performance enregistrée sur les ${activePeriodMeta.months} derniers mois pour ${selectedPlayer.full_name}. Changez vers Semestriel ou Annuel pour élargir l'historique.`}
-                  height={270}
+                  height={460}
                 />
               </div>
             </div>

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Calendar, Clock, CheckCircle2, X, Send, Loader2, ArrowRight } from 'lucide-react';
+import { Calendar, Clock, CheckCircle2, X, Send, Loader2, ArrowRight, BedDouble, Utensils } from 'lucide-react';
 import type { TestSlotValidationInfo } from '../types/recruitment';
 import { formatCompactFrenchDate } from '../utils/testDateIntervals';
 import { toast } from 'sonner';
+
+type LogisticsAvailability = 'available' | 'adjusted' | 'not_required';
 
 interface TestSlotChangeModalProps {
   isOpen: boolean;
@@ -13,13 +15,16 @@ interface TestSlotChangeModalProps {
   currentEndDate: string;
   currentStartTime?: string;
   slotValidation?: TestSlotValidationInfo | null;
-  isAdminMode: boolean; // true = Admin / Super Admin (met à jour + valide), false = Scout Manager (demande un autre créneau)
+  isAdminMode: boolean; // true = Admin / Super Admin / Responsable Vie (met à jour + valide), false = Scout Manager (demande un autre créneau)
+  isResponsableVieMode?: boolean;
   onOpenPlanning?: () => void;
   onSubmit: (payload: {
     startDate: string;
     endDate: string;
     startTime: string;
     note: string;
+    roomAvailability?: LogisticsAvailability;
+    cateringAvailability?: LogisticsAvailability;
   }) => Promise<void> | void;
 }
 
@@ -32,6 +37,7 @@ export const TestSlotChangeModal: React.FC<TestSlotChangeModalProps> = ({
   currentStartTime = '09:30',
   slotValidation,
   isAdminMode,
+  isResponsableVieMode = false,
   onOpenPlanning,
   onSubmit,
 }) => {
@@ -39,6 +45,8 @@ export const TestSlotChangeModal: React.FC<TestSlotChangeModalProps> = ({
   const [endDate, setEndDate] = useState(currentEndDate);
   const [startTime, setStartTime] = useState(currentStartTime);
   const [note, setNote] = useState('');
+  const [roomAvailability, setRoomAvailability] = useState<LogisticsAvailability>('available');
+  const [cateringAvailability, setCateringAvailability] = useState<LogisticsAvailability>('available');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -53,6 +61,8 @@ export const TestSlotChangeModal: React.FC<TestSlotChangeModalProps> = ({
       setStartTime(slotValidation?.requested_start_time || currentStartTime || '09:30');
     }
     setNote(slotValidation?.request_note || '');
+    setRoomAvailability(slotValidation?.room_availability || 'available');
+    setCateringAvailability(slotValidation?.catering_availability || 'available');
   }, [isOpen, isAdminMode, currentStartDate, currentEndDate, currentStartTime, slotValidation]);
 
   if (!isOpen || typeof window === 'undefined' || typeof globalThis.document === 'undefined') {
@@ -73,6 +83,7 @@ export const TestSlotChangeModal: React.FC<TestSlotChangeModalProps> = ({
         endDate: resolvedEnd,
         startTime: startTime || '09:30',
         note: note.trim(),
+        ...(isResponsableVieMode ? { roomAvailability, cateringAvailability } : {}),
       });
       onClose();
     } catch (err: unknown) {
@@ -98,9 +109,11 @@ export const TestSlotChangeModal: React.FC<TestSlotChangeModalProps> = ({
         <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/90 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h3 className="text-sm font-black text-slate-900 truncate">
-              {isAdminMode
-                ? `Changer & Valider le créneau — ${candidateName}`
-                : `Demander un autre créneau — ${candidateName}`}
+              {isResponsableVieMode
+                ? `Ajuster le créneau (Chambre & Restauration) — ${candidateName}`
+                : isAdminMode
+                  ? `Changer & Valider le créneau — ${candidateName}`
+                  : `Demander un autre créneau — ${candidateName}`}
             </h3>
             <p className="text-[11px] text-slate-500">
               Créneau actuel : {formatCompactFrenchDate(currentStartDate)}
@@ -202,18 +215,64 @@ export const TestSlotChangeModal: React.FC<TestSlotChangeModalProps> = ({
             />
           </div>
 
+          {isResponsableVieMode && (
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-600">
+                Disponibilités Vie & Hébergement
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                    <BedDouble className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Chambre</span>
+                  </label>
+                  <select
+                    value={roomAvailability}
+                    onChange={(e) => setRoomAvailability(e.target.value as LogisticsAvailability)}
+                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white focus:ring-2 focus:ring-primary/20 outline-none"
+                  >
+                    <option value="available">Disponible</option>
+                    <option value="adjusted">Créneau ajusté (chambre)</option>
+                    <option value="not_required">Non requise</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                    <Utensils className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Restauration</span>
+                  </label>
+                  <select
+                    value={cateringAvailability}
+                    onChange={(e) => setCateringAvailability(e.target.value as LogisticsAvailability)}
+                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white focus:ring-2 focus:ring-primary/20 outline-none"
+                  >
+                    <option value="available">Disponible</option>
+                    <option value="adjusted">Créneau ajusté (restauration)</option>
+                    <option value="not_required">Non requise</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-[11px] font-bold text-slate-700 mb-1">
-              {isAdminMode ? 'Note de confirmation (optionnel)' : 'Motif / Disponibilité souhaitée'}
+              {isResponsableVieMode
+                ? 'Précision chambre / restauration (optionnel)'
+                : isAdminMode
+                  ? 'Note de confirmation (optionnel)'
+                  : 'Motif / Disponibilité souhaitée'}
             </label>
             <input
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder={
-                isAdminMode
-                  ? 'Ex. Créneau déplacé suite disponibilité terrain'
-                  : 'Ex. Joueur en examen scolaire le 17, disponible à partir du 20'
+                isResponsableVieMode
+                  ? 'Ex. Chambre libre à partir du 22, restauration confirmée'
+                  : isAdminMode
+                    ? 'Ex. Créneau déplacé suite disponibilité terrain'
+                    : 'Ex. Joueur en examen scolaire le 17, disponible à partir du 20'
               }
               className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary/20 outline-none"
             />
@@ -259,7 +318,11 @@ export const TestSlotChangeModal: React.FC<TestSlotChangeModalProps> = ({
                 <Send className="w-3.5 h-3.5" />
               )}
               <span>
-                {isAdminMode ? 'Valider et mettre à jour' : 'Envoyer la demande'}
+                {isResponsableVieMode
+                  ? 'Ajuster & Valider'
+                  : isAdminMode
+                    ? 'Valider et mettre à jour'
+                    : 'Envoyer la demande'}
               </span>
               {!isSaving && <ArrowRight className="w-3 h-3" />}
             </button>

@@ -38,8 +38,14 @@ import { usePermissions } from '../../context/PermissionsContext';
 
 const OpponentClubs: React.FC = () => {
   const { opponentClubs, mainClub, isLoading: clubsLoading, addOpponent, updateOpponent, deleteOpponent } = useClubData();
-  const { can, hasSubModuleAccess } = usePermissions();
-  const canManageClubs = can('manage_standings') || hasSubModuleAccess('matches', 'manage_standings') || can('create_opponent') || hasSubModuleAccess('opponents', 'create') || hasSubModuleAccess('opponents', 'update');
+  const { can, hasSubModuleAccess, hasSpecificActionAccess } = usePermissions();
+  const canManageClubs =
+    can('manage_standings') ||
+    hasSpecificActionAccess('matches', 'manage_standings', 'create') ||
+    hasSpecificActionAccess('matches', 'manage_standings', 'update') ||
+    can('create_opponent') ||
+    hasSubModuleAccess('opponents', 'create') ||
+    hasSubModuleAccess('opponents', 'update');
   const isLoading = clubsLoading;
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);

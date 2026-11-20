@@ -270,7 +270,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               return;
             }
           }
-        } catch (_) {}
+        } catch (_) { }
       }
 
       if (isMounted) {
@@ -319,7 +319,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
           return migrated;
         }
       }
-    } catch (_) {}
+    } catch (_) { }
     return DEFAULT_LAYOUT;
   });
 
@@ -330,14 +330,14 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     setLayout(newLayout);
     try {
       localStorage.setItem('fus_match_overview_blocks_layout_v2', JSON.stringify(newLayout));
-    } catch (_) {}
+    } catch (_) { }
   };
 
   const resetLayout = () => {
     setLayout(DEFAULT_LAYOUT);
     try {
       localStorage.removeItem('fus_match_overview_blocks_layout_v2');
-    } catch (_) {}
+    } catch (_) { }
   };
 
   const handleDragStart = (e: React.DragEvent, blockId: string) => {
@@ -499,19 +499,33 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
   );
 
   const isEventOurTeam = (e: any): boolean => {
-    if (e.extra?.opponent_ref) return false;
+    if (e.extra?.team === 'away' || e.extra?.opponent_ref || e.extra?.opponent_player_id) return false;
+    if (e.extra?.team === 'home') return true;
     const pid = getEventPlayerId(e);
     if (!pid) return true;
     return ourPlayerIds.has(pid);
   };
 
-  // 1. Buts
-  const ourGoalEvents = (events || []).filter(e => (e.type === 'goal' || e.type === 'penalty') && isEventOurTeam(e)).length;
-  const advGoalEvents = (events || []).filter(e => (e.type === 'goal' || e.type === 'penalty') && !isEventOurTeam(e)).length;
-  
-  // Calculate goals for FUS vs Opponent (accounting for match score and logged events)
-  const fusGoals = Math.max(isHome ? homeScore : awayScore, ourGoalEvents);
-  const oppGoals = Math.max(isHome ? awayScore : homeScore, advGoalEvents);
+  // 1. Buts (alignés avec le score officiel lorsqu'un match est terminé)
+  const isScoredPen = (e: any) => e.type === 'penalty' && (!e.extra?.result || e.extra.result === 'scored');
+  const ourGoalEvents = (events || []).filter(e =>
+    ((e.type === 'goal' || isScoredPen(e)) && isEventOurTeam(e)) ||
+    (e.type === 'own_goal' && !isEventOurTeam(e))
+  ).length;
+  const advGoalEvents = (events || []).filter(e =>
+    ((e.type === 'goal' || isScoredPen(e)) && !isEventOurTeam(e)) ||
+    (e.type === 'own_goal' && isEventOurTeam(e))
+  ).length;
+
+  const isMatchFinished = match.status === 'finished' || match.status === 'completed';
+  const rawFusScore = isHome ? homeScore : awayScore;
+  const rawOppScore = isHome ? awayScore : homeScore;
+  const fusGoals = isMatchFinished
+    ? ((rawFusScore === 0 && rawOppScore === 0 && (ourGoalEvents > 0 || advGoalEvents > 0)) ? ourGoalEvents : rawFusScore)
+    : Math.max(rawFusScore, ourGoalEvents);
+  const oppGoals = isMatchFinished
+    ? ((rawFusScore === 0 && rawOppScore === 0 && (ourGoalEvents > 0 || advGoalEvents > 0)) ? advGoalEvents : rawOppScore)
+    : Math.max(rawOppScore, advGoalEvents);
 
   // Home (Left) vs Away (Right) Goals
   const homeGoals = isHome ? fusGoals : oppGoals;
@@ -638,8 +652,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
           desc = `Intervention médicale pour ${pName}`;
         }
 
-        const commentaryText = typeof e.commentary === 'string' && e.commentary.trim() 
-          ? e.commentary 
+        const commentaryText = typeof e.commentary === 'string' && e.commentary.trim()
+          ? e.commentary
           : (e.extra?.commentary || desc);
 
         const photoUrl = playerObj?.photo_url && playerObj.photo_url !== 'null' ? playerObj.photo_url : null;
@@ -672,10 +686,10 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
         let colorClass = 'bg-[#4d94ff]';
         if (e.type === 'goal') colorClass = 'bg-[#2ecc71] ring-2 ring-emerald-300';
         else if (e.type === 'yellow_card') colorClass = 'bg-[#f1c40f]';
-      else if (e.type === 'red_card') colorClass = 'bg-[#e74c3c]';
-      else if (e.type === 'substitution') colorClass = 'bg-[#9b59b6]';
-      return { minute: min, left: leftPercent, color: colorClass };
-    });
+        else if (e.type === 'red_card') colorClass = 'bg-[#e74c3c]';
+        else if (e.type === 'substitution') colorClass = 'bg-[#9b59b6]';
+        return { minute: min, left: leftPercent, color: colorClass };
+      });
   }, [events, totalDuration]);
 
   // Face-à-Face FRMF basé sur Classement & Résultats (masqué s'il n'y a aucune donnée)
@@ -813,12 +827,12 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
       }
     }
 
-    const jerseyNumber = p?.jersey_number 
-      ?? (typeof rawPid === 'object' ? (rawPid.jersey_number || rawPid.number) : null) 
+    const jerseyNumber = p?.jersey_number
+      ?? (typeof rawPid === 'object' ? (rawPid.jersey_number || rawPid.number) : null)
       ?? (fallbackJersey ?? (idx + 1));
 
-    const photoUrl = p?.photo_url && p.photo_url !== 'null' 
-      ? p.photo_url 
+    const photoUrl = p?.photo_url && p.photo_url !== 'null'
+      ? p.photo_url
       : (typeof rawPid === 'object' ? rawPid.photo_url : null);
 
     // DB stats fallback
@@ -826,7 +840,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     const explicitMinutes = dbStat?.minutes_played;
 
     // Goals for this player
-    const playerGoals = (events || []).filter(e => 
+    const playerGoals = (events || []).filter(e =>
       (e.type === 'goal' || e.type === 'penalty') &&
       String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid)
     );
@@ -834,17 +848,17 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     const goalsMinutes = playerGoals.map(g => g.minute || 0).sort((a, b) => a - b);
 
     // Assists
-    const assistsCount = (events || []).filter(e => 
+    const assistsCount = (events || []).filter(e =>
       e.type === 'assist' &&
       String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid)
     ).length;
 
     // Cards
-    const yellowEvents = (events || []).filter(e => 
+    const yellowEvents = (events || []).filter(e =>
       e.type === 'yellow_card' &&
       String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid)
     );
-    const redEvents = (events || []).filter(e => 
+    const redEvents = (events || []).filter(e =>
       e.type === 'red_card' &&
       String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid)
     );
@@ -854,11 +868,11 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     const redCardMinute = redEvents.length > 0 ? (redEvents[0].minute || null) : null;
 
     // Substitutions
-    const subOutEvent = (events || []).find(e => 
+    const subOutEvent = (events || []).find(e =>
       e.type === 'substitution' &&
       String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(pid)
     );
-    const subInEvent = (events || []).find(e => 
+    const subInEvent = (events || []).find(e =>
       e.type === 'substitution' &&
       String(typeof e.relatedPlayerId === 'object' ? e.relatedPlayerId?.id : e.relatedPlayerId) === String(pid)
     );
@@ -875,11 +889,11 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
         subDetails = `Remplacé à la ${subOutEvent.minute}' par ${inPlayerName}`;
       } else {
         minutesPlayed = explicitMinutes ?? currentMatchMinute;
-        minutesStatus = isFinished 
-          ? 'Titulaire · Match complet (90\')' 
-          : isLive 
-          ? `Titulaire · En jeu (${currentMatchMinute}')` 
-          : 'Titulaire';
+        minutesStatus = isFinished
+          ? 'Titulaire · Match complet (90\')'
+          : isLive
+            ? `Titulaire · En jeu (${currentMatchMinute}')`
+            : 'Titulaire';
       }
     } else {
       if (subInEvent) {
@@ -1014,10 +1028,10 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                   <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/80 shadow-md text-white backdrop-blur-sm">
                     <div className="relative shrink-0">
                       {operatorDetails.avatar_url ? (
-                        <img 
-                          src={operatorDetails.avatar_url} 
-                          alt={operatorDetails.name} 
-                          className="w-6 h-6 rounded-full object-cover border border-slate-500 shadow-xs" 
+                        <img
+                          src={operatorDetails.avatar_url}
+                          alt={operatorDetails.name}
+                          className="w-6 h-6 rounded-full object-cover border border-slate-500 shadow-xs"
                         />
                       ) : (
                         <div className="w-6 h-6 rounded-full bg-red-600 text-white font-black text-[9px] flex items-center justify-center border border-red-400">
@@ -1127,26 +1141,24 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
       case 'timeline':
         return (
           <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-200 space-y-4">
-            
+
             {/* Tab Switcher Pills */}
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setFeedTab('play')}
-                className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                  feedTab === 'play'
-                    ? 'bg-[#2ecc71] text-white shadow-md'
-                    : 'bg-slate-100 text-slate-400 hover:text-slate-600'
-                }`}
+                className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${feedTab === 'play'
+                  ? 'bg-[#2ecc71] text-white shadow-md'
+                  : 'bg-slate-100 text-slate-400 hover:text-slate-600'
+                  }`}
               >
                 <Target className="w-3.5 h-3.5" /> PLAY TO PLAY ({(events || []).filter(e => e.type !== 'period_marker').length})
               </button>
               <button
                 onClick={() => setFeedTab('narration')}
-                className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                  feedTab === 'narration'
-                    ? 'bg-[#2ecc71] text-white shadow-md'
-                    : 'bg-slate-100 text-slate-400 hover:text-slate-600'
-                }`}
+                className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${feedTab === 'narration'
+                  ? 'bg-[#2ecc71] text-white shadow-md'
+                  : 'bg-slate-100 text-slate-400 hover:text-slate-600'
+                  }`}
               >
                 <Footprints className="w-3.5 h-3.5" /> NARRATION
               </button>
@@ -1357,13 +1369,12 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                 <span className="text-sm">🎙️</span>
                 <span>Opérateur Fus-App</span>
               </div>
-              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase flex items-center gap-1 ${
-                match.status === 'live' 
-                  ? 'bg-red-50 text-red-600 border border-red-200 animate-pulse' 
-                  : operatorDetails.name 
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase flex items-center gap-1 ${match.status === 'live'
+                ? 'bg-red-50 text-red-600 border border-red-200 animate-pulse'
+                : operatorDetails.name
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                   : 'bg-slate-100 text-slate-500'
-              }`}>
+                }`}>
                 {match.status === 'live' ? '🔴 En Direct' : operatorDetails.name ? '📱 Opéré avec Fus-App' : 'Non assigné'}
               </span>
             </div>
@@ -1372,10 +1383,10 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
               <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-slate-50 to-slate-100/70 border border-slate-200/80 shadow-xs">
                 <div className="relative shrink-0">
                   {operatorDetails.avatar_url ? (
-                    <img 
-                      src={operatorDetails.avatar_url} 
-                      alt={operatorDetails.name} 
-                      className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-md" 
+                    <img
+                      src={operatorDetails.avatar_url}
+                      alt={operatorDetails.name}
+                      className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-md"
                     />
                   ) : (
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white font-black text-sm flex items-center justify-center border-2 border-white shadow-md">
@@ -1418,9 +1429,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
         const stB = frmfFaceToFace.standingB;
 
         const renderMiniLogo = (logoUrl: string | null, label: string, highlight = false) => (
-          <div className={`w-6 h-6 rounded-full flex items-center justify-center overflow-hidden p-0.5 shrink-0 border ${
-            highlight ? 'bg-white border-emerald-400/60' : 'bg-white border-slate-700'
-          }`}>
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center overflow-hidden p-0.5 shrink-0 border ${highlight ? 'bg-white border-emerald-400/60' : 'bg-white border-slate-700'
+            }`}>
             {logoUrl ? (
               <img src={logoUrl} alt={label} className="w-full h-full object-contain rounded-full" />
             ) : (
@@ -1434,9 +1444,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
             {form.slice(-5).map((r, idx) => (
               <span
                 key={idx}
-                className={`w-2 h-2 rounded-full ${
-                  r === 'W' ? 'bg-emerald-400' : r === 'D' ? 'bg-amber-400' : 'bg-rose-500'
-                }`}
+                className={`w-2 h-2 rounded-full ${r === 'W' ? 'bg-emerald-400' : r === 'D' ? 'bg-amber-400' : 'bg-rose-500'
+                  }`}
                 title={r === 'W' ? 'Victoire' : r === 'D' ? 'Nul' : 'Défaite'}
               />
             ))}
@@ -1512,9 +1521,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                 {[stA, stB].map((st, idx) => (
                   <div
                     key={st.teamKey}
-                    className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg ${
-                      idx === 0 ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-900/50'
-                    }`}
+                    className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg ${idx === 0 ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-slate-900/50'
+                      }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-[10px] font-black text-amber-400 w-5 shrink-0">{st.position}e</span>
@@ -1538,7 +1546,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
       case 'compositions':
         return (
           <div className="rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-[#28963c] text-white flex flex-col">
-            
+
             {/* Header: LINE UP & Half selector */}
             <div className="bg-[#2ecc71] px-4 py-2.5 flex items-center justify-between text-[#0b141d] font-black text-[11px] uppercase">
               <span className="flex items-center gap-1.5">
@@ -1598,9 +1606,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                       key={`top-fus-${idx}`}
                       onMouseEnter={() => setHoveredPlayerKey(`top-fus-${idx}`)}
                       onMouseLeave={() => setHoveredPlayerKey(null)}
-                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
-                        isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
-                      }`}
+                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
+                        }`}
                       style={{ top: `${topPct}%`, left: pos.left }}
                     >
                       <div className="relative w-11 h-11 rounded-full bg-slate-900 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
@@ -1656,9 +1663,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                       key={`top-opp-${idx}`}
                       onMouseEnter={() => setHoveredPlayerKey(`top-opp-${idx}`)}
                       onMouseLeave={() => setHoveredPlayerKey(null)}
-                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
-                        isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
-                      }`}
+                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
+                        }`}
                       style={{ top: `${topPct}%`, left: pos.left }}
                     >
                       <div className="relative w-11 h-11 rounded-full bg-rose-600 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
@@ -1701,7 +1707,7 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                   const hasOppGoal = (events || []).some(e => (e.type === 'goal' || e.type === 'penalty') && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
                   const hasOppYellowCard = (events || []).some(e => e.type === 'yellow_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
                   const hasOppRedCard = (events || []).some(e => e.type === 'red_card' && String(typeof e.playerId === 'object' ? e.playerId?.id : e.playerId) === String(oppPid));
-                  
+
                   const topPct = 52 + (parseFloat(pos.top) * 0.44);
                   const leftPct = parseFloat(pos.left);
 
@@ -1714,9 +1720,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                       key={`bottom-opp-${idx}`}
                       onMouseEnter={() => setHoveredPlayerKey(`bottom-opp-${idx}`)}
                       onMouseLeave={() => setHoveredPlayerKey(null)}
-                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
-                        isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
-                      }`}
+                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
+                        }`}
                       style={{ top: `${topPct}%`, left: `${leftPct}%` }}
                     >
                       <div className="relative w-11 h-11 rounded-full bg-rose-600 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
@@ -1767,9 +1772,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                       key={`bottom-fus-${idx}`}
                       onMouseEnter={() => setHoveredPlayerKey(`bottom-fus-${idx}`)}
                       onMouseLeave={() => setHoveredPlayerKey(null)}
-                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${
-                        isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
-                      }`}
+                      className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-transform ${isHovered ? 'scale-125 z-40' : 'hover:scale-125 z-20'
+                        }`}
                       style={{ top: `${topPct}%`, left: `${leftPct}%` }}
                     >
                       <div className="relative w-11 h-11 rounded-full bg-slate-900 border-2 border-white flex items-center justify-center text-xs font-black text-white shadow-xl">
@@ -2020,9 +2024,8 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
         onDragEnd={handleDragEnd}
         onDragOver={(e) => handleDragOver(e, colId, index)}
         onDrop={(e) => handleDrop(e, colId, index)}
-        className={`group/block relative transition-all duration-200 cursor-move ${
-          isThisDragged ? 'opacity-40 scale-[0.98] ring-2 ring-emerald-500/50 rounded-2xl' : 'opacity-100'
-        }`}
+        className={`group/block relative transition-all duration-200 cursor-move ${isThisDragged ? 'opacity-40 scale-[0.98] ring-2 ring-emerald-500/50 rounded-2xl' : 'opacity-100'
+          }`}
       >
         {/* Drop Slot Indicator before this block */}
         {isTargetSlot && (
@@ -2059,13 +2062,12 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
         <div
           onDragOver={(e) => handleDragOver(e, colId, blocks.length)}
           onDrop={(e) => handleDrop(e, colId, blocks.length)}
-          className={`rounded-2xl transition-all duration-200 ${
-            isDroppingAtEnd
-              ? 'py-4 px-4 border-2 border-dashed border-emerald-400 bg-emerald-500/10 text-emerald-400 text-xs font-black flex items-center justify-center gap-2 animate-pulse shadow-inner'
-              : blocks.length === 0
+          className={`rounded-2xl transition-all duration-200 ${isDroppingAtEnd
+            ? 'py-4 px-4 border-2 border-dashed border-emerald-400 bg-emerald-500/10 text-emerald-400 text-xs font-black flex items-center justify-center gap-2 animate-pulse shadow-inner'
+            : blocks.length === 0
               ? 'py-10 border-2 border-dashed border-slate-700 bg-slate-800/40 text-slate-400 text-xs font-bold flex flex-col items-center justify-center gap-2 rounded-2xl'
               : 'min-h-[14px]'
-          }`}
+            }`}
         >
           {blocks.length === 0 ? (
             <>
@@ -2160,13 +2162,12 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
           {/* Bouton Post-Match (Drive) */}
           <Button
             onClick={() => setIsVideoModalOpen(true)}
-            className={`font-black uppercase tracking-wider text-[10px] h-8 px-3 rounded-lg gap-1.5 transition-all shadow-md ${
-              currentVideoUrl
-                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30'
-                : isFinished
+            className={`font-black uppercase tracking-wider text-[10px] h-8 px-3 rounded-lg gap-1.5 transition-all shadow-md ${currentVideoUrl
+              ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30'
+              : isFinished
                 ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black animate-pulse shadow-amber-500/30'
                 : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
-            }`}
+              }`}
             title={currentVideoUrl ? "Voir ou modifier la vidéo post-match (Google Drive)" : "Ajouter le résumé vidéo post-match (Google Drive)"}
           >
             <Video className="w-3.5 h-3.5" />

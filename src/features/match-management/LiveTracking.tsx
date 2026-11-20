@@ -58,7 +58,7 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
   const { players } = usePlayers();
   const { mainClub, opponentClubs } = useClubData();
   const { teams } = useTeams();
-  const { can, authState } = usePermissions();
+  const { can, hasSpecificActionAccess, authState } = usePermissions();
   const { events, addEvent: addEventHook, updateEvent: updateEventHook, deleteEvent: deleteEventHook } = useMatchEvents(matchId);
   
   const match = matches.find(m => m.id === matchId);
@@ -69,7 +69,11 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
   const operatorId = (match as any)?.live_operator_id;
   const operatorName = (match as any)?.live_operator_name;
   const isDesignatedOperator = Boolean(currentUserId && operatorId && currentUserId === operatorId);
-  const canOperateThisMatch = isSuperAdmin || (operatorId ? isDesignatedOperator : isSuperAdmin);
+  const hasMatchOperatorAuthority = isSuperAdmin || (operatorId ? isDesignatedOperator : isSuperAdmin);
+  const canLiveCreate = hasMatchOperatorAuthority && (isSuperAdmin || hasSpecificActionAccess('matches', 'live_tracking', 'create'));
+  const canLiveUpdate = hasMatchOperatorAuthority && (isSuperAdmin || hasSpecificActionAccess('matches', 'live_tracking', 'update'));
+  const canLiveDelete = hasMatchOperatorAuthority && (isSuperAdmin || hasSpecificActionAccess('matches', 'live_tracking', 'delete'));
+  const canOperateThisMatch = canLiveCreate || canLiveUpdate || canLiveDelete;
   const currentOpName = operatorName || authState?.user?.name || authState?.user?.email?.split('@')[0] || 'Opérateur';
 
   const getMatchLabel = useCallback(() => {
@@ -308,6 +312,10 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
   };
 
   const handleActionClick = (type: string, isOpponent: boolean) => {
+    if (!canLiveCreate) {
+      toast.error("Permission Spécifique « Suivi Live (Create) » requise pour enregistrer un événement.");
+      return;
+    }
     setEditingEventId(null);
     setEventType(type);
     setIsOpponentAction(isOpponent);
@@ -317,6 +325,10 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
   };
 
   const handleEditEvent = (event: any) => {
+     if (!canLiveUpdate) {
+       toast.error("Permission Spécifique « Suivi Live (Update) » requise pour modifier un événement.");
+       return;
+     }
      setEditingEventId(event.id);
      setEventType(event.type);
      const isOpp = event.extra?.team === 'away' || !!event.extra?.opponent_ref || (!event.player_id && !event.playerId);
@@ -329,6 +341,10 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
   };
 
   const handleDeleteEvent = async (id: string) => {
+     if (!canLiveDelete) {
+       toast.error("Permission Spécifique « Suivi Live (Delete) » requise pour supprimer un événement.");
+       return;
+     }
      if (confirm('Supprimer cet événement ?')) {
         const evt = events.find(e => e.id === id);
         await deleteEventHook(id);
@@ -349,6 +365,14 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
 
   const saveEvent = async () => {
     if (!eventType || !matchId || (!selectedPlayerId && eventType !== 'substitution')) return;
+    if (editingEventId ? !canLiveUpdate : !canLiveCreate) {
+      toast.error(
+        editingEventId
+          ? "Permission Spécifique « Suivi Live (Update) » requise."
+          : "Permission Spécifique « Suivi Live (Create) » requise."
+      );
+      return;
+    }
 
     const isOpponent = isOpponentAction || selectedPlayerId?.startsWith('OPPONENT-') || opponentPlayers.some(p => p.id === selectedPlayerId);
     
@@ -759,6 +783,10 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
   }, [events]);
 
   const addPenaltyShot = async (team: 'home' | 'away', playerNumber: number, result: 'scored' | 'missed' | 'saved') => {
+    if (!canLiveCreate) {
+      toast.error("Permission Spécifique « Suivi Live (Create) » requise.");
+      return;
+    }
     // Update score
     if (result === 'scored') {
       if (team === 'home') {
@@ -1702,14 +1730,16 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
                 )}
 
                 <div className="flex gap-4 pt-8">
-                  {editingEventId && (
+                  {editingEventId && canLiveDelete && (
                     <Button variant="ghost" onClick={() => handleDeleteEvent(editingEventId)} className="h-16 px-8 rounded-3xl text-red-500 font-black uppercase text-[10px] hover:bg-red-50">
                        <Trash2 className="w-5 h-5 mr-3" /> Supprimer
                     </Button>
                   )}
-                  <Button className="flex-1 h-16 rounded-3xl bg-slate-950 text-white font-black uppercase tracking-widest text-[11px] shadow-2xl shadow-slate-200 hover:bg-slate-800 transition-all" onClick={saveEvent}>
-                     {editingEventId ? 'Mettre à jour' : 'Confirmer l\'Action'}
-                  </Button>
+                  {(editingEventId ? canLiveUpdate : canLiveCreate) && (
+                    <Button className="flex-1 h-16 rounded-3xl bg-slate-950 text-white font-black uppercase tracking-widest text-[11px] shadow-2xl shadow-slate-200 hover:bg-slate-800 transition-all" onClick={saveEvent}>
+                       {editingEventId ? 'Mettre à jour' : 'Confirmer l\'Action'}
+                    </Button>
+                  )}
                 </div>
               </div>
             </motion.div>

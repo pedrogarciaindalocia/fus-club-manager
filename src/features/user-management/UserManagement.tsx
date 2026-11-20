@@ -75,7 +75,22 @@ import ImageCropperModal from '../../components/ImageCropperModal';
 import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
 import { AuditLogger } from '../../services/auditLogger';
 import { PLAYER_CATEGORIES } from '../../constants';
-import { getRoleConfig, OFFICIAL_JOB_TITLES, type OfficialJobTitle } from '../../constants/roles';
+import {
+  getRoleConfig,
+  OFFICIAL_JOB_TITLES,
+  normalizeJobTitleKey,
+  resolveCanonicalJobTitle,
+  isCoachJob,
+  isDirecteurAdministratifJob,
+  isResponsableMagasinierJob,
+  isResponsableVieJob
+} from '../../constants/roles';
+import {
+  type CrudAction,
+  CRUD_KEYS,
+  getSpecificActionKeysForSubModule,
+  hydrateSpecificPermissionsMap
+} from '../../constants/permissions';
 import { recruitmentService, generateSecureTempPassword, generateScoutLogin } from '../recruitment_v2/services/recruitmentService';
 import { MediaPickerModal } from '../media-management/components/MediaPickerModal';
 import defaultClubLogo from '../../assets/fus-logo.png';
@@ -416,7 +431,6 @@ export const CANDIDATE_SPECIFIC_ACTIONS: {
     { key: 'assign_mission', label: 'Assigner une mission', sublabel: 'Assignation de joueur et mission à un scout', icon: UserPlus, badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-300' },
     { key: 'recruit_now', label: 'À recruter immédiatement', sublabel: 'Traitement de la procédure administrative', icon: Flame, badgeClass: 'bg-rose-500/20 text-rose-700 dark:text-rose-300' },
     { key: 'manage_reports', label: 'Gestion de rapport', sublabel: 'Consulter, rédiger et gérer les rapports d\'évaluation', icon: ClipboardList, badgeClass: 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' },
-    { key: 'edit_player', label: 'Modifier un joueur', sublabel: 'Modifier les informations du joueur', icon: Edit2, badgeClass: 'bg-amber-500/20 text-amber-700 dark:text-amber-300' },
   ];
 
 export const MATCH_SPECIFIC_ACTIONS: {
@@ -434,6 +448,28 @@ export const MATCH_SPECIFIC_ACTIONS: {
     { key: 'manage_standings', label: 'Gestion de classement', sublabel: 'Ajouter les clubs adverses et enregistrer leurs résultats pour le classement officiel', icon: Trophy, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
   ];
 
+const SPECIFIC_ACTIONS_CONFIG: Record<string, {
+  sectionTitle: string;
+  accent: 'amber' | 'emerald';
+  actions: typeof PLAYER_SPECIFIC_ACTIONS;
+}> = {
+  players: {
+    sectionTitle: 'Actions Métier Spécifiques (Fiche Joueur)',
+    accent: 'amber',
+    actions: PLAYER_SPECIFIC_ACTIONS,
+  },
+  candidates: {
+    sectionTitle: 'Actions Métier Spécifiques (Vivier Candidats)',
+    accent: 'emerald',
+    actions: CANDIDATE_SPECIFIC_ACTIONS,
+  },
+  matches: {
+    sectionTitle: 'Actions Métier Spécifiques (Calendrier des Matchs)',
+    accent: 'amber',
+    actions: MATCH_SPECIFIC_ACTIONS,
+  },
+};
+
 export const DASHBOARD_PERMISSIONS: PermissionDefinition[] = [
   ...DASHBOARD_HIERARCHY_MODULES.flatMap(cat =>
     cat.subModules.flatMap(sub =>
@@ -447,30 +483,36 @@ export const DASHBOARD_PERMISSIONS: PermissionDefinition[] = [
       }))
     )
   ),
-  ...PLAYER_SPECIFIC_ACTIONS.map(action => ({
-    key: `sub:players:${action.key}`,
-    label: `Effectif & Sportif > Joueurs du Club (${action.label})`,
-    desc: `${action.sublabel} pour les joueurs`,
-    target: 'dashboard' as const,
-    category: 'dashboard_core' as const,
-    badge: action.label
-  })),
-  ...CANDIDATE_SPECIFIC_ACTIONS.map(action => ({
-    key: `sub:candidates:${action.key}`,
-    label: `Détection & Recrutement V2 > Database & Vivier (${action.label})`,
-    desc: `${action.sublabel} pour les candidats détectés`,
-    target: 'dashboard' as const,
-    category: 'dashboard_core' as const,
-    badge: action.label
-  })),
-  ...MATCH_SPECIFIC_ACTIONS.map(action => ({
-    key: `sub:matches:${action.key}`,
-    label: `Compétition & Matchs > Calendrier des Matchs (${action.label})`,
-    desc: `${action.sublabel} pour le calendrier`,
-    target: 'dashboard' as const,
-    category: 'dashboard_core' as const,
-    badge: action.label
-  })),
+  ...PLAYER_SPECIFIC_ACTIONS.flatMap(action =>
+    CRUD_ACTIONS.map(crud => ({
+      key: `sub:players:${action.key}:${crud.key}`,
+      label: `Effectif & Sportif > Joueurs du Club • ${action.label} (${crud.label})`,
+      desc: `${crud.sublabel} — ${action.label}`,
+      target: 'dashboard' as const,
+      category: 'dashboard_core' as const,
+      badge: `${action.label} (${crud.label})`
+    }))
+  ),
+  ...CANDIDATE_SPECIFIC_ACTIONS.flatMap(action =>
+    CRUD_ACTIONS.map(crud => ({
+      key: `sub:candidates:${action.key}:${crud.key}`,
+      label: `Détection & Recrutement V2 > Database & Vivier • ${action.label} (${crud.label})`,
+      desc: `${crud.sublabel} — ${action.label}`,
+      target: 'dashboard' as const,
+      category: 'dashboard_core' as const,
+      badge: `${action.label} (${crud.label})`
+    }))
+  ),
+  ...MATCH_SPECIFIC_ACTIONS.flatMap(action =>
+    CRUD_ACTIONS.map(crud => ({
+      key: `sub:matches:${action.key}:${crud.key}`,
+      label: `Compétition & Matchs > Calendrier des Matchs • ${action.label} (${crud.label})`,
+      desc: `${crud.sublabel} — ${action.label}`,
+      target: 'dashboard' as const,
+      category: 'dashboard_core' as const,
+      badge: `${action.label} (${crud.label})`
+    }))
+  ),
   {
     key: 'manage_recruitment',
     label: 'Détection & Recrutement V2 (Legacy)',
@@ -488,7 +530,7 @@ const AVAILABLE_PERMISSIONS: PermissionDefinition[] = [
 
 const AGE_CATEGORIES = PLAYER_CATEGORIES;
 
-const UserAvatarItem: React.FC<{ user: { full_name?: string | null; avatar_url?: string | null }; size?: 'sm' | 'lg' }> = ({ user, size = 'sm' }) => {
+const UserAvatarItem: React.FC<{ user: { full_name?: string | null; avatar_url?: string | null }; size?: 'xs' | 'sm' | 'lg' }> = ({ user, size = 'sm' }) => {
   const [hasError, setHasError] = useState(false);
   const initials = useMemo(() => {
     const name = user.full_name?.trim() || 'U';
@@ -516,8 +558,12 @@ const UserAvatarItem: React.FC<{ user: { full_name?: string | null; avatar_url?:
     );
   }
 
+  const sizeClass = size === 'xs'
+    ? 'w-8 h-8 rounded-lg text-[11px]'
+    : 'w-10 h-10 rounded-xl text-xs';
+
   return (
-    <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm overflow-hidden shrink-0 border border-border font-bold text-xs select-none">
+    <div className={`${sizeClass} bg-slate-900 text-white flex items-center justify-center shadow-sm overflow-hidden shrink-0 border border-border font-bold select-none`}>
       {showPhoto ? (
         <img
           src={user.avatar_url!}
@@ -532,7 +578,72 @@ const UserAvatarItem: React.FC<{ user: { full_name?: string | null; avatar_url?:
   );
 };
 
-const UserPermissionsHoverBadge: React.FC<{ user: SystemUser }> = ({ user }) => {
+const UserCategoriesCompactCell: React.FC<{
+  categories?: string[];
+  openDownward?: boolean;
+}> = ({ categories = [], openDownward = false }) => {
+  if (!categories || categories.length === 0) {
+    return (
+      <span className="text-[11px] text-muted-foreground italic font-medium whitespace-nowrap">
+        Accès Global
+      </span>
+    );
+  }
+
+  const maxVisible = 3;
+  const visibleCats = categories.slice(0, maxVisible);
+  const remainingCount = categories.length - visibleCats.length;
+
+  return (
+    <div
+      className="relative inline-flex items-center gap-1 whitespace-nowrap group/cats"
+      title={categories.join(', ')}
+    >
+      {visibleCats.map(cat => (
+        <Badge
+          key={cat}
+          variant="secondary"
+          className="px-1.5 py-0 h-5 text-[9px] font-bold bg-secondary text-secondary-foreground rounded-md shrink-0"
+        >
+          {cat}
+        </Badge>
+      ))}
+      {remainingCount > 0 && (
+        <>
+          <span className="inline-flex items-center px-1.5 py-0 h-5 rounded-md bg-primary/10 text-primary border border-primary/20 text-[9px] font-black cursor-default shrink-0">
+            +{remainingCount}
+          </span>
+          <div
+            className={`absolute left-0 hidden group-hover/cats:flex flex-col w-64 p-2.5 bg-card/95 backdrop-blur-md text-card-foreground rounded-xl border border-border shadow-xl z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-150 ${
+              openDownward ? 'top-full mt-1.5' : 'bottom-full mb-1.5'
+            }`}
+          >
+            <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">
+              Périmètre ({categories.length} catégories)
+            </span>
+            <div className="flex flex-wrap gap-1 whitespace-normal">
+              {categories.map(cat => (
+                <Badge
+                  key={cat}
+                  variant="secondary"
+                  className="px-1.5 py-0 h-5 text-[9px] font-bold bg-secondary text-secondary-foreground rounded-md"
+                >
+                  {cat}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const UserPermissionsHoverBadge: React.FC<{
+  user: SystemUser;
+  compact?: boolean;
+  openDownward?: boolean;
+}> = ({ user, compact = false, openDownward = false }) => {
   const activePermKeys = useMemo(() => {
     return Object.keys(user.permissions_overrides || {}).filter(
       k => k !== 'no_permissions' && user.permissions_overrides?.[k]
@@ -541,7 +652,9 @@ const UserPermissionsHoverBadge: React.FC<{ user: SystemUser }> = ({ user }) => 
 
   if (user.system_role === 'super_admin') {
     return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-xs font-bold shadow-2xs">
+      <span className={`inline-flex items-center gap-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-bold shadow-2xs whitespace-nowrap ${
+        compact ? 'px-2.5 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'
+      }`}>
         <span>👑</span>
         <span>Super Admin (Pleins pouvoirs)</span>
       </span>
@@ -550,7 +663,7 @@ const UserPermissionsHoverBadge: React.FC<{ user: SystemUser }> = ({ user }) => 
 
   if (activePermKeys.length === 0) {
     return (
-      <span className="text-xs text-muted-foreground italic font-medium">
+      <span className={`text-muted-foreground italic font-medium whitespace-nowrap ${compact ? 'text-[11px]' : 'text-xs'}`}>
         — Aucune rubrique cochée
       </span>
     );
@@ -585,15 +698,21 @@ const UserPermissionsHoverBadge: React.FC<{ user: SystemUser }> = ({ user }) => 
     <div className="relative inline-block group/perm">
       <button
         type="button"
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-all shadow-2xs cursor-pointer group-hover/perm:border-primary group-hover/perm:bg-primary/20"
+        className={`inline-flex items-center border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary font-bold transition-all shadow-2xs cursor-pointer group-hover/perm:border-primary group-hover/perm:bg-primary/20 whitespace-nowrap ${
+          compact ? 'gap-1 px-2.5 py-1 rounded-lg text-[11px]' : 'gap-1.5 px-3 py-1.5 rounded-xl text-xs'
+        }`}
       >
-        <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+        <ShieldCheck className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} text-primary shrink-0`} />
         <span>{activePermKeys.length} permission{activePermKeys.length > 1 ? 's' : ''}</span>
-        <ChevronDown className="w-3 h-3 opacity-60 group-hover/perm:rotate-180 transition-transform" />
+        <ChevronDown className="w-3 h-3 opacity-60 group-hover/perm:rotate-180 transition-transform shrink-0" />
       </button>
 
       {/* Popover flottant au survol */}
-      <div className="absolute left-0 bottom-full mb-2 hidden group-hover/perm:flex flex-col w-72 sm:w-80 p-3.5 bg-card/95 backdrop-blur-md text-card-foreground rounded-2xl border border-border shadow-2xl z-50 animate-in fade-in zoom-in-95 pointer-events-none duration-150">
+      <div
+        className={`absolute left-0 hidden group-hover/perm:flex flex-col w-72 sm:w-80 p-3.5 bg-card/95 backdrop-blur-md text-card-foreground rounded-2xl border border-border shadow-2xl z-50 animate-in fade-in zoom-in-95 pointer-events-none duration-150 ${
+          openDownward ? 'top-full mt-1.5' : 'bottom-full mb-2'
+        }`}
+      >
         <div className="flex items-center justify-between pb-2 border-b border-border mb-2.5">
           <div className="flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-primary" />
@@ -643,7 +762,8 @@ const UserPermissionsHoverBadge: React.FC<{ user: SystemUser }> = ({ user }) => 
 const UserStatusToggleSwitch: React.FC<{
   user: SystemUser;
   onToggle: (u: SystemUser) => void;
-}> = ({ user, onToggle }) => {
+  compact?: boolean;
+}> = ({ user, onToggle, compact = false }) => {
   const isActive = user.is_active !== false;
 
   return (
@@ -652,7 +772,9 @@ const UserStatusToggleSwitch: React.FC<{
         e.stopPropagation();
         onToggle(user);
       }}
-      className="inline-flex items-center gap-2 cursor-pointer select-none group px-2 py-1 rounded-xl hover:bg-secondary/40 transition-all"
+      className={`inline-flex items-center cursor-pointer select-none group hover:bg-secondary/40 transition-all whitespace-nowrap ${
+        compact ? 'gap-1.5 px-1.5 py-0.5 rounded-lg' : 'gap-2 px-2 py-1 rounded-xl'
+      }`}
       title={
         isActive
           ? "ACCÈS AUTORISÉ — Cliquer sur le toggle pour basculer en Black-list (Bloquer l'accès)"
@@ -661,15 +783,20 @@ const UserStatusToggleSwitch: React.FC<{
     >
       {/* Piste de l'interrupteur coulissant (Track) */}
       <div
-        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-300 ease-in-out border shadow-inner ${isActive
+        className={`relative inline-flex shrink-0 rounded-full transition-colors duration-300 ease-in-out border shadow-inner ${
+          compact ? 'h-5 w-9' : 'h-6 w-11'
+        } ${isActive
           ? 'bg-emerald-500 border-emerald-600'
           : 'bg-rose-500 border-rose-600'
           }`}
       >
         {/* Curseur mobile blanc (Bouton Coulissant Knob) */}
         <span
-          className={`pointer-events-none inline-flex items-center justify-center h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-300 ease-in-out my-auto ${isActive ? 'translate-x-5 text-emerald-600 font-extrabold text-[10px]' : 'translate-x-0.5 text-rose-600 font-extrabold text-[10px]'
-            }`}
+          className={`pointer-events-none inline-flex items-center justify-center rounded-full bg-white shadow-md transform transition-transform duration-300 ease-in-out my-auto font-extrabold ${
+            compact
+              ? `h-4 w-4 text-[9px] ${isActive ? 'translate-x-4 text-emerald-600' : 'translate-x-0.5 text-rose-600'}`
+              : `h-5 w-5 text-[10px] ${isActive ? 'translate-x-5 text-emerald-600' : 'translate-x-0.5 text-rose-600'}`
+          }`}
         >
           {isActive ? '✓' : '✕'}
         </span>
@@ -677,7 +804,9 @@ const UserStatusToggleSwitch: React.FC<{
 
       {/* Libellé textuel du statut */}
       <span
-        className={`text-[11px] font-black uppercase tracking-wider ${isActive
+        className={`font-black uppercase whitespace-nowrap ${
+          compact ? 'text-[10px] tracking-wide' : 'text-[11px] tracking-wider'
+        } ${isActive
           ? 'text-emerald-600 dark:text-emerald-400'
           : 'text-rose-600 dark:text-rose-400 font-bold animate-pulse'
           }`}
@@ -983,15 +1112,16 @@ Direction Générale — FUS Rabat`;
       if (selectedJobTitleFilter === 'none') {
         if (u.job_title && u.job_title.trim().length > 0) return false;
       } else {
-        const userTitle = (u.job_title || '').trim().toLowerCase();
-        if (userTitle !== selectedJobTitleFilter.trim().toLowerCase()) return false;
+        if (normalizeJobTitleKey(u.job_title) !== normalizeJobTitleKey(selectedJobTitleFilter)) return false;
       }
     }
 
     const searchLower = searchTerm.toLowerCase();
+    const searchNorm = normalizeJobTitleKey(searchTerm);
     const matchesSearch = (u.full_name || '').toLowerCase().includes(searchLower) ||
       (u.email || '').toLowerCase().includes(searchLower) ||
-      (u.job_title || '').toLowerCase().includes(searchLower);
+      (u.job_title || '').toLowerCase().includes(searchLower) ||
+      (searchNorm.length > 0 && normalizeJobTitleKey(u.job_title).includes(searchNorm));
     const matchesCategory = selectedCategoryFilter === 'all'
       || (selectedCategoryFilter === 'global' && (!u.categories || u.categories.length === 0))
       || (u.categories && u.categories.includes(selectedCategoryFilter));
@@ -1007,8 +1137,8 @@ Direction Générale — FUS Rabat`;
       if (!title) {
         noneCount++;
       } else {
-        const lower = title.toLowerCase();
-        counts[lower] = (counts[lower] || 0) + 1;
+        const key = normalizeJobTitleKey(title);
+        counts[key] = (counts[key] || 0) + 1;
       }
     });
 
@@ -1016,17 +1146,17 @@ Direction Générale — FUS Rabat`;
       .map(u => u.job_title?.trim())
       .filter((title): title is string => Boolean(title && title.length > 0));
 
-    // Fusionner les titres affectés et les 6 postes officiels
+    // Fusionner les titres affectés et les intitulés de postes officiels
     const combined = [...OFFICIAL_JOB_TITLES, ...userTitles];
     const uniqueMap = new Map<string, string>();
     combined.forEach(t => {
-      const lower = t.toLowerCase();
-      if (!uniqueMap.has(lower)) {
-        uniqueMap.set(lower, t);
+      const key = normalizeJobTitleKey(t);
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, t);
       }
     });
 
-    const sortedTitles = Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b));
+    const sortedTitles = Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b, 'fr'));
 
     return {
       availableJobTitles: sortedTitles,
@@ -2339,12 +2469,12 @@ Direction Générale — FUS Rabat`;
       full_name: user.full_name || '',
       phone_number: user.phone_number || '',
       system_role: (user.system_role || 'viewer').toLowerCase(),
-      job_title: user.job_title || '',
+      job_title: resolveCanonicalJobTitle(user.job_title),
       avatar_url: user.avatar_url || null,
       is_active: user.is_active !== false,
       categories: user.categories || [],
       team_ids: [],
-      permissions_overrides: user.permissions_overrides || {}
+      permissions_overrides: hydrateSpecificPermissionsMap(user.permissions_overrides || {})
     });
     setAvatarFile(null);
     setAvatarPreview(null);
@@ -2375,12 +2505,12 @@ Direction Générale — FUS Rabat`;
       full_name: user.full_name || '',
       phone_number: user.phone_number || '',
       system_role: (user.system_role || 'viewer').toLowerCase(),
-      job_title: user.job_title || '',
+      job_title: resolveCanonicalJobTitle(user.job_title),
       avatar_url: user.avatar_url || null,
       is_active: user.is_active !== false,
       categories: user.categories || [],
       team_ids: [],
-      permissions_overrides: user.permissions_overrides || {}
+      permissions_overrides: hydrateSpecificPermissionsMap(user.permissions_overrides || {})
     });
     setAvatarFile(null);
     setAvatarPreview(null);
@@ -2473,7 +2603,35 @@ Direction Générale — FUS Rabat`;
     setExpandedCats(prev => ({ ...prev, [catId]: !prev[catId] }));
   };
 
-  const toggleSubModuleAction = (subId: string, action: string, parentId: string) => {
+  const getSubModuleAllPermissionKeys = (subId: string): string[] => {
+    const baseKeys = CRUD_KEYS.map(k => `sub:${subId}:${k}`);
+    const specKeys = getSpecificActionKeysForSubModule(subId).flatMap(spec =>
+      CRUD_KEYS.map(crud => `sub:${subId}:${spec}:${crud}`)
+    );
+    return [...baseKeys, ...specKeys];
+  };
+
+  const syncParentCategoryFlags = (next: Record<string, boolean>, parentId: string) => {
+    const parentCat = DASHBOARD_HIERARCHY_MODULES.find(m => m.id === parentId);
+    const hasAnySubActiveInParent = parentCat?.subModules.some(sub => Boolean(next[`sub:${sub.id}:read`]));
+    if (hasAnySubActiveInParent) {
+      next[`${parentId}:read`] = true;
+      if (parentId === 'recruitment_v2') next['manage_recruitment'] = true;
+    } else {
+      delete next[`${parentId}:read`];
+      delete next[`${parentId}:create`];
+      delete next[`${parentId}:update`];
+      delete next[`${parentId}:delete`];
+      if (parentId === 'recruitment_v2') {
+        delete next['manage_recruitment'];
+        delete next['recruitment_v2'];
+        delete next['dashboard_recruitment'];
+      }
+    }
+  };
+
+  /** Bascule d'une action CRUD générale (Create / Read / Update / Delete) du sous-module — strictement découplée des actions spécifiques. */
+  const toggleSubModuleAction = (subId: string, action: CrudAction, parentId: string) => {
     setFormData(prev => {
       const next = { ...prev.permissions_overrides };
       const key = `sub:${subId}:${action}`;
@@ -2481,168 +2639,123 @@ Direction Générale — FUS Rabat`;
 
       if (isCurrentlyActive) {
         delete next[key];
-        // Si Planifier un match est décoché, nettoyer aussi sub:matches:create, update, delete
-        if (subId === 'matches' && action === 'plan_match') {
-          delete next[`sub:matches:create`];
-          delete next[`sub:matches:update`];
-          delete next[`sub:matches:delete`];
-        }
-        // Si Create est décoché sur matches, nettoyer aussi sub:matches:plan_match
-        if (subId === 'matches' && action === 'create') {
-          delete next[`sub:matches:plan_match`];
-        }
-        // Si Read est désactivé, désactiver toutes les autres actions de ce sous-module
+        // Si Read est désactivé sur le sous-module, désactiver aussi les autres actions générales et toutes les actions spécifiques
         if (action === 'read') {
-          delete next[`sub:${subId}:create`];
-          delete next[`sub:${subId}:update`];
-          delete next[`sub:${subId}:delete`];
-          if (subId === 'players') {
-            PLAYER_SPECIFIC_ACTIONS.forEach(a => {
-              delete next[`sub:players:${a.key}`];
-            });
-          }
-          if (subId === 'candidates') {
-            CANDIDATE_SPECIFIC_ACTIONS.forEach(a => {
-              delete next[`sub:candidates:${a.key}`];
-            });
-          }
-          if (subId === 'matches') {
-            MATCH_SPECIFIC_ACTIONS.forEach(a => {
-              delete next[`sub:matches:${a.key}`];
-            });
-          }
+          getSubModuleAllPermissionKeys(subId).forEach(k => {
+            delete next[k];
+          });
         }
       } else {
         next[key] = true;
-        // Si Planifier un match est coché, activer le pack CRUD complet pour les matches (create, update, delete)
-        if (subId === 'matches' && action === 'plan_match') {
-          next[`sub:matches:create`] = true;
-          next[`sub:matches:update`] = true;
-          next[`sub:matches:delete`] = true;
-        }
-        // Si Create est coché sur matches, activer aussi sub:matches:plan_match, update, delete
-        if (subId === 'matches' && action === 'create') {
-          next[`sub:matches:plan_match`] = true;
-          next[`sub:matches:update`] = true;
-          next[`sub:matches:delete`] = true;
-        }
-        // Si Create, Update, Delete ou une action spécifique est activé, Read est automatiquement activé
         if (action !== 'read') {
           next[`sub:${subId}:read`] = true;
         }
-        // Activer également la grande catégorie parente au niveau read
-        next[`${parentId}:read`] = true;
-        if (parentId === 'recruitment_v2') next['manage_recruitment'] = true;
       }
 
-      // Vérification de la catégorie parente : si plus aucun sous-module n'a 'read', nettoyer la permission parente
-      const parentCat = DASHBOARD_HIERARCHY_MODULES.find(m => m.id === parentId);
-      const hasAnySubActiveInParent = parentCat?.subModules.some(sub => Boolean(next[`sub:${sub.id}:read`]));
-      if (!hasAnySubActiveInParent) {
-        delete next[`${parentId}:read`];
-        delete next[`${parentId}:create`];
-        delete next[`${parentId}:update`];
-        delete next[`${parentId}:delete`];
-        if (parentId === 'recruitment_v2') {
-          delete next['manage_recruitment'];
-          delete next['recruitment_v2'];
-          delete next['dashboard_recruitment'];
+      syncParentCategoryFlags(next, parentId);
+      return { ...prev, permissions_overrides: next };
+    });
+  };
+
+  /** Bascule d'une action CRUD (Create / Read / Update / Delete) propre à une permission spécifique. */
+  const toggleSpecificActionCrud = (
+    subId: string,
+    specKey: string,
+    crudAction: CrudAction,
+    parentId: string
+  ) => {
+    setFormData(prev => {
+      const next = { ...prev.permissions_overrides };
+      const prefix = `sub:${subId}:${specKey}`;
+      const key = `${prefix}:${crudAction}`;
+      const isCurrentlyActive = Boolean(next[key]);
+
+      // Nettoyer l'éventuelle ancienne clé plate héritée
+      delete next[prefix];
+
+      if (isCurrentlyActive) {
+        delete next[key];
+        // Si Read est décoché pour cette action spécifique, décocher Create/Update/Delete de cette action spécifique uniquement
+        if (crudAction === 'read') {
+          CRUD_KEYS.forEach(c => {
+            delete next[`${prefix}:${c}`];
+          });
         }
+      } else {
+        next[key] = true;
+        if (crudAction !== 'read') {
+          next[`${prefix}:read`] = true;
+        }
+        next[`sub:${subId}:read`] = true;
       }
 
-      return {
-        ...prev,
-        permissions_overrides: next
-      };
+      syncParentCategoryFlags(next, parentId);
+      return { ...prev, permissions_overrides: next };
+    });
+  };
+
+  /** Bascule les 4 CRUD d'une action spécifique d'un seul clic. */
+  const toggleSpecificActionAll = (subId: string, specKey: string, parentId: string) => {
+    setFormData(prev => {
+      const next = { ...prev.permissions_overrides };
+      const prefix = `sub:${subId}:${specKey}`;
+      delete next[prefix];
+      const activeCount = CRUD_KEYS.filter(c => Boolean(next[`${prefix}:${c}`])).length;
+      const shouldEnable = activeCount < CRUD_KEYS.length;
+
+      CRUD_KEYS.forEach(c => {
+        if (shouldEnable) {
+          next[`${prefix}:${c}`] = true;
+        } else {
+          delete next[`${prefix}:${c}`];
+        }
+      });
+
+      if (shouldEnable) {
+        next[`sub:${subId}:read`] = true;
+      }
+
+      syncParentCategoryFlags(next, parentId);
+      return { ...prev, permissions_overrides: next };
     });
   };
 
   const toggleSubModuleAll = (subId: string, parentId: string) => {
     setFormData(prev => {
       const next = { ...prev.permissions_overrides };
-      const baseActions: string[] = ['create', 'read', 'update', 'delete'];
-      const actions = subId === 'players'
-        ? [...baseActions, ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
-        : subId === 'candidates'
-          ? [...baseActions, ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
-          : subId === 'matches'
-            ? [...baseActions, ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
-            : baseActions;
-      const activeCount = actions.filter(act => next[`sub:${subId}:${act}`]).length;
-      const shouldEnable = activeCount < actions.length;
+      const keys = getSubModuleAllPermissionKeys(subId);
+      const activeCount = keys.filter(k => Boolean(next[k])).length;
+      const shouldEnable = activeCount < keys.length;
 
-      actions.forEach(act => {
+      keys.forEach(k => {
         if (shouldEnable) {
-          next[`sub:${subId}:${act}`] = true;
+          next[k] = true;
         } else {
-          delete next[`sub:${subId}:${act}`];
+          delete next[k];
         }
       });
 
-      if (shouldEnable) {
-        next[`${parentId}:read`] = true;
-        if (parentId === 'recruitment_v2') next['manage_recruitment'] = true;
-      } else {
-        const parentCat = DASHBOARD_HIERARCHY_MODULES.find(m => m.id === parentId);
-        const hasAnySubActiveInParent = parentCat?.subModules.some(sub => Boolean(next[`sub:${sub.id}:read`]));
-        if (!hasAnySubActiveInParent) {
-          delete next[`${parentId}:read`];
-          delete next[`${parentId}:create`];
-          delete next[`${parentId}:update`];
-          delete next[`${parentId}:delete`];
-          if (parentId === 'recruitment_v2') {
-            delete next['manage_recruitment'];
-            delete next['recruitment_v2'];
-            delete next['dashboard_recruitment'];
-          }
-        }
-      }
-
-      return {
-        ...prev,
-        permissions_overrides: next
-      };
+      syncParentCategoryFlags(next, parentId);
+      return { ...prev, permissions_overrides: next };
     });
   };
 
   const toggleCategoryAll = (category: DashboardCategoryDef) => {
     setFormData(prev => {
       const next = { ...prev.permissions_overrides };
-      const getSubActions = (subId: string) =>
-        subId === 'players'
-          ? ['create', 'read', 'update', 'delete', ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
-          : subId === 'candidates'
-            ? ['create', 'read', 'update', 'delete', ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
-            : subId === 'matches'
-              ? ['create', 'read', 'update', 'delete', ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
-              : ['create', 'read', 'update', 'delete'];
+      const allKeys = category.subModules.flatMap(sub => getSubModuleAllPermissionKeys(sub.id));
+      const allActive = allKeys.every(k => Boolean(next[k]));
 
-      const allActive = category.subModules.every(sub =>
-        getSubActions(sub.id).every(act => next[`sub:${sub.id}:${act}`])
-      );
-
-      category.subModules.forEach(sub => {
-        getSubActions(sub.id).forEach(act => {
-          if (!allActive) {
-            next[`sub:${sub.id}:${act}`] = true;
-          } else {
-            delete next[`sub:${sub.id}:${act}`];
-          }
-        });
+      allKeys.forEach(k => {
+        if (!allActive) {
+          next[k] = true;
+        } else {
+          delete next[k];
+        }
       });
 
-      if (!allActive) {
-        next[`${category.id}:read`] = true;
-        if (category.id === 'recruitment_v2') next['manage_recruitment'] = true;
-      } else {
-        delete next[`${category.id}:read`];
-        if (category.id === 'recruitment_v2') delete next['manage_recruitment'];
-      }
-
-      return {
-        ...prev,
-        permissions_overrides: next
-      };
+      syncParentCategoryFlags(next, category.id);
+      return { ...prev, permissions_overrides: next };
     });
   };
 
@@ -2756,7 +2869,7 @@ Direction Générale — FUS Rabat`;
           >
             <option value="all">Tous les intitulés de poste ({users.length})</option>
             {availableJobTitles.map(title => {
-              const count = jobTitleCounts.counts[title.toLowerCase()] || 0;
+              const count = jobTitleCounts.counts[normalizeJobTitleKey(title)] || 0;
               return (
                 <option key={title} value={title}>
                   💼 {title} ({count})
@@ -3003,94 +3116,101 @@ Direction Générale — FUS Rabat`;
             </div>
           ) : (
             /* List View */
-            <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+            <div className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-secondary/20 border-b border-border">
                     <tr>
-                      <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Utilisateur</th>
-                      <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Intitulé de Poste</th>
-                      <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Rôle Système</th>
-                      <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Accès & Black-list</th>
-                      <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Périmètre Catégories</th>
-                      <th className="text-left py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Permissions Spécifiques</th>
-                      <th className="text-right py-4 px-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions</th>
+                      <th className="text-left py-2.5 px-3 text-[10px] font-black uppercase tracking-wider text-muted-foreground whitespace-nowrap">Utilisateur</th>
+                      <th className="text-left py-2.5 px-3 text-[10px] font-black uppercase tracking-wider text-muted-foreground whitespace-nowrap">Intitulé de Poste</th>
+                      <th className="text-left py-2.5 px-3 text-[10px] font-black uppercase tracking-wider text-muted-foreground whitespace-nowrap">Rôle Système</th>
+                      <th className="text-left py-2.5 px-3 text-[10px] font-black uppercase tracking-wider text-muted-foreground whitespace-nowrap">Accès & Black-list</th>
+                      <th className="text-left py-2.5 px-3 text-[10px] font-black uppercase tracking-wider text-muted-foreground whitespace-nowrap">Périmètre Catégories</th>
+                      <th className="text-left py-2.5 px-3 text-[10px] font-black uppercase tracking-wider text-muted-foreground whitespace-nowrap">Permissions Spécifiques</th>
+                      <th className="text-right py-2.5 px-3 text-[10px] font-black uppercase tracking-wider text-muted-foreground whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {filteredUsers.map((u) => (
+                    {filteredUsers.map((u, idx) => (
                       <tr key={u.id} className="hover:bg-secondary/10 transition-colors group">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-3">
-                            <UserAvatarItem user={u} size="sm" />
-                            <div>
-                              <p className="font-bold text-foreground text-sm">{u.full_name}</p>
-                              <p className="text-xs text-muted-foreground">{u.email}</p>
-                              {(() => {
-                                const assignedCount = operableMatches.filter(
-                                  m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(u.id).toLowerCase()
-                                ).length;
-                                if (assignedCount === 0) return null;
-                                return (
-                                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 border border-red-500/25 text-[9px] font-bold mt-1">
-                                    <Radio className="w-2.5 h-2.5 text-red-500 animate-pulse" />
-                                    <span>{assignedCount} match{assignedCount > 1 ? 's' : ''} attribué{assignedCount > 1 ? 's' : ''}</span>
-                                  </div>
-                                );
-                              })()}
+                        <td className="py-2 px-3 align-middle">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <UserAvatarItem user={u} size="xs" />
+                            <div className="min-w-0 max-w-[210px]">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <p className="font-bold text-foreground text-xs leading-tight truncate">{u.full_name}</p>
+                                {(() => {
+                                  const assignedCount = operableMatches.filter(
+                                    m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(u.id).toLowerCase()
+                                  ).length;
+                                  if (assignedCount === 0) return null;
+                                  return (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded bg-red-500/10 text-red-500 border border-red-500/25 text-[9px] font-bold shrink-0 whitespace-nowrap"
+                                      title={`${assignedCount} match${assignedCount > 1 ? 's' : ''} attribué${assignedCount > 1 ? 's' : ''}`}
+                                    >
+                                      <Radio className="w-2.5 h-2.5 text-red-500 animate-pulse" />
+                                      <span>{assignedCount}</span>
+                                    </span>
+                                  );
+                                })()}
+                              </div>
+                              <p className="text-[11px] text-muted-foreground leading-tight truncate" title={u.email}>{u.email}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="py-4 px-6">
+                        <td className="py-2 px-3 align-middle">
                           {u.job_title ? (
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-primary/10 text-primary border border-primary/20 text-xs font-bold">
-                              <Briefcase className="w-3.5 h-3.5 shrink-0" />
-                              <span>{u.job_title}</span>
+                            <div
+                              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-primary/10 text-primary border border-primary/20 text-[11px] font-bold whitespace-nowrap max-w-[195px]"
+                              title={u.job_title}
+                            >
+                              <Briefcase className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{u.job_title}</span>
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground italic font-medium">— Non spécifié</span>
+                            <span className="text-[11px] text-muted-foreground italic font-medium whitespace-nowrap">— Non spécifié</span>
                           )}
                         </td>
-                        <td className="py-4 px-6">
+                        <td className="py-2 px-3 align-middle">
                           {(() => {
                             const rCfg = getRoleConfig(u.system_role);
                             return (
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${rCfg.badgeClass}`}>
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${rCfg.badgeClass}`}>
                                 <span>{rCfg.label}</span>
                               </span>
                             );
                           })()}
                         </td>
-                        <td className="py-4 px-6">
-                          <UserStatusToggleSwitch user={u} onToggle={handleToggleUserActive} />
+                        <td className="py-2 px-3 align-middle">
+                          <UserStatusToggleSwitch user={u} onToggle={handleToggleUserActive} compact />
                         </td>
-                        <td className="py-4 px-6">
-                          {u.categories && u.categories.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {u.categories.map(cat => (
-                                <Badge key={cat} variant="secondary" className="text-[9px] font-bold bg-secondary text-secondary-foreground">{cat}</Badge>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground italic font-medium">Accès Global</span>
-                          )}
+                        <td className="py-2 px-3 align-middle">
+                          <UserCategoriesCompactCell
+                            categories={u.categories || []}
+                            openDownward={idx < 2 && filteredUsers.length > 2}
+                          />
                         </td>
-                        <td className="py-4 px-6">
-                          <UserPermissionsHoverBadge user={u} />
+                        <td className="py-2 px-3 align-middle">
+                          <UserPermissionsHoverBadge
+                            user={u}
+                            compact
+                            openDownward={idx < 2 && filteredUsers.length > 2}
+                          />
                         </td>
-                        <td className="py-4 px-6 text-right">
-                          <div className="flex items-center justify-end gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => openViewMode(u)} className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors" title="Détails">
-                              <Eye className="w-4 h-4" />
+                        <td className="py-2 px-3 align-middle text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                            <button onClick={() => openViewMode(u)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors" title="Détails">
+                              <Eye className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => openCredentialsQuickModal(u)} className="p-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 rounded-lg transition-colors" title="⚡ Générer & Transmettre les Accès (WhatsApp)">
-                              <KeyRound className="w-4 h-4" />
+                            <button onClick={() => openCredentialsQuickModal(u)} className="p-1.5 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 rounded-lg transition-colors" title="⚡ Générer & Transmettre les Accès (WhatsApp)">
+                              <KeyRound className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => openEditMode(u)} className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Modifier">
-                              <Edit2 className="w-4 h-4" />
+                            <button onClick={() => openEditMode(u)} className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Modifier">
+                              <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => handleDeleteUser(u.id, u.full_name || u.email)} className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors" title="Supprimer définitivement">
-                              <Trash2 className="w-4 h-4" />
+                            <button onClick={() => handleDeleteUser(u.id, u.full_name || u.email)} className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors" title="Supprimer définitivement">
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </td>
@@ -3098,7 +3218,7 @@ Direction Générale — FUS Rabat`;
                     ))}
                     {filteredUsers.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="py-12 text-center text-muted-foreground font-medium italic">
+                        <td colSpan={7} className="py-10 text-center text-muted-foreground font-medium italic">
                           Aucun utilisateur trouvé.
                         </td>
                       </tr>
@@ -3651,7 +3771,41 @@ Direction Générale — FUS Rabat`;
                                       } else if (!isNowScout && formData.system_role?.startsWith('scout_')) {
                                         newRole = 'manager';
                                       }
-                                      setFormData({ ...formData, job_title: title, system_role: newRole });
+
+                                      const nextOverrides = { ...formData.permissions_overrides };
+                                      if (modalMode === 'create') {
+                                        if (isResponsableVieJob(title)) {
+                                          Object.keys(nextOverrides).forEach(k => delete nextOverrides[k]);
+                                          nextOverrides['recruitment_v2:read'] = true;
+                                          nextOverrides['sub:candidates:read'] = true;
+                                          toast.info('Accès « Responsable Vie » préconfiguré : Database (Inviter à un test + Déclaration sur l’honneur).');
+                                        } else if (isResponsableMagasinierJob(title)) {
+                                          Object.keys(nextOverrides).forEach(k => delete nextOverrides[k]);
+                                          nextOverrides['recruitment_v2:read'] = true;
+                                          nextOverrides['sub:sessions:read'] = true;
+                                          toast.info('Accès « Responsable Magasinier » préconfiguré : Planning des Tests en lecture seule.');
+                                        } else if (isDirecteurAdministratifJob(title)) {
+                                          Object.keys(nextOverrides).forEach(k => delete nextOverrides[k]);
+                                          nextOverrides['recruitment_v2:read'] = true;
+                                          nextOverrides['sub:candidates:read'] = true;
+                                          nextOverrides['sub:candidates:recruit_now:read'] = true;
+                                          nextOverrides['sub:candidates:recruit_now:update'] = true;
+                                          toast.info('Accès « Directeur Administratif » préconfiguré : Database (Recrutement immédiatement + Dossier & Documents).');
+                                        } else if (isCoachJob(title, newRole)) {
+                                          nextOverrides['recruitment_v2:read'] = true;
+                                          nextOverrides['sub:sessions:read'] = true;
+                                          delete nextOverrides['sub:sessions:create'];
+                                          delete nextOverrides['sub:sessions:update'];
+                                          delete nextOverrides['sub:sessions:delete'];
+                                        }
+                                      }
+
+                                      setFormData({
+                                        ...formData,
+                                        job_title: title,
+                                        system_role: newRole,
+                                        permissions_overrides: nextOverrides,
+                                      });
                                     }}
                                     className="w-full h-10 px-3 rounded-xl bg-background/90 border border-border/80 focus:bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none font-semibold text-xs text-foreground cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
                                   >
@@ -3661,7 +3815,7 @@ Direction Générale — FUS Rabat`;
                                         {title}
                                       </option>
                                     ))}
-                                    {formData.job_title && !OFFICIAL_JOB_TITLES.includes(formData.job_title as any) && (
+                                    {formData.job_title && !OFFICIAL_JOB_TITLES.some(t => normalizeJobTitleKey(t) === normalizeJobTitleKey(formData.job_title)) && (
                                       <option value={formData.job_title}>
                                         {formData.job_title} (Intitulé existant)
                                       </option>
@@ -4198,35 +4352,33 @@ Direction Générale — FUS Rabat`;
                                         type="button"
                                         onClick={() => {
                                           const allSubActive = DASHBOARD_HIERARCHY_MODULES.every(cat =>
-                                            cat.subModules.every(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`]))
+                                            cat.subModules.every(sub =>
+                                              getSubModuleAllPermissionKeys(sub.id).every(k => Boolean(formData.permissions_overrides[k]))
+                                            )
                                           );
                                           setFormData(prev => {
                                             const next = { ...prev.permissions_overrides };
                                             DASHBOARD_HIERARCHY_MODULES.forEach(cat => {
                                               cat.subModules.forEach(sub => {
-                                                CRUD_ACTIONS.forEach(a => {
+                                                getSubModuleAllPermissionKeys(sub.id).forEach(k => {
                                                   if (!allSubActive) {
-                                                    next[`sub:${sub.id}:${a.key}`] = true;
+                                                    next[k] = true;
                                                   } else {
-                                                    delete next[`sub:${sub.id}:${a.key}`];
+                                                    delete next[k];
                                                   }
                                                 });
                                               });
-                                              if (!allSubActive) {
-                                                next[`${cat.id}:read`] = true;
-                                              } else {
-                                                delete next[`${cat.id}:read`];
-                                              }
+                                              syncParentCategoryFlags(next, cat.id);
                                             });
-                                            if (!allSubActive) next['manage_recruitment'] = true;
-                                            else delete next['manage_recruitment'];
                                             return { ...prev, permissions_overrides: next };
                                           });
                                         }}
                                         className="text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
                                       >
                                         {DASHBOARD_HIERARCHY_MODULES.every(cat =>
-                                          cat.subModules.every(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`]))
+                                          cat.subModules.every(sub =>
+                                            getSubModuleAllPermissionKeys(sub.id).every(k => Boolean(formData.permissions_overrides[k]))
+                                          )
                                         ) ? 'Tout décocher' : 'Tout cocher'}
                                       </button>
                                     )}
@@ -4239,7 +4391,9 @@ Direction Générale — FUS Rabat`;
                                     const CatIcon = cat.icon;
                                     const isExpanded = Boolean(expandedCats[cat.id]);
                                     const activeSubCount = cat.subModules.filter(sub => Boolean(formData.permissions_overrides[`sub:${sub.id}:read`])).length;
-                                    const allSubActive = activeSubCount === cat.subModules.length;
+                                    const allCatKeysActive = cat.subModules.every(sub =>
+                                      getSubModuleAllPermissionKeys(sub.id).every(k => Boolean(formData.permissions_overrides[k]))
+                                    );
                                     const isCatPartiallyActive = activeSubCount > 0;
 
                                     return (
@@ -4282,17 +4436,17 @@ Direction Générale — FUS Rabat`;
                                           {/* Actions header : Tout cocher / Déplier */}
                                           <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                                             {modalMode !== 'view' && (
-                                              <button
+                                                <button
                                                 type="button"
                                                 onClick={() => toggleCategoryAll(cat)}
-                                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${allSubActive
+                                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${allCatKeysActive
                                                   ? 'bg-purple-600 text-white shadow-xs'
                                                   : isCatPartiallyActive
                                                     ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 hover:bg-purple-500/30'
                                                     : 'bg-secondary/60 text-muted-foreground hover:bg-secondary'
                                                   }`}
                                               >
-                                                {allSubActive ? (
+                                                {allCatKeysActive ? (
                                                   <>
                                                     <CheckSquare className="w-3 h-3" />
                                                     <span>Tout coché</span>
@@ -4326,14 +4480,26 @@ Direction Générale — FUS Rabat`;
                                           <div className="px-3.5 pb-4 sm:px-4 pt-1 border-t border-border/50 space-y-2.5 bg-background/40">
                                             {cat.subModules.map(sub => {
                                               const isSubReadActive = Boolean(formData.permissions_overrides[`sub:${sub.id}:read`]);
-                                              const subActionsList = sub.id === 'players'
-                                                ? [...CRUD_ACTIONS.map(a => a.key), ...PLAYER_SPECIFIC_ACTIONS.map(a => a.key)]
-                                                : sub.id === 'candidates'
-                                                  ? [...CRUD_ACTIONS.map(a => a.key), ...CANDIDATE_SPECIFIC_ACTIONS.map(a => a.key)]
-                                                  : sub.id === 'matches'
-                                                    ? [...CRUD_ACTIONS.map(a => a.key), ...MATCH_SPECIFIC_ACTIONS.map(a => a.key)]
-                                                    : CRUD_ACTIONS.map(a => a.key);
-                                              const activeActionsCount = subActionsList.filter(k => Boolean(formData.permissions_overrides[`sub:${sub.id}:${k}`])).length;
+                                              const subAllKeys = getSubModuleAllPermissionKeys(sub.id);
+                                              const activeActionsCount = subAllKeys.filter(k => Boolean(formData.permissions_overrides[k])).length;
+                                              const specificConfig = SPECIFIC_ACTIONS_CONFIG[sub.id];
+                                              const accentStyles = specificConfig?.accent === 'emerald'
+                                                ? {
+                                                    badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                                                    cardActive: 'bg-emerald-500/5 border-emerald-500/35 ring-1 ring-emerald-500/15',
+                                                    pillAll: 'bg-emerald-600 text-white shadow-xs',
+                                                    pillPartial: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/30',
+                                                    btnActive: 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300',
+                                                    checkActive: 'bg-emerald-600 text-white',
+                                                  }
+                                                : {
+                                                    badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                                                    cardActive: 'bg-amber-500/5 border-amber-500/35 ring-1 ring-amber-500/15',
+                                                    pillAll: 'bg-amber-600 text-white shadow-xs',
+                                                    pillPartial: 'bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-500/30',
+                                                    btnActive: 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300',
+                                                    checkActive: 'bg-amber-600 text-white',
+                                                  };
 
                                               return (
                                                 <div
@@ -4373,7 +4539,7 @@ Direction Générale — FUS Rabat`;
                                                         {isSubReadActive ? (
                                                           <>
                                                             <CheckSquare className="w-3 h-3" />
-                                                            <span>Actif ({activeActionsCount}/{subActionsList.length})</span>
+                                                            <span>Actif ({activeActionsCount}/{subAllKeys.length})</span>
                                                           </>
                                                         ) : (
                                                           <>
@@ -4385,210 +4551,138 @@ Direction Générale — FUS Rabat`;
                                                     </div>
                                                   </div>
 
-                                                  {/* 4 Boutons CRUD pour la sous-rubrique */}
-                                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
-                                                    {CRUD_ACTIONS.map(action => {
-                                                      const permKey = `sub:${sub.id}:${action.key}`;
-                                                      const isChecked = sub.id === 'matches' && action.key === 'create'
-                                                        ? Boolean(formData.permissions_overrides['sub:matches:plan_match'])
-                                                        : Boolean(formData.permissions_overrides[permKey]);
+                                                  {/* 4 Boutons CRUD Général pour la sous-rubrique */}
+                                                  <div className="pt-2">
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                                        CRUD Général (Rubrique)
+                                                      </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                      {CRUD_ACTIONS.map(action => {
+                                                        const permKey = `sub:${sub.id}:${action.key}`;
+                                                        const isChecked = Boolean(formData.permissions_overrides[permKey]);
 
-                                                      return (
-                                                        <button
-                                                          key={action.key}
-                                                          type="button"
-                                                          disabled={modalMode === 'view'}
-                                                          onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
-                                                          className={`p-1.5 sm:p-2 rounded-xl border text-left transition-all flex items-center gap-2 ${isChecked
-                                                            ? 'bg-purple-500/10 border-purple-500/40 shadow-xs ring-1 ring-purple-500/20'
-                                                            : 'bg-muted/20 border-border/60 hover:bg-muted/40'
-                                                            } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                                        >
-                                                          <div className="shrink-0">
-                                                            {isChecked ? (
-                                                              <div className="w-4 h-4 rounded bg-purple-600 text-white flex items-center justify-center shadow-xs">
-                                                                <Check className="w-3 h-3 stroke-[3]" />
-                                                              </div>
-                                                            ) : (
-                                                              <div className="w-4 h-4 rounded border border-muted-foreground/40 bg-background" />
-                                                            )}
-                                                          </div>
-                                                          <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center justify-between">
-                                                              <span className="text-[11px] font-bold text-foreground">
-                                                                {action.label}
-                                                              </span>
+                                                        return (
+                                                          <button
+                                                            key={action.key}
+                                                            type="button"
+                                                            disabled={modalMode === 'view'}
+                                                            onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
+                                                            className={`p-1.5 sm:p-2 rounded-xl border text-left transition-all flex items-center gap-2 ${isChecked
+                                                              ? 'bg-purple-500/10 border-purple-500/40 shadow-xs ring-1 ring-purple-500/20'
+                                                              : 'bg-muted/20 border-border/60 hover:bg-muted/40'
+                                                              } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                                          >
+                                                            <div className="shrink-0">
+                                                              {isChecked ? (
+                                                                <div className="w-4 h-4 rounded bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                                                                  <Check className="w-3 h-3 stroke-[3]" />
+                                                                </div>
+                                                              ) : (
+                                                                <div className="w-4 h-4 rounded border border-muted-foreground/40 bg-background" />
+                                                              )}
                                                             </div>
-                                                            <p className="text-[9px] text-muted-foreground truncate">
-                                                              {action.sublabel}
-                                                            </p>
-                                                          </div>
-                                                        </button>
-                                                      );
-                                                    })}
+                                                            <div className="min-w-0 flex-1">
+                                                              <div className="flex items-center justify-between">
+                                                                <span className="text-[11px] font-bold text-foreground">
+                                                                  {action.label}
+                                                                </span>
+                                                              </div>
+                                                              <p className="text-[9px] text-muted-foreground truncate">
+                                                                {action.sublabel}
+                                                              </p>
+                                                            </div>
+                                                          </button>
+                                                        );
+                                                      })}
+                                                    </div>
                                                   </div>
 
-                                                  {/* Actions Spécifiques Dédiées aux Joueurs (US-DASH-57) */}
-                                                  {sub.id === 'players' && (
-                                                    <div className="mt-2.5 pt-2 border-t border-border/50">
-                                                      <div className="flex items-center gap-1.5 mb-2">
+                                                  {/* Actions Spécifiques avec leur propre mini-CRUD indépendant */}
+                                                  {specificConfig && (
+                                                    <div className="mt-3 pt-2.5 border-t border-border/50">
+                                                      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                                                         <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
-                                                          Actions Métier Spécifiques (Fiche Joueur)
+                                                          {specificConfig.sectionTitle}
                                                         </span>
-                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
-                                                          Permissions Dédiées
+                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${accentStyles.badge}`}>
+                                                          CRUD Spécifique Indépendant
                                                         </span>
                                                       </div>
-                                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                                        {PLAYER_SPECIFIC_ACTIONS.map(action => {
-                                                          const permKey = `sub:players:${action.key}`;
-                                                          const isChecked = Boolean(formData.permissions_overrides[permKey]);
-                                                          const IconComponent = action.icon;
+                                                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                                                        {specificConfig.actions.map(specAction => {
+                                                          const IconComponent = specAction.icon;
+                                                          const activeCrudCount = CRUD_ACTIONS.filter(crud =>
+                                                            Boolean(formData.permissions_overrides[`sub:${sub.id}:${specAction.key}:${crud.key}`])
+                                                          ).length;
+                                                          const allCrudActive = activeCrudCount === CRUD_ACTIONS.length;
+                                                          const anyCrudActive = activeCrudCount > 0;
 
                                                           return (
-                                                            <button
-                                                              key={action.key}
-                                                              type="button"
-                                                              disabled={modalMode === 'view'}
-                                                              onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
-                                                              className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${isChecked
-                                                                ? 'bg-amber-500/10 border-amber-500/40 shadow-xs ring-1 ring-amber-500/20'
-                                                                : 'bg-muted/20 border-border/60 hover:bg-muted/40'
-                                                                } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                                            <div
+                                                              key={specAction.key}
+                                                              className={`p-2.5 rounded-xl border transition-all ${anyCrudActive
+                                                                ? accentStyles.cardActive
+                                                                : 'bg-muted/15 border-border/60'
+                                                                }`}
                                                             >
-                                                              <div className="shrink-0">
-                                                                {isChecked ? (
-                                                                  <div className="w-5 h-5 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-xs">
-                                                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                              <div className="flex items-start justify-between gap-2">
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${anyCrudActive ? accentStyles.checkActive : 'bg-background border border-border text-muted-foreground'}`}>
+                                                                    <IconComponent className="w-3.5 h-3.5" />
                                                                   </div>
-                                                                ) : (
-                                                                  <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
-                                                                    <IconComponent className="w-3 h-3" />
+                                                                  <div className="min-w-0">
+                                                                    <p className="text-[11px] font-bold text-foreground truncate">
+                                                                      {specAction.label}
+                                                                    </p>
+                                                                    <p className="text-[9px] text-muted-foreground truncate">
+                                                                      {specAction.sublabel}
+                                                                    </p>
                                                                   </div>
-                                                                )}
-                                                              </div>
-                                                              <div className="min-w-0 flex-1">
-                                                                <div className="flex items-center justify-between">
-                                                                  <span className="text-[11px] font-bold text-foreground">
-                                                                    {action.label}
-                                                                  </span>
                                                                 </div>
-                                                                <p className="text-[9px] text-muted-foreground truncate">
-                                                                  {action.sublabel}
-                                                                </p>
+                                                                <button
+                                                                  type="button"
+                                                                  disabled={modalMode === 'view'}
+                                                                  onClick={() => toggleSpecificActionAll(sub.id, specAction.key, cat.id)}
+                                                                  className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed ${allCrudActive
+                                                                    ? accentStyles.pillAll
+                                                                    : anyCrudActive
+                                                                      ? accentStyles.pillPartial
+                                                                      : 'bg-secondary/70 text-muted-foreground hover:bg-secondary'
+                                                                    }`}
+                                                                >
+                                                                  {activeCrudCount}/4
+                                                                </button>
                                                               </div>
-                                                            </button>
-                                                          );
-                                                        })}
-                                                      </div>
-                                                    </div>
-                                                  )}
 
-                                                  {/* Actions Spécifiques Dédiées aux Candidats / Vivier (US-DASH-59) */}
-                                                  {sub.id === 'candidates' && (
-                                                    <div className="mt-2.5 pt-2 border-t border-border/50">
-                                                      <div className="flex items-center gap-1.5 mb-2">
-                                                        <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
-                                                          Actions Métier Spécifiques (Vivier Candidats)
-                                                        </span>
-                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
-                                                          Permissions Dédiées
-                                                        </span>
-                                                      </div>
-                                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                                                        {CANDIDATE_SPECIFIC_ACTIONS.map(action => {
-                                                          const permKey = `sub:candidates:${action.key}`;
-                                                          const isChecked = Boolean(formData.permissions_overrides[permKey]);
-                                                          const IconComponent = action.icon;
-
-                                                          return (
-                                                            <button
-                                                              key={action.key}
-                                                              type="button"
-                                                              disabled={modalMode === 'view'}
-                                                              onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
-                                                              className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${isChecked
-                                                                ? 'bg-emerald-500/10 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/20'
-                                                                : 'bg-muted/20 border-border/60 hover:bg-muted/40'
-                                                                } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                                            >
-                                                              <div className="shrink-0">
-                                                                {isChecked ? (
-                                                                  <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                                                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                                  </div>
-                                                                ) : (
-                                                                  <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
-                                                                    <IconComponent className="w-3 h-3" />
-                                                                  </div>
-                                                                )}
+                                                              <div className="grid grid-cols-4 gap-1.5 mt-2">
+                                                                {CRUD_ACTIONS.map(crud => {
+                                                                  const crudPermKey = `sub:${sub.id}:${specAction.key}:${crud.key}`;
+                                                                  const isCrudChecked = Boolean(formData.permissions_overrides[crudPermKey]);
+                                                                  return (
+                                                                    <button
+                                                                      key={crud.key}
+                                                                      type="button"
+                                                                      disabled={modalMode === 'view'}
+                                                                      onClick={() => toggleSpecificActionCrud(sub.id, specAction.key, crud.key, cat.id)}
+                                                                      title={`${specAction.label} — ${crud.sublabel}`}
+                                                                      className={`px-1.5 py-1 rounded-lg border text-center transition-all flex items-center justify-center gap-1 ${isCrudChecked
+                                                                        ? accentStyles.btnActive
+                                                                        : 'bg-background/70 border-border/60 text-muted-foreground hover:bg-muted/40'
+                                                                        } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
+                                                                    >
+                                                                      <span className={`w-3 h-3 rounded flex items-center justify-center shrink-0 ${isCrudChecked ? accentStyles.checkActive : 'border border-muted-foreground/40 bg-background'}`}>
+                                                                        {isCrudChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                                                      </span>
+                                                                      <span className="text-[9px] font-bold truncate">
+                                                                        {crud.label}
+                                                                      </span>
+                                                                    </button>
+                                                                  );
+                                                                })}
                                                               </div>
-                                                              <div className="min-w-0 flex-1">
-                                                                <div className="flex items-center justify-between">
-                                                                  <span className="text-[11px] font-bold text-foreground">
-                                                                    {action.label}
-                                                                  </span>
-                                                                </div>
-                                                                <p className="text-[9px] text-muted-foreground truncate">
-                                                                  {action.sublabel}
-                                                                </p>
-                                                              </div>
-                                                            </button>
-                                                          );
-                                                        })}
-                                                      </div>
-                                                    </div>
-                                                  )}
-
-                                                  {/* Actions Spécifiques : Calendrier des Matchs */}
-                                                  {sub.id === 'matches' && (
-                                                    <div className="mt-2.5 pt-2 border-t border-border/50">
-                                                      <div className="flex items-center gap-1.5 mb-2">
-                                                        <span className="text-[10px] font-bold text-foreground uppercase tracking-wider">
-                                                          Actions Métier Spécifiques (Calendrier des Matchs)
-                                                        </span>
-                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
-                                                          Permissions Dédiées
-                                                        </span>
-                                                      </div>
-                                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                        {MATCH_SPECIFIC_ACTIONS.map(action => {
-                                                          const permKey = `sub:matches:${action.key}`;
-                                                          const isChecked = Boolean(formData.permissions_overrides[permKey]);
-                                                          const IconComponent = action.icon;
-                                                          return (
-                                                            <button
-                                                              key={action.key}
-                                                              type="button"
-                                                              disabled={modalMode === 'view'}
-                                                              onClick={() => toggleSubModuleAction(sub.id, action.key, cat.id)}
-                                                              className={`p-2 rounded-xl border text-left transition-all flex items-center gap-2.5 ${isChecked
-                                                                ? 'bg-amber-500/10 border-amber-500/40 shadow-xs ring-1 ring-amber-500/20'
-                                                                : 'bg-muted/20 border-border/60 hover:bg-muted/40'
-                                                                } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                                            >
-                                                              <div className="shrink-0">
-                                                                {isChecked ? (
-                                                                  <div className="w-5 h-5 rounded-lg bg-amber-600 text-white flex items-center justify-center shadow-xs">
-                                                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                                  </div>
-                                                                ) : (
-                                                                  <div className="w-5 h-5 rounded-lg border border-muted-foreground/40 bg-background flex items-center justify-center text-muted-foreground/60">
-                                                                    <IconComponent className="w-3 h-3" />
-                                                                  </div>
-                                                                )}
-                                                              </div>
-                                                              <div className="min-w-0 flex-1">
-                                                                <div className="flex items-center justify-between">
-                                                                  <span className="text-[11px] font-bold text-foreground">
-                                                                    {action.label}
-                                                                  </span>
-                                                                </div>
-                                                                <p className="text-[9px] text-muted-foreground truncate">
-                                                                  {action.sublabel}
-                                                                </p>
-                                                              </div>
-                                                            </button>
+                                                            </div>
                                                           );
                                                         })}
                                                       </div>

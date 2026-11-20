@@ -6,6 +6,15 @@
   VITE_SUPABASE_URL = "https://fuhrxfhszttvpkmjydca.supabase.co"
   VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1aHJ4ZmhzenR0dnBrbWp5ZGNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5NTM4NzYsImV4cCI6MjA5MDUyOTg3Nn0.bl-YL0RpUdCiNO5VKZqwgzj5lXnTCzB7s0rONscheOQ"
 
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

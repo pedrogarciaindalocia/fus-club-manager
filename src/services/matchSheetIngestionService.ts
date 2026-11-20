@@ -20,6 +20,7 @@ import {
 } from '../features/match-management/utils/frmfMatchSheetParser';
 import { alignEntriesToFormation } from '../features/match-management/utils/lineupPositionHelper';
 import { inferMatchFormat } from '../features/match-management/tacticalFormations';
+import { normalizeAgeCategory } from '../constants';
 import type { ParsedMatchSheet, FRMFMatchContext, FRMFPlayer } from '../features/match-management/types/matchSheetTypes';
 import type { Club, League, Player, Team } from '../types';
 import type { AgeCategory, MatchEventType } from '../types/supabase';
@@ -125,6 +126,26 @@ export const matchSheetIngestionService = {
         );
         if (matched) {
           return { exists: true, match: matched };
+        }
+
+        // Fallback sécurisé sur même date + adversaire + catégorie (évite un doublon si l'heure diffère de quelques minutes)
+        const targetCat = normalizeAgeCategory(params.category);
+        const sameCatCandidates = candidates.filter(
+          (cand) => normalizeAgeCategory(cand.category || '') === targetCat
+        );
+        if (sameCatCandidates.length === 1) {
+          return { exists: true, match: sameCatCandidates[0] };
+        }
+        if (sameCatCandidates.length > 1 && params.roundName) {
+          const roundMatch = sameCatCandidates.find((cand: any) => {
+            const candRound =
+              cand.round_name ||
+              (cand.lineup && typeof cand.lineup === 'object' ? (cand.lineup as any).round_name : null);
+            return candRound && String(candRound).trim().toLowerCase() === String(params.roundName).trim().toLowerCase();
+          });
+          if (roundMatch) {
+            return { exists: true, match: roundMatch };
+          }
         }
       }
     }
@@ -543,11 +564,24 @@ export const matchSheetIngestionService = {
     opponentId: string,
     oppPlayers: FRMFPlayer[],
     category: string
-  ): Promise<{ idByJersey: Map<number, string>; idByName: Map<string, string>; positionById: Map<string, string | null>; createdCount: number }> {
+  ): Promise<{
+    idByJersey: Map<number, string>;
+    idByName: Map<string, string>;
+    positionById: Map<string, string | null>;
+    infoById: Map<string, { jerseyNumber: number | null; name: string }>;
+    createdCount: number;
+  }> {
     const existing = await opponentPlayerService.getOpponentPlayers(opponentId);
     const idByJersey = new Map<number, string>();
     const idByName = new Map<string, string>();
     const positionById = new Map<string, string | null>();
+    const infoById = new Map<string, { jerseyNumber: number | null; name: string }>();
+    existing.forEach((ep) => {
+      infoById.set(String(ep.id), {
+        jerseyNumber: ep.jersey_number ?? null,
+        name: ep.full_name || '',
+      });
+    });
     let createdCount = 0;
 
     for (const player of oppPlayers) {
@@ -576,6 +610,10 @@ export const matchSheetIngestionService = {
         if (player.jerseyNumber > 0) idByJersey.set(player.jerseyNumber, found.id);
         idByName.set(normalizeName(player.name), found.id);
         positionById.set(found.id, player.isGoalkeeper ? 'GK' : (found.position || null));
+        infoById.set(String(found.id), {
+          jerseyNumber: player.jerseyNumber > 0 ? player.jerseyNumber : (found.jersey_number ?? null),
+          name: player.name || found.full_name || '',
+        });
       } else {
         try {
           const inserted = await opponentPlayerService.addOpponentPlayer({
@@ -592,6 +630,10 @@ export const matchSheetIngestionService = {
             if (player.jerseyNumber > 0) idByJersey.set(player.jerseyNumber, inserted.id);
             idByName.set(normalizeName(player.name), inserted.id);
             positionById.set(inserted.id, player.isGoalkeeper ? 'GK' : null);
+            infoById.set(String(inserted.id), {
+              jerseyNumber: player.jerseyNumber > 0 ? player.jerseyNumber : null,
+              name: player.name || '',
+            });
             createdCount++;
           }
         } catch (err) {
@@ -600,7 +642,7 @@ export const matchSheetIngestionService = {
       }
     }
 
-    return { idByJersey, idByName, positionById, createdCount };
+    return { idByJersey, idByName, positionById, infoById, createdCount };
   },
 
   /**
@@ -762,16 +804,22 @@ export const matchSheetIngestionService = {
       idByJersey: oppIdByJersey,
       idByName: oppIdByName,
       positionById: oppPositionById,
+      infoById: oppInfoById,
       createdCount: opponentPlayersCreated,
     } = await this.syncOpponentPlayers(opponent.id, oppPlayers, parsed.category);
 
     // 4. Synchroniser les numéros de maillot des joueurs My Club (uniquement ceux déjà liés/confirmés)
     const myClubIdByJersey = new Map<number, string>();
     const myClubIdByName = new Map<string, string>();
+    const myClubInfoById = new Map<string, { jerseyNumber: number | null; name: string }>();
     myClubPlayers.forEach(p => {
       if (p.matchedPlayerId) {
         if (p.jerseyNumber > 0) myClubIdByJersey.set(p.jerseyNumber, p.matchedPlayerId);
         myClubIdByName.set(normalizeName(p.name), p.matchedPlayerId);
+        myClubInfoById.set(String(p.matchedPlayerId), {
+          jerseyNumber: p.jerseyNumber > 0 ? p.jerseyNumber : (p.matchedPlayerJersey ?? null),
+          name: p.matchedPlayerName || p.name,
+        });
       }
     });
     const jerseyOverrides = await this.syncMyClubPlayerJerseys(myClubPlayers);
@@ -993,6 +1041,7 @@ export const matchSheetIngestionService = {
     const existingPlayerMap = new Map<string, string>(
       (existingMatchPlayers || []).map((p: any) => [String(p.player_id), String(p.id)])
     );
+    const seenPlayerIds = new Set<string>(existingPlayerMap.keys());
     const matchPlayersInserts: any[] = [];
     let fallbackPosIdx = myClubStarters.length;
 
@@ -1005,14 +1054,15 @@ export const matchSheetIngestionService = {
       if (!pId) continue;
 
       const existingRowId = existingPlayerMap.get(String(pId));
-      if (!existingRowId) {
+      if (!existingRowId && !seenPlayerIds.has(String(pId))) {
+        seenPlayerIds.add(String(pId));
         matchPlayersInserts.push({
           match_id: matchId,
           player_id: pId,
           is_starting: isStarter,
           position_index: posIdx,
         });
-      } else if (isExistingMatch) {
+      } else if (existingRowId && isExistingMatch) {
         await supabase
           .from('match_players')
           .update({
@@ -1054,47 +1104,200 @@ export const matchSheetIngestionService = {
     }
 
     // 10. INJECTION DES ÉVÉNEMENTS (Buts, Cartons Jaunes/Rouges, Blessures + InjuryService, Changements)
+    // Déduplication complète contre les événements existants (Live Tracking + ré-imports) ET dans le lot courant.
     const { data: existingEvents } = await supabase
       .from('match_events')
-      .select('type, minute, extra')
+      .select('id, type, minute, player_id, related_player_id, extra')
       .eq('match_id', matchId);
 
-    const isDuplicateEvent = (type: string, minute: number, jerseyNumber: number, extraTeam: 'home' | 'away') => {
-      return (existingEvents || []).some(ev => {
-        const extraJersey = (ev.extra as any)?.jersey_number;
-        const evTeam = (ev.extra as any)?.team || 'home';
-        return ev.type === type && ev.minute === minute && Number(extraJersey) === Number(jerseyNumber) && evTeam === extraTeam;
-      });
+    const existingList: any[] = existingEvents || [];
+    const matchedExistingKeys = new Set<string>();
+
+    // Enrichir myClubInfoById avec les joueurs My Club référencés dans existingList (même si non liés sur le PDF)
+    const missingExistingPids = Array.from(
+      new Set(
+        existingList
+          .flatMap((ev: any) => [ev?.player_id, ev?.related_player_id, ev?.extra?.player_out_id, ev?.extra?.player_in_id])
+          .filter((id): id is string => Boolean(id) && !myClubInfoById.has(String(id)))
+          .map(id => String(id))
+      )
+    );
+    if (missingExistingPids.length > 0) {
+      try {
+        const { data: extraDbPlayers } = await supabase
+          .from('players')
+          .select('id, full_name, first_name, last_name, jersey_number')
+          .in('id', missingExistingPids);
+        (extraDbPlayers || []).forEach((dp: any) => {
+          const fullName = String(
+            dp.full_name || `${dp.first_name || ''} ${dp.last_name || ''}`.trim()
+          ).trim();
+          const jNum = Number(dp.jersey_number);
+          myClubInfoById.set(String(dp.id), {
+            jerseyNumber: Number.isFinite(jNum) && jNum > 0 ? jNum : null,
+            name: fullName,
+          });
+        });
+      } catch {
+        // Tolérant en cas d'erreur de lecture
+      }
+    }
+
+    const parsePositiveJersey = (val: unknown): number | null => {
+      if (val === null || val === undefined || val === '') return null;
+      const num = Number(val);
+      return Number.isFinite(num) && num > 0 ? num : null;
     };
 
-    const resolveActor = (sheetTeam: 'home' | 'away', jerseyNumber: number, playerName: string) => {
+    const parseJerseyFromLabel = (raw?: string | null): number | null => {
+      if (!raw) return null;
+      const m = String(raw).trim().match(/^(?:#|OPPONENT-)(\d{1,2})\b/i);
+      return m ? parsePositiveJersey(m[1]) : null;
+    };
+
+    const cleanActorName = (raw?: string | null): string =>
+      String(raw || '').replace(/^#\d+\s*/, '').trim();
+
+    const resolveEventTeam = (ev: any): 'home' | 'away' => {
+      const rawTeam = ev?.extra?.team;
+      if (rawTeam === 'away') return 'away';
+      if (rawTeam === 'home') return 'home';
+      if (ev?.extra?.opponent_player_id || ev?.extra?.opponent_ref) return 'away';
+      return 'home';
+    };
+
+    type ActorSignature = {
+      extraTeam: 'home' | 'away';
+      playerId: string | null;
+      oppPlayerId: string | null;
+      jerseyNumber: number;
+      playerName: string;
+    };
+
+    const resolveActor = (sheetTeam: 'home' | 'away', jerseyNumber: number, playerName: string): ActorSignature & { isMyClub: boolean; opponentRef: string | null } => {
       const isMyClubActor = sheetTeam === rawMyClubSide;
       if (isMyClubActor) {
+        const matched =
+          myClubPlayers.find(p => p.matchedPlayerId && (
+            (jerseyNumber > 0 && p.jerseyNumber === jerseyNumber) ||
+            (playerName && matchPlayerName(playerName, p.name))
+          )) || null;
         const pid =
-          myClubIdByJersey.get(jerseyNumber) ||
+          matched?.matchedPlayerId ||
+          (jerseyNumber > 0 ? myClubIdByJersey.get(jerseyNumber) : undefined) ||
           myClubIdByName.get(normalizeName(playerName)) ||
           null;
         return {
           isMyClub: true,
-          extraTeam: 'home' as const, // Convention FUS/My Club dans match_events
+          extraTeam: 'home', // Convention FUS/My Club dans match_events
           playerId: pid,
-          oppPlayerId: null as string | null,
-          opponentRef: null as string | null,
-        };
-      } else {
-        const oppId =
-          oppIdByJersey.get(jerseyNumber) ||
-          oppIdByName.get(normalizeName(playerName)) ||
-          null;
-        return {
-          isMyClub: false,
-          extraTeam: 'away' as const, // Convention Adversaire dans match_events
-          playerId: null as string | null,
-          oppPlayerId: oppId,
-          opponentRef: oppId || `OPPONENT-${jerseyNumber}`,
+          oppPlayerId: null,
+          opponentRef: null,
+          jerseyNumber,
+          playerName,
         };
       }
+      const matchedOpp =
+        oppPlayers.find(p => p.matchedOpponentPlayerId && (
+          (jerseyNumber > 0 && p.jerseyNumber === jerseyNumber) ||
+          (playerName && matchPlayerName(playerName, p.name))
+        )) || null;
+      const oppId =
+        matchedOpp?.matchedOpponentPlayerId ||
+        (jerseyNumber > 0 ? oppIdByJersey.get(jerseyNumber) : undefined) ||
+        oppIdByName.get(normalizeName(playerName)) ||
+        null;
+      return {
+        isMyClub: false,
+        extraTeam: 'away', // Convention Adversaire dans match_events
+        playerId: null,
+        oppPlayerId: oppId,
+        opponentRef: oppId || `OPPONENT-${jerseyNumber}`,
+        jerseyNumber,
+        playerName,
+      };
     };
+
+    const getPrimaryActorFromEvent = (ev: any) => {
+      const extra = ev?.extra || {};
+      const evTeam = resolveEventTeam(ev);
+      const pid = ev?.player_id
+        ? String(ev.player_id)
+        : (extra.player_out_id ? String(extra.player_out_id) : null);
+      const oppRef = extra.opponent_player_id
+        ? String(extra.opponent_player_id)
+        : (extra.opponent_ref ? String(extra.opponent_ref) : null);
+      const oppInfo = oppRef ? oppInfoById.get(oppRef) : undefined;
+      const myInfo = pid ? myClubInfoById.get(pid) : undefined;
+      const jersey =
+        parsePositiveJersey(extra.jersey_number) ??
+        parsePositiveJersey(extra.jersey) ??
+        parsePositiveJersey(extra.player_number) ??
+        parseJerseyFromLabel(extra.player_out_name) ??
+        parseJerseyFromLabel(extra.player_name) ??
+        parseJerseyFromLabel(extra.opponent_ref) ??
+        oppInfo?.jerseyNumber ??
+        myInfo?.jerseyNumber ??
+        null;
+      const name = cleanActorName(extra.player_out_name || extra.player_name || myInfo?.name || oppInfo?.name);
+      return { evTeam, pid, oppRef, jersey, name };
+    };
+
+    const getIncomingActorFromEvent = (ev: any) => {
+      const extra = ev?.extra || {};
+      const evTeam = resolveEventTeam(ev);
+      const pid = ev?.related_player_id
+        ? String(ev.related_player_id)
+        : (extra.player_in_id ? String(extra.player_in_id) : null);
+      const oppRef = extra.related_opponent_player_id
+        ? String(extra.related_opponent_player_id)
+        : (extra.related_ref ? String(extra.related_ref) : null);
+      const oppInfo = oppRef ? oppInfoById.get(oppRef) : undefined;
+      const myInfo = pid ? myClubInfoById.get(pid) : undefined;
+      const jersey =
+        parsePositiveJersey(extra.related_jersey) ??
+        parsePositiveJersey(extra.assist_jersey) ??
+        parseJerseyFromLabel(extra.player_in_name) ??
+        parseJerseyFromLabel(extra.related_name) ??
+        parseJerseyFromLabel(extra.related_ref) ??
+        oppInfo?.jerseyNumber ??
+        myInfo?.jerseyNumber ??
+        null;
+      const name = cleanActorName(extra.player_in_name || extra.related_name || myInfo?.name || oppInfo?.name);
+      return { evTeam, pid, oppRef, jersey, name };
+    };
+
+    const matchesActorInfo = (
+      evActor: { evTeam: 'home' | 'away'; pid: string | null; oppRef: string | null; jersey: number | null; name: string },
+      candidate: ActorSignature
+    ): boolean => {
+      if (evActor.evTeam !== candidate.extraTeam) return false;
+      if (candidate.playerId && evActor.pid && String(candidate.playerId) === evActor.pid) return true;
+      if (candidate.oppPlayerId && evActor.oppRef && String(candidate.oppPlayerId) === evActor.oppRef) return true;
+      if (candidate.jerseyNumber > 0 && evActor.jersey !== null && candidate.jerseyNumber === evActor.jersey) return true;
+      if (candidate.playerName && evActor.name && matchPlayerName(candidate.playerName, evActor.name)) return true;
+      return false;
+    };
+
+    const isScoredEvent = (ev: any): boolean => {
+      if (ev?.type === 'goal') return true;
+      if (ev?.type === 'penalty') {
+        const res = ev?.extra?.result;
+        return res !== 'missed' && res !== 'saved';
+      }
+      return false;
+    };
+
+    const countGoalsForSide = (side: 'home' | 'away', pool: any[]): number =>
+      pool.filter(ev => {
+        const evTeam = resolveEventTeam(ev);
+        if (isScoredEvent(ev)) return evTeam === side;
+        if (ev?.type === 'own_goal') return evTeam !== side;
+        return false;
+      }).length;
+
+    const myClubTargetGoals = parsed.isHomeMatch ? parsed.scoreHome : parsed.scoreAway;
+    const oppTargetGoals = parsed.isHomeMatch ? parsed.scoreAway : parsed.scoreHome;
 
     const eventsToInsert: any[] = [];
     let substitutionsInserted = 0;
@@ -1106,8 +1309,39 @@ export const matchSheetIngestionService = {
       const isCsc = /csc|contre/i.test(goal.type || '');
       const isPen = /pen/i.test(goal.type || '');
       const eventType: MatchEventType = isCsc ? 'own_goal' : isPen ? 'penalty' : 'goal';
+      const isSameGoalType = (t: string) =>
+        isCsc ? t === 'own_goal' : (t === 'goal' || t === 'penalty');
 
-      if (isDuplicateEvent(eventType, goal.minute, goal.jerseyNumber, actor.extraTeam)) continue;
+      // 1) Éviter les doublons exacts au sein du même lot
+      const dupInBatch = eventsToInsert.some(ev =>
+        isSameGoalType(ev.type) &&
+        Number(ev.minute) === Number(goal.minute) &&
+        matchesActorInfo(getPrimaryActorFromEvent(ev), actor)
+      );
+      if (dupInBatch) continue;
+
+      // 2) Appariement 1-pour-1 contre les événements déjà enregistrés (Live Tracking ±5 min ou ré-import)
+      const existingMatchIdx = existingList.findIndex((ev, idx) => {
+        const key = String(ev.id || `idx-${idx}`);
+        if (matchedExistingKeys.has(key)) return false;
+        if (!isSameGoalType(ev.type)) return false;
+        if (Math.abs(Number(ev.minute ?? 0) - Number(goal.minute)) > 5) return false;
+        return matchesActorInfo(getPrimaryActorFromEvent(ev), actor);
+      });
+      if (existingMatchIdx !== -1) {
+        const matchedEv = existingList[existingMatchIdx];
+        matchedExistingKeys.add(String(matchedEv.id || `idx-${existingMatchIdx}`));
+        continue;
+      }
+
+      // 3) Plafond par score officiel : si le match avait déjà des buts enregistrés en base (ex: Live Tracking avec autre n°/minute), ne pas dépasser le score officiel
+      const scoringSide: 'home' | 'away' = isCsc ? (actor.extraTeam === 'home' ? 'away' : 'home') : actor.extraTeam;
+      const targetGoals = scoringSide === 'home' ? myClubTargetGoals : oppTargetGoals;
+      const existingGoalsCount = countGoalsForSide(scoringSide, existingList);
+      const currentGoalsCount = countGoalsForSide(scoringSide, [...existingList, ...eventsToInsert]);
+      if (existingGoalsCount > 0 && targetGoals > 0 && currentGoalsCount >= targetGoals) {
+        continue;
+      }
 
       eventsToInsert.push({
         match_id: matchId,
@@ -1130,7 +1364,52 @@ export const matchSheetIngestionService = {
     for (const card of parsed.cards) {
       const actor = resolveActor(card.team, card.jerseyNumber, card.playerName);
       const cType: MatchEventType = card.cardType === 'yellow' ? 'yellow_card' : 'red_card';
-      if (isDuplicateEvent(cType, card.minute, card.jerseyNumber, actor.extraTeam)) continue;
+
+      if (cType === 'red_card') {
+        const isRedType = (ev: any) =>
+          ev.type === 'red_card' || ev.type === 'second_yellow' || ev.type === 'yellow_red';
+        // Un joueur ne peut jamais recevoir 2 cartons rouges dans le même match (quelle que soit la minute)
+        const dupRedInBatch = eventsToInsert.some(ev =>
+          isRedType(ev) && matchesActorInfo(getPrimaryActorFromEvent(ev), actor)
+        );
+        if (dupRedInBatch) continue;
+
+        const existingRedIdx = existingList.findIndex((ev, idx) => {
+          const key = String(ev.id || `idx-${idx}`);
+          if (matchedExistingKeys.has(key)) return false;
+          return isRedType(ev) && matchesActorInfo(getPrimaryActorFromEvent(ev), actor);
+        });
+        if (existingRedIdx !== -1) {
+          const matchedEv = existingList[existingRedIdx];
+          matchedExistingKeys.add(String(matchedEv.id || `idx-${existingRedIdx}`));
+          continue;
+        }
+      } else {
+        const dupYellowInBatch = eventsToInsert.some(ev =>
+          ev.type === 'yellow_card' &&
+          Number(ev.minute) === Number(card.minute) &&
+          matchesActorInfo(getPrimaryActorFromEvent(ev), actor)
+        );
+        if (dupYellowInBatch) continue;
+
+        const existingYellowIdx = existingList.findIndex((ev, idx) => {
+          const key = String(ev.id || `idx-${idx}`);
+          if (matchedExistingKeys.has(key)) return false;
+          const isYellowOrDoubleYellow =
+            ev.type === 'yellow_card' ||
+            ev.type === 'second_yellow' ||
+            ev.type === 'yellow_red' ||
+            (ev.type === 'red_card' && ev.extra?.reason === 'double_yellow');
+          if (!isYellowOrDoubleYellow) return false;
+          if (Math.abs(Number(ev.minute ?? 0) - Number(card.minute)) > 5) return false;
+          return matchesActorInfo(getPrimaryActorFromEvent(ev), actor);
+        });
+        if (existingYellowIdx !== -1) {
+          const matchedEv = existingList[existingYellowIdx];
+          matchedExistingKeys.add(String(matchedEv.id || `idx-${existingYellowIdx}`));
+          continue;
+        }
+      }
 
       eventsToInsert.push({
         match_id: matchId,
@@ -1151,7 +1430,26 @@ export const matchSheetIngestionService = {
     // 10c. Blessures (match_events + schéma extra compatible InjuryService)
     for (const injury of parsed.injuries) {
       const actor = resolveActor(injury.team, injury.jerseyNumber, injury.playerName);
-      if (isDuplicateEvent('injury', injury.minute, injury.jerseyNumber, actor.extraTeam)) continue;
+
+      const dupInjuryInBatch = eventsToInsert.some(ev =>
+        ev.type === 'injury' &&
+        Number(ev.minute) === Number(injury.minute) &&
+        matchesActorInfo(getPrimaryActorFromEvent(ev), actor)
+      );
+      if (dupInjuryInBatch) continue;
+
+      const existingInjIdx = existingList.findIndex((ev, idx) => {
+        const key = String(ev.id || `idx-${idx}`);
+        if (matchedExistingKeys.has(key)) return false;
+        if (ev.type !== 'injury') return false;
+        if (Math.abs(Number(ev.minute ?? 0) - Number(injury.minute)) > 10) return false;
+        return matchesActorInfo(getPrimaryActorFromEvent(ev), actor);
+      });
+      if (existingInjIdx !== -1) {
+        const matchedEv = existingList[existingInjIdx];
+        matchedExistingKeys.add(String(matchedEv.id || `idx-${existingInjIdx}`));
+        continue;
+      }
 
       eventsToInsert.push({
         match_id: matchId,
@@ -1183,7 +1481,26 @@ export const matchSheetIngestionService = {
     for (const sub of parsed.substitutions) {
       const actorOut = resolveActor(sub.team, sub.jerseyOut, sub.playerOutName || '');
       const actorIn = resolveActor(sub.team, sub.jerseyIn, sub.playerInName || '');
-      if (isDuplicateEvent('substitution', sub.minute, sub.jerseyOut, actorOut.extraTeam)) continue;
+
+      const matchesSubEvent = (ev: any) =>
+        ev.type === 'substitution' && (
+          matchesActorInfo(getPrimaryActorFromEvent(ev), actorOut) ||
+          matchesActorInfo(getIncomingActorFromEvent(ev), actorIn)
+        );
+
+      const dupSubInBatch = eventsToInsert.some(matchesSubEvent);
+      if (dupSubInBatch) continue;
+
+      const existingSubIdx = existingList.findIndex((ev, idx) => {
+        const key = String(ev.id || `idx-${idx}`);
+        if (matchedExistingKeys.has(key)) return false;
+        return matchesSubEvent(ev);
+      });
+      if (existingSubIdx !== -1) {
+        const matchedEv = existingList[existingSubIdx];
+        matchedExistingKeys.add(String(matchedEv.id || `idx-${existingSubIdx}`));
+        continue;
+      }
 
       const outName = sub.playerOutName || `Joueur #${sub.jerseyOut}`;
       const inName = sub.playerInName || `Joueur #${sub.jerseyIn}`;

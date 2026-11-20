@@ -49,8 +49,12 @@ export const OpponentMatchesPanel: React.FC<OpponentMatchesPanelProps> = ({
     deleteOpponentMatch,
   } = useOpponentMatches(selectedLeagueId === 'All' ? undefined : selectedLeagueId);
 
-  const { can, hasSubModuleAccess } = usePermissions();
-  const canManageStandings = can('manage_standings') || hasSubModuleAccess('matches', 'manage_standings');
+  const { can, hasSpecificActionAccess } = usePermissions();
+  const canCreateStandings =
+    hasSpecificActionAccess('matches', 'manage_standings', 'create') || can('create_opponent');
+  const canUpdateStandings = hasSpecificActionAccess('matches', 'manage_standings', 'update');
+  const canDeleteStandings = hasSpecificActionAccess('matches', 'manage_standings', 'delete');
+  const canMutateAnyStandings = canCreateStandings || canUpdateStandings || canDeleteStandings;
   const { addOpponent } = useClubData();
 
   // Modal d'ajout rapide de club adverse
@@ -238,8 +242,12 @@ export const OpponentMatchesPanel: React.FC<OpponentMatchesPanelProps> = ({
 
   const handleSubmitMatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManageStandings) {
-      toast.error("Permission refusée : la saisie des résultats adverses est restreinte.");
+    if (editingMatch ? !canUpdateStandings : !canCreateStandings) {
+      toast.error(
+        editingMatch
+          ? "Permission Spécifique « Classements & Matchs Adverses (Update) » requise."
+          : "Permission Spécifique « Classements & Matchs Adverses (Create) » requise."
+      );
       return;
     }
     if (!formData.home_club_id || !formData.away_club_id) {
@@ -297,7 +305,7 @@ export const OpponentMatchesPanel: React.FC<OpponentMatchesPanelProps> = ({
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          {canManageStandings ? (
+          {canCreateStandings ? (
             <Button
               onClick={handleOpenAddModal}
               className="bg-[#FF3737] hover:bg-[#e02e2e] text-white h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl font-black uppercase tracking-wider text-[10px] sm:text-xs gap-1.5 shadow-md shadow-red-500/20 transition-all shrink-0"
@@ -305,12 +313,12 @@ export const OpponentMatchesPanel: React.FC<OpponentMatchesPanelProps> = ({
               <Plus className="w-4 h-4" />
               <span>Saisir un Score / Match</span>
             </Button>
-          ) : (
+          ) : !canMutateAnyStandings ? (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-bold shrink-0">
               <Shield className="w-3.5 h-3.5 text-slate-400" />
               <span>Consultation seule</span>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -398,7 +406,7 @@ export const OpponentMatchesPanel: React.FC<OpponentMatchesPanelProps> = ({
           return (
             <div
               key={m.id}
-              onClick={() => canManageStandings && handleOpenEditModal(m)}
+              onClick={() => canUpdateStandings && handleOpenEditModal(m)}
               className="flex items-center justify-between py-3.5 px-3 sm:px-6 hover:bg-slate-50/90 transition-colors cursor-pointer group"
             >
               {/* Club Domicile (Gauche - texte aligné à droite) */}
@@ -462,30 +470,34 @@ export const OpponentMatchesPanel: React.FC<OpponentMatchesPanelProps> = ({
               </div>
 
               {/* Actions au survol */}
-              {canManageStandings && (
+              {(canUpdateStandings || canDeleteStandings) && (
                 <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0" onClick={e => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleOpenEditModal(m)}
-                    className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50"
-                    title="Modifier le score"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (window.confirm('Supprimer ce résultat de match adverse ?')) {
-                        deleteOpponentMatch(m.id);
-                      }
-                    }}
-                    className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
-                    title="Supprimer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                  {canUpdateStandings && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleOpenEditModal(m)}
+                      className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                      title="Modifier le score"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  {canDeleteStandings && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (window.confirm('Supprimer ce résultat de match adverse ?')) {
+                          deleteOpponentMatch(m.id);
+                        }
+                      }}
+                      className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                      title="Supprimer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -501,7 +513,7 @@ export const OpponentMatchesPanel: React.FC<OpponentMatchesPanelProps> = ({
             <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
               Cliquez sur « Saisir un Score / Match » pour enregistrer les scores des autres équipes du championnat.
             </p>
-            {canManageStandings && (
+            {canCreateStandings && (
               <Button
                 onClick={handleOpenAddModal}
                 className="mt-4 bg-[#FF3737] hover:bg-[#e02e2e] text-white text-xs font-black uppercase h-9 px-4 rounded-xl"
@@ -592,7 +604,7 @@ export const OpponentMatchesPanel: React.FC<OpponentMatchesPanelProps> = ({
                       <label className="block text-[10px] font-black uppercase text-slate-500">
                         Équipe Domicile *
                       </label>
-                      {canManageStandings && (
+                      {canCreateStandings && (
                         <button
                           type="button"
                           onClick={() => setIsAddClubModalOpen(true)}
@@ -622,7 +634,7 @@ export const OpponentMatchesPanel: React.FC<OpponentMatchesPanelProps> = ({
                       <label className="block text-[10px] font-black uppercase text-slate-500">
                         Équipe Extérieur *
                       </label>
-                      {canManageStandings && (
+                      {canCreateStandings && (
                         <button
                           type="button"
                           onClick={() => setIsAddClubModalOpen(true)}

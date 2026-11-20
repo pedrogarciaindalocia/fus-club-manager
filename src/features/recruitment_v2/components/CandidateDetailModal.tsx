@@ -167,6 +167,7 @@ interface CandidateDetailModalProps {
   initialTab?: 'scout' | 'personal' | 'sport' | 'evaluations' | 'report';
   scouts?: Scout[];
   canManageReports?: boolean;
+  canReadDriveLink?: boolean;
   isRecruitmentAdmin?: boolean;
   isScoutManager?: boolean;
   currentScout?: Scout | null;
@@ -201,13 +202,14 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   onUpdateCandidate,
   initialTab = 'scout',
   canManageReports = true,
+  canReadDriveLink = true,
   isRecruitmentAdmin = false,
   isScoutManager = false,
   currentScout = null,
   currentUserId,
   currentUserName,
 }) => {
-  const { authState, hasSubModuleAccess } = usePermissions();
+  const { authState, hasSubModuleAccess, hasSpecificActionAccess } = usePermissions();
   const hasExplicitPerms = Boolean(authState?.permissions && authState.permissions.length > 0);
   const isSuperAdminUser = Boolean(
     !authState?.isImpersonating && (
@@ -217,11 +219,14 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   );
   const hasDossierOrReportPermission = Boolean(
     canManageReports ||
-    hasSubModuleAccess('candidates', 'manage_reports') ||
+    hasSpecificActionAccess('candidates', 'manage_reports', 'read') ||
+    hasSpecificActionAccess('candidates', 'drive_link', 'read') ||
+    hasSpecificActionAccess('candidates', 'assign_mission', 'read') ||
+    hasSpecificActionAccess('candidates', 'recruit_now', 'read') ||
     hasSubModuleAccess('candidates', 'reports') ||
     hasSubModuleAccess('candidates', 'edit_player') ||
+    hasSubModuleAccess('candidates', 'read') ||
     hasSubModuleAccess('candidates', 'update') ||
-    hasSubModuleAccess('candidates', 'assign_mission') ||
     hasSubModuleAccess('candidates', 'create')
   );
 
@@ -713,7 +718,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
           {/* Actions : Barre d'actions homogène (Hauteur h-9, rounded-xl, design unifié) */}
           <div className="flex items-center gap-2 shrink-0">
             {/* Vidéo / Drive */}
-            {candidate.video_url ? (
+            {candidate.video_url && canReadDriveLink ? (
               <div className="flex items-center h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 overflow-hidden shadow-xs shrink-0">
                 <button
                   type="button"
@@ -735,7 +740,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   </button>
                 )}
               </div>
-            ) : onOpenDriveLink ? (
+            ) : !candidate.video_url && onOpenDriveLink ? (
               <button
                 type="button"
                 onClick={() => onOpenDriveLink(candidate)}

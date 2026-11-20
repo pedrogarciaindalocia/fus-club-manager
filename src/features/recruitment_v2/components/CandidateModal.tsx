@@ -16,8 +16,10 @@ import {
   getAgeCategoryFromBirthDate,
   getPoleFromCategory,
   getSurclassementTargetCategory,
-  getHonorDeclarationDocument
+  getHonorDeclarationDocument,
+  validateRecruitNowPrerequisites
 } from '../types/recruitment';
+import { dashboardNotificationService } from '../../../services/dashboardNotificationService';
 import { AdministrativeDossierForm } from './AdministrativeDossierForm';
 import { HonorDeclarationFormField } from './HonorDeclarationControl';
 import { cn } from '../../../lib/utils';
@@ -104,7 +106,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     }
   }, [mode, initialTab]);
 
-  const { authState, hasSubModuleAccess, canManageCategory } = usePermissions();
+  const { authState, hasSubModuleAccess, hasSpecificActionAccess, canManageCategory } = usePermissions();
   const userRoles = [
     ...(authState?.roles || []),
     authState?.user?.system_role || '',
@@ -122,7 +124,11 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
   const canCreateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'create'));
   const canUpdateCandidate = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'edit_player') || hasSubModuleAccess('candidates', 'update'));
-  const canEditDriveLink = Boolean(isSuperAdmin || hasSubModuleAccess('candidates', 'drive_link'));
+  const canEditDriveLink = Boolean(
+    isSuperAdmin ||
+    hasSpecificActionAccess('candidates', 'drive_link', 'create') ||
+    hasSpecificActionAccess('candidates', 'drive_link', 'update')
+  );
 
   // Règle Métier US-DASH-119 :
   // Seuls Super Admin, Scout Admin, Administrateur (Directeur Administratif) peuvent valider 'Recrutement immédiatement'.
@@ -140,12 +146,27 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       modalJobTitle.includes('scout manager')
     )
   );
-  const canProcessRecruitNow = Boolean(
+  const canCreateRecruitNow = Boolean(
     !isModalScoutManager && (
       isSuperAdmin ||
       isScoutAdmin ||
       (!hasExplicitPerms && (isAdmin || isModalDirecteurAdministratif)) ||
-      hasSubModuleAccess('candidates', 'recruit_now')
+      hasSpecificActionAccess('candidates', 'recruit_now', 'create')
+    )
+  );
+  const canDeleteRecruitNow = Boolean(
+    !isModalScoutManager && (
+      isSuperAdmin ||
+      isScoutAdmin ||
+      (!hasExplicitPerms && (isAdmin || isModalDirecteurAdministratif)) ||
+      hasSpecificActionAccess('candidates', 'recruit_now', 'delete')
+    )
+  );
+  const canProcessRecruitNow = Boolean(
+    !isModalScoutManager && (
+      canCreateRecruitNow ||
+      canDeleteRecruitNow ||
+      hasSpecificActionAccess('candidates', 'recruit_now', 'update')
     )
   );
 
@@ -1555,6 +1576,42 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
           ? persistedCandidateStatus
           : scoutStateDecision;
 
+    const hasWrittenEvaluationFields = Boolean(
+      evaluation ||
+      (candidate?.evaluations && candidate.evaluations.length > 0) ||
+      reportTitle.trim() ||
+      techReport.trim() ||
+      tactReport.trim() ||
+      physReport.trim() ||
+      mentReport.trim() ||
+      strengths.trim() ||
+      weaknesses.trim() ||
+      projection.trim() ||
+      Number(potentialRating || 0) > 0
+    );
+
+    if (effectiveScoutStateDecision === 'recruit_now' && persistedCandidateStatus !== 'recruit_now') {
+      const prereq = validateRecruitNowPrerequisites(
+        {
+          id: candidate?.id || '__draft__',
+          honor_declaration_document: honorDeclarationDoc || (candidate ? getHonorDeclarationDocument(candidate) : null),
+          administrative_documents: administrativeDocuments,
+          evaluations: [
+            ...(candidate?.evaluations || []),
+            ...(evaluation ? [evaluation] : []),
+            ...(mode !== 'player_only' && hasWrittenEvaluationFields ? [{ id: '__pending_eval__' } as CandidateEvaluation] : []),
+          ],
+        },
+        []
+      );
+      if (!prereq.isValid) {
+        toast.error('Passage en « Recrutement immédiatement » bloqué', {
+          description: prereq.missingReasons.join(' · '),
+        });
+        return;
+      }
+    }
+
     // En mode player_only (Ajouter / Modifier un joueur), AUCUN rapport/évaluation ne doit être généré.
     // L'évaluation n'est incluse que si on est en mode 'report_only', si 'À recruter immédiatement' est coché, ou si un vrai titre/contenu de rapport a été renseigné.
     const hasEvalData = mode === 'player_only' ? false : (
@@ -1755,6 +1812,24 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
             : (candidate?.pipeline_stage || 'shortlisted'),
         status: (effectiveScoutStateDecision === 'recruit_now' ? 'selected' : effectiveScoutStateDecision === 'invitation_test' ? 'in_trial' : 'registered') as CandidateStatus,
       }, evaluationPayload);
+      if (effectiveScoutStateDecision === 'recruit_now' && persistedCandidateStatus !== 'recruit_now') {
+        const fullCandName = `${firstName} ${lastName}`.trim();
+        void dashboardNotificationService.dispatchTestPlanningNotification({
+          type: 'recruit_now_validated',
+          title: `Nouveau joueur à recruter (${ageCategory || effectivePrincipalCategory})`,
+          message: `${fullCandName || 'Un joueur'} a été validé « Recrutement immédiatement » et attend la constitution de son dossier administratif.`,
+          categories: ageCategory || effectivePrincipalCategory ? [ageCategory || effectivePrincipalCategory] : [],
+          targetRoles: ['directeur_administratif', 'admin'],
+          linkUrl: candidate?.id
+            ? `/recruitment-v2?tab=candidates&recruitCandidateId=${candidate.id}`
+            : '/recruitment-v2?tab=candidates',
+          metadata: {
+            candidate_id: candidate?.id,
+            candidate_name: fullCandName || undefined,
+            categories: ageCategory || effectivePrincipalCategory ? [ageCategory || effectivePrincipalCategory] : [],
+          },
+        });
+      }
       onClose();
     } finally {
       setIsSubmitting(false);
@@ -2281,9 +2356,34 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                           toast.error("Vous pouvez modifier le statut uniquement pour vos propres joueurs.");
                           return;
                         }
-                        if (val === 'recruit_now' && !canProcessRecruitNow && !isCandidateOwner) {
-                          toast.error("Vous pouvez sélectionner 'Recrutement immédiatement' uniquement pour vos propres joueurs.");
+                        if (persistedCandidateStatus === 'recruit_now' && val !== 'recruit_now' && !canDeleteRecruitNow) {
+                          toast.error("Permission Spécifique « Recruter immédiatement (Delete) » requise pour retirer ce statut.");
                           return;
+                        }
+                        if (val === 'recruit_now' && persistedCandidateStatus !== 'recruit_now' && !canCreateRecruitNow && !isCandidateOwner) {
+                          toast.error("Permission Spécifique « Recruter immédiatement (Create) » requise pour valider ce statut.");
+                          return;
+                        }
+                        if (val === 'recruit_now' && persistedCandidateStatus !== 'recruit_now') {
+                          const prereq = validateRecruitNowPrerequisites(
+                            {
+                              id: candidate?.id || '__draft__',
+                              honor_declaration_document: honorDeclarationDoc || (candidate ? getHonorDeclarationDocument(candidate) : null),
+                              administrative_documents: administrativeDocuments,
+                              evaluations: [
+                                ...(candidate?.evaluations || []),
+                                ...(evaluation ? [evaluation] : []),
+                                ...(mode !== 'player_only' ? [{ id: '__pending_eval__' } as CandidateEvaluation] : []),
+                              ],
+                            },
+                            []
+                          );
+                          if (!prereq.isValid) {
+                            toast.error('Validation requise avant « Recrutement immédiatement »', {
+                              description: prereq.missingReasons.join(' · '),
+                            });
+                            return;
+                          }
                         }
                         setScoutStateDecision(val);
                       }}
@@ -2291,7 +2391,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     >
                       <option value="to_follow">À suivre</option>
                       <option value="invitation_test">Inviter à un test</option>
-                      {(canProcessRecruitNow || isCandidateOwner || scoutStateDecision === 'recruit_now') && (
+                      {(canCreateRecruitNow || canProcessRecruitNow || isCandidateOwner || scoutStateDecision === 'recruit_now') && (
                         <option value="recruit_now">
                           Recrutement immédiatement
                         </option>
@@ -2316,13 +2416,39 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                   )}>
                     {availableStatusOptions.map((opt) => {
                       const isSelected = scoutStateDecision === opt.value;
-                      const isOptDisabled = !canChangeStatus || (!canProcessRecruitNow && !isCandidateOwner && opt.value === 'recruit_now');
+                      const isOptDisabled = !canChangeStatus
+                        || (persistedCandidateStatus === 'recruit_now' && opt.value !== 'recruit_now' && !canDeleteRecruitNow)
+                        || (opt.value === 'recruit_now' && persistedCandidateStatus !== 'recruit_now' && !canCreateRecruitNow && !isCandidateOwner);
                       return (
                         <button
                           key={opt.value}
                           type="button"
                           disabled={isOptDisabled && !isSelected}
-                          onClick={() => { if (!isOptDisabled) setScoutStateDecision(opt.value); }}
+                          onClick={() => {
+                            if (isOptDisabled) return;
+                            if (opt.value === 'recruit_now' && persistedCandidateStatus !== 'recruit_now') {
+                              const prereq = validateRecruitNowPrerequisites(
+                                {
+                                  id: candidate?.id || '__draft__',
+                                  honor_declaration_document: honorDeclarationDoc || (candidate ? getHonorDeclarationDocument(candidate) : null),
+                                  administrative_documents: administrativeDocuments,
+                                  evaluations: [
+                                    ...(candidate?.evaluations || []),
+                                    ...(evaluation ? [evaluation] : []),
+                                    ...(mode !== 'player_only' ? [{ id: '__pending_eval__' } as CandidateEvaluation] : []),
+                                  ],
+                                },
+                                []
+                              );
+                              if (!prereq.isValid) {
+                                toast.error('Validation requise avant « Recrutement immédiatement »', {
+                                  description: prereq.missingReasons.join(' · '),
+                                });
+                                return;
+                              }
+                            }
+                            setScoutStateDecision(opt.value);
+                          }}
                           title={
                             isStatusLockedForNonAdmin
                               ? "Statut « Inviter à un test » verrouillé — Seul l'Admin ou le Super Admin peut le modifier"

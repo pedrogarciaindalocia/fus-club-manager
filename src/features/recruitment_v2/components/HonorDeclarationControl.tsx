@@ -117,17 +117,25 @@ export const HonorDeclarationModal: React.FC<HonorDeclarationModalProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+      className={cn(
+        'fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150',
+        doc ? 'p-0' : 'p-4'
+      )}
       onClick={(e) => {
         e.stopPropagation();
         onClose();
       }}
     >
       <div
-        className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-150"
+        className={cn(
+          'bg-white shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col',
+          doc
+            ? 'w-screen h-screen rounded-none border-0'
+            : 'w-full max-w-lg rounded-3xl border border-slate-200'
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/80">
+        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/80 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <span
               className={cn(
@@ -156,10 +164,10 @@ export const HonorDeclarationModal: React.FC<HonorDeclarationModalProps> = ({
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className={cn('p-5 flex flex-col', doc ? 'flex-1 min-h-0 gap-3' : 'space-y-4')}>
           {doc ? (
-            <div className="space-y-3">
-              <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex items-center justify-between gap-3">
+            <div className="flex-1 min-h-0 flex flex-col gap-3">
+              <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex items-center justify-between gap-3 shrink-0">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
                     {imgDoc ? <ImageIcon className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
@@ -188,19 +196,19 @@ export const HonorDeclarationModal: React.FC<HonorDeclarationModalProps> = ({
               </div>
 
               {imgDoc ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden max-h-[300px] flex items-center justify-center">
+                <div className="flex-1 min-h-0 rounded-2xl border border-slate-200 bg-slate-950/95 overflow-auto flex items-center justify-center p-4">
                   <img
                     src={doc.url}
                     alt={`Déclaration sur l'honneur de ${candidateName}`}
-                    className="max-h-[296px] w-auto object-contain"
+                    className="max-h-full max-w-full w-auto h-auto object-contain"
                   />
                 </div>
               ) : (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
+                <div className="flex-1 min-h-0 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden flex flex-col">
                   <iframe
                     src={doc.url}
                     title={`Déclaration PDF ${candidateName}`}
-                    className="w-full h-[260px] border-0 bg-white"
+                    className="w-full flex-1 border-0 bg-white"
                   />
                 </div>
               )}

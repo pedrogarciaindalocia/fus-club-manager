@@ -4,7 +4,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePlayers } from '../../hooks/usePlayers';
 import { useTeams } from '../../hooks/useTeams';
 import { useClubData } from '../../hooks/useClubData';
@@ -54,6 +54,9 @@ import {
   CheckSquare,
   ArrowUpCircle,
   ArrowDownCircle,
+  ArrowRightLeft,
+  Building2,
+  Coins,
   RotateCcw,
   Sparkles,
   ArrowLeft,
@@ -89,6 +92,14 @@ import { usePermissions } from '../../context/PermissionsContext';
 import { isScoutBranch } from '../../constants/roles';
 import FeatureGate from '../../components/FeatureGate';
 import { PlayerMatchCalendarModal } from './components/PlayerMatchCalendarModal';
+import { PlayerDepartureModal } from './components/PlayerDepartureModal';
+import {
+  DEPARTURE_STATUS_META,
+  DEPARTURE_TYPE_META,
+  type PlayerDeparture,
+  getClubPlayersIncludingInactive,
+  playerDepartureService,
+} from '../../services/playerDepartureService';
 import PlayerMentionsChart from '../../components/PlayerMentionsChart';
 import { usePlayerMentions } from '../../hooks/usePlayerMentions';
 import {
@@ -197,15 +208,55 @@ const formatBirthDateLong = (dob: string | null | undefined): string => {
 const PlayerManagement: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { authState, hasSubModuleAccess, canManageCategory } = usePermissions();
+  const { authState, hasSubModuleAccess, hasSpecificActionAccess, canManageCategory } = usePermissions();
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
   const isScout = isScoutBranch(currentRole, authState.user?.job_title);
 
-  // Permissions dynamiques RBAC (US-DASH-52 & US-DASH-57)
+  // Permissions dynamiques RBAC (CRUD général + mini-CRUD des actions spécifiques)
   const canCreatePlayer = hasSubModuleAccess('players', 'create');
   const canUpdatePlayer = hasSubModuleAccess('players', 'update');
   const canDeletePlayer = hasSubModuleAccess('players', 'delete');
-  const canSurclassPlayer = hasSubModuleAccess('players', 'surclasser');
+
+  const canReadPlayerStats = hasSpecificActionAccess('players', 'stats', 'read');
+  const canCreatePlayerStats = hasSpecificActionAccess('players', 'stats', 'create');
+  const canUpdatePlayerStats = hasSpecificActionAccess('players', 'stats', 'update');
+  const canDeletePlayerStats = hasSpecificActionAccess('players', 'stats', 'delete');
+
+  const canReadSurclass = hasSpecificActionAccess('players', 'surclasser', 'read');
+  const canCreateSurclass = hasSpecificActionAccess('players', 'surclasser', 'create');
+  const canUpdateSurclass = hasSpecificActionAccess('players', 'surclasser', 'update');
+  const canDeleteSurclass = hasSpecificActionAccess('players', 'surclasser', 'delete');
+
+  const canReadDeparture = hasSpecificActionAccess('players', 'departure', 'read');
+  const canCreateDeparture = hasSpecificActionAccess('players', 'departure', 'create');
+  const canUpdateDeparture = hasSpecificActionAccess('players', 'departure', 'update');
+  const canDeleteDeparture = hasSpecificActionAccess('players', 'departure', 'delete');
+
+  const [rosterTab, setRosterTab] = useState<'active' | 'departures'>('active');
+  const [departureSearch, setDepartureSearch] = useState('');
+  const [departureModalState, setDepartureModalState] = useState<{
+    isOpen: boolean;
+    mode: 'create' | 'edit' | 'view';
+    departure: PlayerDeparture | null;
+    preselectedPlayer: Player | null;
+  }>({
+    isOpen: false,
+    mode: 'create',
+    departure: null,
+    preselectedPlayer: null,
+  });
+
+  const { data: departures = [], isLoading: departuresLoading } = useQuery({
+    queryKey: ['player_departures'],
+    queryFn: () => playerDepartureService.getDepartures(),
+    enabled: canReadDeparture,
+  });
+
+  const { data: allClubPlayersForDeparture = [] } = useQuery({
+    queryKey: ['players_including_inactive'],
+    queryFn: () => getClubPlayersIncludingInactive(),
+    enabled: canReadDeparture || canCreateDeparture,
+  });
 
   const [playerToDelete, setPlayerToDelete] = useState<Player | null>(null);
   const [isDeletingPlayer, setIsDeletingPlayer] = useState(false);
@@ -296,13 +347,66 @@ const PlayerManagement: React.FC = () => {
 
   const handleOpenSurclassement = (player: Player) => {
     const playerCategory = getPlayerCategory(player);
-    if (!canSurclassPlayer || !canManageCategory(playerCategory)) {
+    if (!canReadSurclass || !canManageCategory(playerCategory)) {
       toast.error(`Surclassement non autorisé : ce joueur appartient à la catégorie ${playerCategory}. Vos droits sont limités à vos catégories assignées.`);
       return;
     }
     setSurclassementPlayer(player);
   };
   const handleCloseSurclassement = () => setSurclassementPlayer(null);
+
+  const teamNamesById = useMemo(() => {
+    const map: Record<string, string> = {};
+    teams.forEach(t => {
+      if (t.id) map[t.id] = t.name || t.category || '';
+    });
+    return map;
+  }, [teams]);
+
+  const filteredDepartures = useMemo(() => {
+    const q = departureSearch.trim().toLowerCase();
+    return departures.filter(dep => {
+      const teamCat = dep.team_id ? teams.find(t => t.id === dep.team_id)?.category : undefined;
+      const cat = teamCat || 'SENIOR';
+      if (!canManageCategory(cat)) return false;
+      if (!q) return true;
+      const hay = [
+        dep.player?.full_name || '',
+        dep.destination_club || '',
+        dep.reason || '',
+        DEPARTURE_TYPE_META[dep.departure_type]?.label || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [departures, departureSearch, teams, canManageCategory]);
+
+  const refreshDepartures = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['player_departures'] });
+    await queryClient.invalidateQueries({ queryKey: ['players_including_inactive'] });
+    await queryClient.invalidateQueries({ queryKey: ['players'] });
+  };
+
+  const handleOpenDepartureModal = (
+    mode: 'create' | 'edit' | 'view',
+    opts?: { player?: Player | null; departure?: PlayerDeparture | null }
+  ) => {
+    if (mode === 'create' && !canCreateDeparture) {
+      toast.error("Permission Create requise pour déclarer une sortie / transfert.");
+      return;
+    }
+    if (mode === 'edit' && !canUpdateDeparture) {
+      toast.error("Permission Update requise pour modifier un dossier de sortie.");
+      return;
+    }
+    setDepartureModalState({
+      isOpen: true,
+      mode,
+      departure: opts?.departure || null,
+      preselectedPlayer: opts?.player || null,
+    });
+  };
 
   // Settings sync (mode Grille par défaut)
   const preferredViewMode = resolvePreferredViewMode(mainClub, 'grid');
@@ -374,6 +478,14 @@ const PlayerManagement: React.FC = () => {
   const handleSavePlayerMention = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlayer?.id || isSavingMention) return;
+    if (!editingMentionEntry && !canCreatePlayerStats) {
+      toast.error("Permission Spécifique Statistiques (Create) requise pour ajouter une mention.");
+      return;
+    }
+    if (editingMentionEntry && !canUpdatePlayerStats) {
+      toast.error("Permission Spécifique Statistiques (Update) requise pour modifier une mention.");
+      return;
+    }
     const normalizedNew = normalizeMentionDate(mentionFormDate);
     try {
       if (
@@ -405,6 +517,10 @@ const PlayerManagement: React.FC = () => {
 
   const handleDeletePlayerMentionPoint = async (pt: MentionTimelinePoint) => {
     if (!selectedPlayer?.id) return;
+    if (!canDeletePlayerStats) {
+      toast.error("Permission Spécifique Statistiques (Delete) requise pour supprimer une mention.");
+      return;
+    }
     try {
       await deleteMention({
         id: pt.id,
@@ -1448,55 +1564,100 @@ const PlayerManagement: React.FC = () => {
           {/* Header Section */}
           <div className="flex flex-col gap-4 sm:gap-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Effectif Joueurs</h2>
-                <p className="text-muted-foreground text-xs sm:text-sm font-medium">Gérez vos athlètes et leurs données physiques</p>
+              <div className="space-y-2">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Effectif Joueurs</h2>
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium">Gérez vos athlètes, leurs performances et les mouvements sortants</p>
+                </div>
+
+                {canReadDeparture && (
+                  <div className="inline-flex bg-secondary/40 p-1 rounded-2xl border border-border/60 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setRosterTab('active')}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                        rosterTab === 'active'
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      Effectif Actif ({players.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRosterTab('departures')}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                        rosterTab === 'departures'
+                          ? 'bg-amber-600 text-white shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                      <span>Sorties &amp; Transferts ({departures.length})</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Main Action Buttons - Wrap on mobile */}
               <div className="flex items-center gap-2 flex-wrap">
-                {/* View Toggle */}
-                <div className="flex bg-secondary/30 p-1 rounded-2xl border">
-                  <Button
-                    variant={displayMode === 'list' ? 'default' : 'ghost'}
-                    size="icon"
-                    onClick={() => setDisplayMode('list')}
-                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl"
-                  >
-                    <ListIcon className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant={displayMode === 'grid' ? 'default' : 'ghost'}
-                    size="icon"
-                    onClick={() => setDisplayMode('grid')}
-                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl"
-                  >
-                    <LayoutGrid className="w-4 h-4" />
-                  </Button>
-                </div>
+                {rosterTab === 'departures' && canReadDeparture ? (
+                  canCreateDeparture ? (
+                    <Button
+                      onClick={() => handleOpenDepartureModal('create')}
+                      className="gap-2 shadow-lg shadow-amber-500/20 h-10 sm:h-11 px-4 sm:px-6 font-bold uppercase tracking-widest text-[10px] sm:text-xs transition-all active:scale-95 bg-amber-600 hover:bg-amber-500 text-white"
+                    >
+                      <ArrowRightLeft className="w-4 h-4" />
+                      <span>Déclarer une Sortie</span>
+                    </Button>
+                  ) : null
+                ) : (
+                  <>
+                    {/* View Toggle */}
+                    <div className="flex bg-secondary/30 p-1 rounded-2xl border">
+                      <Button
+                        variant={displayMode === 'list' ? 'default' : 'ghost'}
+                        size="icon"
+                        onClick={() => setDisplayMode('list')}
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl"
+                      >
+                        <ListIcon className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant={displayMode === 'grid' ? 'default' : 'ghost'}
+                        size="icon"
+                        onClick={() => setDisplayMode('grid')}
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl"
+                      >
+                        <LayoutGrid className="w-4 h-4" />
+                      </Button>
+                    </div>
 
-                {canCreatePlayer ? (
-                  <Button onClick={handleOpenAdd} className="gap-2 shadow-lg shadow-primary/20 h-10 sm:h-11 px-4 sm:px-6 font-bold uppercase tracking-widest text-[10px] sm:text-xs transition-all active:scale-95 bg-primary">
-                    <UserPlus className="w-4 h-4" />
-                    <span className="hidden sm:inline">Ajouter un Joueur</span>
-                    <span className="sm:hidden">Ajouter</span>
-                  </Button>
-                ) : isScout ? (
-                  <Button
-                    onClick={() => navigate('/recruitment-v2/add-player')}
-                    className="gap-2 shadow-lg shadow-purple-600/20 h-10 sm:h-11 px-4 sm:px-6 font-bold uppercase tracking-widest text-[10px] sm:text-xs transition-all active:scale-95 bg-purple-600 hover:bg-purple-700 text-white cursor-pointer"
-                    title="Enregistrer un talent détecté dans Détection & Recrutement V2"
-                  >
-                    <Sparkles className="w-4 h-4 text-amber-300" />
-                    <span className="hidden sm:inline">Nouveau Talent (Détection V2)</span>
-                    <span className="sm:hidden">Détection V2</span>
-                  </Button>
-                ) : null}
+                    {canCreatePlayer ? (
+                      <Button onClick={handleOpenAdd} className="gap-2 shadow-lg shadow-primary/20 h-10 sm:h-11 px-4 sm:px-6 font-bold uppercase tracking-widest text-[10px] sm:text-xs transition-all active:scale-95 bg-primary">
+                        <UserPlus className="w-4 h-4" />
+                        <span className="hidden sm:inline">Ajouter un Joueur</span>
+                        <span className="sm:hidden">Ajouter</span>
+                      </Button>
+                    ) : isScout ? (
+                      <Button
+                        onClick={() => navigate('/recruitment-v2/add-player')}
+                        className="gap-2 shadow-lg shadow-purple-600/20 h-10 sm:h-11 px-4 sm:px-6 font-bold uppercase tracking-widest text-[10px] sm:text-xs transition-all active:scale-95 bg-purple-600 hover:bg-purple-700 text-white cursor-pointer"
+                        title="Enregistrer un talent détecté dans Détection & Recrutement V2"
+                      >
+                        <Sparkles className="w-4 h-4 text-amber-300" />
+                        <span className="hidden sm:inline">Nouveau Talent (Détection V2)</span>
+                        <span className="sm:hidden">Détection V2</span>
+                      </Button>
+                    ) : null}
+                  </>
+                )}
               </div>
             </div>
 
             {/* Secondary Actions - Scrollable on mobile */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0">
+            {rosterTab === 'active' && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0">
               {/* Bouton mode sélection */}
               <Button
                 variant={selectionMode ? 'default' : 'outline'}
@@ -1565,8 +1726,11 @@ const PlayerManagement: React.FC = () => {
                 </Button>
               )}
             </div>
+            )}
           </div>
 
+          {rosterTab === 'active' && (
+          <>
           {/* Filters Bar */}
           <div className="flex flex-col gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border shadow-sm">
             <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
@@ -1678,7 +1842,7 @@ const PlayerManagement: React.FC = () => {
                                 <Edit2 className="w-4 h-4" />
                               </Button>
                             )}
-                            {canSurclassPlayer && canManageCategory(getPlayerCategory(player)) && (() => {
+                            {canReadSurclass && canManageCategory(getPlayerCategory(player)) && (() => {
                               const activeMob = activeByPlayerId[player.id];
                               return (
                                 <Button
@@ -1698,6 +1862,17 @@ const PlayerManagement: React.FC = () => {
                                 </Button>
                               );
                             })()}
+                            {canCreateDeparture && canManageCategory(getPlayerCategory(player)) && (
+                              <Button
+                                variant="secondary"
+                                size="icon"
+                                onClick={() => handleOpenDepartureModal('create', { player })}
+                                title="Déclarer une sortie / transfert"
+                                className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-amber-600 hover:text-white transition-all"
+                              >
+                                <ArrowRightLeft className="w-4 h-4" />
+                              </Button>
+                            )}
                           </div>
                           {selectionMode ? (
                             canDeletePlayer && canManageCategory(getPlayerCategory(player)) ? (
@@ -1826,9 +2001,11 @@ const PlayerManagement: React.FC = () => {
                               <Button variant="ghost" size="icon" onClick={() => handleViewPlayer(player)} className="h-9 w-9 rounded-xl hover:bg-white hover:shadow-md transition-all" title="Consulter le détail">
                                 <Eye className="w-4 h-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => setCalendarModalPlayer(player)} className="h-9 w-9 rounded-xl hover:bg-blue-50 hover:text-blue-600 hover:shadow-md transition-all" title="Calendrier & Stats Matchs Joueur">
-                                <Calendar className="w-4 h-4 text-blue-600" />
-                              </Button>
+                              {canReadPlayerStats && (
+                                <Button variant="ghost" size="icon" onClick={() => setCalendarModalPlayer(player)} className="h-9 w-9 rounded-xl hover:bg-blue-50 hover:text-blue-600 hover:shadow-md transition-all" title="Calendrier & Stats Matchs Joueur">
+                                  <Calendar className="w-4 h-4 text-blue-600" />
+                                </Button>
+                              )}
                               {!canManageCategory(getPlayerCategory(player)) ? (
                                 <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200 ml-1">
                                   Consultation seule
@@ -1840,7 +2017,7 @@ const PlayerManagement: React.FC = () => {
                                       <Edit2 className="w-4 h-4" />
                                     </Button>
                                   )}
-                                  {canSurclassPlayer && (() => {
+                                  {canReadSurclass && (() => {
                                     const activeMob = activeByPlayerId[player.id];
                                     return (
                                       <Button
@@ -1860,6 +2037,17 @@ const PlayerManagement: React.FC = () => {
                                       </Button>
                                     );
                                   })()}
+                                  {canCreateDeparture && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleOpenDepartureModal('create', { player })}
+                                      title="Déclarer une sortie / transfert"
+                                      className="h-9 w-9 rounded-xl text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-all"
+                                    >
+                                      <ArrowRightLeft className="w-4 h-4" />
+                                    </Button>
+                                  )}
                                   {canDeletePlayer && (
                                     <Button variant="ghost" size="icon" onClick={() => setPlayerToDelete(player)} title="Supprimer définitivement" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-all">
                                       <Trash2 className="w-4 h-4 text-rose-600" />
@@ -1899,6 +2087,167 @@ const PlayerManagement: React.FC = () => {
               </div>
             </div>
           )}
+            </>
+            )}
+
+            {rosterTab === 'departures' && canReadDeparture && (
+              <div className="space-y-4">
+                {/* Barre de recherche du registre des sorties */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-card border shadow-sm">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Rechercher un joueur, un club de destination ou un type de sortie..."
+                      value={departureSearch}
+                      onChange={e => setDepartureSearch(e.target.value)}
+                      className="pl-10 h-10 bg-secondary/30 border-transparent focus:bg-background rounded-xl text-sm"
+                    />
+                  </div>
+                </div>
+
+                {departuresLoading ? (
+                  <div className="p-10 text-center rounded-2xl bg-card border text-sm text-muted-foreground">
+                    Chargement des sorties et transferts…
+                  </div>
+                ) : filteredDepartures.length === 0 ? (
+                  <div className="p-10 text-center rounded-2xl bg-card border border-dashed space-y-2">
+                    <ArrowRightLeft className="w-8 h-8 text-amber-500 mx-auto" />
+                    <p className="text-sm font-bold text-foreground">
+                      Aucune sortie ou transfert enregistré
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Les transferts, prêts, fins de contrat et libérations apparaîtront ici.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-card border rounded-2xl overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                            <th className="py-3 px-4">Joueur</th>
+                            <th className="py-3 px-4">Type</th>
+                            <th className="py-3 px-4">Destination</th>
+                            <th className="py-3 px-4">Date</th>
+                            <th className="py-3 px-4">Indemnité</th>
+                            <th className="py-3 px-4">Statut</th>
+                            <th className="py-3 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60">
+                          {filteredDepartures.map(dep => {
+                            const typeMeta = DEPARTURE_TYPE_META[dep.departure_type];
+                            const statusMeta = DEPARTURE_STATUS_META[dep.status];
+                            const depCat = (dep.team_id && teams.find(t => t.id === dep.team_id)?.category) || 'SENIOR';
+                            const canManageDepCat = canManageCategory(depCat);
+
+                            return (
+                              <tr key={dep.id} className="hover:bg-muted/20 transition-colors">
+                                <td className="py-2.5 px-4">
+                                  <div className="flex items-center gap-2.5">
+                                    {dep.player?.photo_url ? (
+                                      <img
+                                        src={dep.player.photo_url}
+                                        alt={dep.player.full_name}
+                                        className="w-8 h-8 rounded-full object-cover border"
+                                      />
+                                    ) : (
+                                      <div className="w-8 h-8 rounded-full bg-amber-500/15 text-amber-600 flex items-center justify-center text-xs font-black">
+                                        {(dep.player?.full_name || 'J')[0]}
+                                      </div>
+                                    )}
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-foreground truncate">
+                                        {dep.player?.full_name || 'Joueur'}
+                                      </p>
+                                      <p className="text-[10px] text-muted-foreground truncate">
+                                        {depCat} · {dep.player?.position || 'Poste N/A'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeMeta?.badgeClass || ''}`}>
+                                    {typeMeta?.label || dep.departure_type}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-4 text-xs font-medium text-foreground">
+                                  <span className="inline-flex items-center gap-1">
+                                    <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                                    {dep.destination_club || '—'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-4 text-xs text-muted-foreground font-mono">
+                                  {dep.departure_date}
+                                </td>
+                                <td className="py-2.5 px-4 text-xs font-bold text-foreground">
+                                  {dep.transfer_fee !== null && dep.transfer_fee !== undefined ? (
+                                    <span className="inline-flex items-center gap-1">
+                                      <Coins className="w-3.5 h-3.5 text-amber-500" />
+                                      {dep.transfer_fee.toLocaleString('fr-FR')} {dep.currency}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusMeta?.badgeClass || ''}`}>
+                                    {statusMeta?.label || dep.status}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-4 text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleOpenDepartureModal('view', { departure: dep })}
+                                      title="Consulter le dossier"
+                                      className="h-8 w-8 rounded-lg"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </Button>
+                                    {canUpdateDeparture && canManageDepCat && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleOpenDepartureModal('edit', { departure: dep })}
+                                        title="Modifier le dossier"
+                                        className="h-8 w-8 rounded-lg hover:text-amber-600"
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    )}
+                                    {canDeleteDeparture && canManageDepCat && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={async () => {
+                                          try {
+                                            await playerDepartureService.deleteDeparture(dep.id, dep.player_id, true);
+                                            await refreshDepartures();
+                                            toast.success('Sortie supprimée et joueur réintégré dans l’effectif actif.');
+                                          } catch (err: any) {
+                                            toast.error(err?.message || 'Erreur lors de la suppression.');
+                                          }
+                                        }}
+                                        title="Supprimer & réintégrer dans l'effectif actif"
+                                        className="h-8 w-8 rounded-lg text-rose-500 hover:bg-rose-500/10"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
         </div>
       ) : viewState === 'FORM' ? (
         <div
@@ -2496,7 +2845,27 @@ const PlayerManagement: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-auto">
+                <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                  {canReadSurclass && canManageCategory(getPlayerCategory(selectedPlayer)) && (
+                    <Button
+                      variant="outline"
+                      onClick={() => handleOpenSurclassement(selectedPlayer)}
+                      className="h-11 px-3.5 rounded-2xl border-orange-300 text-orange-600 hover:bg-orange-50 text-xs font-black uppercase tracking-wider gap-1.5"
+                    >
+                      <ArrowUpCircle className="w-4 h-4" />
+                      <span className="hidden md:inline">Surclasser</span>
+                    </Button>
+                  )}
+                  {canCreateDeparture && canManageCategory(getPlayerCategory(selectedPlayer)) && (
+                    <Button
+                      variant="outline"
+                      onClick={() => handleOpenDepartureModal('create', { player: selectedPlayer })}
+                      className="h-11 px-3.5 rounded-2xl border-amber-300 text-amber-700 hover:bg-amber-50 text-xs font-black uppercase tracking-wider gap-1.5"
+                    >
+                      <ArrowRightLeft className="w-4 h-4" />
+                      <span className="hidden md:inline">Sortie</span>
+                    </Button>
+                  )}
                   {canUpdatePlayer && canManageCategory(getPlayerCategory(selectedPlayer)) && (
                     <Button
                       onClick={() => handleOpenEdit(selectedPlayer)}
@@ -2511,6 +2880,7 @@ const PlayerManagement: React.FC = () => {
               </div>
 
               {/* ── 2. Top Stats Bar (Ruban BeSoccer Exact) ── */}
+              {canReadPlayerStats && (
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-white p-3.5 rounded-3xl border border-secondary/70 shadow-sm">
                 {/* Matchs */}
                 <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
@@ -2589,9 +2959,10 @@ const PlayerManagement: React.FC = () => {
                   </div>
                 </div>
               </div>
+              )}
 
               {/* ── 3. RANGÉE 1 (3 BLOCS SUR 3) ── */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+              <div className={`grid grid-cols-1 ${canReadPlayerStats ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-5 items-stretch`}>
                 {/* BLOC 1/3 (Gauche) : Identité Joueur */}
                 <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
                   {(() => {
@@ -2720,6 +3091,7 @@ const PlayerManagement: React.FC = () => {
                 </div>
 
                 {/* BLOC 2/3 (Centre) : Dernier Match réellement disputé par ce joueur */}
+                {canReadPlayerStats && (
                 <div
                   role={lastMatchData?.id ? 'button' : undefined}
                   tabIndex={lastMatchData?.id ? 0 : undefined}
@@ -2890,6 +3262,7 @@ const PlayerManagement: React.FC = () => {
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* BLOC 3/3 (Droite) : FUSTV / Média Vidéo Joueur (Image 5 BeSoccer) */}
                 <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 relative overflow-hidden flex flex-col items-center justify-between text-center min-h-[300px]">
@@ -2973,7 +3346,7 @@ const PlayerManagement: React.FC = () => {
               </div>
 
               {/* ── 4. RANGÉE 2 (3 BLOCS SUR 3) ── */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+              <div className={`grid grid-cols-1 ${canReadPlayerStats ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-5 items-stretch`}>
                 {/* BLOC 1/3 (Gauche) : Données Personnelles (Tableau BeSoccer, Sauf Info Carrière) */}
                 <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
                   <div>
@@ -3055,6 +3428,7 @@ const PlayerManagement: React.FC = () => {
                 </div>
 
                 {/* BLOC 2/3 (Centre) : Forme Lors des Derniers Matchs (Image 4 BeSoccer) */}
+                {canReadPlayerStats && (
                 <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
                   <div>
                     {/* En-tête avec barre verte/rouge BeSoccer */}
@@ -3196,6 +3570,7 @@ const PlayerManagement: React.FC = () => {
                     <span className="text-slate-500 font-bold">{recentFormMatches.length} disputés</span>
                   </div>
                 </div>
+                )}
 
                 {/* BLOC 3/3 (Droite) : Position sur le Terrain (Mini-Terrain Vert Tactique BeSoccer) */}
                 <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
@@ -3317,6 +3692,7 @@ const PlayerManagement: React.FC = () => {
               </div>
 
               {/* ── 3B. RÉSUMÉ DES 4 PILIERS DE PERFORMANCE ── */}
+              {canReadPlayerStats && (
               <PlayerFourPillarsSummaryBlock
                 player={selectedPlayer}
                 rawPlayerMatches={rawPlayerMatches}
@@ -3324,29 +3700,37 @@ const PlayerManagement: React.FC = () => {
                 mainClub={mainClub}
                 onNavigateToEvaluation={() => navigate('/player-performance')}
               />
+              )}
 
               {/* ── 4. COURBE D'ÉVOLUTION DES MENTIONS (SHORTLIST OFFICIELLE) ── */}
+              {canReadPlayerStats && (
               <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 space-y-4">
-                {canUpdatePlayer && !isScout && (
+                {!isScout && (canCreatePlayerStats || canUpdatePlayerStats || canDeletePlayerStats) && (
                   <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-800">
                       <Award className="w-4 h-4 text-emerald-600" />
                       <span>Gestion des Mentions Datées ({selectedPlayerMentions.length})</span>
                     </div>
                     {!showMentionEditor ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingMentionEntry(null);
-                          setMentionFormDate(new Date().toISOString().slice(0, 10));
-                          setMentionFormComment('');
-                          setShowMentionEditor(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-black cursor-pointer"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>Ajouter / Mettre à jour une mention</span>
-                      </button>
+                      canCreatePlayerStats ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingMentionEntry(null);
+                            setMentionFormDate(new Date().toISOString().slice(0, 10));
+                            setMentionFormComment('');
+                            setShowMentionEditor(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-black cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Ajouter une mention</span>
+                        </button>
+                      ) : canUpdatePlayerStats ? (
+                        <span className="text-[11px] font-medium text-slate-500">
+                          Cliquez sur un point de la courbe pour le modifier
+                        </span>
+                      ) : null
                     ) : (
                       <button
                         type="button"
@@ -3363,7 +3747,7 @@ const PlayerManagement: React.FC = () => {
                   </div>
                 )}
 
-                {showMentionEditor && canUpdatePlayer && !isScout && (
+                {showMentionEditor && !isScout && ((editingMentionEntry && canUpdatePlayerStats) || (!editingMentionEntry && canCreatePlayerStats)) && (
                   <form
                     onSubmit={handleSavePlayerMention}
                     className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3"
@@ -3374,7 +3758,7 @@ const PlayerManagement: React.FC = () => {
                           ? `Modifier la mention du ${normalizeMentionDate(editingMentionEntry.mention_date)}`
                           : 'Nouvelle mention datée'}
                       </span>
-                      {editingMentionEntry && (
+                      {editingMentionEntry && canDeletePlayerStats && (
                         <button
                           type="button"
                           onClick={() =>
@@ -3455,10 +3839,11 @@ const PlayerManagement: React.FC = () => {
                   emptyMessage={`Aucune mention enregistrée pour ${selectedPlayer.full_name}. Ajoutez une mention ci-dessus ou depuis la Shortlist Officielle pour tracer sa progression.`}
                   selectedEntryId={editingMentionEntry?.id || null}
                   selectedMentionDate={showMentionEditor ? normalizeMentionDate(mentionFormDate) : null}
-                  onSelectEntry={canUpdatePlayer && !isScout ? handleSelectPlayerMentionPoint : undefined}
-                  onDeleteEntry={canUpdatePlayer && !isScout ? handleDeletePlayerMentionPoint : undefined}
+                  onSelectEntry={!isScout && canUpdatePlayerStats ? handleSelectPlayerMentionPoint : undefined}
+                  onDeleteEntry={!isScout && canDeletePlayerStats ? handleDeletePlayerMentionPoint : undefined}
                 />
               </div>
+              )}
 
               {/* ── 5. RANGÉE 3 : POSITION DE L'ÉQUIPE DANS LA COMPÉTITION (CLASSEMENT CATÉGORIE & SURCLASSEMENT) ── */}
               <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 space-y-5">
@@ -3869,19 +4254,45 @@ const PlayerManagement: React.FC = () => {
             isSurclassing={isSurclassing}
             revertSurclassement={revertSurclassement}
             isReverting={isReverting}
+            canCreate={canCreateSurclass}
+            canUpdate={canUpdateSurclass}
+            canDelete={canDeleteSurclass}
             onClose={handleCloseSurclassement}
           />
         )}
       </AnimatePresence>
 
       {/* Dedicated Player Match Calendar Modal */}
-      {calendarModalPlayer && (
+      {calendarModalPlayer && canReadPlayerStats && (
         <PlayerMatchCalendarModal
           isOpen={!!calendarModalPlayer}
           onClose={() => setCalendarModalPlayer(null)}
           initialPlayer={calendarModalPlayer}
         />
       )}
+
+      {/* Sortie / Transfert Modal */}
+      <PlayerDepartureModal
+        isOpen={departureModalState.isOpen}
+        onClose={() =>
+          setDepartureModalState(prev => ({
+            ...prev,
+            isOpen: false,
+            departure: null,
+            preselectedPlayer: null,
+          }))
+        }
+        mode={departureModalState.mode}
+        initialDeparture={departureModalState.departure}
+        preselectedPlayer={departureModalState.preselectedPlayer}
+        players={allClubPlayersForDeparture.length > 0 ? allClubPlayersForDeparture : players}
+        teamNamesById={teamNamesById}
+        canCreate={canCreateDeparture}
+        canUpdate={canUpdateDeparture}
+        canDelete={canDeleteDeparture}
+        onSaved={refreshDepartures}
+        onDeleted={refreshDepartures}
+      />
 
       {/* ── Modal Gestion Lien Vidéo / Google Drive ── */}
       <AnimatePresence>
@@ -4187,6 +4598,9 @@ interface WrapperProps {
   isSurclassing: boolean;
   revertSurclassement: (id: string) => Promise<void>;
   isReverting: boolean;
+  canCreate?: boolean;
+  canUpdate?: boolean;
+  canDelete?: boolean;
   onClose: () => void;
 }
 
@@ -4194,6 +4608,9 @@ function SurclassementModalWrapper({
   player, teams, activeByPlayerId,
   createSurclassement, isSurclassing,
   revertSurclassement, isReverting,
+  canCreate = true,
+  canUpdate = true,
+  canDelete = true,
   onClose,
 }: WrapperProps) {
   const { canManageCategory } = usePermissions();
@@ -4245,6 +4662,9 @@ function SurclassementModalWrapper({
       historyLoading={historyLoading}
       isCreating={isSurclassing}
       isReverting={isReverting}
+      canCreate={canCreate}
+      canUpdate={canUpdate}
+      canDelete={canDelete}
       onConfirmSurclasser={handleConfirmSurclasser}
       onConfirmRevert={handleConfirmRevert}
       onClose={onClose}

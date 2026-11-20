@@ -126,16 +126,17 @@ CREATE TABLE IF NOT EXISTS public.frmf_matches (
   CONSTRAINT chk_frmf_diff_teams CHECK (UPPER(TRIM(home_team)) <> UPPER(TRIM(away_team))),
   CONSTRAINT uq_frmf_match_slot UNIQUE (season, category, league_group, match_day, home_team, away_team)
 );
-GRANT ALL ON TABLE public.frmf_matches TO anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.frmf_matches TO anon;
+GRANT ALL ON TABLE public.frmf_matches TO authenticated, service_role;
 ALTER TABLE public.frmf_matches ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow read frmf_matches" ON public.frmf_matches;
 CREATE POLICY "Allow read frmf_matches" ON public.frmf_matches FOR SELECT TO authenticated, anon USING (true);
 DROP POLICY IF EXISTS "Allow insert frmf_matches" ON public.frmf_matches;
-CREATE POLICY "Allow insert frmf_matches" ON public.frmf_matches FOR INSERT TO authenticated, anon WITH CHECK (true);
+CREATE POLICY "Allow insert frmf_matches" ON public.frmf_matches FOR INSERT TO authenticated WITH CHECK (auth.uid() IS NOT NULL);
 DROP POLICY IF EXISTS "Allow update frmf_matches" ON public.frmf_matches;
-CREATE POLICY "Allow update frmf_matches" ON public.frmf_matches FOR UPDATE TO authenticated, anon USING (true) WITH CHECK (true);
+CREATE POLICY "Allow update frmf_matches" ON public.frmf_matches FOR UPDATE TO authenticated USING (auth.uid() IS NOT NULL) WITH CHECK (auth.uid() IS NOT NULL);
 DROP POLICY IF EXISTS "Allow delete frmf_matches" ON public.frmf_matches;
-CREATE POLICY "Allow delete frmf_matches" ON public.frmf_matches FOR DELETE TO authenticated, anon USING (true);`;
+CREATE POLICY "Allow delete frmf_matches" ON public.frmf_matches FOR DELETE TO authenticated USING (auth.uid() IS NOT NULL);`;
 
 function cloneDataset(ds: FRMFDataset): FRMFDataset {
   return JSON.parse(JSON.stringify(ds)) as FRMFDataset;

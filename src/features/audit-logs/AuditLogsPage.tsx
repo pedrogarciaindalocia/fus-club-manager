@@ -415,8 +415,14 @@ export const AuditLogsPage: React.FC = () => {
     if (t.includes('entraîneur') || t.includes('coach')) {
       return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30';
     }
-    if (t.includes('préparateur') || t.includes('physique')) {
+    if (t.includes('préparateur') || t.includes('preparateur') || t.includes('physique')) {
       return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30';
+    }
+    if (t.includes('matériel') || t.includes('materiel') || t.includes('magasinier') || t.includes('magazinier')) {
+      return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30';
+    }
+    if (t.includes('responsable vie') || t.includes('vie')) {
+      return 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/30';
     }
     if (t.includes('médical') || t.includes('médecin') || t.includes('kiné')) {
       return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30';

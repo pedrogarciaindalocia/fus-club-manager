@@ -19,7 +19,13 @@ import { AuditLogger } from '../services/auditLogger';
 import UserProfileModal from './UserProfileModal';
 import { ticketService } from '../features/ticket-management/ticketService';
 
-import { isScoutBranch } from '../constants/roles';
+import {
+  isCoachJob,
+  isDirecteurAdministratifJob,
+  isResponsableMagasinierJob,
+  isResponsableVieJob,
+  isScoutBranch,
+} from '../constants/roles';
 
 function isItemAllowedInMirror(path: string, subId?: string, role: string = '', jobTitle: string = ''): boolean {
   const normRole = role.toLowerCase();
@@ -35,9 +41,20 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
   }
 
   const isScout = isScoutBranch(normRole, normJob);
-  const isCoach = normRole === 'coach' || normJob.includes('coach') || normJob.includes('entr');
+  const isResponsableVie = isResponsableVieJob(jobTitle);
+  const isDirecteurAdministratif = isDirecteurAdministratifJob(jobTitle);
+  const isResponsableMagasinier = isResponsableMagasinierJob(jobTitle);
+  const isCoach = isCoachJob(jobTitle, normRole);
   const isAnalyst = normJob.includes('analyst') || normRole.includes('analyst') || normJob.includes('vidéo') || normJob.includes('video') || normJob.includes('data');
   const isStaff = normRole === 'staff';
+
+  if (isResponsableVie || isDirecteurAdministratif) {
+    return path.startsWith('/recruitment-v2') && subId === 'candidates';
+  }
+
+  if (isResponsableMagasinier) {
+    return path.startsWith('/recruitment-v2') && subId === 'sessions';
+  }
 
   // Branche Analyse Vidéo & Data
   if (isAnalyst) {
@@ -69,7 +86,8 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
     if (path.startsWith('/trainings')) return true;
     if (path.startsWith('/matches') || path === '/matchday') return true;
     if (path === '/official-shortlist' || path === '/championship-performances' || path === '/player-performance' || path === '/performance-metrics' || path.startsWith('/classement-resultats')) return true;
-    if (path === '/players' || path === '/teams' || path === '/opponents') return true;
+    if (path.startsWith('/players') || path === '/teams' || path === '/opponents') return true;
+    if (path.startsWith('/recruitment-v2') && subId === 'sessions') return true;
     if (path === '/arbitres' || path === '/leagues' || path === '/stadiums') return true;
     if (path === '/media') return true;
     if (path === '/' || path === '/dashboard') return true;
@@ -214,7 +232,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (!subId) return false;
     if (mirrorPermissions !== null) {
       const clean = mirrorPermissions.filter(p => p && p !== 'no_permissions');
-      if (clean.includes(`sub:${subId}:read`)) return true;
+      if (clean.includes(`sub:${subId}:read`) || clean.some(p => p.startsWith(`sub:${subId}:`))) return true;
       return false;
     }
     return isItemAllowedInMirror(path || '', subId, effectiveRole, effectiveJob);

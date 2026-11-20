@@ -22,6 +22,10 @@ interface MissionsManagementViewProps {
   isScoutAdmin: boolean;
   isSuperAdmin?: boolean;
   isScoutManager?: boolean;
+  canCreateMission?: boolean;
+  canUpdateMission?: boolean;
+  canDeleteMission?: boolean;
+  canCreateReport?: boolean;
   onAcknowledgeMission: (candidateId: string, missionId: string) => Promise<void>;
   onOpenCandidate: (candidate: TrialCandidate) => void;
   onNavigateToReport: (candidateId: string) => void;
@@ -53,6 +57,10 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
   isScoutAdmin,
   isSuperAdmin = false,
   isScoutManager = false,
+  canCreateMission,
+  canUpdateMission,
+  canDeleteMission,
+  canCreateReport = true,
   onAcknowledgeMission,
   onOpenCandidate,
   onNavigateToReport,
@@ -68,6 +76,9 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
     (currentUser?.email && currentUser.email.toLowerCase().includes('admin'))
   );
   const hasAdminSupervision = isAdmin || isScoutAdmin || isSuperAdminUser || isSuperAdmin;
+  const canCreateOrAssignMission = (canCreateMission ?? hasAdminSupervision) && Boolean(onAssignMission);
+  const canModifyOrReassignMission = (canUpdateMission ?? hasAdminSupervision) && Boolean(onAssignMission);
+  const canDeleteOrUnassignMission = (canDeleteMission ?? hasAdminSupervision) && Boolean(onUnassignMission);
   const isSuperAdminOrAdmin = Boolean(isSuperAdmin || isAdmin || isScoutAdmin || isSuperAdminUser);
 
   // Filtres
@@ -481,8 +492,8 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
             </div>
           )}
 
-          {/* ACTION ASSIGNER MISSION : RÉSERVÉE EXCLUSIVEMENT AUX SCOUT ADMINS */}
-          {hasAdminSupervision && (
+          {/* ACTION ASSIGNER MISSION */}
+          {canCreateOrAssignMission && (
             <button
               type="button"
               onClick={() => {
@@ -690,8 +701,8 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
         </div>
       </div>
 
-      {/* SECTION DU PANIER DE DÉTECTION (REMPLACE OU SURPLOMBE LE BLOC D'ASSIGNATION CHEZ LE SCOUT ADMIN ET SUPER ADMIN) */}
-      {hasAdminSupervision && (
+      {/* SECTION DU PANIER DE DÉTECTION */}
+      {(canCreateOrAssignMission || canModifyOrReassignMission) && (
         <ScoutingBasketSection
           scouts={scouts}
           isAdmin={isAdmin}
@@ -902,8 +913,8 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
 
                     {/* Profil Joueur, Rapport & Assigner */}
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      {hasAdminSupervision && (
-                        mission.isActive ? (
+                      {mission.isActive ? (
+                        canDeleteOrUnassignMission && (
                           <button
                             type="button"
                             onClick={() => setMissionToUnassign(mission)}
@@ -913,21 +924,21 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
                             <UserMinus className="w-3.5 h-3.5 text-amber-700" />
                             <span>Retirer du scout</span>
                           </button>
-                        ) : !cand.active_mission ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedCandidateForAssign(cand);
-                              setIsAssignModalOpen(true);
-                            }}
-                            className="px-3 py-1.5 rounded-xl border border-purple-200 bg-purple-50/80 hover:bg-purple-100 text-purple-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                            title="Assigner ou confier une nouvelle mission pour ce joueur libre"
-                          >
-                            <Target className="w-3.5 h-3.5 text-purple-600" />
-                            <span>Assigner</span>
-                          </button>
-                        ) : null
-                      )}
+                        )
+                      ) : !cand.active_mission && canCreateOrAssignMission ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCandidateForAssign(cand);
+                            setIsAssignModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 rounded-xl border border-purple-200 bg-purple-50/80 hover:bg-purple-100 text-purple-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                          title="Assigner ou confier une nouvelle mission pour ce joueur libre"
+                        >
+                          <Target className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Assigner</span>
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => onOpenCandidate(cand)}
@@ -937,15 +948,17 @@ export const MissionsManagementView: React.FC<MissionsManagementViewProps> = ({
                         <Eye className="w-3.5 h-3.5 text-purple-600" />
                         <span>Profil Joueur</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onNavigateToReport(cand.id)}
-                        className="px-3 py-1.5 rounded-xl border border-purple-200 bg-purple-50/60 hover:bg-purple-100 text-purple-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                        title="Rédiger un rapport d'observation pour ce joueur"
-                      >
-                        <FileText className="w-3.5 h-3.5 text-purple-600" />
-                        <span>Rapport</span>
-                      </button>
+                      {canCreateReport && (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateToReport(cand.id)}
+                          className="px-3 py-1.5 rounded-xl border border-purple-200 bg-purple-50/60 hover:bg-purple-100 text-purple-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                          title="Rédiger un rapport d'observation pour ce joueur"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Rapport</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

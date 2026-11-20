@@ -17,7 +17,7 @@ const AddReportPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { authState, hasSubModuleAccess, canManageCategory } = usePermissions();
+  const { authState, hasSpecificActionAccess, canManageCategory } = usePermissions();
   const returnTab = searchParams.get('returnTab') || 'candidates';
   const candidateIdFromUrl = searchParams.get('candidateId') || (location.state as any)?.candidateId;
   const editReportId = searchParams.get('editReportId') || (location.state as any)?.editReportId;
@@ -54,13 +54,18 @@ const AddReportPage: React.FC = () => {
   const isRecruitmentAdmin = Boolean(isSuperAdmin || (isScoutAdmin && !isScoutManager));
   const isAdmin = isSuperAdmin || isScoutAdmin || (!hasExplicitPerms && userRoles.includes('admin'));
 
-  // Permission spécifique de gestion de rapport : strictement contrôlée par la case cochée (sauf Super Admin)
-  const canManageReports = Boolean(
+  // Permission spécifique de gestion de rapport (Create vs Update selon editReportId)
+  const canCreateReports = Boolean(
     isSuperAdmin ||
     (!hasExplicitPerms && (isAdmin || isScoutManager)) ||
-    hasSubModuleAccess('candidates', 'manage_reports') ||
-    hasSubModuleAccess('candidates', 'reports')
+    hasSpecificActionAccess('candidates', 'manage_reports', 'create')
   );
+  const canUpdateReports = Boolean(
+    isSuperAdmin ||
+    (!hasExplicitPerms && (isAdmin || isScoutManager)) ||
+    hasSpecificActionAccess('candidates', 'manage_reports', 'update')
+  );
+  const canManageReports = editReportId ? canUpdateReports : canCreateReports;
 
   const currentScout = scouts.find((s) => {
     if (authState?.user?.id && s.id === authState.user.id) return true;

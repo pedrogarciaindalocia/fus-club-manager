@@ -70,6 +70,9 @@ interface Props {
   historyLoading: boolean;
   isCreating: boolean;
   isReverting: boolean;
+  canCreate?: boolean;
+  canUpdate?: boolean;
+  canDelete?: boolean;
   onConfirmSurclasser: (targetTeamId: string, notes: string, targetJerseyNumber: number | null) => void;
   onConfirmRevert: (surclassementId: string) => void;
   onClose: () => void;
@@ -83,8 +86,13 @@ export default function SurclassementModal({
   originalTeam,
   history,
   historyLoading,
+  canCreate = true,
+  canUpdate = true,
+  canDelete = true,
   onClose,
 }: Props) {
+  const canEditFields = canCreate || canUpdate;
+  const canMutateBatch = canCreate || canUpdate || canDelete;
   const queryClient = useQueryClient();
 
   // Équipe et catégorie réelles d'origine
@@ -185,7 +193,27 @@ export default function SurclassementModal({
     return () => { isMounted = false; };
   }, [player.id, currentCategory]);
 
+  const canToggleMatch = (matchObj: any, currentlySelected: boolean) => {
+    const wasAssigned = !!matchObj?.lineup?.surclasses?.[player.id];
+    if (currentlySelected) {
+      // Décocher un match déjà assigné en base équivaut à une suppression d'affectation
+      return wasAssigned ? canDelete : canCreate;
+    }
+    return wasAssigned ? (canDelete || canUpdate) : canCreate;
+  };
+
   const toggleMatchSelection = (matchId: string) => {
+    const targetMatch = matches.find(m => m.id === matchId);
+    const currentlySelected = selectedMatchIds.has(matchId);
+    if (!canToggleMatch(targetMatch, currentlySelected)) {
+      toast.error(
+        currentlySelected
+          ? "Permission Delete requise pour retirer un surclassement existant."
+          : "Permission Create requise pour affecter un nouveau surclassement."
+      );
+      return;
+    }
+
     setSelectedMatchIds(prev => {
       const next = new Set(prev);
       if (next.has(matchId)) next.delete(matchId);
@@ -195,15 +223,29 @@ export default function SurclassementModal({
   };
 
   const handleSelectAll = () => {
+    if (!canMutateBatch) return;
     if (selectedMatchIds.size === matches.length) {
-      setSelectedMatchIds(new Set());
+      setSelectedMatchIds(prev => {
+        const next = new Set(prev);
+        matches.forEach(m => {
+          if (canToggleMatch(m, prev.has(m.id))) next.delete(m.id);
+        });
+        return next;
+      });
     } else {
-      setSelectedMatchIds(new Set(matches.map(m => m.id)));
+      setSelectedMatchIds(prev => {
+        const next = new Set(prev);
+        matches.forEach(m => {
+          if (!prev.has(m.id) && canToggleMatch(m, false)) next.add(m.id);
+        });
+        return next;
+      });
     }
   };
 
   // ── Sauvegarde du surclassement sur les matchs sélectionnés ──
   const handleSaveSurclassementBatch = async () => {
+    if (!canMutateBatch) return;
     const hasCurrentAssignments = matches.some(m => !!m.lineup?.surclasses?.[player.id]);
     if (selectedMatchIds.size === 0 && !hasCurrentAssignments) {
       toast.error('Sélectionnez au moins un match.');
@@ -359,7 +401,7 @@ export default function SurclassementModal({
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                       Matchs cibles éligibles ({matches.length})
                     </span>
-                    {matches.length > 0 && (
+                    {matches.length > 0 && canMutateBatch && (
                       <button
                         type="button"
                         onClick={handleSelectAll}
@@ -397,6 +439,7 @@ export default function SurclassementModal({
                       {matches.map(m => {
                         const isSelected = selectedMatchIds.has(m.id);
                         const wasAssigned = !!m.lineup?.surclasses?.[player.id];
+                        const isToggleAllowed = canToggleMatch(m, isSelected);
                         const oppName = m.opponent?.name || 'Adversaire';
                         const oppLogo = m.opponent?.logo_url;
                         const clubLogo = m.club?.logo_url || '/fus-logo.png';
@@ -405,7 +448,9 @@ export default function SurclassementModal({
                           <div
                             key={m.id}
                             onClick={() => toggleMatchSelection(m.id)}
-                            className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 ${
+                            className={`p-3.5 rounded-2xl border-2 transition-all flex items-center gap-3.5 ${
+                              isToggleAllowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-75'
+                            } ${
                               isSelected
                                 ? 'border-orange-500 bg-orange-50/60 shadow-sm'
                                 : 'border-slate-200 hover:border-slate-300 bg-white'
@@ -474,9 +519,10 @@ export default function SurclassementModal({
                         min={1}
                         max={99}
                         value={targetJerseyNumber}
+                        disabled={!canEditFields}
                         onChange={e => setTargetJerseyNumber(e.target.value)}
                         placeholder={`Actuel: #${player.jersey_number ?? '—'}`}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-black text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-black text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all disabled:opacity-60 disabled:bg-slate-50"
                       />
                       <p className="text-[10px] text-muted-foreground">
                         Laisser vide pour conserver le numéro #{player.jersey_number ?? '—'}
@@ -491,16 +537,17 @@ export default function SurclassementModal({
                       <input
                         type="text"
                         value={notes}
+                        disabled={!canEditFields}
                         onChange={e => setNotes(e.target.value)}
                         placeholder="Ex : Potentiel remarquable, renfort match clé…"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all disabled:opacity-60 disabled:bg-slate-50"
                       />
                     </div>
                   </div>
                 )}
 
                 {/* Bouton d'action principal */}
-                {matches.length > 0 && (
+                {matches.length > 0 && canMutateBatch ? (
                   <Button
                     onClick={handleSaveSurclassementBatch}
                     disabled={(selectedMatchIds.size === 0 && !matches.some(m => !!m.lineup?.surclasses?.[player.id])) || savingBatch}
@@ -518,7 +565,11 @@ export default function SurclassementModal({
                       </>
                     )}
                   </Button>
-                )}
+                ) : matches.length > 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs font-semibold text-slate-600">
+                    Consultation uniquement (permission Spécifique Surclasser — Read).
+                  </div>
+                ) : null}
               </motion.div>
             ) : (
               /* ── Onglet Historique ── */

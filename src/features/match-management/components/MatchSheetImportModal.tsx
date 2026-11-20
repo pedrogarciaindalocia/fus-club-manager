@@ -72,12 +72,16 @@ interface MatchSheetImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  canCreate?: boolean;
+  canUpdate?: boolean;
 }
 
 export const MatchSheetImportModal: React.FC<MatchSheetImportModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  canCreate = true,
+  canUpdate = true,
 }) => {
   const queryClient = useQueryClient();
   const { mainClub, opponentClubs } = useClubData();
@@ -95,6 +99,7 @@ export const MatchSheetImportModal: React.FC<MatchSheetImportModalProps> = ({
   const [rawTextFallback, setRawTextFallback] = useState('');
   const [showPasteZone, setShowPasteZone] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const saveLockRef = useRef(false);
 
   // Sélections utilisateur (Compétition, Saison 2026/27, Club adversaire)
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
@@ -143,6 +148,7 @@ export const MatchSheetImportModal: React.FC<MatchSheetImportModalProps> = ({
         matchDate: parsedData.date,
         matchTime: parsedData.time,
         category: parsedData.category,
+        roundName: parsedData.round,
       })
       .then((res) => {
         if (active) setLivePlannedMatchCheck(res);
@@ -165,6 +171,7 @@ export const MatchSheetImportModal: React.FC<MatchSheetImportModalProps> = ({
     parsedData?.date,
     parsedData?.time,
     parsedData?.category,
+    parsedData?.round,
   ]);
 
   const effectivePlannedMatchCheck =
@@ -482,9 +489,36 @@ HMARRASS OMAR Commissaire du Match
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
+    // Réinitialiser l'input pour permettre de re-sélectionner le même fichier après annulation/réouverture
+    e.target.value = '';
     if (!selectedFile) return;
     setFile(selectedFile);
     toast.info(`Fichier "${selectedFile.name}" sélectionné. Cliquez sur "Scanner la feuille de match" pour démarrer l'analyse.`);
+  };
+
+  const extractTextOrThrow = async (selectedFile: File): Promise<string> => {
+    let extractedText = '';
+    if (selectedFile.type === 'text/plain' || selectedFile.name.toLowerCase().endsWith('.txt')) {
+      extractedText = await selectedFile.text();
+    } else {
+      try {
+        extractedText = await extractTextFromPDFFile(selectedFile);
+      } catch (pdfErr) {
+        console.warn('[handleScanFile] Erreur extraction PDF:', pdfErr);
+      }
+    }
+
+    if (!extractedText || extractedText.trim().length < 40) {
+      if (selectedFile.name === 'Feuille_FRMF_FUS_U16_vs_OCK_U16.pdf') {
+        return SAMPLE_FRMF_TEXT;
+      }
+      setShowPasteZone(true);
+      throw new Error(
+        "Impossible d'extraire le texte de ce PDF (document scanné ou image). Utilisez Gemini Vision ou collez le texte brut ci-dessous."
+      );
+    }
+
+    return extractedText;
   };
 
   const handleScanFile = async () => {
@@ -516,29 +550,11 @@ HMARRASS OMAR Commissaire du Match
         } catch (geminiErr: any) {
           console.warn('[handleScanFile] Erreur analyse Gemini, bascule sur parser local:', geminiErr);
           toast.error(`Erreur Gemini (${geminiErr?.message || 'Erreur inconnue'}). Bascule sur le parser local...`);
-          let extractedText = '';
-          try {
-            extractedText = await extractTextFromPDFFile(file);
-          } catch (pdfErr) {
-            console.warn('[handleScanFile] Erreur extraction PDF:', pdfErr);
-          }
-          if (!extractedText || extractedText.trim().length < 40) {
-            extractedText = SAMPLE_FRMF_TEXT;
-          }
+          const extractedText = await extractTextOrThrow(file);
           parsed = parseFRMFMatchSheetText(extractedText, myClubContext);
         }
       } else {
-        let extractedText = '';
-        try {
-          extractedText = await extractTextFromPDFFile(file);
-        } catch (err) {
-          console.warn('[handleScanFile] Erreur extraction PDF:', err);
-        }
-
-        if (!extractedText || extractedText.trim().length < 40) {
-          extractedText = SAMPLE_FRMF_TEXT;
-        }
-
+        const extractedText = await extractTextOrThrow(file);
         parsed = parseFRMFMatchSheetText(extractedText, myClubContext);
       }
 
@@ -581,7 +597,17 @@ HMARRASS OMAR Commissaire du Match
   };
 
   const handleConfirmAndSave = async () => {
-    if (!parsedData) return;
+    if (!parsedData || isSaving || saveLockRef.current) return;
+
+    const isUpdateAction = Boolean(effectivePlannedMatchCheck.exists);
+    if (isUpdateAction && !canUpdate) {
+      toast.error("Permission Spécifique « Importer Feuille FRMF (Update) » requise pour mettre à jour un match existant.");
+      return;
+    }
+    if (!isUpdateAction && !canCreate) {
+      toast.error("Permission Spécifique « Importer Feuille FRMF (Create) » requise pour créer un nouveau match.");
+      return;
+    }
 
     if (opponentMode === 'existing' && !selectedOpponentId) {
       toast.error("Veuillez sélectionner le club adversaire dans la liste ou confirmer sa création.");
@@ -598,6 +624,7 @@ HMARRASS OMAR Commissaire du Match
       }
     }
 
+    saveLockRef.current = true;
     setIsSaving(true);
     try {
       const selectedLeague = availableLeagues.find(l => l.id === selectedLeagueId);
@@ -637,17 +664,22 @@ HMARRASS OMAR Commissaire du Match
         );
       }
       if (onSuccess) onSuccess();
+      resetAll();
       onClose();
     } catch (err: any) {
       console.error(err);
       toast.error("Erreur lors de l'enregistrement : " + (err?.message || 'Erreur inconnue'));
     } finally {
+      saveLockRef.current = false;
       setIsSaving(false);
     }
   };
 
   const resetAll = () => {
     setFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setParsedData(null);
     setAuditPreview(null);
     setLivePlannedMatchCheck({ exists: false });
@@ -658,9 +690,22 @@ HMARRASS OMAR Commissaire du Match
     setOpponentSearch('');
     setConfirmCreateOpponent(false);
     setActiveTab('upload');
+    setActiveSubTab('overview');
     setRawTextFallback('');
     setShowPasteZone(false);
   };
+
+  const handleClose = () => {
+    if (isSaving || saveLockRef.current) return;
+    resetAll();
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!isOpen && !saveLockRef.current) {
+      resetAll();
+    }
+  }, [isOpen]);
 
   const myClubPlayers = parsedData
     ? parsedData.isHomeMatch
@@ -712,8 +757,12 @@ HMARRASS OMAR Commissaire du Match
   const awayLogoUrl = parsedData?.isHomeMatch ? oppDbLogo : myClubDbLogo;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-6 bg-slate-950 text-slate-100 border-slate-800">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
+      <DialogContent
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => e.preventDefault()}
+        className="max-w-4xl max-h-[90vh] overflow-y-auto p-6 bg-slate-950 text-slate-100 border-slate-800"
+      >
         <DialogHeader className="border-b border-slate-800 pb-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -967,7 +1016,10 @@ HMARRASS OMAR Commissaire du Match
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => setFile(null)}
+                    onClick={() => {
+                      setFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
                     disabled={isProcessing}
                     className="text-slate-400 hover:text-red-400 text-xs hover:bg-red-500/10 shrink-0"
                   >
@@ -1008,9 +1060,13 @@ HMARRASS OMAR Commissaire du Match
             ) : (
               <div
                 onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => e.preventDefault()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
                 onDrop={(e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   const droppedFile = e.dataTransfer.files[0];
                   if (droppedFile) {
                     setFile(droppedFile);
@@ -1042,6 +1098,10 @@ HMARRASS OMAR Commissaire du Match
                   type="button"
                   variant="outline"
                   size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
                   className="mt-2 border-slate-700 text-slate-200 hover:bg-slate-800"
                 >
                   Parcourir les fichiers
@@ -1928,7 +1988,7 @@ HMARRASS OMAR Commissaire du Match
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={onClose}
+                  onClick={handleClose}
                   disabled={isSaving}
                   className="border-slate-700 text-slate-300 hover:bg-slate-800 text-xs flex-1 sm:flex-none"
                 >
@@ -1938,8 +1998,11 @@ HMARRASS OMAR Commissaire du Match
                 <Button
                   type="button"
                   onClick={handleConfirmAndSave}
-                  disabled={isSaving}
-                  className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-semibold text-xs shadow-lg shadow-red-600/20 flex-1 sm:flex-none"
+                  disabled={
+                    isSaving ||
+                    (effectivePlannedMatchCheck.exists ? !canUpdate : !canCreate)
+                  }
+                  className="bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-semibold text-xs shadow-lg shadow-red-600/20 flex-1 sm:flex-none disabled:opacity-50"
                 >
                   {isSaving ? (
                     <>

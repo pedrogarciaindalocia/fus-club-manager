@@ -53,21 +53,15 @@ export const AdministrativeDossierForm: React.FC<AdministrativeDossierFormProps>
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
-      toast.error('Format de fichier non supporté. Veuillez joindre un document PDF.');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-
     setIsUploading(true);
     const toastId = toast.loading(`Téléversement de « ${file.name} »...`);
     try {
-      const newDoc = await uploadRecruitmentDocument(file, selectedCategory);
+      const newDoc = await uploadRecruitmentDocument(file, selectedCategory, { allowImages: true });
       onDocumentsChange([...documents, newDoc]);
-      toast.success(`Document PDF « ${file.name} » rattaché avec succès !`, { id: toastId });
+      toast.success(`Document « ${file.name} » rattaché avec succès !`, { id: toastId });
     } catch (err: any) {
       console.error('[AdministrativeDossierForm] Erreur upload:', err);
-      toast.error(err.message || 'Erreur lors du téléversement du document PDF', { id: toastId });
+      toast.error(err.message || 'Erreur lors du téléversement du document', { id: toastId });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -107,7 +101,7 @@ export const AdministrativeDossierForm: React.FC<AdministrativeDossierFormProps>
               </span>
             </div>
             <p className="text-[11px] text-slate-500">
-              Préparez l'engagement contractuel du joueur et rattachez les pièces justificatives au format PDF.
+              Préparez l'engagement contractuel du joueur et rattachez les pièces justificatives (PDF ou image scannée).
             </p>
           </div>
         </div>
@@ -156,7 +150,7 @@ export const AdministrativeDossierForm: React.FC<AdministrativeDossierFormProps>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
               <Paperclip className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Joindre des Pièces Justificatives (Fichiers PDF)</span>
+              <span>Joindre des Pièces Justificatives (PDF ou Image)</span>
             </label>
 
             {/* Sélecteur de catégorie de document */}
@@ -176,12 +170,12 @@ export const AdministrativeDossierForm: React.FC<AdministrativeDossierFormProps>
             </div>
           </div>
 
-          {/* Bouton d'upload / Dropzone PDF */}
+          {/* Bouton d'upload / Dropzone PDF & Image */}
           <div className="flex items-center gap-3">
             <input
               type="file"
               ref={fileInputRef}
-              accept=".pdf,application/pdf"
+              accept=".pdf,application/pdf,image/*"
               onChange={handleFileSelected}
               className="hidden"
             />
@@ -194,17 +188,17 @@ export const AdministrativeDossierForm: React.FC<AdministrativeDossierFormProps>
               {isUploading ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Téléversement du PDF...</span>
+                  <span>Téléversement du document...</span>
                 </>
               ) : (
                 <>
                   <Upload className="w-3.5 h-3.5" />
-                  <span>Sélectionner un fichier PDF</span>
+                  <span>Sélectionner un fichier (PDF / Scan)</span>
                 </>
               )}
             </button>
             <span className="text-[11px] text-slate-400">
-              Format PDF uniquement (max 25 Mo). Contrat signé, passeport, etc.
+              PDF ou image scannée (max 25 Mo). Contrat signé, passeport, certificat médical...
             </span>
           </div>
         </div>

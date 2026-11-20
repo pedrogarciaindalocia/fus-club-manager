@@ -447,6 +447,9 @@ export interface TestSlotValidationInfo {
   request_note?: string;
   requested_by?: string;
   requested_at?: string;
+  room_availability?: 'available' | 'adjusted' | 'not_required';
+  catering_availability?: 'available' | 'adjusted' | 'not_required';
+  adjusted_by_role?: string;
 }
 
 export function getHonorDeclarationDocument(
@@ -460,6 +463,46 @@ export function getHonorDeclarationDocument(
     (doc) => doc?.category === 'honor_declaration' && Boolean(doc.url)
   );
   return fromAdminDocs || null;
+}
+
+export interface RecruitNowPrerequisitesResult {
+  isValid: boolean;
+  hasHonorDeclaration: boolean;
+  hasEvaluation: boolean;
+  missingReasons: string[];
+}
+
+/**
+ * Vérifie que les prérequis obligatoires pour passer un candidat en « Recrutement immédiatement »
+ * sont bien validés : (1) Déclaration sur l'honneur déposée et (2) au moins une évaluation validée.
+ */
+export function validateRecruitNowPrerequisites(
+  candidate?: Pick<TrialCandidate, 'id' | 'honor_declaration_document' | 'administrative_documents' | 'evaluations'> | null,
+  evaluations: CandidateEvaluation[] = []
+): RecruitNowPrerequisitesResult {
+  const hasHonorDeclaration = Boolean(getHonorDeclarationDocument(candidate)?.url);
+  const candEvals = candidate?.id
+    ? [
+        ...evaluations.filter((e) => e.candidate_id === candidate.id),
+        ...(candidate.evaluations || []),
+      ].filter((e, idx, arr) => arr.findIndex((x) => x.id === e.id) === idx)
+    : [...(candidate?.evaluations || [])];
+  const hasEvaluation = candEvals.length > 0;
+
+  const missingReasons: string[] = [];
+  if (!hasHonorDeclaration) {
+    missingReasons.push("Déclaration sur l'honneur non déposée / validée");
+  }
+  if (!hasEvaluation) {
+    missingReasons.push("Aucune évaluation / rapport d'observation enregistré");
+  }
+
+  return {
+    isValid: hasHonorDeclaration && hasEvaluation,
+    hasHonorDeclaration,
+    hasEvaluation,
+    missingReasons,
+  };
 }
 
 /**
@@ -613,6 +656,7 @@ export interface TrialCandidate {
   administrative_documents?: AdministrativeDocument[];
   honor_declaration_document?: AdministrativeDocument | null;
   test_slot_validation?: TestSlotValidationInfo | null;
+  coach_validation?: 'validated' | 'not_validated' | null;
   contract_type?: string;
   administrative_status?: string;
   admin_notes?: string;

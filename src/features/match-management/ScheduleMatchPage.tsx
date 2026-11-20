@@ -18,7 +18,7 @@ export const ScheduleMatchPage: React.FC = () => {
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const { can, hasSubModuleAccess } = usePermissions();
+  const { can, hasSubModuleAccess, hasSpecificActionAccess } = usePermissions();
 
   const { matches, isLoading } = useMatches();
 
@@ -46,22 +46,39 @@ export const ScheduleMatchPage: React.FC = () => {
     return (location.state as any)?.match || undefined;
   }, [existingMatch, id, dateParam, categoryParam, location.state]);
 
-  // Contrôle de permission : planifier un match ou gérer un match
+  // Contrôle de permission : CRUD spécifique (plan_match / manage_match_played) ou CRUD général matches
   useEffect(() => {
     if (!isEditing) {
-      const hasPlanPermission = can('plan_match') || hasSubModuleAccess('matches', 'plan_match');
+      const hasPlanPermission =
+        can('plan_match') ||
+        hasSpecificActionAccess('matches', 'plan_match', 'create') ||
+        hasSubModuleAccess('matches', 'create');
       if (!hasPlanPermission) {
         toast.error("Accès refusé : vous n'avez pas la permission de planifier un match.");
         navigate('/matches', { replace: true });
       }
+    } else if (location.pathname.includes('/prepare')) {
+      const hasPreparePermission =
+        can('manage_match_played') ||
+        hasSpecificActionAccess('matches', 'manage_match_played', 'create') ||
+        hasSpecificActionAccess('matches', 'manage_match_played', 'update') ||
+        hasSubModuleAccess('matches', 'update');
+      if (!hasPreparePermission) {
+        toast.error("Accès refusé : vous n'avez pas la permission de préparer ou modifier ce match joué.");
+        navigate('/matches', { replace: true });
+      }
     } else {
-      const hasEditPermission = can('plan_match') || hasSubModuleAccess('matches', 'plan_match') || can('manage_match_played') || hasSubModuleAccess('matches', 'manage_match_played');
+      const hasEditPermission =
+        can('edit_matches') ||
+        hasSpecificActionAccess('matches', 'plan_match', 'update') ||
+        hasSpecificActionAccess('matches', 'manage_match_played', 'update') ||
+        hasSubModuleAccess('matches', 'update');
       if (!hasEditPermission) {
-        toast.error("Accès refusé : vous n'avez pas la permission d'éditer ou de préparer ce match.");
+        toast.error("Accès refusé : vous n'avez pas la permission de modifier ce match.");
         navigate('/matches', { replace: true });
       }
     }
-  }, [isEditing, can, hasSubModuleAccess, navigate]);
+  }, [isEditing, location.pathname, can, hasSubModuleAccess, hasSpecificActionAccess, navigate]);
 
   const handleBack = () => {
     navigate('/matches');

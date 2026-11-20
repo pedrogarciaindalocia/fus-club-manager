@@ -18,13 +18,22 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
   candidate,
   onSuccess,
 }) => {
-  const { authState, hasSubModuleAccess } = usePermissions();
+  const { authState, hasSpecificActionAccess } = usePermissions();
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
   const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
-  const canEditDriveLink = Boolean(
+  const canCreateDriveLink = Boolean(
     isSuperAdmin ||
-    hasSubModuleAccess('candidates', 'drive_link')
+    hasSpecificActionAccess('candidates', 'drive_link', 'create')
   );
+  const canUpdateDriveLink = Boolean(
+    isSuperAdmin ||
+    hasSpecificActionAccess('candidates', 'drive_link', 'update')
+  );
+  const canDeleteDriveLink = Boolean(
+    isSuperAdmin ||
+    hasSpecificActionAccess('candidates', 'drive_link', 'delete')
+  );
+  const hasExistingLink = Boolean(candidate?.video_url?.trim());
 
   const [videoUrl, setVideoUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,11 +49,18 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
   const trimmedUrl = videoUrl.trim();
   const isDrive = trimmedUrl.includes('drive.google.com');
   const isYouTube = trimmedUrl.includes('youtube.com') || trimmedUrl.includes('youtu.be');
+  const canSubmitForm = hasExistingLink
+    ? (trimmedUrl ? canUpdateDriveLink : canDeleteDriveLink)
+    : canCreateDriveLink;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEditDriveLink) {
-      toast.error("Action refusée : vous n'avez pas la permission de modifier le lien vidéo Drive.");
+    if (!canSubmitForm) {
+      toast.error(
+        hasExistingLink
+          ? "Action refusée : permission Spécifique Lien Drive (Update) requise pour modifier le lien."
+          : "Action refusée : permission Spécifique Lien Drive (Create) requise pour ajouter un lien."
+      );
       return;
     }
     setIsSubmitting(true);
@@ -71,8 +87,8 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
   };
 
   const handleClear = async () => {
-    if (!canEditDriveLink) {
-      toast.error("Action refusée : vous n'avez pas la permission de modifier le lien vidéo Drive.");
+    if (!canDeleteDriveLink) {
+      toast.error("Action refusée : permission Spécifique Lien Drive (Delete) requise pour supprimer le lien.");
       return;
     }
     setIsSubmitting(true);
@@ -132,9 +148,10 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
               <input
                 type="url"
                 value={videoUrl}
+                disabled={!(hasExistingLink ? canUpdateDriveLink : canCreateDriveLink)}
                 onChange={e => setVideoUrl(e.target.value)}
                 placeholder="https://drive.google.com/file/d/.../view?usp=sharing"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-white placeholder-slate-500 text-xs font-mono outline-hidden transition-all"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-white placeholder-slate-500 text-xs font-mono outline-hidden transition-all disabled:opacity-60"
                 autoFocus
               />
               {trimmedUrl && (
@@ -180,7 +197,7 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
 
           {/* Action buttons */}
           <div className="pt-2 flex items-center justify-between gap-2">
-            {candidate.video_url ? (
+            {candidate.video_url && canDeleteDriveLink ? (
               <button
                 type="button"
                 onClick={handleClear}
@@ -200,13 +217,14 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
                 disabled={isSubmitting}
                 className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer"
               >
-                Annuler
+                {canSubmitForm ? 'Annuler' : 'Fermer'}
               </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
+              {canSubmitForm && (
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -218,7 +236,8 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
                     <span>Enregistrer</span>
                   </>
                 )}
-              </button>
+                </button>
+              )}
             </div>
           </div>
         </form>

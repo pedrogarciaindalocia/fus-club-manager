@@ -117,7 +117,7 @@ export const JOB_BRANCHES: JobBranchDefinition[] = [
     iconName: 'Briefcase',
     badgeClass: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800',
     description: 'Gestion tactique des équipes, séances d’entraînement, compositions et matchs.',
-    defaultJobTitles: ['Entraîneur Principal', 'Entraîneur Adjoint', 'Entraîneur des Gardiens', 'Préparateur Physique']
+    defaultJobTitles: ['Coach Principal', 'Coach Adjoint', 'Préparateur Physique', 'Entraîneur Principal', 'Entraîneur Adjoint', 'Entraîneur des Gardiens']
   },
   {
     key: 'medical',
@@ -153,7 +153,7 @@ export const JOB_BRANCHES: JobBranchDefinition[] = [
     iconName: 'ShieldCheck',
     badgeClass: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-300 dark:border-indigo-800',
     description: 'Opérations administratives, gestion logistique et support du club.',
-    defaultJobTitles: ['Responsable Administratif', 'Secrétaire Général', 'Chargé de Mission']
+    defaultJobTitles: ['Directeur Administratif', 'Chargé de Matériel', 'Responsable Magasinier', 'Responsable Vie', 'Responsable Administratif', 'Secrétaire Général', 'Chargé de Mission']
   }
 ];
 
@@ -351,6 +351,49 @@ export const isScoutBranch = (role?: string | null, jobTitle?: string | null): b
 };
 
 /**
+ * Détermine si l'utilisateur exerce le poste « Responsable Vie »
+ */
+export const isResponsableVieJob = (jobTitle?: string | null): boolean => {
+  const norm = normalizeJobTitleKey(jobTitle);
+  return norm === 'responsable vie' || norm.includes('responsable vie') || norm.includes('responsable de vie');
+};
+
+/**
+ * Détermine si l'utilisateur exerce le poste « Responsable Magasinier »
+ */
+export const isResponsableMagasinierJob = (jobTitle?: string | null): boolean => {
+  const norm = normalizeJobTitleKey(jobTitle);
+  return norm.includes('magasinier') || norm.includes('magazinier');
+};
+
+/**
+ * Détermine si l'utilisateur exerce une fonction d'entraîneur / coach
+ */
+export const isCoachJob = (jobTitle?: string | null, role?: string | null): boolean => {
+  const normRole = (role || '').toLowerCase().trim();
+  const normJob = normalizeJobTitleKey(jobTitle);
+  return (
+    normRole === 'coach' ||
+    normRole === 'assistant_coach' ||
+    normJob.includes('coach') ||
+    normJob.includes('entraineur')
+  );
+};
+
+/**
+ * Détermine si l'utilisateur exerce le poste « Directeur Administratif »
+ * (inclut les intitulés existants comme « Directeur Administratif Du CF » ou « Responsable Administratif »)
+ */
+export const isDirecteurAdministratifJob = (jobTitle?: string | null): boolean => {
+  const norm = normalizeJobTitleKey(jobTitle);
+  return (
+    norm === 'directeur administratif' ||
+    norm.includes('directeur administratif') ||
+    norm === 'responsable administratif'
+  );
+};
+
+/**
  * Détermine si le compte effectif possède le rôle Scout Admin (`scout_admin`),
  * y compris lors d'une impersonation, indépendamment de la matrice de cases cochées.
  */
@@ -372,18 +415,45 @@ export const isScoutAdminRole = (
 };
 
 /**
- * Liste officielle et stricte des 6 intitulés de postes autorisés dans FUSC
- * Utilisée dans la gestion des utilisateurs et les filtres des logs d'audit.
+ * Liste officielle des intitulés de postes autorisés dans FUSC
+ * Utilisée dans la gestion des utilisateurs (filtres, création et modification) et les tickets/logs.
  */
 export const OFFICIAL_JOB_TITLES = [
-  'Scout',
   'Analyste Vidéo',
+  'Chargé de Matériel',
   'Coach',
   'Coach Adjoint',
   'Coach Principal',
+  'Directeur Administratif',
   'Directeur Technique',
-  'Directeur Administratif'
+  'Préparateur Physique',
+  'Responsable Magasinier',
+  'Responsable Vie',
+  'Scout'
 ] as const;
 
 export type OfficialJobTitle = typeof OFFICIAL_JOB_TITLES[number];
+
+/** Normalise un intitulé de poste (suppression des accents, espaces superflus et casse) pour comparaison fiable. */
+export const normalizeJobTitleKey = (title?: string | null): string =>
+  (title || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const JOB_TITLE_ALIAS_MAP: Record<string, OfficialJobTitle> = {
+  'responsable magazinier': 'Responsable Magasinier',
+  'responsable de vie': 'Responsable Vie',
+};
+
+/** Résout la forme canonique officielle d'un intitulé de poste si elle correspond à OFFICIAL_JOB_TITLES. */
+export const resolveCanonicalJobTitle = (title?: string | null): string => {
+  const trimmed = (title || '').trim();
+  if (!trimmed) return '';
+  const norm = normalizeJobTitleKey(trimmed);
+  if (JOB_TITLE_ALIAS_MAP[norm]) return JOB_TITLE_ALIAS_MAP[norm];
+  const official = OFFICIAL_JOB_TITLES.find(t => normalizeJobTitleKey(t) === norm);
+  return official || trimmed;
+};
 

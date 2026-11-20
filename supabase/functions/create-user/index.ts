@@ -1,11 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN') || '*';
+const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': allowedOrigin,
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Credentials': 'true',
+  ...(allowedOrigin !== '*' ? { 'Access-Control-Allow-Credentials': 'true' } : {}),
 }
 
 serve(async (req) => {
@@ -55,15 +56,6 @@ serve(async (req) => {
       }
     }
 
-    // Authenticated endpoint: get_all_profiles (accessible to authenticated users or service_role)
-    if (action === 'get_all_profiles') {
-      const { data: profiles, error: pErr } = await supabaseAdmin
-        .from('user_profiles')
-        .select('id, job_title, phone_number, avatar_url, system_role, full_name, is_active')
-      if (pErr) return new Response(JSON.stringify({ error: pErr.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-      return new Response(JSON.stringify({ profiles }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
-    }
-
     let isAuthorizedAdmin = isDirectServiceRole
     if (!isAuthorizedAdmin && callerUser) {
       const { data: callerProfile, error: profileError } = await supabaseAdmin
@@ -79,7 +71,16 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized: Only admin or super_admin can perform this action' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const { email, password, full_name, system_role, categories, club_id, user_id, job_title, phone_number } = body;
+    // Admin-only endpoint: get_all_profiles
+    if (action === 'get_all_profiles') {
+      const { data: profiles, error: pErr } = await supabaseAdmin
+        .from('user_profiles')
+        .select('id, job_title, phone_number, avatar_url, system_role, full_name, is_active')
+      if (pErr) return new Response(JSON.stringify({ error: pErr.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ profiles }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
+    }
+
+    const { email, password, full_name, system_role, categories, club_id, user_id, job_title, phone_number, permissions } = body;
 
     if (action === 'create') {
       if (!email || !password || !full_name || !system_role) {
@@ -166,6 +167,15 @@ serve(async (req) => {
           const categoryAssignments = categories.map((cat: string) => ({ user_id, category: cat, club_id }))
           await supabaseAdmin.from('user_category_assignments').insert(categoryAssignments)
         }
+      }
+
+      // Update permission overrides if provided
+      if (Array.isArray(permissions)) {
+        await supabaseAdmin.from('user_permissions_overrides').delete().eq('user_id', user_id)
+        const permsToInsert = permissions.length > 0
+          ? permissions.map((permission_id: string) => ({ user_id, permission_id }))
+          : [{ user_id, permission_id: 'no_permissions' }]
+        await supabaseAdmin.from('user_permissions_overrides').insert(permsToInsert)
       }
 
       return new Response(JSON.stringify({ message: 'User updated successfully' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })

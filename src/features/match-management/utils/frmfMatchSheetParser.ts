@@ -703,20 +703,72 @@ export function finalizeParsedMatchSheet(
     return list.find(p => p.jerseyNumber === jersey)?.name || `#${jersey}`;
   };
 
-  const substitutions = (draft.substitutions || []).map(s => ({
+  const rawSubs = (draft.substitutions || []).map(s => ({
     ...s,
     playerOutName: enrichPlayerName(s.team, s.jerseyOut, s.playerOutName),
     playerInName: enrichPlayerName(s.team, s.jerseyIn, s.playerInName),
   }));
 
+  // Déduplication stricte des faits de jeu au sein d'une même feuille scannée (PDF multi-pages / OCR)
+  const seenGoalKeys = new Set<string>();
+  const goals = (draft.goals || []).filter(g => {
+    const typeKey = normalizeName(g.type || 'regulier');
+    const nameKey = normalizeName(g.playerName || '');
+    const actorKey = g.jerseyNumber > 0 ? `#${g.jerseyNumber}` : nameKey;
+    const key = `${g.team}|${g.minute}|${actorKey}|${typeKey}`;
+    if (seenGoalKeys.has(key)) return false;
+    seenGoalKeys.add(key);
+    return true;
+  });
+
+  const seenCardKeys = new Set<string>();
+  const seenRedPlayers = new Set<string>();
+  const cards = (draft.cards || []).filter(c => {
+    const actorKey = c.jerseyNumber > 0 ? `#${c.jerseyNumber}` : normalizeName(c.playerName || '');
+    const exactKey = `${c.team}|${c.cardType}|${c.minute}|${actorKey}`;
+    if (seenCardKeys.has(exactKey)) return false;
+    if (c.cardType === 'red' && actorKey) {
+      const redKey = `${c.team}|${actorKey}`;
+      if (seenRedPlayers.has(redKey)) return false;
+      seenRedPlayers.add(redKey);
+    }
+    seenCardKeys.add(exactKey);
+    return true;
+  });
+
+  const seenSubExactKeys = new Set<string>();
+  const seenSubOutKeys = new Set<string>();
+  const seenSubInKeys = new Set<string>();
+  const substitutions = rawSubs.filter(s => {
+    const outKey = s.jerseyOut > 0 ? `#${s.jerseyOut}` : normalizeName(s.playerOutName || '');
+    const inKey = s.jerseyIn > 0 ? `#${s.jerseyIn}` : normalizeName(s.playerInName || '');
+    const exactKey = `${s.team}|${s.minute}|${outKey}->${inKey}`;
+    if (seenSubExactKeys.has(exactKey)) return false;
+    if (outKey && seenSubOutKeys.has(`${s.team}|${outKey}`)) return false;
+    if (inKey && seenSubInKeys.has(`${s.team}|${inKey}`)) return false;
+    seenSubExactKeys.add(exactKey);
+    if (outKey) seenSubOutKeys.add(`${s.team}|${outKey}`);
+    if (inKey) seenSubInKeys.add(`${s.team}|${inKey}`);
+    return true;
+  });
+
+  const seenInjuryKeys = new Set<string>();
+  const injuries = (draft.injuries || []).filter(inj => {
+    const actorKey = inj.jerseyNumber > 0 ? `#${inj.jerseyNumber}` : normalizeName(inj.playerName || '');
+    const key = `${inj.team}|${inj.minute}|${actorKey}`;
+    if (seenInjuryKeys.has(key)) return false;
+    seenInjuryKeys.add(key);
+    return true;
+  });
+
   // Score cohérent avec les buts si l'OCR a renvoyé 0-0 malgré des buts listés
   let scoreHome = Number(draft.scoreHome ?? 0);
   let scoreAway = Number(draft.scoreAway ?? 0);
-  const homeGoalsCount = (draft.goals || []).filter(g => {
+  const homeGoalsCount = goals.filter(g => {
     const isCsc = /csc|contre/i.test(g.type || '');
     return isCsc ? g.team === 'away' : g.team === 'home';
   }).length;
-  const awayGoalsCount = (draft.goals || []).filter(g => {
+  const awayGoalsCount = goals.filter(g => {
     const isCsc = /csc|contre/i.test(g.type || '');
     return isCsc ? g.team === 'home' : g.team === 'away';
   }).length;
@@ -749,10 +801,10 @@ export function finalizeParsedMatchSheet(
     scoreAway,
     homePlayers,
     awayPlayers,
-    goals: draft.goals || [],
-    cards: draft.cards || [],
+    goals,
+    cards,
     substitutions,
-    injuries: draft.injuries || [],
+    injuries,
     officials: draft.officials || [],
     surclassementsDetected: {
       myClub: myClubPlayers.filter(p => p.isSurclasse),

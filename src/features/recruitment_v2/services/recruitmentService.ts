@@ -154,6 +154,7 @@ export function parseMissionsMetadata(notes?: string): {
   administrative_documents?: AdministrativeDocument[];
   honor_declaration_document?: AdministrativeDocument | null;
   test_slot_validation?: TestSlotValidationInfo | null;
+  coach_validation?: 'validated' | 'not_validated' | null;
   contract_type?: string;
   administrative_status?: string;
   admin_notes?: string;
@@ -232,6 +233,7 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
   const surclassement_category = candidate.surclassement_category;
   const honor_declaration_document = candidate.honor_declaration_document;
   const test_slot_validation = candidate.test_slot_validation;
+  const coach_validation = candidate.coach_validation;
 
   const hasExtraMeta = activeMission ||
     (missionHistory && missionHistory.length > 0) ||
@@ -243,7 +245,8 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
     surclassement ||
     surclassement_category ||
     honor_declaration_document !== undefined ||
-    test_slot_validation !== undefined;
+    test_slot_validation !== undefined ||
+    coach_validation !== undefined;
 
   if (hasExtraMeta) {
     const metaBlock = `\n[MISSIONS_METADATA]:` + JSON.stringify({
@@ -253,6 +256,7 @@ function toSupabasePayload(candidate: Record<string, any>): Record<string, any> 
       administrative_documents: administrative_documents || [],
       honor_declaration_document: honor_declaration_document ?? null,
       test_slot_validation: test_slot_validation ?? null,
+      coach_validation: coach_validation ?? null,
       contract_type: contract_type || null,
       administrative_status: administrative_status || null,
       admin_notes: admin_notes || null,
@@ -1296,6 +1300,9 @@ export const recruitmentService = {
             test_slot_validation: (loc && 'test_slot_validation' in loc)
               ? loc.test_slot_validation
               : ((d as any).test_slot_validation !== undefined ? (d as any).test_slot_validation : (parsedMeta.test_slot_validation ?? null)),
+            coach_validation: (loc && 'coach_validation' in loc)
+              ? loc.coach_validation
+              : ((d as any).coach_validation !== undefined ? (d as any).coach_validation : (parsedMeta.coach_validation ?? null)),
             contract_type: loc?.contract_type || (d as any).contract_type || parsedMeta.contract_type,
             administrative_status: loc?.administrative_status || (d as any).administrative_status || parsedMeta.administrative_status,
             admin_notes: loc?.admin_notes || (d as any).admin_notes || parsedMeta.admin_notes,
@@ -1450,7 +1457,7 @@ export const recruitmentService = {
       'active_mission', 'mission_history', 'reference_player_style',
       'administrative_documents', 'contract_type', 'administrative_status',
       'admin_notes', 'surclassement', 'surclassement_category',
-      'honor_declaration_document', 'test_slot_validation', 'notes',
+      'honor_declaration_document', 'test_slot_validation', 'coach_validation', 'notes',
     ];
     const touchesMetadata = META_KEYS.some(k => k in updates);
     const localListBefore = getLocal<TrialCandidate[]>(KEY_CANDIDATES, []);
@@ -1470,6 +1477,7 @@ export const recruitmentService = {
           ...(existingLocal.administrative_documents !== undefined ? { administrative_documents: existingLocal.administrative_documents } : {}),
           ...(existingLocal.honor_declaration_document !== undefined ? { honor_declaration_document: existingLocal.honor_declaration_document } : {}),
           ...(existingLocal.test_slot_validation !== undefined ? { test_slot_validation: existingLocal.test_slot_validation } : {}),
+          ...(existingLocal.coach_validation !== undefined ? { coach_validation: existingLocal.coach_validation } : {}),
           ...(existingLocal.contract_type !== undefined ? { contract_type: existingLocal.contract_type } : {}),
           ...(existingLocal.administrative_status !== undefined ? { administrative_status: existingLocal.administrative_status } : {}),
           ...(existingLocal.admin_notes !== undefined ? { admin_notes: existingLocal.admin_notes } : {}),

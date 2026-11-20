@@ -29,10 +29,11 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PlayerTest, TrialCandidate, SessionStatus, CandidateEvaluation } from '../types/recruitment';
-import { RECRUITMENT_AGE_CATEGORIES, groupCategoriesByPole, calculateCandidateAge } from '../types/recruitment';
+import { RECRUITMENT_AGE_CATEGORIES, groupCategoriesByPole, calculateCandidateAge, resolveReportOrCandidateSurclassement } from '../types/recruitment';
 import { getFrenchPositionLabel } from '../constants/scoutCriteriaByPosition';
 import { cn } from '../../../lib/utils';
 import { TrialSessionPlannerForm } from './TrialSessionPlannerForm';
+import { PreferredFootIcon } from './PreferredFootIcon';
 import {
   formatCompactFrenchDate,
   formatTestDateIntervalLabel,
@@ -65,6 +66,7 @@ interface TestCalendarViewProps {
   onOpenFullPlanning?: () => void;
   contextTitle?: string;
   contextSubtitle?: string;
+  showSportingDetails?: boolean;
   onOpenCandidateDetail?: (candidate: TrialCandidate) => void;
 }
 
@@ -124,6 +126,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
   onOpenFullPlanning,
   contextTitle,
   contextSubtitle,
+  showSportingDetails = false,
   onOpenCandidateDetail,
 }) => {
   // Mode d'affichage
@@ -302,6 +305,73 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
 
   const todayStr = new Date().toLocaleDateString('en-CA');
 
+  const renderCandidateSportingBadges = (cand: TrialCandidate, compact = false) => {
+    if (!showSportingDetails) return null;
+    const surclassInfo = resolveReportOrCandidateSurclassement({
+      ageCategory: cand.age_category,
+      birthDate: cand.birth_date,
+      birthYear: cand.birth_date ? Number(String(cand.birth_date).slice(0, 4)) : null,
+    });
+    const candEvals = evaluations
+      .filter((e) => e.candidate_id === cand.id)
+      .sort((a, b) => new Date(b.evaluation_date || b.created_at || 0).getTime() - new Date(a.evaluation_date || a.created_at || 0).getTime());
+    const latestEval = candEvals[0];
+    const footRaw = String(cand.preferred_foot || '').toLowerCase();
+    const footLabel = footRaw === 'right' || footRaw === 'droit' || footRaw === 'droitier'
+      ? 'Droitier'
+      : footRaw === 'left' || footRaw === 'gauche' || footRaw === 'gaucher'
+      ? 'Gaucher'
+      : footRaw === 'both' || footRaw === 'ambidextre'
+      ? 'Ambidextre'
+      : cand.preferred_foot || null;
+    const verdictLabels: Record<string, string> = {
+      recruit_now: 'Recruter',
+      invitation_test: 'Test',
+      to_follow: 'À suivre',
+      reject: 'Écarté',
+    };
+    const candAge = calculateCandidateAge(cand.birth_date);
+
+    return (
+      <div className={cn('flex flex-wrap items-center gap-1', compact ? 'pt-1' : 'pt-1.5')}>
+        {compact && (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[9px] font-bold">
+            {getFrenchPositionLabel(cand.primary_position)}
+            {cand.secondary_position ? ` / ${getFrenchPositionLabel(cand.secondary_position)}` : ''}
+            {cand.age_category ? ` · ${cand.age_category}` : ''}
+            {candAge != null ? ` (${candAge} ans)` : ''}
+          </span>
+        )}
+        {footLabel && (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">
+            <PreferredFootIcon foot={cand.preferred_foot} className="w-3.5 h-3.5" />
+            {footLabel}
+          </span>
+        )}
+        {(cand.height_cm || cand.weight_kg) && (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
+            {cand.height_cm ? `${cand.height_cm} cm` : ''}
+            {cand.height_cm && cand.weight_kg ? ' · ' : ''}
+            {cand.weight_kg ? `${cand.weight_kg} kg` : ''}
+          </span>
+        )}
+        {surclassInfo?.isSurclasse && (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-extrabold">
+            {surclassInfo.badgeLabel || 'Surclassé'}
+          </span>
+        )}
+        {latestEval?.overall_score != null && (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-extrabold">
+            Score {latestEval.overall_score}/10
+            {latestEval.recommendation && verdictLabels[latestEval.recommendation]
+              ? ` · ${verdictLabels[latestEval.recommendation]}`
+              : ''}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   // Sessions appartenant aux jours sélectionnés
   const selectedDaysTests = useMemo(() => {
     if (selectedDates.length === 0) return [];
@@ -381,7 +451,19 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
     setLastClickedDate(tStr);
     setPanelEditingTest(null);
     if (rightPanelTab !== 'invited' && rightPanelTab !== 'sessions') {
-      setRightPanelTab('plan');
+      setRightPanelTab(canManageSchedule ? 'plan' : 'invited');
+    }
+  };
+  const handleTomorrow = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setCurrentDate(new Date(tomorrow.getFullYear(), tomorrow.getMonth(), 1));
+    const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
+    setSelectedDates([tomorrowStr]);
+    setLastClickedDate(tomorrowStr);
+    setPanelEditingTest(null);
+    if (rightPanelTab !== 'invited' && rightPanelTab !== 'sessions') {
+      setRightPanelTab(canManageSchedule ? 'plan' : 'invited');
     }
   };
 
@@ -850,6 +932,14 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                 >
                   Aujourd'hui
                 </button>
+                <button
+                  type="button"
+                  onClick={handleTomorrow}
+                  className="px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50/70 text-xs font-bold text-amber-800 hover:bg-amber-100/80 transition-colors cursor-pointer"
+                  title="Afficher les tests prévus demain"
+                >
+                  Demain
+                </button>
                 {selectedDates.length > 0 && (
                   <button
                     type="button"
@@ -867,7 +957,11 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
 
             <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 flex items-center justify-between gap-2 flex-wrap">
               <span>
-                {selectedDates.length === 0
+                {!canManageSchedule ? (
+                  selectedDates.length === 0
+                    ? <>👁️ <strong>Mode consultation</strong> — Cliquez sur un jour (ou « Demain ») pour consulter le planning et les joueurs convoqués.</>
+                    : <>📅 <strong>{selectedDates.length} jour(s) sélectionné(s)</strong> (du {selectedDates[0]} au {selectedDates[selectedDates.length - 1]}) — consultation seule.</>
+                ) : selectedDates.length === 0
                   ? <>💡 Cliquez sur le jour de début, maintenez <strong>Shift</strong> et cliquez sur le jour de fin pour sélectionner toute une plage.</>
                   : <>📅 <strong>{selectedDates.length} jour(s) sélectionné(s)</strong> (du {selectedDates[0]} au {selectedDates[selectedDates.length - 1]}) — maintenez <strong>Shift + clic</strong> sur un autre jour pour étendre la plage.</>}
               </span>
@@ -982,7 +1076,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                             )}
                             title={`${test.test_name} (${test.start_time || 'Horaire TBD'})`}
                           >
-                            {isBulkSelectMode ? (
+                            {isBulkSelectMode && canManageSchedule ? (
                               <span
                                 className={cn(
                                   "w-3 h-3 rounded border flex items-center justify-center shrink-0",
@@ -991,9 +1085,9 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                               >
                                 {isTestChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                               </span>
-                            ) : (
+                            ) : canManageSchedule ? (
                               <GripVertical className="w-2.5 h-2.5 opacity-40 shrink-0 hidden sm:block" />
-                            )}
+                            ) : null}
                             <div className={cn("w-1.5 h-1.5 rounded-full shrink-0", isTestChecked ? "bg-white" : typeConfig.color)} />
                             <span className="truncate flex-1">{chipLabel}</span>
                           </div>
@@ -1224,6 +1318,7 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
 
                                   <p className="text-[11px] font-semibold text-slate-600 truncate">
                                     {getFrenchPositionLabel(candidate.primary_position)}
+                                    {showSportingDetails && candidate.secondary_position ? ` / ${getFrenchPositionLabel(candidate.secondary_position)}` : ''}
                                     {candidate.age_category ? ` · ${candidate.age_category}` : ''}
                                     {candAge != null ? ` (${candAge} ans)` : ''}
                                   </p>
@@ -1234,6 +1329,8 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                                       <span className="truncate">{clubName}</span>
                                     </p>
                                   )}
+
+                                  {showSportingDetails && renderCandidateSportingBadges(candidate, false)}
                                 </div>
                               </div>
 
@@ -1370,12 +1467,14 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex items-start gap-2 min-w-0">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => toggleSelectTest(test.id)}
-                                  className="mt-1 w-4 h-4 rounded border-slate-300 text-rose-600 cursor-pointer"
-                                />
+                                {canManageSchedule && (
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => toggleSelectTest(test.id)}
+                                    className="mt-1 w-4 h-4 rounded border-slate-300 text-rose-600 cursor-pointer"
+                                  />
+                                )}
                                 <div className="min-w-0">
                                   <span className={cn("text-[9px] font-black uppercase px-2 py-0.5 rounded-md border", typeConfig.badge)}>
                                     {typeConfig.label} • {test.age_category}
@@ -1391,25 +1490,33 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                             </div>
 
                             {testCands.length > 0 && (
-                              <div className="flex flex-wrap gap-1">
-                                {testCands.map(c => {
-                                  const canEvalThis = Boolean(onOpenEvaluationForTest && test.test_date <= todayStr);
-                                  return (
-                                    <button
-                                      key={c.id}
-                                      type="button"
-                                      disabled={!canEvalThis}
-                                      onClick={() => canEvalThis && onOpenEvaluationForTest?.(c, test)}
-                                      title={canEvalThis ? `Évaluer ${c.first_name} ${c.last_name}` : undefined}
-                                      className={cn(
-                                        "text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white border text-slate-700",
-                                        canEvalThis && "hover:border-primary hover:text-primary cursor-pointer transition-colors"
-                                      )}
-                                    >
-                                      {c.first_name} {c.last_name} ({c.primary_position})
-                                    </button>
-                                  );
-                                })}
+                              <div className="space-y-1.5">
+                                <div className="flex flex-wrap gap-1">
+                                  {testCands.map(c => {
+                                    const canEvalThis = Boolean(onOpenEvaluationForTest && test.test_date <= todayStr);
+                                    return (
+                                      <button
+                                        key={c.id}
+                                        type="button"
+                                        disabled={!canEvalThis}
+                                        onClick={() => canEvalThis && onOpenEvaluationForTest?.(c, test)}
+                                        title={canEvalThis ? `Évaluer ${c.first_name} ${c.last_name}` : undefined}
+                                        className={cn(
+                                          "text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white border text-slate-700",
+                                          canEvalThis && "hover:border-primary hover:text-primary cursor-pointer transition-colors"
+                                        )}
+                                      >
+                                        {c.first_name} {c.last_name} ({getFrenchPositionLabel(c.primary_position)})
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {showSportingDetails && testCands.map(c => (
+                                  <div key={`sport-${test.id}-${c.id}`} className="pl-2 border-l-2 border-slate-200">
+                                    <p className="text-[10px] font-bold text-slate-700">{c.first_name} {c.last_name}</p>
+                                    {renderCandidateSportingBadges(c, true)}
+                                  </div>
+                                ))}
                               </div>
                             )}
 
@@ -1525,13 +1632,15 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                   <div className="space-y-2.5">
                     <div className="flex justify-between items-start gap-2">
                       <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelectTest(test.id)}
-                          className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/30 cursor-pointer"
-                          aria-label={`Sélectionner ${test.test_name}`}
-                        />
+                        {canManageSchedule && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectTest(test.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/30 cursor-pointer"
+                            aria-label={`Sélectionner ${test.test_name}`}
+                          />
+                        )}
                         <span className={cn("text-[9px] font-black uppercase px-2.5 py-1 rounded-lg border", typeConfig.badge)}>
                           {typeConfig.label} • {test.age_category}
                         </span>
@@ -1551,25 +1660,33 @@ export const TestCalendarView: React.FC<TestCalendarViewProps> = ({
                           <Users className="w-3.5 h-3.5 text-primary shrink-0" />
                           <span>{testCands.length} joueur{testCands.length > 1 ? 's' : ''} convoqué{testCands.length > 1 ? 's' : ''}</span>
                         </div>
-                        <div className="flex flex-wrap gap-1">
-                          {testCands.map(c => {
-                            const canEvalThis = Boolean(onOpenEvaluationForTest);
-                            return (
-                              <button
-                                key={c.id}
-                                type="button"
-                                disabled={!canEvalThis}
-                                onClick={() => canEvalThis && onOpenEvaluationForTest?.(c, test)}
-                                title={canEvalThis ? `Évaluer ${c.first_name} ${c.last_name}` : undefined}
-                                className={cn(
-                                  "text-[11px] font-bold text-slate-800 bg-white px-2 py-0.5 rounded-lg border",
-                                  canEvalThis && "hover:border-primary hover:text-primary cursor-pointer transition-colors"
-                                )}
-                              >
-                                {c.first_name} {c.last_name} <span className="text-slate-400 font-medium">({c.primary_position})</span>
-                              </button>
-                            );
-                          })}
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap gap-1">
+                            {testCands.map(c => {
+                              const canEvalThis = Boolean(onOpenEvaluationForTest);
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  disabled={!canEvalThis}
+                                  onClick={() => canEvalThis && onOpenEvaluationForTest?.(c, test)}
+                                  title={canEvalThis ? `Évaluer ${c.first_name} ${c.last_name}` : undefined}
+                                  className={cn(
+                                    "text-[11px] font-bold text-slate-800 bg-white px-2 py-0.5 rounded-lg border",
+                                    canEvalThis && "hover:border-primary hover:text-primary cursor-pointer transition-colors"
+                                  )}
+                                >
+                                  {c.first_name} {c.last_name} <span className="text-slate-400 font-medium">({getFrenchPositionLabel(c.primary_position)})</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {showSportingDetails && testCands.map(c => (
+                            <div key={`card-sport-${test.id}-${c.id}`} className="pt-1 border-t border-slate-200/70">
+                              <p className="text-[10px] font-bold text-slate-700">{c.first_name} {c.last_name}</p>
+                              {renderCandidateSportingBadges(c, true)}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}

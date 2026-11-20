@@ -11,7 +11,13 @@ import { PermissionsProvider, usePermissions } from './context/PermissionsContex
 import { SessionSecurityProvider } from './context/SessionSecurityContext';
 import { MatchReminderProvider } from './context/MatchReminderContext';
 import { syncQueue } from './services/offlineQueue';
-import { isScoutBranch } from './constants/roles';
+import {
+  isDirecteurAdministratifJob,
+  isResponsableMagasinierJob,
+  isResponsableVieJob,
+  isScoutAdminRole,
+  isScoutBranch,
+} from './constants/roles';
 
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -110,12 +116,46 @@ const AppContent: React.FC = () => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { isPluginActive } = usePlugins();
-  const { authState, hasModuleAccess, hasSubModuleAccess } = usePermissions();
+  const { authState, hasModuleAccess, hasSubModuleAccess, hasSpecificActionAccess } = usePermissions();
 
   const currentRole = authState.user?.system_role?.toLowerCase() || (authState.roles?.[0]?.toLowerCase() ?? '');
+  const effectiveJobTitle = authState.isImpersonating
+    ? (authState.impersonatedUser?.job_title || authState.user?.job_title)
+    : authState.user?.job_title;
   const isSuperAdmin = !authState.isImpersonating && (currentRole === 'super_admin');
-  const isScout = isScoutBranch(currentRole, authState.user?.job_title);
+  const isEffectiveScoutAdmin = isScoutAdminRole(
+    authState.user,
+    authState.roles,
+    authState.isImpersonating,
+    authState.impersonatedUser
+  );
+  const isScout = isScoutBranch(currentRole, effectiveJobTitle);
+  const isResponsableVie = !isSuperAdmin && !isEffectiveScoutAdmin && isResponsableVieJob(effectiveJobTitle);
+  const isDirecteurAdministratif = !isSuperAdmin && !isEffectiveScoutAdmin && isDirecteurAdministratifJob(effectiveJobTitle);
+  const isResponsableMagasinier = !isSuperAdmin && !isEffectiveScoutAdmin && isResponsableMagasinierJob(effectiveJobTitle);
   const canAccessRecruitmentV2 = isSuperAdmin || hasModuleAccess('recruitment_v2', 'read');
+
+  // Cloisonnement strict : Responsable Magasinier -> Planning des Tests uniquement
+  if (isResponsableMagasinier) {
+    const allowedMagPaths =
+      location.pathname.startsWith('/recruitment-v2') ||
+      location.pathname === '/profile' ||
+      location.pathname === '/tickets';
+    if (!allowedMagPaths || location.pathname === '/recruitment-v2/add-player' || location.pathname === '/recruitment-v2/add-report') {
+      return <Navigate to="/recruitment-v2?tab=sessions" replace />;
+    }
+  }
+
+  // Cloisonnement strict : Responsable Vie & Directeur Administratif -> Database Détection V2 uniquement
+  if (isResponsableVie || isDirecteurAdministratif) {
+    const allowedCandidatesOnlyPaths =
+      location.pathname.startsWith('/recruitment-v2') ||
+      location.pathname === '/profile' ||
+      location.pathname === '/tickets';
+    if (!allowedCandidatesOnlyPaths || location.pathname === '/recruitment-v2/add-player' || location.pathname === '/recruitment-v2/add-report') {
+      return <Navigate to="/recruitment-v2?tab=candidates" replace />;
+    }
+  }
 
   // 1. Redirection de la racine et dashboard vers Détection & Recrutements uniquement si habilité sur au moins une sous-rubrique V2
   if (isScout && canAccessRecruitmentV2 && (location.pathname === '/' || location.pathname === '/dashboard')) {
@@ -208,10 +248,10 @@ const AppContent: React.FC = () => {
     if ((location.pathname.startsWith('/recruitment') || location.pathname.startsWith('/recruitment-v2')) && !hasModuleAccess('recruitment_v2', 'read')) {
       return <Navigate to="/" replace />;
     }
-    if (location.pathname === '/recruitment-v2/add-player' && !(hasSubModuleAccess('candidates', 'create') || hasSubModuleAccess('candidates', 'edit_player') || hasSubModuleAccess('candidates', 'update'))) {
+    if (location.pathname === '/recruitment-v2/add-player' && !(hasSubModuleAccess('candidates', 'create') || hasSubModuleAccess('candidates', 'update'))) {
       return <Navigate to="/recruitment-v2" replace />;
     }
-    if (location.pathname === '/recruitment-v2/add-report' && !(hasSubModuleAccess('candidates', 'manage_reports') || hasSubModuleAccess('candidates', 'reports'))) {
+    if (location.pathname === '/recruitment-v2/add-report' && !(hasSpecificActionAccess('candidates', 'manage_reports', 'create') || hasSpecificActionAccess('candidates', 'manage_reports', 'update') || hasSubModuleAccess('candidates', 'reports'))) {
       return <Navigate to="/recruitment-v2" replace />;
     }
 
@@ -249,7 +289,7 @@ const AppContent: React.FC = () => {
               </ProtectedRoute>
             } />
             <Route path="/matches/edit/:id" element={
-              <ProtectedRoute requiredPermission="manage_match_played">
+              <ProtectedRoute requiredPermission="edit_matches">
                 <ScheduleMatchPage />
               </ProtectedRoute>
             } />

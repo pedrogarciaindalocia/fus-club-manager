@@ -2,7 +2,6 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabaseServiceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn("Supabase environment variables are missing! Registration will fail.");
@@ -23,12 +22,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export const supabaseAdmin = (supabaseServiceRoleKey && supabaseUrl)
-  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-        lock: noopLock,
-      },
-    })
-  : supabase;
+// Sécurité : ne jamais exposer de clé service_role (VITE_SUPABASE_SERVICE_ROLE_KEY) côté navigateur.
+// Les opérations d'administration doivent passer par les Edge Functions ou RPC sécurisées.
+export const supabaseAdmin = supabase;

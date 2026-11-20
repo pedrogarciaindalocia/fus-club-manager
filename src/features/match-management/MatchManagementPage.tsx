@@ -428,7 +428,7 @@ const MatchManagementPage: React.FC = () => {
    const { mainClub, opponentClubs, isLoading: clubLoading } = useClubData();
    const { leagues } = useCompetitions();
    const { teams } = useTeams();
-   const { can, canManageCategory, authState, hasSubModuleAccess } = usePermissions();
+   const { can, canManageCategory, authState, hasSubModuleAccess, hasSpecificActionAccess } = usePermissions();
 
    const resolveRequestedTab = (
       tab: string | null,
@@ -476,15 +476,47 @@ const MatchManagementPage: React.FC = () => {
    const [isFrmfCalendarSyncOpen, setIsFrmfCalendarSyncOpen] = useState(false);
    const [pendingFrmfSyncCount, setPendingFrmfSyncCount] = useState<number>(0);
 
-   const canPlanMatch = can('plan_match') || hasSubModuleAccess('matches', 'plan_match');
-   const canSyncMyClub = can('sync_my_club') || hasSubModuleAccess('matches', 'sync_my_club');
-   const canImportFrmf = can('import_frmf_sheet') || hasSubModuleAccess('matches', 'import_frmf_sheet');
-   const canManageMatchPlayed = can('manage_match_played') || hasSubModuleAccess('matches', 'manage_match_played');
-   const canLiveTracking = can('live_tracking') || hasSubModuleAccess('matches', 'live_tracking');
-   const canManageStandings = can('manage_standings') || hasSubModuleAccess('matches', 'manage_standings');
-   const canDeleteMatch = canPlanMatch || hasSubModuleAccess('matches', 'delete');
-   const canUpdateMatch = canPlanMatch || canManageMatchPlayed || hasSubModuleAccess('matches', 'update');
-   const canCreateMatches = canPlanMatch;
+   // Permissions Spécifiques (mini-CRUDs indépendants)
+   const canCreatePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'create');
+   const canUpdatePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'update');
+   const canDeletePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'delete');
+   const canPlanMatch = can('plan_match') || canCreatePlanMatch;
+
+   const canReadSyncMyClub = hasSpecificActionAccess('matches', 'sync_my_club', 'read');
+   const canCreateSyncMyClub = hasSpecificActionAccess('matches', 'sync_my_club', 'create');
+   const canUpdateSyncMyClub = hasSpecificActionAccess('matches', 'sync_my_club', 'update');
+   const canSyncMyClub = can('sync_my_club') || canReadSyncMyClub || canCreateSyncMyClub || canUpdateSyncMyClub;
+
+   const canReadImportFrmf = hasSpecificActionAccess('matches', 'import_frmf_sheet', 'read');
+   const canCreateImportFrmf = hasSpecificActionAccess('matches', 'import_frmf_sheet', 'create');
+   const canUpdateImportFrmf = hasSpecificActionAccess('matches', 'import_frmf_sheet', 'update');
+   const canImportFrmf = can('import_frmf_sheet') || canReadImportFrmf || canCreateImportFrmf || canUpdateImportFrmf;
+
+   const canReadMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'read');
+   const canCreateMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'create');
+   const canUpdateMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'update');
+   const canDeleteMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'delete');
+   const canManageMatchPlayed = can('manage_match_played') || canReadMatchPlayed || canCreateMatchPlayed || canUpdateMatchPlayed || canDeleteMatchPlayed;
+
+   const canReadLiveTracking = hasSpecificActionAccess('matches', 'live_tracking', 'read');
+   const canLiveTracking = can('live_tracking') || canReadLiveTracking;
+
+   const canReadStandings = hasSpecificActionAccess('matches', 'manage_standings', 'read');
+   const canCreateStandings = hasSpecificActionAccess('matches', 'manage_standings', 'create');
+   const canUpdateStandings = hasSpecificActionAccess('matches', 'manage_standings', 'update');
+   const canDeleteStandings = hasSpecificActionAccess('matches', 'manage_standings', 'delete');
+   const canManageStandings = can('manage_standings') || canReadStandings || canCreateStandings || canUpdateStandings || canDeleteStandings;
+
+   // CRUD général de la sous-rubrique matches (strictement découplé de plan_match)
+   const canUpdateGeneralMatch = hasSubModuleAccess('matches', 'update');
+   const canDeleteGeneralMatch = hasSubModuleAccess('matches', 'delete');
+
+   const canUpdateMatchFor = (m: Match) =>
+      canUpdateGeneralMatch || (m.status === 'finished' ? canUpdateMatchPlayed : canUpdatePlanMatch);
+   const canDeleteMatchFor = (m: Match) =>
+      canDeleteGeneralMatch || (m.status === 'finished' ? canDeleteMatchPlayed : canDeletePlanMatch);
+   const canDeleteAnyMatch = canDeleteGeneralMatch || canDeletePlanMatch || canDeleteMatchPlayed;
+   const canCreateMatches = canPlanMatch || hasSubModuleAccess('matches', 'create');
 
    useEffect(() => {
       if (calendarSection === 'opponents' && !canManageStandings) {
@@ -1101,6 +1133,10 @@ const MatchManagementPage: React.FC = () => {
 
    const handleOpenDeleteSingle = (match: Match, e?: React.MouseEvent) => {
       if (e) e.stopPropagation();
+      if (!canDeleteMatchFor(match)) {
+         toast.error("Vous n'avez pas la permission de supprimer ce match.");
+         return;
+      }
       setDeleteModalState({
          isOpen: true,
          match,
@@ -1272,6 +1308,7 @@ const MatchManagementPage: React.FC = () => {
                            {/* Synchroniser My Club (Permission Spécifique / Photo 2) */}
                            {canSyncMyClub && (
                               <Button
+                                 type="button"
                                  onClick={() => setIsFrmfCalendarSyncOpen(true)}
                                  variant="outline"
                                  className="border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 h-10 sm:h-12 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-bold uppercase tracking-wider text-[10px] sm:text-[11px] gap-2 transition-all hover:scale-[1.02] active:scale-95 shrink-0"
@@ -1291,7 +1328,12 @@ const MatchManagementPage: React.FC = () => {
                            {/* Importer Feuille FRMF PDF (Permission Spécifique / Photo 1) */}
                            {canImportFrmf && (
                               <Button
-                                 onClick={() => setIsPdfImportOpen(true)}
+                                 type="button"
+                                 onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setIsPdfImportOpen(true);
+                                 }}
                                  variant="outline"
                                  className="border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 h-10 sm:h-12 px-3 sm:px-4 rounded-xl sm:rounded-2xl font-bold uppercase tracking-wider text-[10px] sm:text-[11px] gap-2 transition-all hover:scale-[1.02] active:scale-95 shrink-0"
                                  title="Importer automatiquement une feuille de match FRMF (PDF)"
@@ -1305,6 +1347,7 @@ const MatchManagementPage: React.FC = () => {
                            {/* Planifier un Match (Permission Spécifique / Photo 1) */}
                            {canPlanMatch && (
                               <Button
+                                 type="button"
                                  onClick={() => navigate('/matches/new' + (categoryFilter !== 'All' ? `?category=${encodeURIComponent(categoryFilter)}` : ''))}
                                  className="bg-[#FF3737] hover:bg-[#e02e2e] text-white h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-[11px] gap-2 shadow-lg shadow-red-500/25 transition-all hover:scale-[1.02] active:scale-95 group shrink-0"
                               >
@@ -2263,7 +2306,7 @@ const MatchManagementPage: React.FC = () => {
                                                 }`}
                                           >
                                              {/* Sélection multi-match si activée */}
-                                             {selectedMatchIds.size > 0 && canDeleteMatch && (
+                                             {selectedMatchIds.size > 0 && canDeleteAnyMatch && canDeleteMatchFor(match) && (
                                                 <div className="mr-3 shrink-0" onClick={e => e.stopPropagation()}>
                                                    <input
                                                       type="checkbox"
@@ -2396,7 +2439,7 @@ const MatchManagementPage: React.FC = () => {
                                                       <span className="text-[9px] font-black uppercase">Live</span>
                                                    </Button>
                                                 )}
-                                                {canUpdateMatch && canManageCategory(match.category) && (
+                                                {canUpdateMatchFor(match) && canManageCategory(match.category) && (
                                                    <Button
                                                       variant="ghost"
                                                       size="sm"
@@ -2407,7 +2450,7 @@ const MatchManagementPage: React.FC = () => {
                                                       <Edit3 className="w-3.5 h-3.5" />
                                                    </Button>
                                                 )}
-                                                {canDeleteMatch && canManageCategory(match.category) && (
+                                                {canDeleteMatchFor(match) && canManageCategory(match.category) && (
                                                    <Button
                                                       variant="ghost"
                                                       size="sm"
@@ -2437,11 +2480,11 @@ const MatchManagementPage: React.FC = () => {
                                     setSelectedMatchId(match.id);
                                     setActiveTab('overview');
                                  }}
-                                 onEdit={canUpdateMatch && canManageCategory(match.category) ? (e) => {
+                                 onEdit={canUpdateMatchFor(match) && canManageCategory(match.category) ? (e) => {
                                     e.stopPropagation();
                                     navigate(`/matches/edit/${match.id}`, { state: { match } });
                                  } : undefined}
-                                 onDelete={canDeleteMatch && canManageCategory(match.category) ? (e) => {
+                                 onDelete={canDeleteMatchFor(match) && canManageCategory(match.category) ? (e) => {
                                     handleOpenDeleteSingle(match, e);
                                  } : undefined}
                                  onStartLive={canLiveTracking && canManageCategory(match.category) ? (e) => {
@@ -2484,7 +2527,7 @@ const MatchManagementPage: React.FC = () => {
                         mainClub={mainClub}
                         opponentClubs={opponentClubs}
                         getOpponentName={getOpponentName}
-                        onOrchestrate={canUpdateMatch ? () => {
+                        onOrchestrate={canUpdateMatchFor(selectedMatch) ? () => {
                            navigate(`/matches/edit/${selectedMatch.id}`, { state: { match: selectedMatch } });
                         } : undefined}
                         onStats={() => setActiveTab('stats')}
@@ -2678,6 +2721,8 @@ const MatchManagementPage: React.FC = () => {
          <MatchSheetImportModal
             isOpen={isPdfImportOpen}
             onClose={() => setIsPdfImportOpen(false)}
+            canCreate={canCreateImportFrmf}
+            canUpdate={canUpdateImportFrmf}
             onSuccess={() => {
                refetch();
             }}
@@ -2693,6 +2738,8 @@ const MatchManagementPage: React.FC = () => {
             leagues={leagues}
             teams={teams}
             canManageCategory={canManageCategory}
+            canCreate={canCreateSyncMyClub}
+            canUpdate={canUpdateSyncMyClub}
             onSynced={async () => {
                await refetch();
                await refreshPendingFrmfSyncCount();

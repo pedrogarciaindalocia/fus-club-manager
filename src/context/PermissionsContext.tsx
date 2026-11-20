@@ -2,6 +2,18 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import type { UserProfile } from '../types';
 import { normalizeAgeCategory } from '../constants';
+import {
+  type CrudAction,
+  CRUD_KEYS,
+  hasAnySpecificPermissionInSubModule,
+  hasSpecificActionPermission,
+  isCrudAction,
+  isSpecificActionForSubModule,
+} from '../constants/permissions';
+import {
+  isDirecteurAdministratifJob,
+  isScoutAdminRole,
+} from '../constants/roles';
 
 export interface AuthState {
   email: string | null;
@@ -61,6 +73,7 @@ interface PermissionsContextType {
   can: (action: string, scopeType?: string, scopeId?: string) => boolean;
   hasModuleAccess: (module: string, action?: 'create' | 'read' | 'update' | 'delete') => boolean;
   hasSubModuleAccess: (subModule: string, action?: 'create' | 'read' | 'update' | 'delete' | 'stats' | 'surclasser' | 'departure' | 'drive_link' | string, parentModule?: string) => boolean;
+  hasSpecificActionAccess: (subModule: string, specificAction: string, crudAction?: CrudAction) => boolean;
   canManageCategory: (category: string | null | undefined) => boolean;
   hasCategoryRestriction: boolean;
   allowedCategories: string[];
@@ -86,6 +99,7 @@ export const DEFAULT_PERMISSIONS_CONTEXT: PermissionsContextType = {
   can: () => false,
   hasModuleAccess: () => false,
   hasSubModuleAccess: () => false,
+  hasSpecificActionAccess: () => false,
   canManageCategory: () => true,
   hasCategoryRestriction: false,
   allowedCategories: [],
@@ -107,58 +121,8 @@ export const usePermissions = () => {
 };
 
 const getInitialAuthState = (): AuthState => {
-  try {
-    const cachedProfileStr = localStorage.getItem('fusc_cached_user_profile');
-    if (cachedProfileStr) {
-      const cached = JSON.parse(cachedProfileStr);
-      if (cached && cached.id) {
-        const isSuperAdmin = cached.system_role === 'super_admin';
-        const roles = cached.system_role ? [cached.system_role] : ['super_admin'];
-        let cachedPerms: string[] = [];
-        const localPerms = localStorage.getItem(`fusc_user_perms_${cached.id}`);
-        if (localPerms) cachedPerms = JSON.parse(localPerms);
-        let cachedCats: string[] = [];
-        const localCats = localStorage.getItem(`fusc_user_categories_${cached.id}`);
-        if (localCats) cachedCats = JSON.parse(localCats);
-
-        return {
-          email: cached.email || 'admin@fus.com',
-          isAuthenticated: true,
-          user: cached,
-          roles,
-          userCategories: cachedCats,
-          permissions: cachedPerms,
-          loading: false,
-          isRealSuperAdmin: isSuperAdmin,
-        };
-      }
-    }
-  } catch (e) {
-    console.warn('[PermissionsContext] Erreur lecture cache initial:', e);
-  }
-
-  // En mode DEV, initialisation immédiate pour éviter tout blocage réseau / CORS
-  if (import.meta.env.DEV) {
-    return {
-      email: 'admin@fus.com',
-      isAuthenticated: true,
-      user: {
-        id: 'dev-super-admin',
-        email: 'admin@fus.com',
-        full_name: 'Directeur Général (FUS)',
-        system_role: 'super_admin',
-        job_title: 'Directeur Général',
-        is_active: true,
-        created_at: new Date().toISOString(),
-      },
-      roles: ['super_admin'],
-      userCategories: [],
-      permissions: ['*'],
-      loading: false,
-      isRealSuperAdmin: true,
-    };
-  }
-
+  // Sécurité : toujours attendre la vérification réelle de la session JWT Supabase
+  // via onAuthStateChange avant d'accorder isAuthenticated: true.
   return EMPTY_STATE;
 };
 
@@ -183,19 +147,9 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       if (!('timeout' in profileRes) && profileRes?.data) {
         profile = profileRes.data;
-      } else {
-        // En cas d'échec ou timeout, récupérer le profil en cache local
-        const localProfile =
-          localStorage.getItem(`fusc_user_profile_${userId}`) ||
-          localStorage.getItem('fusc_cached_user_profile');
-        if (localProfile) {
-          try {
-            profile = JSON.parse(localProfile);
-          } catch { }
-        }
       }
 
-      // Fallback dev si toujours rien
+      // Fallback dev uniquement en environnement de développement local
       if (!profile && import.meta.env.DEV) {
         profile = {
           id: userId,
@@ -208,48 +162,33 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
         };
       }
 
-      if (profile) {
-        localStorage.setItem('fusc_cached_user_profile', JSON.stringify(profile));
-        localStorage.setItem(`fusc_user_profile_${userId}`, JSON.stringify(profile));
-      }
-
       let assignedCats: string[] = [];
       try {
-        const catPromise = supabaseAdmin
+        const catPromise = supabase
           .from('user_category_assignments')
           .select('category')
           .eq('user_id', userId);
         const catRes = await Promise.race([catPromise, timeoutPromise]);
         if (!('timeout' in catRes) && catRes?.data && catRes.data.length > 0) {
           assignedCats = catRes.data.map((c: any) => c.category);
-          localStorage.setItem(`fusc_user_categories_${userId}`, JSON.stringify(assignedCats));
-        } else {
-          const localCats = localStorage.getItem(`fusc_user_categories_${userId}`);
-          if (localCats) assignedCats = JSON.parse(localCats);
         }
       } catch {
-        const localCats = localStorage.getItem(`fusc_user_categories_${userId}`);
-        if (localCats) assignedCats = JSON.parse(localCats);
+        // Fail-closed : aucune catégorie attribuée en cas d'erreur
       }
 
       // Charger les permissions explicites de l'utilisateur (matrice CRUD et modules)
       let userPerms: string[] = [];
       try {
-        const permPromise = supabaseAdmin
+        const permPromise = supabase
           .from('user_permissions_overrides')
           .select('permission_id')
           .eq('user_id', userId);
         const permRes = await Promise.race([permPromise, timeoutPromise]);
         if (!('timeout' in permRes) && !permRes?.error && Array.isArray(permRes?.data)) {
           userPerms = permRes.data.map((p: any) => p.permission_id);
-          localStorage.setItem(`fusc_user_perms_${userId}`, JSON.stringify(userPerms));
-        } else {
-          const localCache = localStorage.getItem(`fusc_user_perms_${userId}`);
-          if (localCache) userPerms = JSON.parse(localCache);
         }
       } catch {
-        const localCache = localStorage.getItem(`fusc_user_perms_${userId}`);
-        if (localCache) userPerms = JSON.parse(localCache);
+        // Fail-closed : aucune permission en cas d'erreur
       }
 
       const roles: string[] = [];
@@ -263,7 +202,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       setAuthState({
         email: email || profile?.email || null,
-        isAuthenticated: true,
+        isAuthenticated: Boolean(profile),
         user: (profile as UserProfile) ?? null,
         roles,
         userCategories: assignedCats,
@@ -272,26 +211,11 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
         isRealSuperAdmin: isSuperAdmin,
       });
     } catch (err) {
-      console.warn('[PermissionsContext] fetchUser fallback sur profil local/dev:', err);
-      const fallbackUser: UserProfile = {
-        id: userId,
-        email: email || 'admin@fus.com',
-        full_name: 'Directeur Général (FUS)',
-        system_role: 'super_admin',
-        job_title: 'Directeur Général',
-        is_active: true,
-        created_at: new Date().toISOString(),
-      };
-
+      console.warn('[PermissionsContext] fetchUser error (fail-closed):', err);
       setAuthState({
-        email: email || 'admin@fus.com',
-        isAuthenticated: true,
-        user: fallbackUser,
-        roles: ['super_admin'],
-        userCategories: [],
-        permissions: ['*'],
+        ...EMPTY_STATE,
+        email: email || null,
         loading: false,
-        isRealSuperAdmin: true,
       });
     }
   };
@@ -305,9 +229,6 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
           return {
             ...prev,
             loading: false,
-            isAuthenticated: import.meta.env.DEV ? true : prev.isAuthenticated,
-            roles: import.meta.env.DEV && prev.roles.length === 0 ? ['super_admin'] : prev.roles,
-            isRealSuperAdmin: import.meta.env.DEV ? true : prev.isRealSuperAdmin,
           };
         }
         return prev;
@@ -318,14 +239,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (session?.user) {
         fetchUser(session.user.id, session.user.email ?? null);
       } else {
-        if (import.meta.env.DEV) {
-          setAuthState(prev => ({
-            ...prev,
-            loading: false,
-          }));
-        } else {
-          setAuthState({ ...EMPTY_STATE, loading: false });
-        }
+        setAuthState({ ...EMPTY_STATE, loading: false });
       }
     });
 
@@ -358,8 +272,65 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return role === 'super_admin' || authState.isRealSuperAdmin;
   };
 
+  const getEffectiveJobTitle = (): string | null | undefined =>
+    authState.isImpersonating
+      ? (authState.impersonatedUser?.job_title ?? authState.user?.job_title)
+      : authState.user?.job_title;
+
+  const getEffectiveRoleValue = (): string | null | undefined =>
+    authState.isImpersonating
+      ? (authState.impersonatedUser?.system_role ?? authState.user?.system_role)
+      : authState.user?.system_role;
+
+  const isEffectiveScoutAdmin = (): boolean =>
+    isScoutAdminRole(
+      authState.user,
+      authState.roles,
+      authState.isImpersonating,
+      authState.impersonatedUser
+    );
+
+  const normalizeSpecificActionName = (subModule: string, rawAction: string): string => {
+    if (subModule === 'candidates' && rawAction === 'reports') return 'manage_reports';
+    if (subModule === 'matches') {
+      if (rawAction === 'sync_frmf') return 'sync_my_club';
+      if (rawAction === 'import_pdf') return 'import_frmf_sheet';
+      if (rawAction === 'prepare_match') return 'manage_match_played';
+      if (rawAction === 'live_match' || rawAction === 'track_live_match') return 'live_tracking';
+      if (rawAction === 'standings') return 'manage_standings';
+    }
+    return rawAction;
+  };
+
   /**
-   * Vérifie l'accès granulaire CRUD à une SOUS-RUBRIQUE :
+   * Vérifie l'accès CRUD granulaire (create / read / update / delete) d'une permission métier spécifique
+   * (`sub:<subModule>:<specificAction>:<crudAction>`), avec repli rétro-compatible sur les anciennes clés plates.
+   */
+  const hasSpecificActionAccess = (
+    subModule: string,
+    specificAction: string,
+    crudAction: CrudAction = 'read'
+  ): boolean => {
+    if (isEffectiveSuperAdmin()) return true;
+
+    const canonicalSpec = normalizeSpecificActionName(subModule, specificAction);
+
+    // Directeur Administratif : accès strict aux dossiers Recrutement Immédiat (lecture & dépôt de documents)
+    if (!isEffectiveScoutAdmin() && isDirecteurAdministratifJob(getEffectiveJobTitle())) {
+      if (subModule === 'candidates' && canonicalSpec === 'recruit_now') {
+        return crudAction === 'read' || crudAction === 'update';
+      }
+      return false;
+    }
+
+    const perms = (authState.permissions || []).filter(p => p && p !== 'no_permissions');
+    if (perms.length === 0) return false;
+
+    return hasSpecificActionPermission(perms, subModule, canonicalSpec, crudAction);
+  };
+
+  /**
+   * Vérifie l'accès granulaire CRUD à une SOUS-RUBRIQUE (CRUD général découplé des permissions spécifiques) :
    * Ex: 'matches', 'official_shortlist', 'arbitres', 'leagues', 'stadiums',
    * 'trainings_calendar', 'trainings_sessions', 'trainings_exercises', 'trainings_evaluations', 'trainings_load',
    * 'players', 'teams', 'opponents', 'staff',
@@ -376,57 +347,40 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const perms = (authState.permissions || []).filter(p => p && p !== 'no_permissions');
     if (perms.length === 0) return false;
 
-    // 1. Clé sous-module explicite : "sub:<subModule>:<action>"
+    // 1. Délégation vers un CRUD d'action spécifique si format "<specificAction>:<crud>"
+    if (action.includes(':')) {
+      const [rawSpec, rawCrud] = action.split(':');
+      const specName = normalizeSpecificActionName(subModule, rawSpec);
+      const crudName: CrudAction = isCrudAction(rawCrud) ? rawCrud : 'read';
+      if (isSpecificActionForSubModule(subModule, specName)) {
+        return hasSpecificActionPermission(perms, subModule, specName, crudName);
+      }
+    }
+
+    // 2. Délégation vers l'action spécifique (niveau 'read') si action correspond à une permission dédiée
+    const canonicalAction = normalizeSpecificActionName(subModule, action);
+    if (isSpecificActionForSubModule(subModule, canonicalAction)) {
+      return hasSpecificActionPermission(perms, subModule, canonicalAction, 'read');
+    }
+
+    // 3. Compatibilité pour l'ancienne permission 'edit_player' fusionnée dans le CRUD général candidates:update
+    if (subModule === 'candidates' && (action === 'edit_player' || action === 'update')) {
+      return perms.includes('sub:candidates:update') || perms.includes('sub:candidates:edit_player');
+    }
+
+    // 4. Vérification du CRUD général du sous-module (découplé des actions spécifiques)
+    if (action === 'edit') {
+      return perms.includes(`sub:${subModule}:update`);
+    }
+
+    if (action === 'read') {
+      if (perms.includes(`sub:${subModule}:read`)) return true;
+      if (CRUD_KEYS.some(k => perms.includes(`sub:${subModule}:${k}`))) return true;
+      if (subModule === 'candidates' && perms.includes('sub:candidates:edit_player')) return true;
+      return hasAnySpecificPermissionInSubModule(perms, subModule);
+    }
+
     if (perms.includes(`sub:${subModule}:${action}`)) return true;
-
-    // Alias spécifiques pour la gestion des rapports sur les candidats
-    if (subModule === 'candidates' && (action === 'manage_reports' || action === 'reports')) {
-      return perms.includes('sub:candidates:manage_reports') || perms.includes('sub:candidates:reports');
-    }
-
-    // Actions Métier Spécifiques (Calendrier des Matchs) :
-    // Chaque action spécifique doit être STRICTEMENT vérifiée par sa propre clé sub:matches:<action>
-    if (subModule === 'matches') {
-      if (action === 'plan_match' || action === 'create') {
-        return perms.includes('sub:matches:plan_match') || perms.includes('sub:matches:create') || perms.includes('plan_match');
-      }
-      if (action === 'update' || action === 'edit') {
-        return (
-          perms.includes('sub:matches:update') ||
-          perms.includes('sub:matches:plan_match') ||
-          perms.includes('plan_match') ||
-          perms.includes('sub:matches:manage_match_played') ||
-          perms.includes('manage_match_played')
-        );
-      }
-      if (action === 'delete') {
-        return (
-          perms.includes('sub:matches:delete') ||
-          perms.includes('sub:matches:plan_match') ||
-          perms.includes('plan_match')
-        );
-      }
-      if (action === 'sync_my_club' || action === 'sync_frmf') {
-        return perms.includes('sub:matches:sync_my_club') || perms.includes('sync_my_club');
-      }
-      if (action === 'import_frmf_sheet' || action === 'import_pdf') {
-        return perms.includes('sub:matches:import_frmf_sheet') || perms.includes('import_frmf_sheet');
-      }
-      if (action === 'manage_match_played' || action === 'prepare_match') {
-        return (
-          perms.includes('sub:matches:manage_match_played') ||
-          perms.includes('manage_match_played') ||
-          perms.includes('sub:matches:plan_match') ||
-          perms.includes('plan_match')
-        );
-      }
-      if (action === 'live_tracking' || action === 'live_match' || action === 'track_live_match') {
-        return perms.includes('sub:matches:live_tracking') || perms.includes('live_tracking');
-      }
-      if (action === 'manage_standings' || action === 'standings') {
-        return perms.includes('sub:matches:manage_standings') || perms.includes('manage_standings');
-      }
-    }
 
     // Toute sous-rubrique ou action non explicitement cochée est strictement masquée
     return false;
@@ -440,9 +394,6 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const hasModuleAccess = (module: string, action: 'create' | 'read' | 'update' | 'delete' = 'read'): boolean => {
     if (isEffectiveSuperAdmin()) return true;
 
-    const perms = (authState.permissions || []).filter(p => p && p !== 'no_permissions');
-    if (perms.length === 0) return false;
-
     // Vérifier qu'au moins une sous-rubrique de cette grande rubrique possède la permission requise
     const moduleSubKeys = Object.entries(SUBMODULE_TO_PARENT_MAP)
       .filter(([, parent]) => parent === module)
@@ -451,6 +402,9 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (moduleSubKeys.length > 0) {
       return moduleSubKeys.some(subKey => hasSubModuleAccess(subKey, action, module));
     }
+
+    const perms = (authState.permissions || []).filter(p => p && p !== 'no_permissions');
+    if (perms.length === 0) return false;
 
     // Fallback uniquement pour des modules sans sous-rubrique dans SUBMODULE_TO_PARENT_MAP
     return perms.includes(`${module}:${action}`);
@@ -469,7 +423,6 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     const perms = (authState.permissions || []).filter(p => p && p !== 'no_permissions');
-    if (perms.includes(action)) return true;
 
     if (action === 'manage_teams') {
       return hasSubModuleAccess('teams', 'read') || hasSubModuleAccess('teams', 'update');
@@ -477,65 +430,55 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     if (action === 'create_match' || action === 'plan_match' || action === 'schedule_match') {
       return (
-        perms.includes('sub:matches:plan_match') ||
-        perms.includes('plan_match') ||
-        perms.includes('schedule_match')
+        hasSpecificActionAccess('matches', 'plan_match', 'create') ||
+        hasSubModuleAccess('matches', 'create')
       );
     }
 
     if (action === 'import_frmf_sheet' || action === 'import_pdf') {
-      return (
-        perms.includes('sub:matches:import_frmf_sheet') ||
-        perms.includes('import_frmf_sheet')
-      );
+      return hasSpecificActionAccess('matches', 'import_frmf_sheet', 'read');
     }
 
     if (action === 'sync_my_club' || action === 'sync_frmf') {
-      return (
-        perms.includes('sub:matches:sync_my_club') ||
-        perms.includes('sync_my_club')
-      );
+      return hasSpecificActionAccess('matches', 'sync_my_club', 'read');
     }
 
-    if (action === 'manage_match_played' || action === 'prepare_match' || action === 'edit_matches' || action === 'edit_match') {
+    if (action === 'manage_match_played' || action === 'prepare_match') {
+      return hasSpecificActionAccess('matches', 'manage_match_played', 'read');
+    }
+
+    if (action === 'edit_matches' || action === 'edit_match') {
       return (
-        perms.includes('sub:matches:manage_match_played') ||
-        perms.includes('manage_match_played') ||
-        perms.includes('sub:matches:plan_match') ||
-        perms.includes('plan_match') ||
-        perms.includes('schedule_match')
+        hasSpecificActionAccess('matches', 'manage_match_played', 'update') ||
+        hasSpecificActionAccess('matches', 'plan_match', 'update') ||
+        hasSubModuleAccess('matches', 'update')
       );
     }
 
     if (action === 'live_tracking' || action === 'live_match' || action === 'track_live_match') {
-      return (
-        perms.includes('sub:matches:live_tracking') ||
-        perms.includes('live_tracking')
-      );
+      return hasSpecificActionAccess('matches', 'live_tracking', 'read');
     }
 
     if (action === 'manage_matches') {
       return (
-        perms.includes('sub:matches:manage_match_played') ||
-        perms.includes('manage_match_played') ||
+        hasSpecificActionAccess('matches', 'manage_match_played', 'update') ||
         hasSubModuleAccess('matches', 'update')
       );
     }
 
     if (action === 'manage_standings' || action === 'manage_ranking' || action === 'standings') {
-      return (
-        perms.includes('sub:matches:manage_standings') ||
-        perms.includes('manage_standings')
-      );
+      return hasSpecificActionAccess('matches', 'manage_standings', 'read');
     }
 
     if (action === 'create_opponent' || action === 'manage_opponents') {
       return (
-        perms.includes('sub:matches:manage_standings') ||
-        perms.includes('sub:opponents:create') ||
-        perms.includes('sub:opponents:update')
+        hasSpecificActionAccess('matches', 'manage_standings', 'create') ||
+        hasSubModuleAccess('opponents', 'create') ||
+        hasSubModuleAccess('opponents', 'update')
       );
     }
+
+    if (perms.includes(action)) return true;
 
     return false;
   };
@@ -746,6 +689,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       can,
       hasModuleAccess,
       hasSubModuleAccess,
+      hasSpecificActionAccess,
       canManageCategory,
       hasCategoryRestriction,
       allowedCategories,

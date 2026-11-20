@@ -37,6 +37,8 @@ interface FrmfCalendarSyncModalProps {
   leagues: League[];
   teams?: Team[];
   canManageCategory?: (category: string | null | undefined) => boolean;
+  canCreate?: boolean;
+  canUpdate?: boolean;
   onSynced?: (result: {
     createdCount: number;
     updatedRoundsCount: number;
@@ -53,6 +55,8 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
   leagues,
   teams,
   canManageCategory,
+  canCreate = true,
+  canUpdate = true,
   onSynced,
 }) => {
   const queryClient = useQueryClient();
@@ -77,8 +81,8 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
       setAudit(res);
       setSelectedKeys(
         new Set([
-          ...res.missingMatches.map((m) => m.syncKey),
-          ...res.roundUpdates.map((r) => r.syncKey),
+          ...(canCreate ? res.missingMatches.map((m) => m.syncKey) : []),
+          ...(canUpdate ? res.roundUpdates.map((r) => r.syncKey) : []),
         ])
       );
     } catch (err: unknown) {
@@ -87,7 +91,7 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
     } finally {
       setIsAuditing(false);
     }
-  }, [mainClub, opponentClubs, calendarMatches, leagues, teams, canManageCategory]);
+  }, [mainClub, opponentClubs, calendarMatches, leagues, teams, canManageCategory, canCreate, canUpdate]);
 
   useEffect(() => {
     if (isOpen) {
@@ -99,19 +103,33 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
   const missingMatches = useMemo(() => audit?.missingMatches || [], [audit]);
   const roundUpdates = useMemo(() => audit?.roundUpdates || [], [audit]);
   const selectedMissingItems = useMemo(
-    () => missingMatches.filter((m) => selectedKeys.has(m.syncKey)),
-    [missingMatches, selectedKeys]
+    () => (canCreate ? missingMatches.filter((m) => selectedKeys.has(m.syncKey)) : []),
+    [missingMatches, selectedKeys, canCreate]
   );
   const selectedRoundItems = useMemo(
-    () => roundUpdates.filter((r) => selectedKeys.has(r.syncKey)),
-    [roundUpdates, selectedKeys]
+    () => (canUpdate ? roundUpdates.filter((r) => selectedKeys.has(r.syncKey)) : []),
+    [roundUpdates, selectedKeys, canUpdate]
   );
 
   const totalSyncableCount = missingMatches.length + roundUpdates.length;
+  const totalAllowedSyncableCount =
+    (canCreate ? missingMatches.length : 0) + (canUpdate ? roundUpdates.length : 0);
   const totalSelectedCount = selectedMissingItems.length + selectedRoundItems.length;
-  const allSelected = totalSyncableCount > 0 && totalSelectedCount === totalSyncableCount;
+  const allSelected =
+    totalAllowedSyncableCount > 0 && totalSelectedCount === totalAllowedSyncableCount;
+
+  const missingKeySet = useMemo(() => new Set(missingMatches.map(m => m.syncKey)), [missingMatches]);
+  const roundKeySet = useMemo(() => new Set(roundUpdates.map(r => r.syncKey)), [roundUpdates]);
 
   const toggleKey = (key: string) => {
+    if (missingKeySet.has(key) && !canCreate) {
+      toast.error("Permission Spécifique « Synchroniser My Club (Create) » requise pour ajouter des matchs manquants.");
+      return;
+    }
+    if (roundKeySet.has(key) && !canUpdate) {
+      toast.error("Permission Spécifique « Synchroniser My Club (Update) » requise pour mettre à jour les journées.");
+      return;
+    }
     setSelectedKeys((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
@@ -126,8 +144,8 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
     } else {
       setSelectedKeys(
         new Set([
-          ...missingMatches.map((m) => m.syncKey),
-          ...roundUpdates.map((r) => r.syncKey),
+          ...(canCreate ? missingMatches.map((m) => m.syncKey) : []),
+          ...(canUpdate ? roundUpdates.map((r) => r.syncKey) : []),
         ])
       );
     }
@@ -137,13 +155,17 @@ export const FrmfCalendarSyncModal: React.FC<FrmfCalendarSyncModalProps> = ({
     if (totalSelectedCount === 0 || isSyncing) return;
     setIsSyncing(true);
     try {
-      const createRes = await frmfCalendarSyncService.syncMissingMatchesToCalendar(
-        selectedMissingItems,
-        { mainClub }
-      );
-      const roundRes = await frmfCalendarSyncService.syncRoundNamesToCalendar(
-        selectedRoundItems
-      );
+      const createRes = canCreate && selectedMissingItems.length > 0
+        ? await frmfCalendarSyncService.syncMissingMatchesToCalendar(
+            selectedMissingItems,
+            { mainClub }
+          )
+        : { createdCount: 0, skippedCount: 0, errors: [] };
+      const roundRes = canUpdate && selectedRoundItems.length > 0
+        ? await frmfCalendarSyncService.syncRoundNamesToCalendar(
+            selectedRoundItems
+          )
+        : { updatedCount: 0, skippedCount: 0, errors: [] };
 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['matches'] }),
