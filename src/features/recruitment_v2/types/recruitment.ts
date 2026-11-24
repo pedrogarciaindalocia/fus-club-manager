@@ -287,27 +287,34 @@ export function calculateCandidateAge(birthDateStr?: string | null): number | nu
 }
 
 /**
- * Déduit automatiquement la catégorie d'âge officielle FUS à partir de la date de naissance
- * (ex: 13 ans -> U13).
+ * Déduit automatiquement la catégorie d'âge officielle FUS à partir de l'année de naissance
+ * selon la règle saisonnière (âge année civile + 1, ex: né en 2012 en 2026 -> 14 + 1 = 15 -> U15).
  */
 export function getAgeCategoryFromBirthDate(birthDateStr?: string | null, fallbackCategory = 'U19'): string {
-  const age = calculateCandidateAge(birthDateStr);
-  if (age === null) return fallbackCategory;
-  if (age <= 9) return 'U9';
-  if (age === 10) return 'U10';
-  if (age === 11) return 'U11';
-  if (age === 12) return 'U12';
-  if (age === 13) return 'U13';
-  if (age === 14) return 'U14';
-  if (age === 15) return 'U15';
-  if (age === 16) return 'U16';
-  if (age === 17) return 'U17';
-  if (age === 18) return 'U18';
-  if (age === 19) return 'U19';
-  if (age === 20) return 'U20';
-  if (age === 21) return 'U21';
-  if (age === 22) return 'U22';
-  if (age === 23) return 'U23';
+  if (!birthDateStr) return fallbackCategory;
+  const yearMatch = String(birthDateStr).trim().match(/^(\d{4})/);
+  const birth = new Date(birthDateStr);
+  if (!yearMatch && isNaN(birth.getTime())) return fallbackCategory;
+  const birthYear = yearMatch ? Number(yearMatch[1]) : birth.getUTCFullYear();
+  if (isNaN(birthYear) || birthYear <= 1900) return fallbackCategory;
+
+  const seasonAge = new Date().getFullYear() - birthYear + 1;
+  if (seasonAge < 0) return fallbackCategory;
+  if (seasonAge <= 9) return 'U9';
+  if (seasonAge === 10) return 'U10';
+  if (seasonAge === 11) return 'U11';
+  if (seasonAge === 12) return 'U12';
+  if (seasonAge === 13) return 'U13';
+  if (seasonAge === 14) return 'U14';
+  if (seasonAge === 15) return 'U15';
+  if (seasonAge === 16) return 'U16';
+  if (seasonAge === 17) return 'U17';
+  if (seasonAge === 18) return 'U18';
+  if (seasonAge === 19) return 'U19';
+  if (seasonAge === 20) return 'U20';
+  if (seasonAge === 21) return 'U21';
+  if (seasonAge === 22) return 'U22';
+  if (seasonAge === 23) return 'U23';
   return 'SENIOR';
 }
 
@@ -656,7 +663,6 @@ export interface TrialCandidate {
   administrative_documents?: AdministrativeDocument[];
   honor_declaration_document?: AdministrativeDocument | null;
   test_slot_validation?: TestSlotValidationInfo | null;
-  coach_validation?: 'validated' | 'not_validated' | null;
   contract_type?: string;
   administrative_status?: string;
   admin_notes?: string;

@@ -53,10 +53,10 @@ import { toast } from 'sonner';
 import { useClubData } from '../../../hooks/useClubData';
 import type { Club } from '../../../types';
 import { OpponentClubFormModal } from '../../club-management/components/OpponentClubFormModal';
-import { AdministrativeDossierForm } from './AdministrativeDossierForm';
 import { HonorDeclarationFormField } from './HonorDeclarationControl';
 import { PlayerVideoModal } from './PlayerVideoModal';
 import { usePermissions } from '../../../context/PermissionsContext';
+import { isResponsableMagasinierJob, isDirecteurAdministratifJob, isResponsableVieJob } from '../../../constants/roles';
 
 const calculateAge = (birthDate?: string) => {
   if (!birthDate) return null;
@@ -217,7 +217,21 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
       authState?.user?.system_role === 'super_admin'
     )
   );
+  const effectiveJobTitle = authState?.isImpersonating && authState?.impersonatedUser
+    ? (authState.impersonatedUser.job_title ?? authState?.user?.job_title)
+    : authState?.user?.job_title;
+  const isResponsableMagasinierUser = Boolean(
+    !isSuperAdminUser && isResponsableMagasinierJob(effectiveJobTitle)
+  );
+  const isDirecteurAdministratifUser = Boolean(
+    !isSuperAdminUser && isDirecteurAdministratifJob(effectiveJobTitle)
+  );
+  const isResponsableVieUser = Boolean(
+    !isSuperAdminUser && isResponsableVieJob(effectiveJobTitle)
+  );
+  const isReadOnlyProfileViewer = isResponsableMagasinierUser || isDirecteurAdministratifUser || isResponsableVieUser;
   const hasDossierOrReportPermission = Boolean(
+    isReadOnlyProfileViewer ||
     canManageReports ||
     hasSpecificActionAccess('candidates', 'manage_reports', 'read') ||
     hasSpecificActionAccess('candidates', 'drive_link', 'read') ||
@@ -230,7 +244,15 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
     hasSubModuleAccess('candidates', 'create')
   );
 
-  const [activeTab, setActiveTab] = useState<'scout' | 'personal' | 'report'>((canManageReports !== false && (initialTab === 'sport' || initialTab === 'evaluations' || initialTab === 'report')) ? 'report' : (initialTab as any) === 'admin' ? 'personal' : (initialTab as any) || 'scout');
+  const [activeTab, setActiveTab] = useState<'scout' | 'personal' | 'report'>(
+    isReadOnlyProfileViewer
+      ? 'personal'
+      : (canManageReports !== false && (initialTab === 'sport' || initialTab === 'evaluations' || initialTab === 'report'))
+        ? 'report'
+        : (initialTab as any) === 'admin'
+          ? 'personal'
+          : (initialTab as any) || 'scout'
+  );
   const { getPositionByCode } = useMetrics();
 
   // Garde-fou strict : si l'utilisateur n'a pas la permission de consulter le dossier ou les rapports
@@ -261,15 +283,9 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
 
   const [currentAdminDocs, setCurrentAdminDocs] = useState<AdministrativeDocument[]>(candidate?.administrative_documents || []);
   const [honorDeclarationDoc, setHonorDeclarationDoc] = useState<AdministrativeDocument | null>(() => getHonorDeclarationDocument(candidate));
-  const [currentContractType, setCurrentContractType] = useState<string>(candidate?.contract_type || '');
-  const [currentAdminNotes, setCurrentAdminNotes] = useState<string>(candidate?.admin_notes || '');
-  const [showAdminForm, setShowAdminForm] = useState(false);
-
   React.useEffect(() => {
     setCurrentAdminDocs(candidate?.administrative_documents || []);
     setHonorDeclarationDoc(getHonorDeclarationDocument(candidate));
-    setCurrentContractType(candidate?.contract_type || '');
-    setCurrentAdminNotes(candidate?.admin_notes || '');
   }, [candidate]);
 
   const handleHonorDocChange = async (doc: AdministrativeDocument | null) => {
@@ -291,34 +307,11 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
     }
   };
 
-  const handleDocsChange = async (newDocs: AdministrativeDocument[]) => {
-    setCurrentAdminDocs(newDocs);
-    if (onUpdateCandidate && candidate?.id) {
-      await onUpdateCandidate(candidate.id, { administrative_documents: newDocs });
-    } else if (candidate?.id) {
-      await recruitmentService.updateCandidate(candidate.id, { administrative_documents: newDocs });
-    }
-  };
-
-  const handleContractTypeChange = async (newType: string) => {
-    setCurrentContractType(newType);
-    if (onUpdateCandidate && candidate?.id) {
-      await onUpdateCandidate(candidate.id, { contract_type: newType });
-    } else if (candidate?.id) {
-      await recruitmentService.updateCandidate(candidate.id, { contract_type: newType });
-    }
-  };
-
-  const handleAdminNotesChange = async (newNotes: string) => {
-    setCurrentAdminNotes(newNotes);
-    if (onUpdateCandidate && candidate?.id) {
-      await onUpdateCandidate(candidate.id, { admin_notes: newNotes });
-    } else if (candidate?.id) {
-      await recruitmentService.updateCandidate(candidate.id, { admin_notes: newNotes });
-    }
-  };
-
   React.useEffect(() => {
+    if (isReadOnlyProfileViewer) {
+      setActiveTab('personal');
+      return;
+    }
     if (initialTab) {
       if (initialTab === 'sport' || initialTab === 'evaluations' || initialTab === 'report') {
         if (canManageReports !== false) {
@@ -332,7 +325,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
         setActiveTab(initialTab as any);
       }
     }
-  }, [initialTab, candidate?.id, canManageReports]);
+  }, [initialTab, candidate?.id, canManageReports, isReadOnlyProfileViewer]);
 
   if (!isOpen) return null;
 
@@ -618,7 +611,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               {candidate.first_name?.[0]}{candidate.last_name?.[0]}
             </div>
             <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black uppercase shadow-xs border border-slate-900">
-              {candidate.primary_position}
+              {getFrenchPositionLabel(candidate.primary_position)}
             </span>
           </div>
 
@@ -627,14 +620,11 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               <h2 className="text-base sm:text-lg font-black text-white tracking-tight truncate">
                 {candidate.first_name} {candidate.last_name}
               </h2>
-              {isCandidateUpgraded && (
+              {!isDirecteurAdministratifUser && !isResponsableVieUser && isCandidateUpgraded && (
                 <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-extrabold shadow-2xs">
                   Surclassé {candidateSurclassLabel || ''}
                 </span>
               )}
-              <span className="px-2 py-0.5 rounded-md bg-primary/20 text-red-200 border border-primary/40 text-[10px] font-black uppercase tracking-wider">
-                {candidate.pipeline_stage || 'Prospect'}
-              </span>
               {candidate.reference_player_style && (
                 <span className="px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 text-[10px] font-bold flex items-center gap-1 shadow-2xs">
                   <Sparkles className="w-3 h-3 text-indigo-300" />
@@ -668,52 +658,48 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   {candidateAge ? `${candidateAge} ans` : ''} {candidate.birth_date ? `(${new Date(candidate.birth_date).getFullYear()})` : ''}
                 </span>
               </span>
-              {candidate.status && (
-                <>
-                  <span className="text-slate-600 font-semibold">•</span>
-                  <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700/80 text-slate-300 text-[10px] font-semibold tracking-wide">
-                    {candidate.status}
-                  </span>
-                </>
-              )}
             </div>
           </div>
         </div>
 
         {/* BLOC 2 : SCOUT OMNIPRÉSENT & ACTIONS */}
         <div className="flex items-center gap-3 self-end lg:self-center shrink-0 flex-wrap sm:flex-nowrap">
-          {/* Carte Scout Référent / Découvreur */}
-          <div className="h-10 px-3 py-1 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 rounded-xl flex items-center gap-2.5 shadow-xs transition-all shrink-0">
-            <ScoutAvatar
-              scoutId={candidate.discovering_scout_id || latestEval?.evaluator_id}
-              scoutName={candidate.discovering_scout_name || latestEval?.evaluator_name || 'Cellule Recrutement FUS'}
-              scouts={scouts}
-              size="md"
-              className="ring-1 ring-white/20 rounded-lg shrink-0"
-            />
-            <div className="min-w-0 pr-0.5">
-              <div className="flex items-center gap-1.5 leading-none mb-0.5">
-                <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">
-                  Scout Référent
-                </span>
-                {(() => {
-                  const s = scouts.find(sc => sc.id === candidate.discovering_scout_id || sc.full_name?.toLowerCase().trim() === (candidate.discovering_scout_name || latestEval?.evaluator_name || '').toLowerCase().trim());
-                  if (!s?.role_title && !candidate.discovering_scout_id) return null;
-                  return (
-                    <span className="text-[9px] text-amber-300/90 font-semibold block truncate">
-                      • {s?.role_title || 'Scout'}
+          {/* Carte Scout Référent / Découvreur (masquée pour Responsable de Vie & Magasinier) */}
+          {!isResponsableVieUser && !isResponsableMagasinierUser && (
+            <>
+              <div className="h-10 px-3 py-1 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 rounded-xl flex items-center gap-2.5 shadow-xs transition-all shrink-0">
+                <ScoutAvatar
+                  scoutId={candidate.discovering_scout_id || latestEval?.evaluator_id}
+                  scoutName={candidate.discovering_scout_name || latestEval?.evaluator_name || 'Cellule Recrutement FUS'}
+                  scouts={scouts}
+                  size="md"
+                  className="ring-1 ring-white/20 rounded-lg shrink-0"
+                />
+                <div className="min-w-0 pr-0.5">
+                  <div className="flex items-center gap-1.5 leading-none mb-0.5">
+                    <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">
+                      Scout Référent
                     </span>
-                  );
-                })()}
+                    {(() => {
+                      const s = scouts.find(sc => sc.id === candidate.discovering_scout_id || sc.full_name?.toLowerCase().trim() === (candidate.discovering_scout_name || latestEval?.evaluator_name || '').toLowerCase().trim());
+                      if (!s?.role_title && !candidate.discovering_scout_id) return null;
+                      return (
+                        <span className="text-[9px] text-amber-300/90 font-semibold block truncate">
+                          • {s?.role_title || 'Scout'}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <span className="font-bold text-white text-xs block truncate max-w-[120px] sm:max-w-[150px] leading-tight">
+                    {candidate.discovering_scout_name || latestEval?.evaluator_name || 'Cellule Recrutement FUS'}
+                  </span>
+                </div>
               </div>
-              <span className="font-bold text-white text-xs block truncate max-w-[120px] sm:max-w-[150px] leading-tight">
-                {candidate.discovering_scout_name || latestEval?.evaluator_name || 'Cellule Recrutement FUS'}
-              </span>
-            </div>
-          </div>
 
-          {/* Séparateur discret */}
-          <div className="hidden sm:block h-6 w-px bg-slate-700/80 shrink-0" />
+              {/* Séparateur discret */}
+              <div className="hidden sm:block h-6 w-px bg-slate-700/80 shrink-0" />
+            </>
+          )}
 
           {/* Actions : Barre d'actions homogène (Hauteur h-9, rounded-xl, design unifié) */}
           <div className="flex items-center gap-2 shrink-0">
@@ -793,7 +779,8 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
       </div>
 
       {/* 🌟 BLOC OMNIPRÉSENT SOUS LE HEADER : HIÉRARCHISATION SCOUT DÉTECTEUR VS SCOUTS INTERVENANTS (US-DASH-101) 🌟 */}
-      <div className="bg-slate-50/90 border-b border-slate-200 px-6 py-4 space-y-4 shrink-0">
+      {!isReadOnlyProfileViewer && (
+        <div className="bg-slate-50/90 border-b border-slate-200 px-6 py-4 space-y-4 shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
@@ -1833,19 +1820,23 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
             )}
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Tab Navigation Principale du Dossier (1. Scout, 2. État Civil & Contact, 3. Rapports) */}
       <div className="flex border-b bg-white px-6 overflow-x-auto gap-2 py-2.5 shrink-0">
-        {[
-          { id: 'scout', label: '1. Scout', icon: Compass },
-          { id: 'personal', label: '2. État Civil & Contact', icon: User },
-          ...(canManageReports !== false ? [{
-            id: 'report',
-            label: `3. Rapports (${(isRecruitmentAdmin || isScoutManager) ? multiScoutMetrics.totalReportsCount : candidateEvals.length})`,
-            icon: FileText
-          }] : []),
-        ].map((tab) => {
+        {(isReadOnlyProfileViewer
+          ? [{ id: 'personal', label: 'Infos Personnelles & Sportives', icon: User }]
+          : [
+              { id: 'scout', label: '1. Scout', icon: Compass },
+              { id: 'personal', label: '2. État Civil & Contact', icon: User },
+              ...(canManageReports !== false ? [{
+                id: 'report',
+                label: `3. Rapports (${(isRecruitmentAdmin || isScoutManager) ? multiScoutMetrics.totalReportsCount : candidateEvals.length})`,
+                icon: FileText
+              }] : []),
+            ]
+        ).map((tab) => {
           const Icon = tab.icon;
           return (
             <button
@@ -1868,8 +1859,8 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
 
       {/* Content Body */}
       <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
-        {/* TAB 1 : SCOUT */}
-        {activeTab === 'scout' && (
+        {/* TAB 1 : SCOUT (également affiché en tête pour le Directeur Administratif) */}
+        {(activeTab === 'scout' || (isDirecteurAdministratifUser && activeTab === 'personal')) && (
           <div className="space-y-6 text-xs animate-in fade-in duration-200">
             {/* En-tête Scout Découvreur & Poste */}
             <div className="bg-slate-50/90 p-5 rounded-3xl border border-slate-200/90 space-y-4">
@@ -1885,10 +1876,6 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="px-3 py-1 rounded-xl bg-slate-900 text-white font-black text-xs flex items-center gap-1.5 shadow-xs">
-                    <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                    <span>{candidate.primary_position}</span>
-                  </span>
                   <span className="px-2.5 py-1 rounded-xl bg-primary/10 text-primary font-bold text-xs uppercase border border-primary/20">
                     Priorité : {candidate.recommendation_priority || 'Standard'}
                   </span>
@@ -1962,7 +1949,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                     <Shield className="w-3.5 h-3.5 text-primary" /> Poste Détecté
                   </span>
                   <span className="font-black text-primary text-sm">
-                    {candidate.primary_position}
+                    {getFrenchPositionLabel(candidate.primary_position)}
                   </span>
                 </div>
 
@@ -2374,94 +2361,50 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   <User className="w-4 h-4 text-primary" />
                   Identité & État Civil du Joueur
                 </h4>
-                <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700">
-                  Catégorie : {candidate.age_category || 'U19'}
-                </span>
               </div>
 
-              <div className="flex flex-col md:flex-row gap-6 items-start">
-                {/* Photo officielle avec avatar */}
-                <div className="w-32 h-32 sm:w-36 sm:h-36 rounded-2xl border-2 border-slate-300 bg-white overflow-hidden shadow-xs flex items-center justify-center shrink-0">
-                  {candidate.photo_url ? (
-                    <img
-                      src={candidate.photo_url}
-                      alt={`${candidate.first_name} ${candidate.last_name}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <User className="w-12 h-12 text-slate-300" />
-                  )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 w-full">
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Date de Naissance</span>
+                  <span className="font-bold text-slate-900">
+                    {candidate.birth_date || 'Non renseignée'}
+                  </span>
                 </div>
 
-                {/* Grille informations personnelles */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 flex-1 w-full">
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Prénom</span>
-                    <span className="font-bold text-slate-900 text-sm">{candidate.first_name}</span>
-                  </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Lieu de Naissance</span>
+                  <span className="font-bold text-slate-900">{candidate.birth_place || 'Non renseigné'}</span>
+                </div>
 
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Nom</span>
-                    <span className="font-bold text-slate-900 text-sm">{candidate.last_name}</span>
-                  </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Nationalité</span>
+                  <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <span className="text-sm leading-none">{getCountryFlag(candidate.country || candidate.nationality)}</span>
+                    <span>{candidate.nationality || 'Marocaine'}</span>
+                  </span>
+                </div>
 
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Date de Naissance</span>
-                    <span className="font-bold text-slate-900">
-                      {candidate.birth_date || 'Non renseignée'}
-                    </span>
-                  </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Genre</span>
+                  <span className="font-bold text-slate-900">{candidate.gender || 'Masculin'}</span>
+                </div>
 
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Âge Actuel</span>
-                    <span className="font-bold text-slate-900">
-                      {calculateAge(candidate.birth_date) ? `${calculateAge(candidate.birth_date)} ans` : '-'}
-                    </span>
-                  </div>
-
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Lieu de Naissance</span>
-                    <span className="font-bold text-slate-900">{candidate.birth_place || 'Non renseigné'}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Nationalité</span>
-                    <span className="font-bold text-slate-900 flex items-center gap-1.5">
-                      <span className="text-sm leading-none">{getCountryFlag(candidate.country || candidate.nationality)}</span>
-                      <span>{candidate.nationality || 'Marocaine'}</span>
-                    </span>
-                  </div>
-
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Genre</span>
-                    <span className="font-bold text-slate-900">{candidate.gender || 'Masculin'}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Catégorie Officielle</span>
-                    {(() => {
-                      const effectiveCat = candidateSurclassInfo.baseCategory;
-                      const pole = getPoleFromCategory(effectiveCat);
-                      return (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-primary">{effectiveCat}</span>
-                          {pole && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">
-                              {pole.shortLabel}
-                            </span>
-                          )}
-                          {candidateSurclassInfo.isUpgraded && (
-                            <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
-                              Surclassé {candidateSurclassInfo.shortBadgeText}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Catégorie Officielle</span>
+                  {(() => {
+                    const effectiveCat = candidateSurclassInfo.baseCategory;
+                    const pole = getPoleFromCategory(effectiveCat);
+                    return (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-primary">{effectiveCat}</span>
+                        {pole && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">
+                            {pole.shortLabel}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -2548,8 +2491,66 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               </div>
             </div>
 
+            {/* 4. Profil Sportif */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+              <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2 border-b border-slate-100 pb-3">
+                <Trophy className="w-4 h-4 text-amber-600" />
+                Profil Sportif du Joueur
+              </h4>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Poste Secondaire</span>
+                  <span className="font-bold text-slate-900">
+                    {candidate.secondary_position ? getFrenchPositionLabel(candidate.secondary_position) : '-'}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Pied Fort</span>
+                  <span className="font-bold text-slate-900">{candidate.preferred_foot || '-'}</span>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Taille / Poids</span>
+                  <span className="font-bold text-slate-900">
+                    {candidate.height_cm ? `${candidate.height_cm} cm` : '-'} / {candidate.weight_kg ? `${candidate.weight_kg} kg` : '-'}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Club d'Origine</span>
+                  <span className="font-bold text-slate-900">{candidate.origin_club || '-'}</span>
+                </div>
+
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Compétition / Ligue</span>
+                  <span className="font-bold text-slate-900">{candidate.league_competition || '-'}</span>
+                </div>
+              </div>
+            </div>
+
             {/* Déclaration sur l'honneur (automatique dès « Inviter à un test ») */}
             {(latestDecision === 'invitation_test' || Boolean(honorDeclarationDoc)) && (() => {
+              if (isResponsableMagasinierUser) {
+                const exists = Boolean(honorDeclarationDoc);
+                return (
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold text-slate-700">Déclaration sur l'honneur</span>
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border text-xs font-black',
+                        exists
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : 'border-rose-200 bg-rose-50 text-rose-700'
+                      )}
+                    >
+                      <span className={cn('w-2.5 h-2.5 rounded-full', exists ? 'bg-emerald-500' : 'bg-rose-500')} />
+                      <span>{exists ? 'Oui (Existe)' : 'Non (N\'existe pas)'}</span>
+                    </span>
+                  </div>
+                );
+              }
               const currentScoutId = currentScout?.id;
               const normUserName = (currentUserName || '').trim().toLowerCase();
               const isDetailOwner = Boolean(
@@ -2562,9 +2563,11 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                 (normUserName && (candidate.discovering_scout_name || '').trim().toLowerCase() === normUserName)
               );
               const canUploadHonor = Boolean(
-                isSuperAdminUser ||
-                isRecruitmentAdmin ||
-                isDetailOwner
+                !isDirecteurAdministratifUser && (
+                  isSuperAdminUser ||
+                  isRecruitmentAdmin ||
+                  isDetailOwner
+                )
               );
               return (
                 <HonorDeclarationFormField
@@ -2576,48 +2579,6 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               );
             })()}
 
-            {/* 3. Détails Administratifs & Documents (affichés dans l'onglet État Civil) */}
-            {(currentAdminDocs.length > 0 || currentContractType || currentAdminNotes || candidate.contract_type || candidate.admin_notes || showAdminForm) ? (
-              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                    <Briefcase className="w-4 h-4 text-emerald-600" />
-                    Détails Administratifs & Documents ({currentAdminDocs.length})
-                  </h4>
-                  {currentContractType && (
-                    <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
-                      {currentContractType}
-                    </span>
-                  )}
-                </div>
-
-                <AdministrativeDossierForm
-                  documents={currentAdminDocs}
-                  onDocumentsChange={handleDocsChange}
-                  contractType={currentContractType || 'Convention de formation'}
-                  onContractTypeChange={handleContractTypeChange}
-                  adminNotes={currentAdminNotes}
-                  onAdminNotesChange={handleAdminNotesChange}
-                />
-              </div>
-            ) : (
-              <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/70 flex items-center justify-between">
-                <div className="flex items-center gap-2.5 text-xs text-slate-600">
-                  <Briefcase className="w-4 h-4 text-slate-400" />
-                  <span>Aucun document administratif joint pour ce joueur.</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!currentContractType) setCurrentContractType('Convention de formation');
-                    setShowAdminForm(true);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                >
-                  <span>+ Ajouter un document</span>
-                </button>
-              </div>
-            )}
           </div>
         )}
 

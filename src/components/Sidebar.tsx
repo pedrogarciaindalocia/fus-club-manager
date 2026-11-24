@@ -48,8 +48,12 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
   const isAnalyst = normJob.includes('analyst') || normRole.includes('analyst') || normJob.includes('vidéo') || normJob.includes('video') || normJob.includes('data');
   const isStaff = normRole === 'staff';
 
-  if (isResponsableVie || isDirecteurAdministratif) {
+  if (isResponsableVie) {
     return path.startsWith('/recruitment-v2') && subId === 'candidates';
+  }
+
+  if (isDirecteurAdministratif && path.startsWith('/recruitment-v2')) {
+    return subId === 'candidates';
   }
 
   if (isResponsableMagasinier) {
@@ -90,7 +94,6 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
     if (path.startsWith('/recruitment-v2') && subId === 'sessions') return true;
     if (path === '/arbitres' || path === '/leagues' || path === '/stadiums') return true;
     if (path === '/media') return true;
-    if (path === '/' || path === '/dashboard') return true;
     return false;
   }
 
@@ -246,6 +249,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     ? (effectiveRole === 'super_admin')
     : (currentRole === 'super_admin');
   const isScout = isScoutBranch(effectiveRole, effectiveJob);
+  const isResponsableVie = !isSuperAdmin && isResponsableVieJob(effectiveJob);
+  const isResponsableMagasinier = !isSuperAdmin && isResponsableMagasinierJob(effectiveJob);
+  const isCoach = !isSuperAdmin && isCoachJob(effectiveJob, effectiveRole);
   const isScoutAdmin = isImpersonating
     ? (effectiveRole === 'scout_admin' || effectiveRole === 'super_admin')
     : (currentRole === 'scout_admin' || realIsSuperAdmin || currentRole === 'admin');
@@ -527,8 +533,8 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const renderNavList = (isCollapsedMode = false) => (
     <div className="space-y-4">
-      {/* Primary Dashboard Link (Caché pour la cellule Scout / Détection & Recrutements) */}
-      {!isScout && (
+      {/* Primary Dashboard Link (Caché pour Scout, Responsable Magasinier, Responsable Vie & Coach) */}
+      {!isScout && !isResponsableMagasinier && !isResponsableVie && !isCoach && (
         <div className="mb-2">
           <NavLink
             to="/dashboard"

@@ -649,6 +649,7 @@ HMARRASS OMAR Commissaire du Match
       });
 
       queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['match_events'] });
       queryClient.invalidateQueries({ queryKey: ['players'] });
       queryClient.invalidateQueries({ queryKey: ['opponents'] });
       queryClient.invalidateQueries({ queryKey: ['opponent_players'] });
@@ -656,7 +657,7 @@ HMARRASS OMAR Commissaire du Match
 
       if (result.isExistingMatch) {
         toast.success(
-          `Match existant synchronisé ! Score (${dataToSave.scoreHome}-${dataToSave.scoreAway}), ${result.eventsInserted} fait(s) de jeu dont ${result.substitutionsInserted} changement(s) et ${result.injuriesInserted} blessure(s).`
+          `Match existant synchronisé ! Score (${dataToSave.scoreHome}-${dataToSave.scoreAway}), ${result.eventsRectified} minute(s) rectifiée(s), ${result.eventsInserted} nouveau(x) fait(s) de jeu.`
         );
       } else {
         toast.success(

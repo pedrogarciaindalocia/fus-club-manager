@@ -43,13 +43,13 @@ export async function dispatchMatchPushNotification(record: PushNotificationReco
     // 2.1 Récupérer les détails du match
     const { data: match } = await supabase
       .from('matches')
-      .select('id, category, competition, home_team, away_team, score_home, score_away, status, opponent:clubs!opponent_id(name)')
+      .select('id, category, is_home, score_home, score_away, status, opponent:clubs!opponent_id(name)')
       .eq('id', matchId)
       .single();
 
     if (!match) return;
 
-    const opponentName = (match as any).opponent?.name || match.away_team || 'Adversaire';
+    const opponentName = (match as any).opponent?.name || 'Adversaire';
     const category = match.category || '';
 
     // 2.2 Récupérer le nom du joueur si applicable
@@ -57,11 +57,11 @@ export async function dispatchMatchPushNotification(record: PushNotificationReco
     if (record.player_id) {
       const { data: player } = await supabase
         .from('players')
-        .select('first_name, last_name')
+        .select('full_name, first_name, last_name')
         .eq('id', record.player_id)
         .single();
       if (player) {
-        playerName = `${player.first_name || ''} ${player.last_name || ''}`.trim();
+        playerName = (player as any).full_name || `${player.first_name || ''} ${player.last_name || ''}`.trim();
       }
     }
 
@@ -148,14 +148,21 @@ export async function dispatchMatchPushNotification(record: PushNotificationReco
     // 2.3 Récupérer les tokens enregistrés
     const { data: allTokens, error: tokensErr } = await supabase
       .from('push_tokens')
-      .select('token, followed_categories, preferences');
+      .select('token, user_id, followed_categories, preferences');
 
     if (tokensErr || !allTokens || allTokens.length === 0) return;
 
+    const targetUserId = record.operator_id || record.target_user_id || null;
     const eligibleTokens: string[] = [];
     for (const entry of allTokens) {
       const token = entry.token?.trim();
       if (!token || !token.startsWith('ExponentPushToken[')) continue;
+
+      if (eventType === 'operator_assigned' && targetUserId) {
+        if (String((entry as any).user_id || '').toLowerCase() !== String(targetUserId).toLowerCase()) continue;
+        eligibleTokens.push(token);
+        continue;
+      }
 
       if (prefKey && entry.preferences) {
         const prefVal = (entry.preferences as any)[prefKey];

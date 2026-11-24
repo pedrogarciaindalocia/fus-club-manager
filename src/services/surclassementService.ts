@@ -108,6 +108,100 @@ export const surclassementService = {
     if (error) throw error;
   },
 
+  /** Réintègre un joueur dans sa catégorie principale en clôturant tous ses
+   *  surclassements actifs et en nettoyant matches.lineup.surclasses + match_players. */
+  async revertAllForPlayer(playerId: string): Promise<number> {
+    const { data: activeRows, error: fetchErr } = await supabase
+      .from('player_surclassements')
+      .select('id, notes')
+      .eq('player_id', playerId)
+      .eq('status', 'active');
+    if (fetchErr) throw fetchErr;
+
+    const rows = activeRows || [];
+    const matchIds = new Set<string>();
+    const rosterLinkMatchIds = new Set<string>();
+
+    rows.forEach((row: any) => {
+      try {
+        const parsed = typeof row.notes === 'string' ? JSON.parse(row.notes) : row.notes;
+        if (parsed?.match_id) {
+          const mid = String(parsed.match_id);
+          matchIds.add(mid);
+          if (parsed.roster_link_created === true) rosterLinkMatchIds.add(mid);
+        }
+      } catch {
+        // ignore non-JSON notes
+      }
+    });
+
+    // Inclure également les matchs non terminés où lineup.surclasses contient ce joueur
+    const { data: openMatches } = await supabase
+      .from('matches')
+      .select('id, lineup, status')
+      .in('status', ['scheduled', 'planned', 'live', 'in_progress']);
+
+    (openMatches || []).forEach((m: any) => {
+      if (m.lineup?.surclasses?.[playerId]) {
+        matchIds.add(String(m.id));
+      }
+    });
+
+    if (rows.length > 0) {
+      const activeIds = rows.map((r: any) => r.id);
+      const { error: updErr } = await supabase
+        .from('player_surclassements')
+        .update({ status: 'reverted', reverted_at: new Date().toISOString() })
+        .in('id', activeIds);
+      if (updErr) throw updErr;
+    }
+
+    if (matchIds.size > 0) {
+      const { data: targetMatches, error: mErr } = await supabase
+        .from('matches')
+        .select('id, lineup')
+        .in('id', Array.from(matchIds));
+      if (mErr) throw mErr;
+
+      for (const m of targetMatches || []) {
+        const currentLineup = (m as any).lineup || {};
+        if (currentLineup.surclasses?.[playerId]) {
+          const updatedSurclasses = { ...currentLineup.surclasses };
+          delete updatedSurclasses[playerId];
+          const { error: mUpdErr } = await supabase
+            .from('matches')
+            .update({ lineup: { ...currentLineup, surclasses: updatedSurclasses } })
+            .eq('id', (m as any).id);
+          if (mUpdErr) throw mUpdErr;
+        }
+
+        if (rosterLinkMatchIds.has(String((m as any).id))) {
+          const { data: events } = await supabase
+            .from('match_events')
+            .select('id')
+            .eq('match_id', (m as any).id)
+            .or(`player_id.eq.${playerId},related_player_id.eq.${playerId}`)
+            .limit(1);
+          const { data: stats } = await supabase
+            .from('player_match_stats')
+            .select('player_id')
+            .eq('match_id', (m as any).id)
+            .eq('player_id', playerId)
+            .limit(1);
+          if (!events?.length && !stats?.length) {
+            await supabase
+              .from('match_players')
+              .delete()
+              .eq('match_id', (m as any).id)
+              .eq('player_id', playerId);
+          }
+        }
+      }
+    }
+
+    return rows.length;
+  },
+
   /**
    * Planifier le surclassement d'un joueur sur un ensemble de matchs cibles à venir.
    * Aligné strictement sur le fonctionnement de fus-app :

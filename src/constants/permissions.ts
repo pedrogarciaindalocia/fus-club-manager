@@ -24,11 +24,11 @@ export const LEGACY_SPECIFIC_KEY_ALIASES: Record<string, string[]> = {
   'candidates:assign_mission': ['sub:candidates:assign_mission'],
   'candidates:recruit_now': ['sub:candidates:recruit_now'],
   'candidates:manage_reports': ['sub:candidates:manage_reports', 'sub:candidates:reports'],
-  'matches:plan_match': ['sub:matches:plan_match', 'plan_match', 'schedule_match'],
+  'matches:plan_match': ['sub:matches:plan_match', 'plan_match'],
   'matches:sync_my_club': ['sub:matches:sync_my_club', 'sync_my_club'],
   'matches:import_frmf_sheet': ['sub:matches:import_frmf_sheet', 'import_frmf_sheet'],
   'matches:manage_match_played': ['sub:matches:manage_match_played', 'manage_match_played'],
-  'matches:live_tracking': ['sub:matches:live_tracking', 'live_tracking'],
+  'matches:live_tracking': ['sub:matches:live_tracking'],
   'matches:manage_standings': ['sub:matches:manage_standings', 'manage_standings'],
 };
 

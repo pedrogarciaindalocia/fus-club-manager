@@ -12,6 +12,7 @@ import { SessionSecurityProvider } from './context/SessionSecurityContext';
 import { MatchReminderProvider } from './context/MatchReminderContext';
 import { syncQueue } from './services/offlineQueue';
 import {
+  isCoachJob,
   isDirecteurAdministratifJob,
   isResponsableMagasinierJob,
   isResponsableVieJob,
@@ -133,6 +134,7 @@ const AppContent: React.FC = () => {
   const isResponsableVie = !isSuperAdmin && !isEffectiveScoutAdmin && isResponsableVieJob(effectiveJobTitle);
   const isDirecteurAdministratif = !isSuperAdmin && !isEffectiveScoutAdmin && isDirecteurAdministratifJob(effectiveJobTitle);
   const isResponsableMagasinier = !isSuperAdmin && !isEffectiveScoutAdmin && isResponsableMagasinierJob(effectiveJobTitle);
+  const isCoach = !isSuperAdmin && !isEffectiveScoutAdmin && isCoachJob(effectiveJobTitle, currentRole);
   const canAccessRecruitmentV2 = isSuperAdmin || hasModuleAccess('recruitment_v2', 'read');
 
   // Cloisonnement strict : Responsable Magasinier -> Planning des Tests uniquement
@@ -146,8 +148,8 @@ const AppContent: React.FC = () => {
     }
   }
 
-  // Cloisonnement strict : Responsable Vie & Directeur Administratif -> Database Détection V2 uniquement
-  if (isResponsableVie || isDirecteurAdministratif) {
+  // Cloisonnement strict : Responsable Vie -> Database Détection V2 uniquement
+  if (isResponsableVie) {
     const allowedCandidatesOnlyPaths =
       location.pathname.startsWith('/recruitment-v2') ||
       location.pathname === '/profile' ||
@@ -155,6 +157,16 @@ const AppContent: React.FC = () => {
     if (!allowedCandidatesOnlyPaths || location.pathname === '/recruitment-v2/add-player' || location.pathname === '/recruitment-v2/add-report') {
       return <Navigate to="/recruitment-v2?tab=candidates" replace />;
     }
+  }
+
+  // Cloisonnement Coach : pas de Dashboard -> redirection vers Entraînements
+  if (isCoach && (location.pathname === '/' || location.pathname === '/dashboard')) {
+    return <Navigate to="/trainings" replace />;
+  }
+
+  // Directeur Administratif : pas de restriction hors Recrutement & Détection V2, mais dans /recruitment-v2 uniquement Database (lecture seule)
+  if (isDirecteurAdministratif && (location.pathname === '/recruitment-v2/add-player' || location.pathname === '/recruitment-v2/add-report')) {
+    return <Navigate to="/recruitment-v2?tab=candidates" replace />;
   }
 
   // 1. Redirection de la racine et dashboard vers Détection & Recrutements uniquement si habilité sur au moins une sous-rubrique V2

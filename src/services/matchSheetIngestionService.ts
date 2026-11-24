@@ -34,6 +34,7 @@ export interface IngestionResult {
   opponentPlayersCreated: number;
   myClubSurclassementsLogged: number;
   eventsInserted: number;
+  eventsRectified: number;
   substitutionsInserted: number;
   injuriesInserted: number;
 }
@@ -590,8 +591,12 @@ export const matchSheetIngestionService = {
         existing.find(ep => matchPlayerName(player.name, ep.full_name));
 
       if (found) {
-        // Synchroniser le numéro de maillot et le poste GK (uniquement si (G))
+        // Synchroniser le numéro de maillot, le nom réel (si générique) et le poste GK (uniquement si (G))
         const updates: Record<string, any> = {};
+        const isGenericOppName = !found.full_name || /^(adversaire|joueur|opponent|#?\d+)/i.test(found.full_name.trim());
+        if (player.name && isGenericOppName && !/^(adversaire|joueur|opponent)/i.test(player.name.trim())) {
+          updates.full_name = player.name.trim();
+        }
         if (player.jerseyNumber > 0 && found.jersey_number !== player.jerseyNumber) {
           updates.jersey_number = player.jerseyNumber;
         }
@@ -1300,8 +1305,114 @@ export const matchSheetIngestionService = {
     const oppTargetGoals = parsed.isHomeMatch ? parsed.scoreAway : parsed.scoreHome;
 
     const eventsToInsert: any[] = [];
+    const minuteUpdates: Array<{ id: string; minute?: number; extra?: Record<string, any> }> = [];
     let substitutionsInserted = 0;
     let injuriesInserted = 0;
+
+    const isGenericActorLabel = (val?: string | null): boolean => {
+      const s = String(val || '').trim();
+      return !s || /^(adversaire|joueur|opponent|#?\d+|inconnu)/i.test(s);
+    };
+
+    const queueEventRectification = (
+      matchedEv: any,
+      newMinute: number,
+      opponentExtraPatch?: Record<string, any>
+    ) => {
+      if (!matchedEv?.id) return;
+      const oldMinute = Number(matchedEv.minute);
+      const targetMinute = Number(newMinute);
+      const minuteChanged = Number.isFinite(targetMinute) && oldMinute !== targetMinute;
+
+      let nextExtra: Record<string, any> | undefined;
+      if (opponentExtraPatch && Object.keys(opponentExtraPatch).length > 0) {
+        const curExtra = (matchedEv.extra && typeof matchedEv.extra === 'object') ? matchedEv.extra : {};
+        const merged = { ...curExtra };
+        let extraChanged = false;
+
+        if (opponentExtraPatch.player_name && isGenericActorLabel(curExtra.player_name)) {
+          merged.player_name = opponentExtraPatch.player_name;
+          extraChanged = true;
+        }
+        if (opponentExtraPatch.player_out_name && isGenericActorLabel(curExtra.player_out_name)) {
+          merged.player_out_name = opponentExtraPatch.player_out_name;
+          extraChanged = true;
+        }
+        if (opponentExtraPatch.player_in_name && isGenericActorLabel(curExtra.player_in_name)) {
+          merged.player_in_name = opponentExtraPatch.player_in_name;
+          extraChanged = true;
+        }
+        if (opponentExtraPatch.related_name && isGenericActorLabel(curExtra.related_name)) {
+          merged.related_name = opponentExtraPatch.related_name;
+          extraChanged = true;
+        }
+        if (opponentExtraPatch.jersey_number && !curExtra.jersey_number) {
+          merged.jersey_number = opponentExtraPatch.jersey_number;
+          extraChanged = true;
+        }
+        if (opponentExtraPatch.related_jersey && !curExtra.related_jersey) {
+          merged.related_jersey = opponentExtraPatch.related_jersey;
+          extraChanged = true;
+        }
+        if (opponentExtraPatch.opponent_player_id && !curExtra.opponent_player_id) {
+          merged.opponent_player_id = opponentExtraPatch.opponent_player_id;
+          extraChanged = true;
+        }
+        if (opponentExtraPatch.related_opponent_player_id && !curExtra.related_opponent_player_id) {
+          merged.related_opponent_player_id = opponentExtraPatch.related_opponent_player_id;
+          extraChanged = true;
+        }
+        if (
+          opponentExtraPatch.opponent_ref &&
+          (!curExtra.opponent_ref || curExtra.opponent_ref === 'OPPONENT-SUB' || /^OPPONENT-\d+$/i.test(String(curExtra.opponent_ref)))
+        ) {
+          if (curExtra.opponent_ref !== opponentExtraPatch.opponent_ref) {
+            merged.opponent_ref = opponentExtraPatch.opponent_ref;
+            extraChanged = true;
+          }
+        }
+        if (extraChanged) {
+          nextExtra = merged;
+          matchedEv.extra = merged;
+        }
+      }
+
+      if (!minuteChanged && !nextExtra) return;
+      const existingUpdate = minuteUpdates.find(u => u.id === matchedEv.id);
+      if (existingUpdate) {
+        if (minuteChanged) existingUpdate.minute = targetMinute;
+        if (nextExtra) existingUpdate.extra = nextExtra;
+      } else {
+        minuteUpdates.push({
+          id: matchedEv.id,
+          ...(minuteChanged ? { minute: targetMinute } : {}),
+          ...(nextExtra ? { extra: nextExtra } : {}),
+        });
+      }
+      if (minuteChanged) matchedEv.minute = targetMinute;
+    };
+
+    const queueMinuteRectification = (matchedEv: any, newMinute: number) =>
+      queueEventRectification(matchedEv, newMinute);
+
+    const findClosestUnmatchedIndex = (
+      targetMinute: number,
+      predicate: (ev: any) => boolean
+    ): number => {
+      let bestIdx = -1;
+      let bestDiff = Infinity;
+      existingList.forEach((ev, idx) => {
+        const key = String(ev.id || `idx-${idx}`);
+        if (matchedExistingKeys.has(key)) return;
+        if (!predicate(ev)) return;
+        const diff = Math.abs(Number(ev.minute ?? 0) - Number(targetMinute));
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestIdx = idx;
+        }
+      });
+      return bestIdx;
+    };
 
     // 10a. Buts (Régulier, Penalty, CSC)
     for (const goal of parsed.goals) {
@@ -1320,24 +1431,68 @@ export const matchSheetIngestionService = {
       );
       if (dupInBatch) continue;
 
-      // 2) Appariement 1-pour-1 contre les événements déjà enregistrés (Live Tracking ±5 min ou ré-import)
-      const existingMatchIdx = existingList.findIndex((ev, idx) => {
-        const key = String(ev.id || `idx-${idx}`);
-        if (matchedExistingKeys.has(key)) return false;
-        if (!isSameGoalType(ev.type)) return false;
-        if (Math.abs(Number(ev.minute ?? 0) - Number(goal.minute)) > 5) return false;
-        return matchesActorInfo(getPrimaryActorFromEvent(ev), actor);
-      });
-      if (existingMatchIdx !== -1) {
-        const matchedEv = existingList[existingMatchIdx];
-        matchedExistingKeys.add(String(matchedEv.id || `idx-${existingMatchIdx}`));
-        continue;
-      }
+      // 2) Appariement 1-pour-1 contre les événements déjà enregistrés (Live Tracking ou ré-import)
+      //    On cherche d'abord le même buteur (plus proche en minute), puis on rectifie uniquement sa minute
+      //    tout en conservant intact son éventuel passeur décisif (related_player_id / assist).
+      let existingMatchIdx = findClosestUnmatchedIndex(
+        goal.minute,
+        ev => isSameGoalType(ev.type) && matchesActorInfo(getPrimaryActorFromEvent(ev), actor)
+      );
 
-      // 3) Plafond par score officiel : si le match avait déjà des buts enregistrés en base (ex: Live Tracking avec autre n°/minute), ne pas dépasser le score officiel
+      // Si le score officiel est déjà atteint sur ce match pour cette équipe, apparier le but le plus proche
+      // de la même équipe pour rectifier sa minute sans jamais créer de doublon.
       const scoringSide: 'home' | 'away' = isCsc ? (actor.extraTeam === 'home' ? 'away' : 'home') : actor.extraTeam;
       const targetGoals = scoringSide === 'home' ? myClubTargetGoals : oppTargetGoals;
       const existingGoalsCount = countGoalsForSide(scoringSide, existingList);
+
+      if (existingMatchIdx === -1 && existingGoalsCount > 0 && targetGoals > 0 && existingGoalsCount >= targetGoals) {
+        existingMatchIdx = findClosestUnmatchedIndex(
+          goal.minute,
+          ev => {
+            if (!isSameGoalType(ev.type)) return false;
+            const evTeam = resolveEventTeam(ev);
+            const evSide: 'home' | 'away' = ev.type === 'own_goal' ? (evTeam === 'home' ? 'away' : 'home') : evTeam;
+            return evSide === scoringSide;
+          }
+        );
+      }
+
+      if (existingMatchIdx !== -1) {
+        const matchedEv = existingList[existingMatchIdx];
+        const oldGoalMinute = Number(matchedEv.minute);
+        matchedExistingKeys.add(String(matchedEv.id || `idx-${existingMatchIdx}`));
+        queueEventRectification(
+          matchedEv,
+          goal.minute,
+          !actor.isMyClub
+            ? {
+              player_name: goal.playerName,
+              jersey_number: goal.jerseyNumber,
+              opponent_player_id: actor.oppPlayerId,
+              opponent_ref: actor.opponentRef,
+            }
+            : undefined
+        );
+
+        // Si une passe décisive séparée (type === 'assist') était liée à la même ancienne minute, rectifier sa minute aussi
+        if (Number.isFinite(oldGoalMinute) && oldGoalMinute !== Number(goal.minute)) {
+          const companionAssistIdx = findClosestUnmatchedIndex(
+            oldGoalMinute,
+            ev =>
+              ev.type === 'assist' &&
+              resolveEventTeam(ev) === actor.extraTeam &&
+              Number(ev.minute) === oldGoalMinute
+          );
+          if (companionAssistIdx !== -1) {
+            const assistEv = existingList[companionAssistIdx];
+            matchedExistingKeys.add(String(assistEv.id || `idx-${companionAssistIdx}`));
+            queueMinuteRectification(assistEv, goal.minute);
+          }
+        }
+        continue;
+      }
+
+      // 3) Plafond par score officiel
       const currentGoalsCount = countGoalsForSide(scoringSide, [...existingList, ...eventsToInsert]);
       if (existingGoalsCount > 0 && targetGoals > 0 && currentGoalsCount >= targetGoals) {
         continue;
@@ -1374,14 +1529,25 @@ export const matchSheetIngestionService = {
         );
         if (dupRedInBatch) continue;
 
-        const existingRedIdx = existingList.findIndex((ev, idx) => {
-          const key = String(ev.id || `idx-${idx}`);
-          if (matchedExistingKeys.has(key)) return false;
-          return isRedType(ev) && matchesActorInfo(getPrimaryActorFromEvent(ev), actor);
-        });
+        const existingRedIdx = findClosestUnmatchedIndex(
+          card.minute,
+          ev => isRedType(ev) && matchesActorInfo(getPrimaryActorFromEvent(ev), actor)
+        );
         if (existingRedIdx !== -1) {
           const matchedEv = existingList[existingRedIdx];
           matchedExistingKeys.add(String(matchedEv.id || `idx-${existingRedIdx}`));
+          queueEventRectification(
+            matchedEv,
+            card.minute,
+            !actor.isMyClub
+              ? {
+                player_name: card.playerName,
+                jersey_number: card.jerseyNumber,
+                opponent_player_id: actor.oppPlayerId,
+                opponent_ref: actor.opponentRef,
+              }
+              : undefined
+          );
           continue;
         }
       } else {
@@ -1392,21 +1558,32 @@ export const matchSheetIngestionService = {
         );
         if (dupYellowInBatch) continue;
 
-        const existingYellowIdx = existingList.findIndex((ev, idx) => {
-          const key = String(ev.id || `idx-${idx}`);
-          if (matchedExistingKeys.has(key)) return false;
-          const isYellowOrDoubleYellow =
-            ev.type === 'yellow_card' ||
-            ev.type === 'second_yellow' ||
-            ev.type === 'yellow_red' ||
-            (ev.type === 'red_card' && ev.extra?.reason === 'double_yellow');
-          if (!isYellowOrDoubleYellow) return false;
-          if (Math.abs(Number(ev.minute ?? 0) - Number(card.minute)) > 5) return false;
-          return matchesActorInfo(getPrimaryActorFromEvent(ev), actor);
-        });
+        const existingYellowIdx = findClosestUnmatchedIndex(
+          card.minute,
+          ev => {
+            const isYellowOrDoubleYellow =
+              ev.type === 'yellow_card' ||
+              ev.type === 'second_yellow' ||
+              ev.type === 'yellow_red' ||
+              (ev.type === 'red_card' && ev.extra?.reason === 'double_yellow');
+            return isYellowOrDoubleYellow && matchesActorInfo(getPrimaryActorFromEvent(ev), actor);
+          }
+        );
         if (existingYellowIdx !== -1) {
           const matchedEv = existingList[existingYellowIdx];
           matchedExistingKeys.add(String(matchedEv.id || `idx-${existingYellowIdx}`));
+          queueEventRectification(
+            matchedEv,
+            card.minute,
+            !actor.isMyClub
+              ? {
+                player_name: card.playerName,
+                jersey_number: card.jerseyNumber,
+                opponent_player_id: actor.oppPlayerId,
+                opponent_ref: actor.opponentRef,
+              }
+              : undefined
+          );
           continue;
         }
       }
@@ -1438,16 +1615,14 @@ export const matchSheetIngestionService = {
       );
       if (dupInjuryInBatch) continue;
 
-      const existingInjIdx = existingList.findIndex((ev, idx) => {
-        const key = String(ev.id || `idx-${idx}`);
-        if (matchedExistingKeys.has(key)) return false;
-        if (ev.type !== 'injury') return false;
-        if (Math.abs(Number(ev.minute ?? 0) - Number(injury.minute)) > 10) return false;
-        return matchesActorInfo(getPrimaryActorFromEvent(ev), actor);
-      });
+      const existingInjIdx = findClosestUnmatchedIndex(
+        injury.minute,
+        ev => ev.type === 'injury' && matchesActorInfo(getPrimaryActorFromEvent(ev), actor)
+      );
       if (existingInjIdx !== -1) {
         const matchedEv = existingList[existingInjIdx];
         matchedExistingKeys.add(String(matchedEv.id || `idx-${existingInjIdx}`));
+        queueMinuteRectification(matchedEv, injury.minute);
         continue;
       }
 
@@ -1491,19 +1666,41 @@ export const matchSheetIngestionService = {
       const dupSubInBatch = eventsToInsert.some(matchesSubEvent);
       if (dupSubInBatch) continue;
 
-      const existingSubIdx = existingList.findIndex((ev, idx) => {
-        const key = String(ev.id || `idx-${idx}`);
-        if (matchedExistingKeys.has(key)) return false;
-        return matchesSubEvent(ev);
-      });
+      const outName = sub.playerOutName || `Joueur #${sub.jerseyOut}`;
+      const inName = sub.playerInName || `Joueur #${sub.jerseyIn}`;
+
+      let existingSubIdx = findClosestUnmatchedIndex(sub.minute, matchesSubEvent);
+      if (existingSubIdx === -1 && !actorOut.isMyClub) {
+        existingSubIdx = findClosestUnmatchedIndex(
+          sub.minute,
+          ev =>
+            ev.type === 'substitution' &&
+            resolveEventTeam(ev) === 'away' &&
+            (isGenericActorLabel(ev.extra?.player_out_name) || isGenericActorLabel(ev.extra?.player_in_name))
+        );
+      }
       if (existingSubIdx !== -1) {
         const matchedEv = existingList[existingSubIdx];
         matchedExistingKeys.add(String(matchedEv.id || `idx-${existingSubIdx}`));
+        queueEventRectification(
+          matchedEv,
+          sub.minute,
+          !actorOut.isMyClub
+            ? {
+              jersey_number: sub.jerseyOut,
+              related_jersey: sub.jerseyIn,
+              player_name: outName,
+              related_name: inName,
+              player_out_name: `#${sub.jerseyOut} ${outName}`,
+              player_in_name: `#${sub.jerseyIn} ${inName}`,
+              opponent_player_id: actorOut.oppPlayerId,
+              related_opponent_player_id: actorIn.oppPlayerId,
+              opponent_ref: actorOut.opponentRef,
+            }
+            : undefined
+        );
         continue;
       }
-
-      const outName = sub.playerOutName || `Joueur #${sub.jerseyOut}`;
-      const inName = sub.playerInName || `Joueur #${sub.jerseyIn}`;
 
       eventsToInsert.push({
         match_id: matchId,
@@ -1529,6 +1726,21 @@ export const matchSheetIngestionService = {
       substitutionsInserted++;
     }
 
+    if (minuteUpdates.length > 0) {
+      const updateResults = await Promise.all(
+        minuteUpdates.map(({ id, minute, extra }) => {
+          const patch: Record<string, any> = {};
+          if (minute !== undefined) patch.minute = minute;
+          if (extra !== undefined) patch.extra = extra;
+          return supabase.from('match_events').update(patch).eq('id', id);
+        })
+      );
+      const updateErr = updateResults.find(r => r.error)?.error;
+      if (updateErr) {
+        console.warn('[matchSheetIngestionService] Erreur rectification minutes match_events:', updateErr);
+      }
+    }
+
     if (eventsToInsert.length > 0) {
       const { error: eventsError } = await supabase.from('match_events').insert(eventsToInsert);
       if (eventsError) {
@@ -1545,6 +1757,7 @@ export const matchSheetIngestionService = {
       opponentPlayersCreated,
       myClubSurclassementsLogged,
       eventsInserted: eventsToInsert.length,
+      eventsRectified: minuteUpdates.length,
       substitutionsInserted,
       injuriesInserted,
     };

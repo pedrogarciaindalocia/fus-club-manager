@@ -258,17 +258,13 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     (!isStatusLockedForNonAdmin && (canProcessRecruitNow || isCandidateOwner))
   );
 
-  // Options de statuts disponibles selon les droits :
-  // - 3 statuts : À suivre, Inviter à un test, Recrutement immédiatement (jamais de 'recruit_standby')
+  // Options de statuts disponibles : À suivre & Inviter à un test (Recrutement immédiatement retiré)
   const availableStatusOptions = useMemo(() => {
     return PLAYER_RECRUITMENT_STATUS_OPTIONS.filter(opt => {
-      if ((opt.value as string) === 'recruit_standby') return false;
-      if (opt.value === 'recruit_now') {
-        return canProcessRecruitNow || isCandidateOwner || persistedCandidateStatus === 'recruit_now';
-      }
+      if ((opt.value as string) === 'recruit_standby' || opt.value === 'recruit_now') return false;
       return true;
     });
-  }, [canProcessRecruitNow, isCandidateOwner, persistedCandidateStatus]);
+  }, []);
 
   const allowedCategories = useMemo(() => {
     if (isSuperAdmin || isAdmin) return RECRUITMENT_AGE_CATEGORIES;
@@ -2391,11 +2387,6 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     >
                       <option value="to_follow">À suivre</option>
                       <option value="invitation_test">Inviter à un test</option>
-                      {(canCreateRecruitNow || canProcessRecruitNow || isCandidateOwner || scoutStateDecision === 'recruit_now') && (
-                        <option value="recruit_now">
-                          Recrutement immédiatement
-                        </option>
-                      )}
                     </select>
 
                     {!canProcessRecruitNow && (
@@ -2403,7 +2394,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                         {isStatusLockedForNonAdmin
                           ? "Ce joueur a déjà le statut « Inviter à un test ». Seul un Admin ou Super Admin peut modifier ce statut ou planifier ses tests."
                           : isCandidateOwner
-                            ? "En tant que scout découvreur, vous pouvez orienter votre joueur vers « À suivre », « Inviter à un test » ou « Recrutement immédiatement » (le statut « Inviter à un test » devient ensuite verrouillé)."
+                            ? "En tant que scout découvreur, vous pouvez orienter votre joueur vers « À suivre » ou « Inviter à un test » (le statut « Inviter à un test » devient ensuite verrouillé)."
                             : "Ce joueur a été détecté par un autre scout. La modification de statut est réservée à son découvreur ou à la Direction."}
                       </p>
                     )}

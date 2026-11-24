@@ -52,15 +52,36 @@ export const uploadRecruitmentDocument = async (
   let finalUrl = '';
 
   try {
-    if (isImage) {
+    if (category === 'honor_declaration') {
+      // Déclaration sur l'honneur (PDF ou Image) -> bucket 'medias', dossier 'scout_documents/'
+      const rawExt = (fileToUpload.name.split('.').pop() || (isPdf ? 'pdf' : 'jpg'))
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '') || (isPdf ? 'pdf' : 'jpg');
+      const storagePath = `scout_documents/${Date.now()}-${Math.random().toString(36).substring(2)}.${rawExt}`;
+      const { error: uploadErr } = await supabase.storage
+        .from('medias')
+        .upload(storagePath, fileToUpload, {
+          contentType: fileToUpload.type || (isPdf ? 'application/pdf' : 'image/jpeg'),
+          upsert: false,
+        });
+      if (uploadErr) {
+        console.error('[uploadRecruitmentDocument] Erreur upload medias/scout_documents:', uploadErr);
+        throw new Error(`Échec upload Supabase Storage (medias/scout_documents) : ${uploadErr.message}`);
+      }
+      const { data } = supabase.storage.from('medias').getPublicUrl(storagePath);
+      if (!data?.publicUrl) {
+        throw new Error('Impossible de récupérer l’URL publique depuis medias/scout_documents.');
+      }
+      finalUrl = data.publicUrl;
+    } else if (isImage) {
       const publicUrl = await storageService.uploadFile(fileToUpload, 'scouts');
       if (publicUrl) {
         finalUrl = publicUrl;
       }
     } else if (isPdf) {
-      // Pour les PDF, tenter un upload direct dans le bucket Storage 'medias'
+      // Pour les autres PDF de recrutement, téléverser également dans 'medias/scout_documents/'
       const safeExt = 'pdf';
-      const storagePath = `default/docs/${Date.now()}-${Math.random().toString(36).substring(2)}.${safeExt}`;
+      const storagePath = `scout_documents/${Date.now()}-${Math.random().toString(36).substring(2)}.${safeExt}`;
       const { error: uploadErr } = await supabase.storage
         .from('medias')
         .upload(storagePath, fileToUpload, { contentType: 'application/pdf' });
@@ -72,6 +93,9 @@ export const uploadRecruitmentDocument = async (
       }
     }
   } catch (err) {
+    if (category === 'honor_declaration') {
+      throw err;
+    }
     console.warn('[uploadRecruitmentDocument] Échec upload Supabase, bascule Base64:', err);
   }
 

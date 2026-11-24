@@ -179,49 +179,6 @@ export interface PermissionDefinition {
   badge: string;
 }
 
-export const MATCH_OPERATION_PERMISSIONS: PermissionDefinition[] = [
-  {
-    key: 'live_tracking',
-    label: 'Live Tracking',
-    desc: 'Chronométrage et saisie des événements de match en direct (buts, cartons...)',
-    target: 'mobile',
-    category: 'match_management',
-    badge: 'Live'
-  },
-  {
-    key: 'modify_match',
-    label: 'Modification des matchs',
-    desc: 'Mettre à jour le score, les titulaires, remplaçants et détails de match',
-    target: 'mobile',
-    category: 'match_management',
-    badge: 'Feuille'
-  },
-  {
-    key: 'change_formation',
-    label: 'Changement du système de jeu',
-    desc: 'Ajuster le schéma tactique (4-3-3, 3-5-2...) en direct sur le terrain',
-    target: 'mobile',
-    category: 'match_management',
-    badge: 'Tactique'
-  },
-  {
-    key: 'postpone_match',
-    label: 'Reporter un match',
-    desc: 'Déclarer un report ou une suspension de match',
-    target: 'mobile',
-    category: 'match_management',
-    badge: 'Statut'
-  },
-  {
-    key: 'evaluate_players',
-    label: 'Évaluation des joueurs',
-    desc: 'Notes individuelles et bilans techniques d\'après-match',
-    target: 'mobile',
-    category: 'match_management',
-    badge: 'Éval'
-  }
-];
-
 export const MATCH_GLOBAL_PLANNING_PERMISSIONS: PermissionDefinition[] = [
   {
     key: 'schedule_match',
@@ -234,8 +191,7 @@ export const MATCH_GLOBAL_PLANNING_PERMISSIONS: PermissionDefinition[] = [
 ];
 
 export const MATCH_MOBILE_PERMISSIONS: PermissionDefinition[] = [
-  ...MATCH_GLOBAL_PLANNING_PERMISSIONS,
-  ...MATCH_OPERATION_PERMISSIONS
+  ...MATCH_GLOBAL_PLANNING_PERMISSIONS
 ];
 
 export const SCOUT_MOBILE_PERMISSIONS: PermissionDefinition[] = [
@@ -446,6 +402,7 @@ export const MATCH_SPECIFIC_ACTIONS: {
     { key: 'manage_match_played', label: 'Feuille & Match Joué (Préparation)', sublabel: 'Accès à la préparation du match, composition, consignes et verrouillage', icon: PlaySquare, badgeClass: 'bg-blue-500/20 text-blue-700 dark:text-blue-300' },
     { key: 'live_tracking', label: 'Live Match & Chronomètre', sublabel: 'Gestion du chronomètre en direct, saisie des scores et événements live', icon: Radio, badgeClass: 'bg-red-500/20 text-red-700 dark:text-red-300' },
     { key: 'manage_standings', label: 'Gestion de classement', sublabel: 'Ajouter les clubs adverses et enregistrer leurs résultats pour le classement officiel', icon: Trophy, badgeClass: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' },
+    { key: 'assign_operator', label: 'Opérateur FUS-APP (Gestion & Assignation)', sublabel: 'Permet de choisir l’opérateur FUS-APP du match et définir ses permissions terrain', icon: UserPlus, badgeClass: 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' },
   ];
 
 const SPECIFIC_ACTIONS_CONFIG: Record<string, {
@@ -614,9 +571,8 @@ const UserCategoriesCompactCell: React.FC<{
             +{remainingCount}
           </span>
           <div
-            className={`absolute left-0 hidden group-hover/cats:flex flex-col w-64 p-2.5 bg-card/95 backdrop-blur-md text-card-foreground rounded-xl border border-border shadow-xl z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-150 ${
-              openDownward ? 'top-full mt-1.5' : 'bottom-full mb-1.5'
-            }`}
+            className={`absolute left-0 hidden group-hover/cats:flex flex-col w-64 p-2.5 bg-card/95 backdrop-blur-md text-card-foreground rounded-xl border border-border shadow-xl z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-150 ${openDownward ? 'top-full mt-1.5' : 'bottom-full mb-1.5'
+              }`}
           >
             <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">
               Périmètre ({categories.length} catégories)
@@ -652,9 +608,8 @@ const UserPermissionsHoverBadge: React.FC<{
 
   if (user.system_role === 'super_admin') {
     return (
-      <span className={`inline-flex items-center gap-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-bold shadow-2xs whitespace-nowrap ${
-        compact ? 'px-2.5 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'
-      }`}>
+      <span className={`inline-flex items-center gap-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-bold shadow-2xs whitespace-nowrap ${compact ? 'px-2.5 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'
+        }`}>
         <span>👑</span>
         <span>Super Admin (Pleins pouvoirs)</span>
       </span>
@@ -698,9 +653,8 @@ const UserPermissionsHoverBadge: React.FC<{
     <div className="relative inline-block group/perm">
       <button
         type="button"
-        className={`inline-flex items-center border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary font-bold transition-all shadow-2xs cursor-pointer group-hover/perm:border-primary group-hover/perm:bg-primary/20 whitespace-nowrap ${
-          compact ? 'gap-1 px-2.5 py-1 rounded-lg text-[11px]' : 'gap-1.5 px-3 py-1.5 rounded-xl text-xs'
-        }`}
+        className={`inline-flex items-center border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary font-bold transition-all shadow-2xs cursor-pointer group-hover/perm:border-primary group-hover/perm:bg-primary/20 whitespace-nowrap ${compact ? 'gap-1 px-2.5 py-1 rounded-lg text-[11px]' : 'gap-1.5 px-3 py-1.5 rounded-xl text-xs'
+          }`}
       >
         <ShieldCheck className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} text-primary shrink-0`} />
         <span>{activePermKeys.length} permission{activePermKeys.length > 1 ? 's' : ''}</span>
@@ -709,9 +663,8 @@ const UserPermissionsHoverBadge: React.FC<{
 
       {/* Popover flottant au survol */}
       <div
-        className={`absolute left-0 hidden group-hover/perm:flex flex-col w-72 sm:w-80 p-3.5 bg-card/95 backdrop-blur-md text-card-foreground rounded-2xl border border-border shadow-2xl z-50 animate-in fade-in zoom-in-95 pointer-events-none duration-150 ${
-          openDownward ? 'top-full mt-1.5' : 'bottom-full mb-2'
-        }`}
+        className={`absolute left-0 hidden group-hover/perm:flex flex-col w-72 sm:w-80 p-3.5 bg-card/95 backdrop-blur-md text-card-foreground rounded-2xl border border-border shadow-2xl z-50 animate-in fade-in zoom-in-95 pointer-events-none duration-150 ${openDownward ? 'top-full mt-1.5' : 'bottom-full mb-2'
+          }`}
       >
         <div className="flex items-center justify-between pb-2 border-b border-border mb-2.5">
           <div className="flex items-center gap-1.5">
@@ -772,9 +725,8 @@ const UserStatusToggleSwitch: React.FC<{
         e.stopPropagation();
         onToggle(user);
       }}
-      className={`inline-flex items-center cursor-pointer select-none group hover:bg-secondary/40 transition-all whitespace-nowrap ${
-        compact ? 'gap-1.5 px-1.5 py-0.5 rounded-lg' : 'gap-2 px-2 py-1 rounded-xl'
-      }`}
+      className={`inline-flex items-center cursor-pointer select-none group hover:bg-secondary/40 transition-all whitespace-nowrap ${compact ? 'gap-1.5 px-1.5 py-0.5 rounded-lg' : 'gap-2 px-2 py-1 rounded-xl'
+        }`}
       title={
         isActive
           ? "ACCÈS AUTORISÉ — Cliquer sur le toggle pour basculer en Black-list (Bloquer l'accès)"
@@ -783,20 +735,18 @@ const UserStatusToggleSwitch: React.FC<{
     >
       {/* Piste de l'interrupteur coulissant (Track) */}
       <div
-        className={`relative inline-flex shrink-0 rounded-full transition-colors duration-300 ease-in-out border shadow-inner ${
-          compact ? 'h-5 w-9' : 'h-6 w-11'
-        } ${isActive
-          ? 'bg-emerald-500 border-emerald-600'
-          : 'bg-rose-500 border-rose-600'
+        className={`relative inline-flex shrink-0 rounded-full transition-colors duration-300 ease-in-out border shadow-inner ${compact ? 'h-5 w-9' : 'h-6 w-11'
+          } ${isActive
+            ? 'bg-emerald-500 border-emerald-600'
+            : 'bg-rose-500 border-rose-600'
           }`}
       >
         {/* Curseur mobile blanc (Bouton Coulissant Knob) */}
         <span
-          className={`pointer-events-none inline-flex items-center justify-center rounded-full bg-white shadow-md transform transition-transform duration-300 ease-in-out my-auto font-extrabold ${
-            compact
-              ? `h-4 w-4 text-[9px] ${isActive ? 'translate-x-4 text-emerald-600' : 'translate-x-0.5 text-rose-600'}`
-              : `h-5 w-5 text-[10px] ${isActive ? 'translate-x-5 text-emerald-600' : 'translate-x-0.5 text-rose-600'}`
-          }`}
+          className={`pointer-events-none inline-flex items-center justify-center rounded-full bg-white shadow-md transform transition-transform duration-300 ease-in-out my-auto font-extrabold ${compact
+            ? `h-4 w-4 text-[9px] ${isActive ? 'translate-x-4 text-emerald-600' : 'translate-x-0.5 text-rose-600'}`
+            : `h-5 w-5 text-[10px] ${isActive ? 'translate-x-5 text-emerald-600' : 'translate-x-0.5 text-rose-600'}`
+            }`}
         >
           {isActive ? '✓' : '✕'}
         </span>
@@ -804,11 +754,10 @@ const UserStatusToggleSwitch: React.FC<{
 
       {/* Libellé textuel du statut */}
       <span
-        className={`font-black uppercase whitespace-nowrap ${
-          compact ? 'text-[10px] tracking-wide' : 'text-[11px] tracking-wider'
-        } ${isActive
-          ? 'text-emerald-600 dark:text-emerald-400'
-          : 'text-rose-600 dark:text-rose-400 font-bold animate-pulse'
+        className={`font-black uppercase whitespace-nowrap ${compact ? 'text-[10px] tracking-wide' : 'text-[11px] tracking-wider'
+          } ${isActive
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : 'text-rose-600 dark:text-rose-400 font-bold animate-pulse'
           }`}
       >
         {isActive ? 'Accès Autorisé' : 'Black-listé'}
@@ -918,9 +867,7 @@ Direction Générale — FUS Rabat`;
   const [availableTeams, setAvailableTeams] = useState<any[]>([]);
   const [mobileAppSubTab, setMobileAppSubTab] = useState<'match' | 'scout'>('match');
   const [operableMatches, setOperableMatches] = useState<OperableMatch[]>([]);
-  const [assignedMatchIds, setAssignedMatchIds] = useState<string[]>([]);
-  const [matchFilterScope, setMatchFilterScope] = useState<'all' | 'programmed' | 'covered'>('all');
-  const [loadingMatches, setLoadingMatches] = useState(false);
+  const [, setLoadingMatches] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -979,45 +926,45 @@ Direction Générale — FUS Rabat`;
       const mapped: OperableMatch[] = (matchesRes.data || [])
         .filter((m: any) => !isMatchExpiredUnlaunched(m))
         .map((m: any) => {
-        const oppClub = m.opponent_id ? clubsMap.get(m.opponent_id) : null;
-        const oppName = oppClub?.name || (m.opponent_id === DEFAULT_FUS_CLUB_ID ? mainClubName : 'Adversaire');
-        const oppLogo = (oppClub?.logo_url && oppClub.logo_url !== 'null' && oppClub.logo_url.trim() !== '') ? oppClub.logo_url : null;
+          const oppClub = m.opponent_id ? clubsMap.get(m.opponent_id) : null;
+          const oppName = oppClub?.name || (m.opponent_id === DEFAULT_FUS_CLUB_ID ? mainClubName : 'Adversaire');
+          const oppLogo = (oppClub?.logo_url && oppClub.logo_url !== 'null' && oppClub.logo_url.trim() !== '') ? oppClub.logo_url : null;
 
-        const stadiumName = (m.stadium_id ? stadiumsMap.get(m.stadium_id) : null) || m.location || (m.is_home ? 'Complexe Sportif FUS' : 'Stade Extérieur');
+          const stadiumName = (m.stadium_id ? stadiumsMap.get(m.stadium_id) : null) || m.location || (m.is_home ? 'Complexe Sportif FUS' : 'Stade Extérieur');
 
-        const homeName = m.is_home ? mainClubName : oppName;
-        const homeLogo = m.is_home ? mainClubLogo : oppLogo;
-        const awayName = m.is_home ? oppName : mainClubName;
-        const awayLogo = m.is_home ? oppLogo : mainClubLogo;
+          const homeName = m.is_home ? mainClubName : oppName;
+          const homeLogo = m.is_home ? mainClubLogo : oppLogo;
+          const awayName = m.is_home ? oppName : mainClubName;
+          const awayLogo = m.is_home ? oppLogo : mainClubLogo;
 
-        const resolvedOperatorId = m.live_operator_id || m.lineup?.live_operator?.id || null;
-        const resolvedOperatorName = m.live_operator_name || m.lineup?.live_operator?.name || null;
-        const resolvedStatus = m.live_operator_status || m.lineup?.live_operator?.status || (m.live_operator_acknowledged_at || m.lineup?.live_operator?.acknowledged_at ? 'acknowledged' : 'pending_ack');
-        const resolvedAcknowledgedAt = m.live_operator_acknowledged_at || m.lineup?.live_operator?.acknowledged_at || null;
+          const resolvedOperatorId = m.live_operator_id || m.lineup?.live_operator?.id || null;
+          const resolvedOperatorName = m.live_operator_name || m.lineup?.live_operator?.name || null;
+          const resolvedStatus = m.live_operator_status || m.lineup?.live_operator?.status || (m.live_operator_acknowledged_at || m.lineup?.live_operator?.acknowledged_at ? 'acknowledged' : 'pending_ack');
+          const resolvedAcknowledgedAt = m.live_operator_acknowledged_at || m.lineup?.live_operator?.acknowledged_at || null;
 
-        const homeFormation = m.is_home ? (m.formation || null) : (m.opponent_formation || null);
-        const awayFormation = m.is_home ? (m.opponent_formation || null) : (m.formation || null);
+          const homeFormation = m.is_home ? (m.formation || null) : (m.opponent_formation || null);
+          const awayFormation = m.is_home ? (m.opponent_formation || null) : (m.formation || null);
 
-        return {
-          id: m.id,
-          match_date: m.match_date,
-          match_time: m.match_time,
-          category: m.category,
-          status: m.status,
-          is_home: m.is_home,
-          homeName,
-          homeLogo,
-          awayName,
-          awayLogo,
-          stadiumName,
-          live_operator_id: resolvedOperatorId,
-          live_operator_name: resolvedOperatorName,
-          live_operator_status: resolvedStatus,
-          live_operator_acknowledged_at: resolvedAcknowledgedAt,
-          homeFormation,
-          awayFormation,
-        };
-      });
+          return {
+            id: m.id,
+            match_date: m.match_date,
+            match_time: m.match_time,
+            category: m.category,
+            status: m.status,
+            is_home: m.is_home,
+            homeName,
+            homeLogo,
+            awayName,
+            awayLogo,
+            stadiumName,
+            live_operator_id: resolvedOperatorId,
+            live_operator_name: resolvedOperatorName,
+            live_operator_status: resolvedStatus,
+            live_operator_acknowledged_at: resolvedAcknowledgedAt,
+            homeFormation,
+            awayFormation,
+          };
+        });
 
       setOperableMatches(mapped);
       return mapped;
@@ -1027,13 +974,6 @@ Direction Générale — FUS Rabat`;
     } finally {
       setLoadingMatches(false);
     }
-  };
-
-  const toggleAssignMatch = (matchId: string) => {
-    if (modalMode === 'view') return;
-    setAssignedMatchIds(prev =>
-      prev.includes(matchId) ? prev.filter(id => id !== matchId) : [...prev, matchId]
-    );
   };
 
   const fetchTeams = async () => {
@@ -1241,10 +1181,18 @@ Direction Générale — FUS Rabat`;
 
       let permAssignments: any[] = [];
       try {
-        const { data: permData, error: permError } = await adminClient
-          .from('user_permissions_overrides')
-          .select('*');
-        if (!permError && permData) permAssignments = permData;
+        const pageSize = 1000;
+        let from = 0;
+        while (true) {
+          const { data: permData, error: permError } = await adminClient
+            .from('user_permissions_overrides')
+            .select('*')
+            .range(from, from + pageSize - 1);
+          if (permError || !permData || permData.length === 0) break;
+          permAssignments = permAssignments.concat(permData);
+          if (permData.length < pageSize) break;
+          from += pageSize;
+        }
       } catch (permEx) {
         console.warn('[UserManagement] Perm assignments query warning:', permEx);
       }
@@ -1575,101 +1523,6 @@ Direction Générale — FUS Rabat`;
         } catch (e) {
           console.warn('Perms notice:', e);
         }
-
-        // 5.5. Synchronisation des matchs assignés pour opérations live
-        if (assignedMatchIds.length > 0) {
-          try {
-            const { data: currentMatches } = await adminClient
-              .from('matches')
-              .select('id, lineup')
-              .in('id', assignedMatchIds);
-
-            const opName = formData.full_name || formData.email;
-            const opRole = formData.job_title || formData.system_role || 'Opérateur';
-            const opAvatar = createdAvatarUrl || null;
-
-            for (const matchId of assignedMatchIds) {
-              const curMatch = (currentMatches || []).find(m => m.id === matchId);
-              const curLineup = curMatch?.lineup || {};
-              const updatedLineup = {
-                ...curLineup,
-                live_operator: {
-                  id: createdUserId,
-                  name: opName,
-                  role: opRole,
-                  avatar_url: opAvatar,
-                }
-              };
-
-              const { error: updErr } = await adminClient
-                .from('matches')
-                .update({
-                  live_operator_id: createdUserId,
-                  live_operator_name: opName,
-                  live_operator_role: opRole,
-                  live_operator_avatar_url: opAvatar,
-                  lineup: updatedLineup,
-                })
-                .eq('id', matchId);
-
-              if (updErr) {
-                console.error('[UserManagement] Erreur assignation match nouveau compte:', updErr);
-              } else {
-                try {
-                  const foundOperable = operableMatches.find(o => o.id === matchId);
-                  const homeName = foundOperable?.homeName || (curMatch?.is_home ? 'FUS Rabat' : 'Adversaire');
-                  const awayName = foundOperable?.awayName || (curMatch?.is_home ? 'Adversaire' : 'FUS Rabat');
-                  const matchCategory = foundOperable?.category || curMatch?.category || '';
-                  const matchDate = foundOperable?.match_date || curMatch?.match_date || '';
-                  const matchTime = foundOperable?.match_time || curMatch?.match_time || '';
-
-                  const broadcastPayload = {
-                    match_id: matchId,
-                    matchId: matchId,
-                    category: matchCategory,
-                    home_name: homeName,
-                    away_name: awayName,
-                    match_date: matchDate,
-                    match_time: matchTime,
-                    operator_id: createdUserId,
-                    operator_name: opName,
-                    operator_role: opRole,
-                    operator_avatar_url: opAvatar,
-                  };
-
-                  const assignChannel = supabase.channel('operator-assignments');
-                  assignChannel.subscribe(async (status) => {
-                    if (status === 'SUBSCRIBED') {
-                      await assignChannel.send({
-                        type: 'broadcast',
-                        event: 'operator_assigned',
-                        payload: broadcastPayload,
-                      });
-                      supabase.removeChannel(assignChannel);
-                    }
-                  });
-
-                  dispatchMatchPushNotification({
-                    match_id: matchId,
-                    type: 'operator_assigned',
-                    category: matchCategory,
-                    operator_id: createdUserId,
-                    operator_name: opName,
-                    operator_avatar_url: opAvatar,
-                    operator_role: opRole,
-                    title: `🎙️ Opérateur Match Assigné [${matchCategory || 'FUS'}]`,
-                    body: `${opName} a été désigné Opérateur Live pour le match ${homeName} vs ${awayName} le ${matchDate}.`,
-                  }).catch(pErr => console.warn('[UserManagement] Erreur push assignation nouveau compte:', pErr));
-                } catch (bErr) {
-                  console.warn('[UserManagement] Erreur broadcast assignation nouveau compte:', bErr);
-                }
-              }
-            }
-            await fetchOperableMatches();
-          } catch (mErr) {
-            console.warn('[UserManagement] Erreur assignation match nouveau compte:', mErr);
-          }
-        }
       }
 
       toast.success("Utilisateur créé avec succès ! Identifiants générés.");
@@ -1987,150 +1840,6 @@ Direction Générale — FUS Rabat`;
         toast.error("Les permissions n'ont pas pu être entièrement enregistrées.");
       }
 
-      // 6.5. Synchronisation des matchs assignés pour opérations live (Persistance garantie DB & Lineup)
-      try {
-        const { data: allCurrentMatches, error: fetchMatchesErr } = await adminClient
-          .from('matches')
-          .select('*');
-
-        if (!fetchMatchesErr && allCurrentMatches) {
-          // 1. Dé-assigner les matchs qui étaient assignés à cet utilisateur mais ne sont plus cochés
-          const matchesToUnassign = allCurrentMatches.filter(m => {
-            const currentOpId = m.live_operator_id || m.lineup?.live_operator?.id;
-            const isAssignedToThisUser = currentOpId && String(currentOpId).toLowerCase() === String(currentUserId).toLowerCase();
-            return isAssignedToThisUser && !assignedMatchIds.includes(m.id);
-          });
-
-          for (const m of matchesToUnassign) {
-            const curLineup = (m.lineup && typeof m.lineup === 'object') ? { ...m.lineup } : {};
-            delete curLineup.live_operator;
-
-            const unassignPayload: Record<string, any> = {
-              live_operator_id: null,
-              live_operator_name: null,
-              live_operator_role: null,
-              live_operator_avatar_url: null,
-              lineup: curLineup,
-            };
-            if ('live_operator_status' in m) {
-              unassignPayload.live_operator_status = null;
-              unassignPayload.live_operator_acknowledged_at = null;
-            }
-
-            const { error: unassignErr } = await adminClient
-              .from('matches')
-              .update(unassignPayload)
-              .eq('id', m.id);
-
-            if (unassignErr) {
-              console.error('[UserManagement] Erreur désassignation match:', m.id, unassignErr);
-            }
-          }
-
-          // 2. Assigner et persister les matchs cochés
-          const opName = formData.full_name || formData.email;
-          const opRole = formData.job_title || formData.system_role || 'Opérateur';
-          const opAvatar = finalAvatarUrl || formData.avatar_url || null;
-
-          for (const matchId of assignedMatchIds) {
-            const targetMatch = allCurrentMatches.find(m => m.id === matchId);
-            const curLineup = (targetMatch?.lineup && typeof targetMatch.lineup === 'object') ? { ...targetMatch.lineup } : {};
-
-            const isSameUser = String(targetMatch?.live_operator_id || curLineup?.live_operator?.id).toLowerCase() === String(currentUserId).toLowerCase();
-            const existingAck = isSameUser && (targetMatch?.live_operator_acknowledged_at || curLineup?.live_operator?.acknowledged_at);
-            const operatorStatus = existingAck ? 'acknowledged' : 'pending_ack';
-            const operatorAckAt = existingAck ? (targetMatch?.live_operator_acknowledged_at || curLineup?.live_operator?.acknowledged_at) : null;
-
-            const updatedLineup = {
-              ...curLineup,
-              live_operator: {
-                id: currentUserId,
-                name: opName,
-                role: opRole,
-                avatar_url: opAvatar,
-                status: operatorStatus,
-                acknowledged_at: operatorAckAt,
-              }
-            };
-
-            const assignPayload: Record<string, any> = {
-              live_operator_id: currentUserId,
-              live_operator_name: opName,
-              live_operator_role: opRole,
-              live_operator_avatar_url: opAvatar,
-              lineup: updatedLineup,
-            };
-            if ('live_operator_status' in (targetMatch || {})) {
-              assignPayload.live_operator_status = operatorStatus;
-              assignPayload.live_operator_acknowledged_at = operatorAckAt;
-            }
-
-            const { error: assignErr } = await adminClient
-              .from('matches')
-              .update(assignPayload)
-              .eq('id', matchId);
-
-            if (assignErr) {
-              console.error('[UserManagement] Erreur assignation match:', matchId, assignErr);
-            } else {
-              // Notification Realtime & Push pour l'Opérateur et l'ensemble du Staff
-              try {
-                const foundOperable = operableMatches.find(o => o.id === matchId);
-                const homeName = foundOperable?.homeName || (targetMatch?.is_home ? 'FUS Rabat' : 'Adversaire');
-                const awayName = foundOperable?.awayName || (targetMatch?.is_home ? 'Adversaire' : 'FUS Rabat');
-                const matchCategory = foundOperable?.category || targetMatch?.category || '';
-                const matchDate = foundOperable?.match_date || targetMatch?.match_date || '';
-                const matchTime = foundOperable?.match_time || targetMatch?.match_time || '';
-
-                const broadcastPayload = {
-                  match_id: matchId,
-                  matchId: matchId,
-                  category: matchCategory,
-                  home_name: homeName,
-                  away_name: awayName,
-                  match_date: matchDate,
-                  match_time: matchTime,
-                  operator_id: currentUserId,
-                  operator_name: opName,
-                  operator_role: opRole,
-                  operator_avatar_url: opAvatar,
-                };
-
-                const assignChannel = supabase.channel('operator-assignments');
-                assignChannel.subscribe(async (status) => {
-                  if (status === 'SUBSCRIBED') {
-                    await assignChannel.send({
-                      type: 'broadcast',
-                      event: 'operator_assigned',
-                      payload: broadcastPayload,
-                    });
-                    supabase.removeChannel(assignChannel);
-                  }
-                });
-
-                dispatchMatchPushNotification({
-                  match_id: matchId,
-                  type: 'operator_assigned',
-                  category: matchCategory,
-                  operator_id: currentUserId,
-                  operator_name: opName,
-                  operator_avatar_url: opAvatar,
-                  operator_role: opRole,
-                  title: `🎙️ Opérateur Match Assigné [${matchCategory || 'FUS'}]`,
-                  body: `${opName} a été désigné Opérateur Live pour le match ${homeName} vs ${awayName} le ${matchDate}.`,
-                }).catch(pErr => console.warn('[UserManagement] Erreur push assignation:', pErr));
-              } catch (bErr) {
-                console.warn('[UserManagement] Erreur broadcast assignation:', bErr);
-              }
-            }
-          }
-        }
-
-        await fetchOperableMatches();
-      } catch (mErr) {
-        console.warn('[UserManagement] Erreur synchronisation matchs assignés:', mErr);
-      }
-
       setDbErrors(localErrors);
 
       // 7. Diffusion Realtime pour notification instantanée et déverrouillage à chaud sur l'app mobile
@@ -2385,7 +2094,6 @@ Direction Générale — FUS Rabat`;
     setQuickShowPassword(true);
     setSelectedUserId(user.id);
     setModalStep(1);
-    setMatchFilterScope('all');
     setCreatedCredentials(null);
     setShowTempPassword(false);
     setCopiedField(null);
@@ -2450,11 +2158,7 @@ Direction Générale — FUS Rabat`;
     setAvatarFile(null);
     setAvatarPreview(null);
     setSelectedUserId(null);
-    setAssignedMatchIds([]);
-    setMatchFilterScope('all');
-    fetchOperableMatches();
     setModalStep(1);
-    setMatchFilterScope('all');
     setCreatedCredentials(null);
     setShowTempPassword(false);
     setCopiedField(null);
@@ -2479,18 +2183,7 @@ Direction Générale — FUS Rabat`;
     setAvatarFile(null);
     setAvatarPreview(null);
     setDbErrors([]);
-    const currentAssigned = operableMatches
-      .filter(m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(user.id).toLowerCase())
-      .map(m => m.id);
-    setAssignedMatchIds(currentAssigned);
-    fetchOperableMatches().then(matches => {
-      const userMatches = matches
-        .filter(m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(user.id).toLowerCase())
-        .map(m => m.id);
-      setAssignedMatchIds(userMatches);
-    });
     setModalStep(1);
-    setMatchFilterScope('all');
     setCreatedCredentials(null);
     setShowTempPassword(false);
     setCopiedField(null);
@@ -2514,18 +2207,7 @@ Direction Générale — FUS Rabat`;
     });
     setAvatarFile(null);
     setAvatarPreview(null);
-    const currentAssigned = operableMatches
-      .filter(m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(user.id).toLowerCase())
-      .map(m => m.id);
-    setAssignedMatchIds(currentAssigned);
-    fetchOperableMatches().then(matches => {
-      const userMatches = matches
-        .filter(m => m.live_operator_id && String(m.live_operator_id).toLowerCase() === String(user.id).toLowerCase())
-        .map(m => m.id);
-      setAssignedMatchIds(userMatches);
-    });
     setModalStep(1);
-    setMatchFilterScope('all');
     setCreatedCredentials(null);
     setShowTempPassword(false);
     setCopiedField(null);
@@ -4436,7 +4118,7 @@ Direction Générale — FUS Rabat`;
                                           {/* Actions header : Tout cocher / Déplier */}
                                           <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                                             {modalMode !== 'view' && (
-                                                <button
+                                              <button
                                                 type="button"
                                                 onClick={() => toggleCategoryAll(cat)}
                                                 className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 cursor-pointer ${allCatKeysActive
@@ -4485,21 +4167,21 @@ Direction Générale — FUS Rabat`;
                                               const specificConfig = SPECIFIC_ACTIONS_CONFIG[sub.id];
                                               const accentStyles = specificConfig?.accent === 'emerald'
                                                 ? {
-                                                    badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-                                                    cardActive: 'bg-emerald-500/5 border-emerald-500/35 ring-1 ring-emerald-500/15',
-                                                    pillAll: 'bg-emerald-600 text-white shadow-xs',
-                                                    pillPartial: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/30',
-                                                    btnActive: 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300',
-                                                    checkActive: 'bg-emerald-600 text-white',
-                                                  }
+                                                  badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                                                  cardActive: 'bg-emerald-500/5 border-emerald-500/35 ring-1 ring-emerald-500/15',
+                                                  pillAll: 'bg-emerald-600 text-white shadow-xs',
+                                                  pillPartial: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/30',
+                                                  btnActive: 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300',
+                                                  checkActive: 'bg-emerald-600 text-white',
+                                                }
                                                 : {
-                                                    badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                                                    cardActive: 'bg-amber-500/5 border-amber-500/35 ring-1 ring-amber-500/15',
-                                                    pillAll: 'bg-amber-600 text-white shadow-xs',
-                                                    pillPartial: 'bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-500/30',
-                                                    btnActive: 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300',
-                                                    checkActive: 'bg-amber-600 text-white',
-                                                  };
+                                                  badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                                                  cardActive: 'bg-amber-500/5 border-amber-500/35 ring-1 ring-amber-500/15',
+                                                  pillAll: 'bg-amber-600 text-white shadow-xs',
+                                                  pillPartial: 'bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-500/30',
+                                                  btnActive: 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300',
+                                                  checkActive: 'bg-amber-600 text-white',
+                                                };
 
                                               return (
                                                 <div
@@ -4700,483 +4382,6 @@ Direction Générale — FUS Rabat`;
                               </div>
                             </div>
                           )}
-                        </div>
-
-                        {/* ── SECTION 4 : MATCHS ASSIGNÉS POUR OPÉRATIONS LIVE (fus-app & Direct) ── */}
-                        <div className="p-5 rounded-2xl bg-secondary/20 border border-border/80 space-y-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
-                            <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full bg-red-600" />
-                              <label className="text-[11px] font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                                <Radio className="w-3.5 h-3.5 text-red-600 animate-pulse" />
-                                4. Matchs Assignés pour Opérations Live (fus-app & Direct)
-                              </label>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/20">
-                                {assignedMatchIds.length} match{assignedMatchIds.length > 1 ? 's' : ''} assigné{assignedMatchIds.length > 1 ? 's' : ''}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-muted-foreground">
-                              Sélectionnez les matchs que ce collaborateur pilotera en direct
-                            </p>
-                          </div>
-
-                          {/* Note explicative Super Admin vs Opérateur Assigné */}
-                          <div className="p-3.5 rounded-xl bg-slate-900/60 border border-border/70 text-xs flex items-start gap-2.5">
-                            <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                            <div className="space-y-0.5 text-[11px] text-muted-foreground">
-                              <span className="font-bold text-foreground">Règle d'Habilitation Terrain & Super Admin :</span>
-                              <p>
-                                Si aucun opérateur n'est assigné à un match, <strong>seul le Super Admin</strong> dispose des commandes (lancement live, chrono, modifications, scores).
-                                Dès qu'un match est coché ci-dessous, ce collaborateur devient l'opérateur officiel habilité pour cette rencontre sur <code>fus-app</code> et le dashboard.
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* A. Habilitations Opérationnelles sur les Matchs Assignés */}
-                          <div className="p-4 rounded-xl bg-background/70 border border-border/80 space-y-3">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
-                              <div className="flex items-center gap-2">
-                                <ShieldCheck className="w-4 h-4 text-red-500" />
-                                <span className="text-xs font-bold text-foreground uppercase tracking-wide">
-                                  A. Habilitations Opérationnelles (Pour les Matchs Assignés)
-                                </span>
-                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/20 font-bold">
-                                  {MATCH_OPERATION_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length}/{MATCH_OPERATION_PERMISSIONS.length} actives
-                                </span>
-                              </div>
-                              {modalMode !== 'view' && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const allActive = MATCH_OPERATION_PERMISSIONS.every(p => formData.permissions_overrides[p.key]);
-                                    setFormData(prev => {
-                                      const next = { ...prev.permissions_overrides };
-                                      MATCH_OPERATION_PERMISSIONS.forEach(p => {
-                                        if (allActive) delete next[p.key];
-                                        else next[p.key] = true;
-                                      });
-                                      return { ...prev, permissions_overrides: next };
-                                    });
-                                  }}
-                                  className="text-[10px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer"
-                                >
-                                  {MATCH_OPERATION_PERMISSIONS.every(p => formData.permissions_overrides[p.key]) ? 'Tout décocher' : 'Tout cocher'}
-                                </button>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-muted-foreground">
-                              Cochez les actions que ce collaborateur sera habilité à effectuer sur les rencontres qui lui sont assignées ci-dessous :
-                            </p>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                              {MATCH_OPERATION_PERMISSIONS.map(perm => {
-                                const isChecked = Boolean(formData.permissions_overrides[perm.key]);
-                                return (
-                                  <button
-                                    key={perm.key}
-                                    type="button"
-                                    disabled={modalMode === 'view'}
-                                    onClick={() => togglePermission(perm.key)}
-                                    className={`p-3 rounded-xl border text-left transition-all flex items-start gap-2.5 min-h-[70px] ${isChecked
-                                      ? 'bg-red-500/10 border-red-500 shadow-xs ring-1 ring-red-500/30'
-                                      : 'bg-background/90 border-border/80 hover:bg-secondary/40 hover:border-red-300 dark:hover:border-red-800'
-                                      } disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer`}
-                                  >
-                                    <div className="mt-0.5 shrink-0">
-                                      {isChecked ? (
-                                        <div className="w-4 h-4 rounded bg-[#FF3737] text-white flex items-center justify-center shadow-xs">
-                                          <Check className="w-3 h-3 stroke-[3]" />
-                                        </div>
-                                      ) : (
-                                        <div className="w-4 h-4 rounded border border-muted-foreground/40 bg-transparent" />
-                                      )}
-                                    </div>
-                                    <div className="space-y-1 min-w-0 flex-1">
-                                      <div className="flex items-center justify-between gap-1 w-full">
-                                        <span className="text-xs font-bold text-foreground truncate">
-                                          {perm.label}
-                                        </span>
-                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-red-500/15 text-red-600 dark:text-red-400 shrink-0">
-                                          {perm.badge}
-                                        </span>
-                                      </div>
-                                      <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">
-                                        {perm.desc}
-                                      </p>
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* B. Rencontres Attribuées */}
-                          {(() => {
-                            const isUserCovered = (m: OperableMatch) => {
-                              return (
-                                assignedMatchIds.includes(m.id) ||
-                                Boolean(
-                                  m.live_operator_id &&
-                                  selectedUserId &&
-                                  String(m.live_operator_id).toLowerCase() === String(selectedUserId).toLowerCase()
-                                )
-                              );
-                            };
-
-                            const isProgrammedOrLive = (m: OperableMatch) => {
-                              if (isMatchExpiredUnlaunched(m)) return false;
-                              return m.status !== 'finished' && m.status !== 'cancelled';
-                            };
-
-                            // Seuls les matchs programmés non expirés (ou en direct) ET les matchs non expirés couverts par le user sont éligibles
-                            const eligibleMatches = operableMatches.filter(m => {
-                              if (isMatchExpiredUnlaunched(m)) return false;
-                              return isProgrammedOrLive(m) || isUserCovered(m);
-                            });
-
-                            const filteredList = eligibleMatches.filter(m => {
-                              if (matchFilterScope === 'programmed') return isProgrammedOrLive(m);
-                              if (matchFilterScope === 'covered') return isUserCovered(m);
-                              return true;
-                            });
-
-                            const programmedCount = eligibleMatches.filter(isProgrammedOrLive).length;
-                            const coveredCount = eligibleMatches.filter(isUserCovered).length;
-
-                            return (
-                              <>
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 pb-1 border-b border-border/40">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <Calendar className="w-4 h-4 text-foreground" />
-                                    <span className="text-xs font-bold text-foreground uppercase tracking-wide">
-                                      B. Rencontres Attribuées à cet Opérateur
-                                    </span>
-                                    {assignedMatchIds.length > 0 && (
-                                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-red-500/15 text-red-500 border border-red-500/30 flex items-center gap-1 shadow-xs">
-                                        <Check className="w-3 h-3 stroke-[3]" />
-                                        {assignedMatchIds.length} attribué{assignedMatchIds.length > 1 ? 's' : ''}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    {/* Filtres rapides : Tous / Programmés / Couverts */}
-                                    <div className="inline-flex items-center p-0.5 rounded-lg bg-secondary/80 border border-border/60 text-[10px] font-bold">
-                                      <button
-                                        type="button"
-                                        onClick={() => setMatchFilterScope('all')}
-                                        className={`px-2 py-0.5 rounded-md transition-all ${matchFilterScope === 'all'
-                                          ? 'bg-primary text-primary-foreground shadow-xs'
-                                          : 'text-muted-foreground hover:text-foreground'
-                                          }`}
-                                      >
-                                        Tous ({eligibleMatches.length})
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setMatchFilterScope('programmed')}
-                                        className={`px-2 py-0.5 rounded-md transition-all ${matchFilterScope === 'programmed'
-                                          ? 'bg-primary text-primary-foreground shadow-xs'
-                                          : 'text-muted-foreground hover:text-foreground'
-                                          }`}
-                                      >
-                                        Programmés ({programmedCount})
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setMatchFilterScope('covered')}
-                                        className={`px-2 py-0.5 rounded-md transition-all ${matchFilterScope === 'covered'
-                                          ? 'bg-primary text-primary-foreground shadow-xs'
-                                          : 'text-muted-foreground hover:text-foreground'
-                                          }`}
-                                      >
-                                        Couverts ({coveredCount})
-                                      </button>
-                                    </div>
-
-                                    {assignedMatchIds.length > 0 && modalMode !== 'view' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setAssignedMatchIds([])}
-                                        className="text-[11px] font-bold text-red-500 hover:text-red-400 hover:underline flex items-center gap-1 transition-colors px-2 py-1 rounded-lg hover:bg-red-500/10"
-                                        title="Décocher toutes les rencontres attribuées à cet utilisateur"
-                                      >
-                                        <X className="w-3.5 h-3.5" />
-                                        <span>Tout décocher ({assignedMatchIds.length})</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Liste des Cartes de Matchs */}
-                                {loadingMatches ? (
-                                  <div className="py-8 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                                    <span>Chargement du calendrier des matchs...</span>
-                                  </div>
-                                ) : filteredList.length === 0 ? (
-                                  <div className="p-6 text-center rounded-xl bg-background/50 border border-dashed border-border/80 text-xs text-muted-foreground">
-                                    {matchFilterScope === 'covered'
-                                      ? 'Aucun match couvert par cet opérateur pour le moment.'
-                                      : matchFilterScope === 'programmed'
-                                        ? 'Aucun match programmé disponible actuellement.'
-                                        : 'Aucun match programmé ou attribué à cet opérateur pour le moment.'}
-                                  </div>
-                                ) : (
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[380px] overflow-y-auto pr-1">
-                                    {(() => {
-                                      // Trier les matchs : Attribués EN PREMIER, puis en direct, puis programmés, puis terminés
-                                      const sortedList = [...filteredList].sort((a, b) => {
-                                        const aAssigned = assignedMatchIds.includes(a.id);
-                                        const bAssigned = assignedMatchIds.includes(b.id);
-                                        if (aAssigned && !bAssigned) return -1;
-                                        if (!aAssigned && bAssigned) return 1;
-
-                                        const isLiveStatus = (s: string) => ['live', 'halftime', 'paused', 'extra_time', 'penalties'].includes(s);
-                                        if (isLiveStatus(a.status) && !isLiveStatus(b.status)) return -1;
-                                        if (!isLiveStatus(a.status) && isLiveStatus(b.status)) return 1;
-
-                                        const aIsFuture = isProgrammedOrLive(a);
-                                        const bIsFuture = isProgrammedOrLive(b);
-                                        if (aIsFuture && bIsFuture) {
-                                          return new Date(a.match_date || 0).getTime() - new Date(b.match_date || 0).getTime();
-                                        }
-
-                                        return new Date(b.match_date || 0).getTime() - new Date(a.match_date || 0).getTime();
-                                      });
-
-                                      return sortedList.map(m => {
-                                        const isAssigned = assignedMatchIds.includes(m.id);
-                                        const isAssignedToOther = Boolean(m.live_operator_id && m.live_operator_id !== selectedUserId && !isAssigned);
-
-                                        const renderMatchStatus = () => {
-                                          switch (m.status) {
-                                            case 'live':
-                                              return (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-red-600 text-white animate-pulse shadow-xs">
-                                                  🔴 En Direct
-                                                </span>
-                                              );
-                                            case 'halftime':
-                                              return (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-amber-500 text-white shadow-xs">
-                                                  ⏸️ Mi-Temps
-                                                </span>
-                                              );
-                                            case 'paused':
-                                              return (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-amber-600 text-white shadow-xs">
-                                                  ⏸️ Pause
-                                                </span>
-                                              );
-                                            case 'extra_time':
-                                              return (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-red-700 text-white animate-pulse">
-                                                  ⏱️ Prolongations
-                                                </span>
-                                              );
-                                            case 'penalties':
-                                              return (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-red-800 text-white animate-pulse">
-                                                  🥅 Tirs au But
-                                                </span>
-                                              );
-                                            case 'finished':
-                                              return (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-muted text-muted-foreground border border-border">
-                                                  🏁 Terminé
-                                                </span>
-                                              );
-                                            case 'cancelled':
-                                              return (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-rose-500/20 text-rose-500 border border-rose-500/30">
-                                                  ❌ Annulé
-                                                </span>
-                                              );
-                                            default:
-                                              return (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-secondary text-muted-foreground border border-border">
-                                                  📅 Programmé
-                                                </span>
-                                              );
-                                          }
-                                        };
-
-                                        return (
-                                          <div
-                                            key={m.id}
-                                            onClick={() => {
-                                              if (modalMode === 'view') return;
-                                              toggleAssignMatch(m.id);
-                                            }}
-                                            className={`p-3.5 rounded-2xl border transition-all text-left relative flex flex-col justify-between gap-2.5 ${modalMode === 'view' ? 'cursor-default' : 'cursor-pointer hover:border-red-500/50'
-                                              } ${isAssigned
-                                                ? 'bg-red-500/10 border-red-500 shadow-sm ring-1 ring-red-500/40'
-                                                : 'bg-background/80 border-border/80 hover:bg-secondary/40'
-                                              }`}
-                                          >
-                                            {/* Header de la carte : Catégorie Badge & Status */}
-                                            <div className="flex items-center justify-between gap-2">
-                                              <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-[#FF3737] text-white shadow-xs">
-                                                  {m.category || 'Équipe'}
-                                                </span>
-                                                {renderMatchStatus()}
-                                              </div>
-
-                                              {/* Checkbox / Statut d'attribution */}
-                                              <div className="flex items-center gap-1.5 shrink-0">
-                                                {isAssigned ? (
-                                                  <div className="flex items-center gap-1.5">
-                                                    <span className="text-[10px] font-black text-red-500 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-lg hidden sm:inline-flex items-center gap-1">
-                                                      <Check className="w-3 h-3 stroke-[3]" />
-                                                      Attribué (décocher)
-                                                    </span>
-                                                    <div className="w-5 h-5 rounded-lg border flex items-center justify-center transition-all bg-[#FF3737] border-[#FF3737] text-white shadow-xs">
-                                                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                    </div>
-                                                  </div>
-                                                ) : (
-                                                  <div className="flex items-center gap-1.5">
-                                                    <span className="text-[10px] font-medium text-muted-foreground hidden sm:inline">
-                                                      Cliquer pour attribuer
-                                                    </span>
-                                                    <div className="w-5 h-5 rounded-lg border border-muted-foreground/30 bg-background text-transparent flex items-center justify-center transition-all">
-                                                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                                    </div>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            </div>
-
-                                            {/* Clubs & Logos */}
-                                            <div className="flex items-center justify-between gap-2 py-1.5 bg-secondary/40 rounded-xl px-3 border border-border/50">
-                                              {/* Domicile */}
-                                              <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                <div className="flex flex-col items-center shrink-0">
-                                                  <div className="w-7 h-7 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden shadow-xs">
-                                                    {m.homeLogo ? (
-                                                      <img
-                                                        src={m.homeLogo}
-                                                        alt={m.homeName}
-                                                        className="w-full h-full object-contain p-0.5"
-                                                        onError={(e) => {
-                                                          const target = e.currentTarget;
-                                                          target.onerror = null;
-                                                          target.src = defaultClubLogo;
-                                                        }}
-                                                      />
-                                                    ) : (
-                                                      <span className="text-[10px] font-black text-muted-foreground">
-                                                        {m.homeName?.slice(0, 2).toUpperCase() || 'DOM'}
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                  {m.homeFormation && (
-                                                    <span className="text-[8px] font-black text-muted-foreground mt-0.5 tracking-tight">
-                                                      {m.homeFormation}
-                                                    </span>
-                                                  )}
-                                                </div>
-                                                <span className="text-xs font-bold text-foreground truncate" title={m.homeName}>
-                                                  {m.homeName}
-                                                </span>
-                                              </div>
-
-                                              <span className="text-[10px] font-black text-muted-foreground/60 px-1 shrink-0">VS</span>
-
-                                              {/* Extérieur */}
-                                              <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
-                                                <span className="text-xs font-bold text-foreground truncate" title={m.awayName}>
-                                                  {m.awayName}
-                                                </span>
-                                                <div className="flex flex-col items-center shrink-0">
-                                                  <div className="w-7 h-7 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden shadow-xs">
-                                                    {m.awayLogo ? (
-                                                      <img
-                                                        src={m.awayLogo}
-                                                        alt={m.awayName}
-                                                        className="w-full h-full object-contain p-0.5"
-                                                        onError={(e) => {
-                                                          const target = e.currentTarget;
-                                                          target.style.display = 'none';
-                                                          if (target.parentElement) {
-                                                            const span = document.createElement('span');
-                                                            span.className = 'text-[10px] font-black text-muted-foreground';
-                                                            span.innerText = m.awayName?.slice(0, 2).toUpperCase() || 'EXT';
-                                                            target.parentElement.appendChild(span);
-                                                          }
-                                                        }}
-                                                      />
-                                                    ) : (
-                                                      <span className="text-[10px] font-black text-muted-foreground">
-                                                        {m.awayName?.slice(0, 2).toUpperCase() || 'EXT'}
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                  {m.awayFormation && (
-                                                    <span className="text-[8px] font-black text-muted-foreground mt-0.5 tracking-tight">
-                                                      {m.awayFormation}
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            </div>
-
-                                            {/* Date, Heure & Stade */}
-                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-muted-foreground pt-1 border-t border-border/40">
-                                              <div className="flex items-center gap-1.5 font-medium">
-                                                <CalendarPlus className="w-3.5 h-3.5 text-primary shrink-0" />
-                                                <span>
-                                                  {m.match_date ? new Date(m.match_date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Date TBD'}
-                                                  {m.match_time ? ` à ${m.match_time.slice(0, 5)}` : ''}
-                                                </span>
-                                              </div>
-                                              <div className="flex items-center gap-1.5 font-medium truncate" title={m.stadiumName}>
-                                                <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                                <span className="truncate">{m.stadiumName}</span>
-                                              </div>
-                                            </div>
-
-                                            {/* Accusé de réception de l'opérateur (US-MATCH-125) */}
-                                            {isAssigned && (
-                                              <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2">
-                                                {m.live_operator_acknowledged_at || m.live_operator_status === 'acknowledged' ? (
-                                                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
-                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                                    <span>
-                                                      Accusé de réception validé
-                                                      {m.live_operator_acknowledged_at && (
-                                                        <span className="opacity-80 font-normal ml-1">
-                                                          ({new Date(m.live_operator_acknowledged_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} à {new Date(m.live_operator_acknowledged_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})
-                                                        </span>
-                                                      )}
-                                                    </span>
-                                                  </div>
-                                                ) : (
-                                                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold animate-pulse">
-                                                    <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                                    <span>⏳ En attente d'accusé mobile (fus-app)</span>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            )}
-
-                                            {/* Alerte si déjà assigné à un autre opérateur */}
-                                            {isAssignedToOther && (
-                                              <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 bg-amber-500/10 p-1.5 rounded-lg border border-amber-500/20">
-                                                <span>⚠️ Actuellement assigné à :</span>
-                                                <strong className="truncate">{m.live_operator_name || 'Autre collaborateur'}</strong>
-                                              </div>
-                                            )}
-                                          </div>
-                                        );
-                                      });
-                                    })()}
-                                  </div>
-                                )}
-                              </>
-                            );
-                          })()}
                         </div>
                       </div>
                     );

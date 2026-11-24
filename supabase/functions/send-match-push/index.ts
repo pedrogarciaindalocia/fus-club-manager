@@ -86,7 +86,7 @@ serve(async (req) => {
     // 1. Fetch match info
     const { data: match, error: matchErr } = await supabaseAdmin
       .from('matches')
-      .select('id, category, competition, home_team, away_team, score_home, score_away, status, opponent:clubs!opponent_id(name)')
+      .select('id, category, is_home, score_home, score_away, status, opponent:clubs!opponent_id(name)')
       .eq('id', matchId)
       .single()
 
@@ -97,7 +97,7 @@ serve(async (req) => {
       })
     }
 
-    const opponentName = match.opponent?.name || match.away_team || 'Adversaire'
+    const opponentName = match.opponent?.name || 'Adversaire'
     const category = match.category || ''
 
     // 2. Fetch player if applicable
@@ -105,11 +105,11 @@ serve(async (req) => {
     if (record.player_id) {
       const { data: player } = await supabaseAdmin
         .from('players')
-        .select('first_name, last_name, jersey_number, number')
+        .select('full_name, first_name, last_name, jersey_number')
         .eq('id', record.player_id)
         .single()
       if (player) {
-        playerName = `${player.first_name || ''} ${player.last_name || ''}`.trim()
+        playerName = player.full_name || `${player.first_name || ''} ${player.last_name || ''}`.trim()
       }
     }
 
@@ -130,7 +130,7 @@ serve(async (req) => {
           bodyText = `But pour ${opponentName}. Score : FUS ${match.score_home ?? 0} - ${match.score_away ?? 0} ${opponentName}`
         } else {
           title = `⚽ GOAL ! FUS Rabat (${minute})`
-          bodyText = playerName 
+          bodyText = playerName
             ? `${playerName} marque pour le FUS ! Score : ${match.score_home ?? 0} - ${match.score_away ?? 0}`
             : `But pour le FUS Rabat ! Score : ${match.score_home ?? 0} - ${match.score_away ?? 0}`
         }
@@ -177,9 +177,19 @@ serve(async (req) => {
         bodyText = `La composition d'équipe FUS vs ${opponentName} est disponible !`
         break
 
+      case 'operator_assigned': {
+        const catStr = category ? `[${category}] ` : ''
+        title = record.title || `${catStr}🎙️ Opérateur Match Assigné`
+        bodyText = record.body || `${record.operator_name || 'Un opérateur'} a été assigné pour le match FUS vs ${opponentName}.`
+        break
+      }
+
       default:
         // Titre personnalisé fourni dans le body
-        if (body.title && body.body) {
+        if (record.title && record.body) {
+          title = record.title
+          bodyText = record.body
+        } else if (body.title && body.body) {
           title = body.title
           bodyText = body.body
         } else {
@@ -194,7 +204,7 @@ serve(async (req) => {
     // 4. Query Push Tokens
     const { data: allTokens, error: tokensErr } = await supabaseAdmin
       .from('push_tokens')
-      .select('token, followed_categories, preferences')
+      .select('token, user_id, followed_categories, preferences')
 
     if (tokensErr || !allTokens || allTokens.length === 0) {
       return new Response(JSON.stringify({ message: 'No registered push tokens found', count: 0 }), {
@@ -204,11 +214,18 @@ serve(async (req) => {
     }
 
     // 5. Filter tokens according to user preferences and followed categories
+    const targetUserId = record.operator_id || record.target_user_id || null
     const eligibleTokens: string[] = []
 
     for (const entry of allTokens) {
       const token = entry.token?.trim()
       if (!token || !token.startsWith('ExponentPushToken[')) continue
+
+      if (eventType === 'operator_assigned' && targetUserId) {
+        if (String(entry.user_id || '').toLowerCase() !== String(targetUserId).toLowerCase()) continue
+        eligibleTokens.push(token)
+        continue
+      }
 
       // Preference check
       if (prefKey && entry.preferences) {

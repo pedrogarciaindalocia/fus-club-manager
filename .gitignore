@@ -23,6 +23,12 @@ apply-migration.mjs
 deploy-edge-function.mjs
 migrate-rpc.js
 check_db.ts
+backup-storage.mjs
+restore-storage.mjs
+backup_complet_fus.sql
+roles.sql
+supabase_storage_backup/
+supabase/.temp/
 
 # Editor directories and files
 .vscode/*

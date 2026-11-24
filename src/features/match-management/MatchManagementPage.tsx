@@ -477,10 +477,16 @@ const MatchManagementPage: React.FC = () => {
    const [pendingFrmfSyncCount, setPendingFrmfSyncCount] = useState<number>(0);
 
    // Permissions Spécifiques (mini-CRUDs indépendants)
-   const canCreatePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'create');
-   const canUpdatePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'update');
-   const canDeletePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'delete');
-   const canPlanMatch = can('plan_match') || canCreatePlanMatch;
+   const canReadAssignOperator = hasSpecificActionAccess('matches', 'assign_operator', 'read');
+   const canCreateAssignOperator = hasSpecificActionAccess('matches', 'assign_operator', 'create');
+   const canUpdateAssignOperator = hasSpecificActionAccess('matches', 'assign_operator', 'update');
+   const canDeleteAssignOperator = hasSpecificActionAccess('matches', 'assign_operator', 'delete');
+   const hasAssignOperatorPerm = can('assign_operator') || canReadAssignOperator || canCreateAssignOperator || canUpdateAssignOperator || canDeleteAssignOperator;
+
+   const canCreatePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'create') || canCreateAssignOperator || can('assign_operator');
+   const canUpdatePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'update') || canUpdateAssignOperator || can('assign_operator');
+   const canDeletePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'delete') || canDeleteAssignOperator || can('assign_operator');
+   const canPlanMatch = can('plan_match') || canCreatePlanMatch || hasAssignOperatorPerm;
 
    const canReadSyncMyClub = hasSpecificActionAccess('matches', 'sync_my_club', 'read');
    const canCreateSyncMyClub = hasSpecificActionAccess('matches', 'sync_my_club', 'create');
@@ -494,12 +500,12 @@ const MatchManagementPage: React.FC = () => {
 
    const canReadMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'read');
    const canCreateMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'create');
-   const canUpdateMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'update');
-   const canDeleteMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'delete');
-   const canManageMatchPlayed = can('manage_match_played') || canReadMatchPlayed || canCreateMatchPlayed || canUpdateMatchPlayed || canDeleteMatchPlayed;
+   const canUpdateMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'update') || canUpdateAssignOperator || can('assign_operator');
+   const canDeleteMatchPlayed = hasSpecificActionAccess('matches', 'manage_match_played', 'delete') || canDeleteAssignOperator || can('assign_operator');
+   const canManageMatchPlayed = can('manage_match_played') || canReadMatchPlayed || canCreateMatchPlayed || canUpdateMatchPlayed || canDeleteMatchPlayed || hasAssignOperatorPerm;
 
    const canReadLiveTracking = hasSpecificActionAccess('matches', 'live_tracking', 'read');
-   const canLiveTracking = can('live_tracking') || canReadLiveTracking;
+   const canLiveTracking = can('live_tracking') || canReadLiveTracking || hasAssignOperatorPerm;
 
    const canReadStandings = hasSpecificActionAccess('matches', 'manage_standings', 'read');
    const canCreateStandings = hasSpecificActionAccess('matches', 'manage_standings', 'create');

@@ -394,6 +394,20 @@ export const isDirecteurAdministratifJob = (jobTitle?: string | null): boolean =
 };
 
 /**
+ * Détermine si l'utilisateur exerce le poste « Analyste Vidéo »
+ */
+export const isVideoAnalystJob = (jobTitle?: string | null, role?: string | null): boolean => {
+  const normRole = (role || '').toLowerCase().trim();
+  const normJob = normalizeJobTitleKey(jobTitle);
+  return (
+    normRole === 'analyst' ||
+    normJob.includes('analyste') ||
+    normJob.includes('analyst') ||
+    normJob.includes('video')
+  );
+};
+
+/**
  * Détermine si le compte effectif possède le rôle Scout Admin (`scout_admin`),
  * y compris lors d'une impersonation, indépendamment de la matrice de cases cochées.
  */

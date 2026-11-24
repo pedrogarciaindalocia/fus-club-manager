@@ -106,6 +106,11 @@ export default function SurclassementModal({
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [selectedMatchIds, setSelectedMatchIds] = useState<Set<string>>(new Set());
   const [savingBatch, setSavingBatch] = useState(false);
+  const [revertingAll, setRevertingAll] = useState(false);
+
+  const hasActiveSurclassement =
+    history.some(s => s.status === 'active') ||
+    matches.some(m => !!m.lineup?.surclasses?.[player.id]);
 
   // Form inputs
   const [targetJerseyNumber, setTargetJerseyNumber] = useState<string>('');
@@ -281,6 +286,27 @@ export default function SurclassementModal({
     }
   };
 
+  // ── Retour immédiat à la catégorie principale (révoque tous les surclassements actifs) ──
+  const handleRevertAllToPrincipal = async () => {
+    if (!canDelete) {
+      toast.error("Permission Delete requise pour réintégrer le joueur dans sa catégorie principale.");
+      return;
+    }
+    try {
+      setRevertingAll(true);
+      await surclassementService.revertAllForPlayer(player.id);
+      queryClient.invalidateQueries({ queryKey: ['surclassements'] });
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['players'] });
+      toast.success(`${player.full_name} a été réintégré dans sa catégorie principale (${currentCategory}).`);
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message || 'Impossible de réintégrer le joueur dans sa catégorie principale.');
+    } finally {
+      setRevertingAll(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <motion.div
@@ -353,22 +379,20 @@ export default function SurclassementModal({
         <div className="flex border-b bg-slate-50 flex-shrink-0">
           <button
             onClick={() => setTab('action')}
-            className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
-              tab === 'action'
+            className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${tab === 'action'
                 ? 'text-orange-600 border-b-2 border-orange-500 bg-white'
                 : 'text-muted-foreground hover:text-foreground'
-            }`}
+              }`}
           >
             <Calendar className="w-4 h-4" />
             Matchs à venir ({matches.length})
           </button>
           <button
             onClick={() => setTab('history')}
-            className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
-              tab === 'history'
+            className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${tab === 'history'
                 ? 'text-orange-600 border-b-2 border-orange-500 bg-white'
                 : 'text-muted-foreground hover:text-foreground'
-            }`}
+              }`}
           >
             <Clock className="w-4 h-4" />
             Historique ({history.length})
@@ -448,20 +472,17 @@ export default function SurclassementModal({
                           <div
                             key={m.id}
                             onClick={() => toggleMatchSelection(m.id)}
-                            className={`p-3.5 rounded-2xl border-2 transition-all flex items-center gap-3.5 ${
-                              isToggleAllowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-75'
-                            } ${
-                              isSelected
+                            className={`p-3.5 rounded-2xl border-2 transition-all flex items-center gap-3.5 ${isToggleAllowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-75'
+                              } ${isSelected
                                 ? 'border-orange-500 bg-orange-50/60 shadow-sm'
                                 : 'border-slate-200 hover:border-slate-300 bg-white'
-                            }`}
+                              }`}
                           >
                             {/* Checkbox visuelle */}
-                            <div className={`w-5 h-5 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${
-                              isSelected
+                            <div className={`w-5 h-5 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${isSelected
                                 ? 'bg-orange-500 text-white'
                                 : 'border-2 border-slate-300 bg-white'
-                            }`}>
+                              }`}>
                               {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
                             </div>
 
@@ -570,6 +591,28 @@ export default function SurclassementModal({
                     Consultation uniquement (permission Spécifique Surclasser — Read).
                   </div>
                 ) : null}
+
+                {hasActiveSurclassement && canDelete && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleRevertAllToPrincipal}
+                    disabled={revertingAll || savingBatch}
+                    className="w-full h-11 rounded-2xl font-bold uppercase tracking-wider text-xs gap-2 border-2 border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-all"
+                  >
+                    {revertingAll ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-400 border-t-slate-700 animate-spin" />
+                        Retour en cours…
+                      </span>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-4 h-4 text-orange-600" />
+                        Revenir à la catégorie principale ({currentCategory || 'Native'})
+                      </>
+                    )}
+                  </Button>
+                )}
               </motion.div>
             ) : (
               /* ── Onglet Historique ── */
@@ -581,8 +624,22 @@ export default function SurclassementModal({
                 className="space-y-4"
               >
                 {history.some(s => s.status === 'active') && (
-                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-xs font-semibold text-orange-900">
-                    Les surclassements sont associés séparément à chaque match. Pour en annuler un, décochez ce match dans l’onglet Action puis validez ; son entrée restera dans l’historique.
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-xs font-semibold text-orange-900 space-y-3">
+                    <p>
+                      Les surclassements sont associés séparément à chaque match. Pour en annuler un seul, décochez-le dans l’onglet Action puis validez ; ou réintégrez immédiatement le joueur dans sa catégorie principale.
+                    </p>
+                    {canDelete && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleRevertAllToPrincipal}
+                        disabled={revertingAll || savingBatch}
+                        className="w-full h-10 rounded-xl font-bold uppercase tracking-wider text-[11px] gap-2 border-orange-300 bg-white text-orange-800 hover:bg-orange-100"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Revenir à la catégorie principale ({currentCategory || 'Native'})
+                      </Button>
+                    )}
                   </div>
                 )}
 
@@ -606,11 +663,10 @@ export default function SurclassementModal({
                     {history.map(s => (
                       <div
                         key={s.id}
-                        className={`rounded-2xl p-4 border transition-all ${
-                          s.status === 'active'
+                        className={`rounded-2xl p-4 border transition-all ${s.status === 'active'
                             ? 'bg-orange-50/70 border-orange-200'
                             : 'bg-slate-50 border-slate-200 opacity-80'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
@@ -628,11 +684,10 @@ export default function SurclassementModal({
                             )}
                           </div>
                           <Badge
-                            className={`border-none text-[9px] font-black uppercase ${
-                              s.status === 'active'
+                            className={`border-none text-[9px] font-black uppercase ${s.status === 'active'
                                 ? 'bg-orange-500 text-white'
                                 : 'bg-slate-200 text-slate-700'
-                            }`}
+                              }`}
                           >
                             {s.status === 'active' ? 'Actif' : 'Clôturé'}
                           </Badge>

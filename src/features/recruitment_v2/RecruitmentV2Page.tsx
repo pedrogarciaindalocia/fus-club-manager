@@ -37,7 +37,7 @@ import {
   validateRecruitNowPrerequisites
 } from './types/recruitment';
 import { PLAYER_POSITIONS, normalizeAgeCategory } from '../../constants';
-import { isScoutAdminRole, isResponsableVieJob, isResponsableMagasinierJob, isCoachJob, isDirecteurAdministratifJob } from '../../constants/roles';
+import { isScoutAdminRole, isResponsableVieJob, isResponsableMagasinierJob, isCoachJob, isDirecteurAdministratifJob, isVideoAnalystJob } from '../../constants/roles';
 import { dashboardNotificationService } from '../../services/dashboardNotificationService';
 import { getCountryFlag } from '../../constants/geography';
 
@@ -227,28 +227,29 @@ export const RecruitmentV2Page: React.FC = () => {
   const isResponsableMagasinierUser = Boolean(!isSuperAdmin && !isScoutAdmin && isResponsableMagasinierJob(effectiveJobTitle));
   const isCoachUser = Boolean(!isSuperAdmin && !isScoutAdmin && isCoachJob(effectiveJobTitle, effectiveSystemRole));
   const isDirecteurAdministratifUser = Boolean(!isSuperAdmin && !isScoutAdmin && isDirecteurAdministratifJob(effectiveJobTitle));
+  const isVideoAnalystUser = Boolean(!isSuperAdmin && !isScoutAdmin && isVideoAnalystJob(effectiveJobTitle, effectiveSystemRole));
 
   // Assigner des missions : mini-CRUD granulaire strictement découplé du CRUD général
   const canReadMissions = Boolean(
-    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && (
+    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && !isVideoAnalystUser && (
       isSuperAdmin ||
       hasSpecificActionAccess('candidates', 'assign_mission', 'read')
     )
   );
   const canCreateMissions = Boolean(
-    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && (
+    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && !isVideoAnalystUser && (
       isSuperAdmin ||
       hasSpecificActionAccess('candidates', 'assign_mission', 'create')
     )
   );
   const canUpdateMissions = Boolean(
-    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && (
+    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && !isVideoAnalystUser && (
       isSuperAdmin ||
       hasSpecificActionAccess('candidates', 'assign_mission', 'update')
     )
   );
   const canDeleteMissions = Boolean(
-    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && (
+    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && !isVideoAnalystUser && (
       isSuperAdmin ||
       hasSpecificActionAccess('candidates', 'assign_mission', 'delete')
     )
@@ -257,6 +258,7 @@ export const RecruitmentV2Page: React.FC = () => {
     !isResponsableVieUser &&
     !isResponsableMagasinierUser &&
     !isDirecteurAdministratifUser &&
+    !isVideoAnalystUser &&
     (canCreateMissions || canUpdateMissions)
   );
 
@@ -294,31 +296,33 @@ export const RecruitmentV2Page: React.FC = () => {
   const canProcessRecruitNow = Boolean(
     !isResponsableVieUser &&
     !isResponsableMagasinierUser &&
-    (isDirecteurAdministratifUser || canReadRecruitNow || canCreateRecruitNow || canUpdateRecruitNow || canDeleteRecruitNow)
+    !isVideoAnalystUser &&
+    !isDirecteurAdministratifUser &&
+    (canReadRecruitNow || canCreateRecruitNow || canUpdateRecruitNow || canDeleteRecruitNow)
   );
 
   // Rapports d'observation : mini-CRUD granulaire strictement découplé du CRUD général
   const canReadReports = Boolean(
-    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && (
+    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && !isVideoAnalystUser && (
       isSuperAdmin ||
       hasSpecificActionAccess('candidates', 'manage_reports', 'read') ||
       hasSubModuleAccess('candidates', 'reports')
     )
   );
   const canCreateReports = Boolean(
-    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && (
+    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && !isVideoAnalystUser && (
       isSuperAdmin ||
       hasSpecificActionAccess('candidates', 'manage_reports', 'create')
     )
   );
   const canUpdateReports = Boolean(
-    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && (
+    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && !isVideoAnalystUser && (
       isSuperAdmin ||
       hasSpecificActionAccess('candidates', 'manage_reports', 'update')
     )
   );
   const canDeleteReports = Boolean(
-    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && (
+    !isResponsableVieUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && !isVideoAnalystUser && (
       isSuperAdmin ||
       hasSpecificActionAccess('candidates', 'manage_reports', 'delete')
     )
@@ -348,14 +352,14 @@ export const RecruitmentV2Page: React.FC = () => {
   const isOnlyRecruitNowUser = Boolean(
     !isSuperAdmin &&
     !isScoutAdmin &&
-    (isDirecteurAdministratifUser || (
+    !isDirecteurAdministratifUser && (
       canProcessRecruitNow &&
       !hasSubModuleAccess('candidates', 'create') &&
       !hasSubModuleAccess('candidates', 'update') &&
       !canReadReports &&
       !canReadDriveLink &&
       !canReadMissions
-    ))
+    )
   );
 
   // Vérification granulaire des accès aux sous-rubriques Détection V2 (strict : uniquement ce qui est coché)
@@ -697,6 +701,7 @@ export const RecruitmentV2Page: React.FC = () => {
     candReportsCount: number,
     roundedClass: 'rounded-md' | 'rounded-full' = 'rounded-md'
   ) => {
+    if (isResponsableVieUser || isDirecteurAdministratifUser) return null;
     const surclassInfo = resolveReportOrCandidateSurclassement({
       candidate: { ...c, age_category: getCandidateEffectiveCategory(c) },
       evaluation: latestEval,
@@ -840,7 +845,7 @@ export const RecruitmentV2Page: React.FC = () => {
   }, [createTestsBatch, dispatchPlanningNotifications]);
 
   const canUploadHonorDeclarationForCandidate = (cand: TrialCandidate): boolean => {
-    if (!cand || isResponsableMagasinierUser || isCoachUser) return false;
+    if (!cand || isResponsableMagasinierUser || isCoachUser || isVideoAnalystUser || isDirecteurAdministratifUser) return false;
     if (isResponsableVieUser) {
       return cand.test_slot_validation?.status === 'validated';
     }
@@ -848,8 +853,8 @@ export const RecruitmentV2Page: React.FC = () => {
   };
 
   const canValidateCandidateSlot = (cand: TrialCandidate): boolean => {
-    if (!cand || isResponsableVieUser || isResponsableMagasinierUser || isCoachUser) return false;
-    return Boolean(canScheduleTests || isScoutManager || isCandidateIntroducedByScout(cand));
+    if (!cand || isScoutManager || isResponsableVieUser || isResponsableMagasinierUser || isCoachUser || isVideoAnalystUser || isDirecteurAdministratifUser) return false;
+    return Boolean(canScheduleTests);
   };
 
   const handleHonorDeclarationChange = async (
@@ -1030,6 +1035,10 @@ export const RecruitmentV2Page: React.FC = () => {
     cand: TrialCandidate,
     payload: { startDate: string; endDate: string; startTime: string; note: string }
   ) => {
+    if (isScoutManager || !canAdjustTestSlot) {
+      toast.error("Vous n'avez pas l'autorisation de demander ou d'ajouter un créneau de test.");
+      return;
+    }
     const requestInfo: TestSlotValidationInfo = {
       status: 'change_requested',
       requested_start_date: payload.startDate,
@@ -1049,6 +1058,10 @@ export const RecruitmentV2Page: React.FC = () => {
   };
 
   const openSlotModalForCandidate = (cand: TrialCandidate, interval?: TestDateInterval) => {
+    if (isScoutManager || !canAdjustTestSlot) {
+      toast.error("Seul l'Admin ou le Super Admin peut modifier ou ajouter un créneau de test.");
+      return;
+    }
     const summary = candidateTestSummaryMap.get(cand.id);
     const targetInterval = interval || summary?.intervals?.[0];
     const startDate = targetInterval?.startDate || todayStr;
@@ -1182,15 +1195,26 @@ export const RecruitmentV2Page: React.FC = () => {
   };
 
   const renderHonorDeclarationControl = (c: TrialCandidate) => {
-    const isSlotValidated = c.test_slot_validation?.status === 'validated';
-    if (isResponsableVieUser && !isSlotValidated) {
+    const honorDoc = getHonorDeclarationDocument(c);
+    if (isResponsableMagasinierUser) {
+      const exists = Boolean(honorDoc);
       return (
         <span
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold whitespace-nowrap"
-          title="La déclaration sur l'honneur devient accessible dès que le créneau de test est validé"
+          className={cn(
+            'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-black whitespace-nowrap cursor-default',
+            exists
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-rose-200 bg-rose-50 text-rose-700'
+          )}
+          title={exists ? "Déclaration sur l'honneur présente" : "Déclaration sur l'honneur manquante"}
         >
-          <Clock className="w-3 h-3 shrink-0" />
-          <span>Créneau à valider</span>
+          <span
+            className={cn(
+              'w-2.5 h-2.5 rounded-full ring-2 shrink-0',
+              exists ? 'bg-emerald-500 ring-emerald-500/25' : 'bg-rose-500 ring-rose-500/25'
+            )}
+          />
+          <span>{exists ? 'Oui (Reçue)' : 'Non (Manquante)'}</span>
         </span>
       );
     }
@@ -1198,7 +1222,7 @@ export const RecruitmentV2Page: React.FC = () => {
     return (
       <HonorDeclarationStatusPill
         candidateName={`${c.first_name} ${c.last_name}`.trim()}
-        document={getHonorDeclarationDocument(c)}
+        document={honorDoc}
         isRequired={resolveCandidateStatus(c) === 'invitation_test'}
         canUpload={canUploadHonorDeclarationForCandidate(c)}
         onDocumentChange={(doc) => handleHonorDeclarationChange(c, doc)}
@@ -1243,25 +1267,6 @@ export const RecruitmentV2Page: React.FC = () => {
   // - Admin / Super Admin -> liste déroulante toujours active (même si « Inviter à un test » / créneau validé) + « Dossier Admin » si Recrutement immédiatement ou pastille de dates si Inviter à un test
   // - Scout Manager propriétaire (hors « Inviter à un test ») -> liste déroulante des 3 statuts autorisés
   // - « Inviter à un test » -> uniquement la pastille si planifié (Capture 2 : survol calendrier pour Valider / Autre créneau / Changer créneau) ou « En attente de planning » (Scout Manager)
-  const handleCoachValidationChange = async (
-    c: TrialCandidate,
-    nextValidation: 'validated' | 'not_validated'
-  ) => {
-    try {
-      await updateCandidate({
-        id: c.id,
-        updates: { coach_validation: nextValidation } as any,
-      });
-      toast.success(
-        nextValidation === 'validated'
-          ? `${c.first_name} ${c.last_name} : Validé par le coach`
-          : `${c.first_name} ${c.last_name} : Non validé par le coach`
-      );
-    } catch (err: any) {
-      toast.error(err?.message || 'Erreur lors de la mise à jour de la validation coach');
-    }
-  };
-
   const renderCandidateStatusControl = (
     c: TrialCandidate,
     fullWidthButton = false,
@@ -1307,6 +1312,8 @@ export const RecruitmentV2Page: React.FC = () => {
       !isResponsableVieUser &&
       !isResponsableMagasinierUser &&
       !isCoachUser &&
+      !isVideoAnalystUser &&
+      !isDirecteurAdministratifUser &&
       (canScheduleTests || (isScoutManager && isOwner && currentStatus !== 'invitation_test'))
     );
 
@@ -1345,28 +1352,7 @@ export const RecruitmentV2Page: React.FC = () => {
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        {isCoachUser ? (
-          <select
-            aria-label={`Validation coach de ${c.first_name} ${c.last_name}`}
-            value={c.coach_validation === 'validated' ? 'validated' : 'not_validated'}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => {
-              e.stopPropagation();
-              handleCoachValidationChange(c, e.target.value as 'validated' | 'not_validated');
-            }}
-            className={cn(
-              "px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer focus:outline-none focus:ring-2",
-              c.coach_validation === 'validated'
-                ? "bg-emerald-50 text-emerald-900 border-emerald-300 focus:ring-emerald-400/30"
-                : "bg-rose-50 text-rose-900 border-rose-200 focus:ring-rose-400/30",
-              fullWidthButton ? "w-full" : "max-w-[175px]"
-            )}
-            title="Validation du coach sur le joueur invité à un test"
-          >
-            <option value="not_validated">Non validé</option>
-            <option value="validated">Validé</option>
-          </select>
-        ) : canChangeStatusInDb ? (
+        {canChangeStatusInDb ? (
           <div className={cn("flex flex-col gap-1.5", fullWidthButton ? "w-full" : "")}>
             <select
               aria-label={`Statut de ${c.first_name} ${c.last_name}`}
@@ -1374,7 +1360,14 @@ export const RecruitmentV2Page: React.FC = () => {
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => {
                 e.stopPropagation();
-                handleDatabaseStatusChange(c, e.target.value as PlayerRecruitmentStatus);
+                const nextStatus = e.target.value as PlayerRecruitmentStatus;
+                if (nextStatus !== currentStatus) {
+                  setStatusChangeConfirmTarget({
+                    candidate: c,
+                    currentStatus,
+                    nextStatus,
+                  });
+                }
               }}
               className={cn(
                 "px-2.5 py-1.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer focus:outline-none focus:ring-2",
@@ -1389,48 +1382,7 @@ export const RecruitmentV2Page: React.FC = () => {
             >
               <option value="to_follow">À suivre</option>
               <option value="invitation_test">Inviter à un test</option>
-              {(canCreateRecruitNow || currentStatus === 'recruit_now' || (isScoutManager && isOwner)) && (
-                <option value="recruit_now">Recrutement immédiatement</option>
-              )}
             </select>
-
-            {(isScoutAdmin || isSuperAdmin) && currentStatus === 'invitation_test' && (
-              <div className="flex flex-col gap-1">
-                {c.coach_validation && (
-                  <span
-                    className={cn(
-                      "inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-bold w-fit",
-                      c.coach_validation === 'validated'
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        : "bg-rose-50 text-rose-700 border-rose-200"
-                    )}
-                  >
-                    Coach : {c.coach_validation === 'validated' ? 'Validé' : 'Non validé'}
-                  </span>
-                )}
-                <select
-                  aria-label={`Recruter le joueur ${c.first_name} ${c.last_name}`}
-                  value=""
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    const val = e.target.value as PlayerRecruitmentStatus | '';
-                    if (val) {
-                      handleDatabaseStatusChange(c, val);
-                    }
-                  }}
-                  className={cn(
-                    "px-2.5 py-1 rounded-xl border border-amber-300 bg-amber-50 text-amber-950 text-[11px] font-black transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400/40",
-                    fullWidthButton ? "w-full" : "max-w-[205px]"
-                  )}
-                  title="Décision Scout Admin : Oui (dossier à clôturer) ou Non (retour en À suivre)"
-                >
-                  <option value="">Recruter le joueur...</option>
-                  <option value="recruit_now">Oui — Dossier à clôturer</option>
-                  <option value="to_follow">Non — À suivre (défaut)</option>
-                </select>
-              </div>
-            )}
           </div>
         ) : (
           <span
@@ -1478,15 +1430,14 @@ export const RecruitmentV2Page: React.FC = () => {
                   interval={interval}
                   allCandidateTestDates={candTestSummary?.allDates}
                   sessions={candTestSummary?.sessions}
-                  readOnly={!canScheduleTests && !isResponsableVieUser}
+                  readOnly={!canScheduleTests}
                   slotValidation={slotValidation}
                   canValidateSlot={allowSlotAction}
-                  canOpenSlotModal={allowSlotAction || isResponsableVieUser}
-                  isAdminSlotEditor={canScheduleTests || isResponsableVieUser}
-                  slotEditorLabel={isResponsableVieUser ? 'Ajuster créneau' : undefined}
+                  canOpenSlotModal={allowSlotAction}
+                  isAdminSlotEditor={canScheduleTests}
                   customTitle={
                     isResponsableVieUser
-                      ? 'Cliquer pour ajuster le créneau (chambre / restauration) • Survoler pour voir le calendrier'
+                      ? 'Cliquer pour confirmer la validation (Oui / Non) • Survoler pour voir le calendrier'
                       : undefined
                   }
                   onValidateSlot={() => handleValidateCandidateTestSlot(c)}
@@ -1495,7 +1446,7 @@ export const RecruitmentV2Page: React.FC = () => {
                     canScheduleTests
                       ? () => handleOpenInvitedCalendar(c, interval)
                       : isResponsableVieUser
-                        ? () => openSlotModalForCandidate(c, interval)
+                        ? () => setVieValidationConfirmTarget(c)
                         : undefined
                   }
                 />
@@ -1516,6 +1467,14 @@ export const RecruitmentV2Page: React.FC = () => {
   };
   // Scout Report Wizard state
   const [isReportWizardOpen, setIsReportWizardOpen] = useState(false);
+  const [vieValidationConfirmTarget, setVieValidationConfirmTarget] = useState<TrialCandidate | null>(null);
+  const [statusChangeConfirmTarget, setStatusChangeConfirmTarget] = useState<{
+    candidate: TrialCandidate;
+    currentStatus: PlayerRecruitmentStatus;
+    nextStatus: PlayerRecruitmentStatus;
+  } | null>(null);
+  const [isSavingStatusChange, setIsSavingStatusChange] = useState(false);
+  const [isSavingVieValidation, setIsSavingVieValidation] = useState(false);
   const [reportWizardCandidate, setReportWizardCandidate] = useState<TrialCandidate | null>(null);
   const [createdPromptCandidate, setCreatedPromptCandidate] = useState<{ id: string; name: string } | null>(null);
   const [candidateToDelete, setCandidateToDelete] = useState<TrialCandidate | null>(null);
@@ -2000,8 +1959,8 @@ export const RecruitmentV2Page: React.FC = () => {
       });
     }
 
-    // 1. Les administrateurs de détection, la direction générale, Scout Managers, Resp. Vie, Magasinier, Coach & Directeur Administratif accèdent aux joueurs du périmètre (catégories déjà filtrées ci-dessus)
-    if (isRecruitmentAdmin || isScoutManager || isResponsableVieUser || isResponsableMagasinierUser || isCoachUser || isDirecteurAdministratifUser) {
+    // 1. Les administrateurs de détection, la direction générale, Scout Managers, Resp. Vie, Magasinier, Coach, Directeur Administratif & Analyste Vidéo accèdent aux joueurs du périmètre (catégories déjà filtrées ci-dessus)
+    if (isRecruitmentAdmin || isScoutManager || isResponsableVieUser || isResponsableMagasinierUser || isCoachUser || isDirecteurAdministratifUser || isVideoAnalystUser) {
       return candidates;
     }
 
@@ -2042,11 +2001,18 @@ export const RecruitmentV2Page: React.FC = () => {
 
       return false;
     });
-  }, [candidates, authState?.userCategories, isRecruitmentAdmin, isScoutManager, isResponsableVieUser, isResponsableMagasinierUser, isCoachUser, isDirecteurAdministratifUser, currentScout, authState?.user?.id, authState?.user?.full_name, evaluations, observations]);
+  }, [candidates, authState?.userCategories, isRecruitmentAdmin, isScoutManager, isResponsableVieUser, isResponsableMagasinierUser, isCoachUser, isDirecteurAdministratifUser, isVideoAnalystUser, currentScout, authState?.user?.id, authState?.user?.full_name, evaluations, observations]);
 
   const activeScopedCandidates = React.useMemo(
-    () => scopedCandidates.filter(c => c.pipeline_stage !== 'archived' && c.status !== 'archived'),
-    [scopedCandidates]
+    () =>
+      scopedCandidates.filter((c) => {
+        if (c.pipeline_stage === 'archived' || c.status === 'archived') return false;
+        if ((isResponsableVieUser || isCoachUser || isResponsableMagasinierUser || isDirecteurAdministratifUser) && resolveCandidateStatus(c) !== 'invitation_test') {
+          return false;
+        }
+        return true;
+      }),
+    [scopedCandidates, isResponsableVieUser, isCoachUser, isResponsableMagasinierUser, resolveCandidateStatus]
   );
 
   const databaseScopedTests = React.useMemo(() => {
@@ -2207,8 +2173,8 @@ export const RecruitmentV2Page: React.FC = () => {
   // Vérifie si l'utilisateur a le droit d'ouvrir et de consulter le dossier détaillé (modal/page) et les rapports du joueur
   const canViewCandidateDetails = (candidate?: TrialCandidate): boolean => {
     if (!candidate) return false;
-    if (isResponsableVieUser || isResponsableMagasinierUser || isDirecteurAdministratifUser) return false;
-    if (isSuperAdmin) return true;
+    if (isResponsableVieUser || isVideoAnalystUser) return false;
+    if (isSuperAdmin || isResponsableMagasinierUser || isDirecteurAdministratifUser) return true;
 
     const hasDossierOrReportPermission = Boolean(
       canManageReports ||
@@ -2240,7 +2206,7 @@ export const RecruitmentV2Page: React.FC = () => {
   // Vérifie si l'utilisateur a le droit de modifier l'intégralité de la fiche du candidat (accès au formulaire complet)
   const canUpdateCandidateFull = (cand: TrialCandidate): boolean => {
     if (!cand) return false;
-    if (isResponsableVieUser || isResponsableMagasinierUser || isDirecteurAdministratifUser) return false;
+    if (isResponsableVieUser || isResponsableMagasinierUser || isDirecteurAdministratifUser || isVideoAnalystUser) return false;
     if (isSuperAdmin) return true;
 
     const hasEditPermission = hasSubModuleAccess('candidates', 'update');
@@ -2259,7 +2225,7 @@ export const RecruitmentV2Page: React.FC = () => {
   // Règle de suppression : Seule la direction ou le scout ayant introduit le joueur peut le supprimer
   const canDeleteCandidate = (cand: TrialCandidate): boolean => {
     if (!cand) return false;
-    if (isResponsableVieUser || isResponsableMagasinierUser || isDirecteurAdministratifUser) return false;
+    if (isResponsableVieUser || isResponsableMagasinierUser || isDirecteurAdministratifUser || isVideoAnalystUser) return false;
     if (isSuperAdmin) return true;
     // Règle stricte : la permission de suppression candidates:delete est impérativement requise
     if (!hasSubModuleAccess('candidates', 'delete')) return false;
@@ -2320,6 +2286,8 @@ export const RecruitmentV2Page: React.FC = () => {
   const [nationalityTagFilter, setNationalityTagFilter] = useState<'all' | 'marocains' | 'africains'>('all');
   // Filtre de statut / décision scout
   const [decisionFilter, setDecisionFilter] = useState<'ALL' | 'recruit_now' | 'invitation_test' | 'to_follow'>('ALL');
+  // Filtre Déclaration sur l'honneur (Toutes / Reçue / Manquante)
+  const [honorFilter, setHonorFilter] = useState<'ALL' | 'received' | 'missing'>('ALL');
 
   const nationalityCounts = React.useMemo(() => {
     let morocCount = 0;
@@ -2356,7 +2324,8 @@ export const RecruitmentV2Page: React.FC = () => {
     scoutFilter !== 'ALL' ||
     myPlayersOnly ||
     nationalityTagFilter !== 'all' ||
-    decisionFilter !== 'ALL'
+    decisionFilter !== 'ALL' ||
+    honorFilter !== 'ALL'
   );
 
   const handleResetAllFilters = () => {
@@ -2368,6 +2337,7 @@ export const RecruitmentV2Page: React.FC = () => {
     setMyPlayersOnly(false);
     setNationalityTagFilter('all');
     setDecisionFilter('ALL');
+    setHonorFilter('ALL');
   };
 
   const setTab = (tab: string) => {
@@ -2459,10 +2429,17 @@ export const RecruitmentV2Page: React.FC = () => {
         return false;
       }
 
-      // Règle Responsable Vie & Coach : uniquement les joueurs avec le statut « Inviter à un test »
+      // Règle Responsable Vie, Coach, Responsable Magasinier & Directeur Administratif : uniquement les joueurs avec le statut « Inviter à un test »
       const resolvedStatus = resolveCandidateStatus(c);
-      if ((isResponsableVieUser || isCoachUser) && resolvedStatus !== 'invitation_test') {
+      if ((isResponsableVieUser || isCoachUser || isResponsableMagasinierUser || isDirecteurAdministratifUser) && resolvedStatus !== 'invitation_test') {
         return false;
+      }
+
+      // Filtre Déclaration sur l'honneur (Reçue / Manquante)
+      if (honorFilter !== 'ALL') {
+        const hasHonor = Boolean(getHonorDeclarationDocument(c)?.url);
+        if (honorFilter === 'received' && !hasHonor) return false;
+        if (honorFilter === 'missing' && hasHonor) return false;
       }
 
       // Filtre Décision Scout / Statut (si activé manuellement)
@@ -2491,7 +2468,7 @@ export const RecruitmentV2Page: React.FC = () => {
     });
 
     return sorted;
-  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, myPlayersOnly, nationalityTagFilter, currentScout, authState?.user, decisionFilter, isOnlyRecruitNowUser, isResponsableVieUser, isCoachUser, isCandidateRecruitNow, resolveCandidateStatus]);
+  }, [scopedCandidates, evaluations, searchQuery, categoryFilter, positionFilter, footFilter, scoutFilter, myPlayersOnly, nationalityTagFilter, currentScout, authState?.user, decisionFilter, honorFilter, isOnlyRecruitNowUser, isResponsableVieUser, isCoachUser, isResponsableMagasinierUser, isDirecteurAdministratifUser, isCandidateRecruitNow, resolveCandidateStatus]);
 
   // 1b. Filtrage des candidats archivés pour l'onglet Archives
   const filteredArchivedCandidates = React.useMemo(() => {
@@ -3111,7 +3088,7 @@ export const RecruitmentV2Page: React.FC = () => {
               {/* Barre de Filtre Complet (Placée directement au-dessus du tableau) */}
               <div className="bg-white rounded-3xl p-4 md:p-5 border shadow-sm space-y-3">
                 {/* LIGNE 0 : Filtres Marocains / Africains (sans bouton Tous) + Filtres Rapides de Statut (sans icônes) */}
-                {!isResponsableVieUser && (
+                {!isResponsableVieUser && !isCoachUser && !isResponsableMagasinierUser && !isDirecteurAdministratifUser && (
                   <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 gap-1 flex-wrap mr-1">
@@ -3217,31 +3194,6 @@ export const RecruitmentV2Page: React.FC = () => {
                               </span>
                             </button>
                           </div>
-
-                          {/* Filtre Rapide : À recruter immédiatement */}
-                          <div className="inline-flex items-center p-1 bg-emerald-50 rounded-2xl border border-emerald-200/80">
-                            <button
-                              type="button"
-                              onClick={() => setDecisionFilter(prev => prev === 'recruit_now' ? 'ALL' : 'recruit_now')}
-                              className={cn(
-                                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
-                                decisionFilter === 'recruit_now'
-                                  ? "bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-400/40"
-                                  : "text-emerald-800 hover:bg-white"
-                              )}
-                              title="Filtrer uniquement les talents validés à recruter immédiatement"
-                            >
-                              <span>Recrutement immédiatement</span>
-                              <span className={cn(
-                                "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
-                                decisionFilter === 'recruit_now'
-                                  ? "bg-white/20 text-white"
-                                  : "bg-emerald-200 text-emerald-900"
-                              )}>
-                                {activeScopedCandidates.filter(c => isCandidateRecruitNow(c)).length}
-                              </span>
-                            </button>
-                          </div>
                         </>
                       )}
                     </div>
@@ -3273,7 +3225,7 @@ export const RecruitmentV2Page: React.FC = () => {
 
                   <div className="flex items-center gap-2 self-stretch md:self-auto justify-between md:justify-end text-xs shrink-0 flex-wrap">
                     {/* Bouton filtre rapide : Mes Joueurs Uniquement */}
-                    {!isResponsableVieUser && !isOnlyRecruitNowUser && (
+                    {!isResponsableVieUser && !isOnlyRecruitNowUser && !isDirecteurAdministratifUser && !isCoachUser && !isResponsableMagasinierUser && (
                       <button
                         type="button"
                         onClick={() => setMyPlayersOnly(!myPlayersOnly)}
@@ -3313,7 +3265,7 @@ export const RecruitmentV2Page: React.FC = () => {
                 {/* LIGNE 2 : Sélecteurs déroulants de filtrage complet */}
                 <div className={cn(
                   "grid gap-2.5 pt-1 border-t border-slate-100",
-                  isResponsableVieUser ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2 sm:grid-cols-2 lg:grid-cols-4"
+                  isResponsableVieUser ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-2 lg:grid-cols-4"
                 )}>
                   {/* 1. Catégorie d'Âge */}
                   <div>
@@ -3370,15 +3322,37 @@ export const RecruitmentV2Page: React.FC = () => {
                   </div>
 
                   {isResponsableVieUser ? (
-                    <div className="flex flex-col justify-end">
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                        Statut affiché (lecture seule)
-                      </label>
-                      <div className="px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-xs font-bold flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 shrink-0" />
-                        <span>Inviter à un test uniquement</span>
+                    <>
+                      <div className="flex flex-col justify-end">
+                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                          Statut affiché (lecture seule)
+                        </label>
+                        <div className="px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-xs font-bold flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 shrink-0" />
+                          <span>Inviter à un test uniquement</span>
+                        </div>
                       </div>
-                    </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                          Déclaration sur l'honneur
+                        </label>
+                        <select
+                          value={honorFilter}
+                          onChange={(e) => setHonorFilter(e.target.value as 'ALL' | 'received' | 'missing')}
+                          className={cn(
+                            "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
+                            honorFilter !== 'ALL'
+                              ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
+                              : "border-slate-200 bg-white text-slate-700"
+                          )}
+                        >
+                          <option value="ALL">Toutes</option>
+                          <option value="received">Reçue</option>
+                          <option value="missing">Manquante</option>
+                        </select>
+                      </div>
+                    </>
                   ) : (
                     <>
                       {/* 2. Poste de Jeu */}
@@ -3405,29 +3379,31 @@ export const RecruitmentV2Page: React.FC = () => {
                         </select>
                       </div>
 
-                      {/* 3. Pied Fort */}
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
-                          Pied Fort
-                        </label>
-                        <select
-                          value={footFilter}
-                          onChange={(e) => setFootFilter(e.target.value)}
-                          className={cn(
-                            "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
-                            footFilter !== 'ALL'
-                              ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
-                              : "border-slate-200 bg-white text-slate-700"
-                          )}
-                        >
-                          {FOOT_OPTIONS.map(opt => (
-                            <option key={opt.id} value={opt.id}>{opt.label}</option>
-                          ))}
-                        </select>
-                      </div>
+                      {/* 3. Pied Fort (masqué pour Directeur Administratif) */}
+                      {!isDirecteurAdministratifUser && (
+                        <div>
+                          <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                            Pied Fort
+                          </label>
+                          <select
+                            value={footFilter}
+                            onChange={(e) => setFootFilter(e.target.value)}
+                            className={cn(
+                              "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
+                              footFilter !== 'ALL'
+                                ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
+                                : "border-slate-200 bg-white text-slate-700"
+                            )}
+                          >
+                            {FOOT_OPTIONS.map(opt => (
+                              <option key={opt.id} value={opt.id}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
-                      {/* 4. Scout (Réservé à la Direction) */}
-                      {isRecruitmentAdmin ? (
+                      {/* 4. Scout (Réservé à la Direction, Scout Manager & Directeur Administratif) */}
+                      {(isRecruitmentAdmin || isScoutManager || isDirecteurAdministratifUser) ? (
                         <div>
                           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
                             Scout
@@ -3457,6 +3433,29 @@ export const RecruitmentV2Page: React.FC = () => {
                         </div>
                       ) : (
                         <div className="hidden lg:block" />
+                      )}
+
+                      {/* 5. Déclaration sur l'honneur */}
+                      {!isOnlyRecruitNowUser && !isVideoAnalystUser && (
+                        <div>
+                          <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                            Déclaration sur l'honneur
+                          </label>
+                          <select
+                            value={honorFilter}
+                            onChange={(e) => setHonorFilter(e.target.value as 'ALL' | 'received' | 'missing')}
+                            className={cn(
+                              "w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:ring-2 focus:ring-primary transition-all",
+                              honorFilter !== 'ALL'
+                                ? "border-primary bg-primary/5 text-primary font-bold shadow-2xs"
+                                : "border-slate-200 bg-white text-slate-700"
+                            )}
+                          >
+                            <option value="ALL">Toutes</option>
+                            <option value="received">Reçue</option>
+                            <option value="missing">Manquante</option>
+                          </select>
+                        </div>
                       )}
                     </>
                   )}
@@ -3523,6 +3522,13 @@ export const RecruitmentV2Page: React.FC = () => {
                       <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-900 font-bold border border-slate-300 flex items-center gap-1">
                         Statut : {decisionFilter === 'recruit_now' ? 'Recrutement immédiatement' : decisionFilter === 'invitation_test' ? 'Inviter à un test' : 'À suivre'}
                         <button onClick={() => setDecisionFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
+                      </span>
+                    )}
+
+                    {honorFilter !== 'ALL' && (
+                      <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-semibold border border-primary/20 flex items-center gap-1">
+                        Déclaration : {honorFilter === 'received' ? 'Reçue' : 'Manquante'}
+                        <button onClick={() => setHonorFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
                       </span>
                     )}
                   </div>
@@ -3616,17 +3622,20 @@ export const RecruitmentV2Page: React.FC = () => {
                             </th>
                           )}
                           <th className="py-3.5 px-4">Joueur</th>
-                          {!isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isOnlyRecruitNowUser && (
+                          {!isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isOnlyRecruitNowUser && !isVideoAnalystUser && (
                             <th className="py-3.5 px-3">Scout Détecteur</th>
                           )}
-                          {!isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isOnlyRecruitNowUser && isRecruitmentAdmin && (
+                          {!isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isOnlyRecruitNowUser && !isVideoAnalystUser && !isDirecteurAdministratifUser && (isRecruitmentAdmin || isScoutManager) && (
                             <th className="py-3.5 px-3 text-center">Scores Détecteur (5 Piliers)</th>
                           )}
                           <th className="py-3.5 px-3">{isOnlyRecruitNowUser ? 'Dossier Administratif' : 'Statut'}</th>
-                          {!isOnlyRecruitNowUser && (
+                          {isResponsableVieUser && (
+                            <th className="py-3.5 px-3 text-center whitespace-nowrap">Validé</th>
+                          )}
+                          {!isOnlyRecruitNowUser && !isVideoAnalystUser && (
                             <th className="py-3.5 px-3 text-center whitespace-nowrap">Déclaration sur l'honneur</th>
                           )}
-                          {!isOnlyRecruitNowUser && !isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && (
+                          {!isOnlyRecruitNowUser && !isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isDirecteurAdministratifUser && (
                             <th className="py-3.5 px-4 text-right min-w-[360px]">Actions</th>
                           )}
                         </tr>
@@ -3769,7 +3778,7 @@ export const RecruitmentV2Page: React.FC = () => {
                               </td>
 
                               {/* Scout Détecteur & Auteur(s) de rapport */}
-                              {!isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isOnlyRecruitNowUser && (
+                              {!isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isOnlyRecruitNowUser && !isVideoAnalystUser && (
                                 <td className="py-3 px-3">
                                   <div className="flex flex-col gap-1 items-start">
                                     {c.discovering_scout_name ? (
@@ -3826,7 +3835,7 @@ export const RecruitmentV2Page: React.FC = () => {
                               )}
 
                               {/* Scores 5 Piliers (Technique, Tactique, Physique, Mental, Potentiel) avec survol Radar & Barres de progression */}
-                              {!isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isOnlyRecruitNowUser && isRecruitmentAdmin && (
+                              {!isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isOnlyRecruitNowUser && !isVideoAnalystUser && !isDirecteurAdministratifUser && (isRecruitmentAdmin || isScoutManager) && (
                                 <td className="py-3 px-3 text-center">
                                   <CandidatePillarsScorecard
                                     candidate={c}
@@ -3846,15 +3855,45 @@ export const RecruitmentV2Page: React.FC = () => {
                                 {renderCandidateStatusControl(c)}
                               </td>
 
-                              {/* Colonne Déclaration sur l'honneur : masquée pour Directeur Administratif */}
-                              {!isOnlyRecruitNowUser && (
+                              {/* Colonne Validé (Responsable de Vie : confirmation Oui / Non sans ajustement de créneau) */}
+                              {isResponsableVieUser && (
+                                <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                  {(() => {
+                                    const isValidated = c.test_slot_validation?.status === 'validated';
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => setVieValidationConfirmTarget(c)}
+                                        className={cn(
+                                          'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer shadow-2xs whitespace-nowrap',
+                                          isValidated
+                                            ? 'border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                                            : 'border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700'
+                                        )}
+                                        title="Cliquer pour confirmer la validation (Oui ou Non)"
+                                      >
+                                        <span
+                                          className={cn(
+                                            'w-2 h-2 rounded-full shrink-0',
+                                            isValidated ? 'bg-emerald-500' : 'bg-rose-500'
+                                          )}
+                                        />
+                                        <span>{isValidated ? 'Validé' : 'Non validé'}</span>
+                                      </button>
+                                    );
+                                  })()}
+                                </td>
+                              )}
+
+                              {/* Colonne Déclaration sur l'honneur : masquée pour Directeur Administratif et Analyste Vidéo */}
+                              {!isOnlyRecruitNowUser && !isVideoAnalystUser && (
                                 <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                                   {renderHonorDeclarationControl(c)}
                                 </td>
                               )}
 
-                              {/* Actions : masqué si utilisateur recrutement immédiat exclusif, Responsable Vie, Responsable Magasinier ou Coach */}
-                              {!isOnlyRecruitNowUser && !isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && (
+                              {/* Actions : masqué si utilisateur recrutement immédiat exclusif, Responsable Vie, Responsable Magasinier, Coach ou Directeur Administratif */}
+                              {!isOnlyRecruitNowUser && !isResponsableVieUser && !isResponsableMagasinierUser && !isCoachUser && !isDirecteurAdministratifUser && (
                                 <td className="py-3 px-4 text-right">
                                   <div className="flex items-center justify-end gap-2.5">
 
@@ -3921,9 +3960,6 @@ export const RecruitmentV2Page: React.FC = () => {
                                         </button>
                                       );
                                     })()}
-
-                                    {/* Bouton action rapide : Recruter immédiatement (Scout Admin / Admin) */}
-                                    {renderRecruitNowButton(c, candEvalsList)}
 
                                     {/* Bouton Assigner Mission */}
                                     {(c.active_mission ? canUpdateMissions : canCreateMissions) && (
@@ -4118,7 +4154,10 @@ export const RecruitmentV2Page: React.FC = () => {
                           )}
 
                           {/* Scout & Mission badges */}
-                          {!isResponsableVieUser && !isOnlyRecruitNowUser && (
+                          {!isResponsableVieUser && !isOnlyRecruitNowUser && !isVideoAnalystUser && !isDirecteurAdministratifUser && (() => {
+                            const activeScoutId = currentScout?.id || authState?.user?.id || '';
+                            const activeScoutName = (currentScout?.full_name || authState?.user?.full_name || '').toLowerCase().trim();
+                            return (
                             <div className="pt-2 mt-2 border-t border-slate-100 flex flex-wrap gap-1.5 text-[11px]">
                               {isRecruitmentAdmin && (() => {
                                 const discScout = c.discovering_scout_name;
@@ -4155,8 +4194,8 @@ export const RecruitmentV2Page: React.FC = () => {
                                       />
                                     )}
                                     {assScout && (isRecruitmentAdmin || Boolean(
-                                      (scoutId && (c.assigned_scout_id === scoutId || c.active_mission?.assigned_to_id === scoutId)) ||
-                                      (scoutName && assScout.toLowerCase().trim() === scoutName)
+                                      (activeScoutId && (c.assigned_scout_id === activeScoutId || c.active_mission?.assigned_to_id === activeScoutId)) ||
+                                      (activeScoutName && assScout.toLowerCase().trim() === activeScoutName)
                                     )) && (
                                         <ScoutAvatar
                                           scoutId={c.assigned_scout_id}
@@ -4172,8 +4211,8 @@ export const RecruitmentV2Page: React.FC = () => {
                                 );
                               })()}
                               {c.active_mission?.mission_title && (isRecruitmentAdmin || Boolean(
-                                (scoutId && c.active_mission.assigned_to_id === scoutId) ||
-                                (scoutName && c.active_mission.assigned_to_name && c.active_mission.assigned_to_name.toLowerCase().trim() === scoutName) ||
+                                (activeScoutId && c.active_mission.assigned_to_id === activeScoutId) ||
+                                (activeScoutName && c.active_mission.assigned_to_name && c.active_mission.assigned_to_name.toLowerCase().trim() === activeScoutName) ||
                                 (authState?.user?.id && c.active_mission.assigned_to_id === authState.user.id)
                               )) && (
                                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200 truncate max-w-full">
@@ -4197,7 +4236,8 @@ export const RecruitmentV2Page: React.FC = () => {
                                 />
                               )}
                             </div>
-                          )}
+                            );
+                          })()}
                         </div>
 
                         {/* Statut du joueur : bouton action si recrutement immédiat, sinon badge + dates cliquables si invitation test */}
@@ -4206,8 +4246,8 @@ export const RecruitmentV2Page: React.FC = () => {
                           {renderCandidateStatusControl(c, false, 'end')}
                         </div>
 
-                        {/* Déclaration sur l'honneur (masquée pour Directeur Administratif) */}
-                        {!isOnlyRecruitNowUser && (resolveCandidateStatus(c) === 'invitation_test' || Boolean(getHonorDeclarationDocument(c))) && (
+                        {/* Déclaration sur l'honneur (masquée pour Directeur Administratif et Analyste Vidéo) */}
+                        {!isOnlyRecruitNowUser && !isVideoAnalystUser && (resolveCandidateStatus(c) === 'invitation_test' || Boolean(getHonorDeclarationDocument(c))) && (
                           <div className="pt-2 border-t flex items-center justify-between gap-2">
                             <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider shrink-0">
                               Déclaration sur l'honneur
@@ -4217,7 +4257,7 @@ export const RecruitmentV2Page: React.FC = () => {
                         )}
 
                         {/* Actions en mode Grid */}
-                        {!isOnlyRecruitNowUser && !isResponsableVieUser && (
+                        {!isOnlyRecruitNowUser && !isResponsableVieUser && !isDirecteurAdministratifUser && (
                           <div className="pt-2 border-t flex flex-col gap-2">
                             <div className="flex items-center justify-between gap-2.5">
                               {/* Bouton Vidéo Google Drive : Play uniquement si le lien est présent et lisible, sinon + Drive */}
@@ -4280,8 +4320,6 @@ export const RecruitmentV2Page: React.FC = () => {
                                   </button>
                                 );
                               })()}
-
-                              {renderRecruitNowButton(c, candEvalsList, true)}
 
                               {(c.active_mission ? canUpdateMissions : canCreateMissions) && (
                                 <button
@@ -4667,6 +4705,154 @@ export const RecruitmentV2Page: React.FC = () => {
             await updateTest({ id, updates });
           }}
         />
+      )}
+
+      {statusChangeConfirmTarget && (() => {
+        const formatStatusLabel = (st: PlayerRecruitmentStatus) =>
+          st === 'recruit_now'
+            ? 'Recrutement immédiatement'
+            : st === 'invitation_test'
+              ? 'Inviter à un test'
+              : 'À suivre';
+        const { candidate: targetCand, currentStatus, nextStatus } = statusChangeConfirmTarget;
+        return (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+            onClick={() => !isSavingStatusChange && setStatusChangeConfirmTarget(null)}
+          >
+            <div
+              className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden p-6 space-y-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="space-y-2">
+                <h3 className="text-base font-black text-slate-900">
+                  Confirmer le changement de statut
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Voulez-vous vraiment changer le statut du joueur{' '}
+                  <span className="font-bold text-slate-900">
+                    {targetCand.first_name} {targetCand.last_name}
+                  </span>{' '}
+                  de{' '}
+                  <span className="font-bold text-slate-800">
+                    « {formatStatusLabel(currentStatus)} »
+                  </span>{' '}
+                  vers{' '}
+                  <span className="font-bold text-primary">
+                    « {formatStatusLabel(nextStatus)} »
+                  </span>{' '}
+                  ?
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 pt-1">
+                <button
+                  type="button"
+                  disabled={isSavingStatusChange}
+                  onClick={() => setStatusChangeConfirmTarget(null)}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black cursor-pointer disabled:opacity-60 transition-all"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingStatusChange}
+                  onClick={async () => {
+                    setIsSavingStatusChange(true);
+                    try {
+                      await handleDatabaseStatusChange(targetCand, nextStatus);
+                      setStatusChangeConfirmTarget(null);
+                    } finally {
+                      setIsSavingStatusChange(false);
+                    }
+                  }}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-black cursor-pointer disabled:opacity-60 transition-all"
+                >
+                  {isSavingStatusChange ? 'Mise à jour...' : 'Oui, changer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {vieValidationConfirmTarget && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => !isSavingVieValidation && setVieValidationConfirmTarget(null)}
+        >
+          <div
+            className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden p-6 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1.5">
+              <h3 className="text-base font-black text-slate-900">
+                Confirmer l'hébergement
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Joueur : <span className="font-bold text-slate-900">{vieValidationConfirmTarget.first_name} {vieValidationConfirmTarget.last_name}</span>.
+                <br />
+                Souhaitez-vous confirmer l'hébergement pendant la période de test ?
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                disabled={isSavingVieValidation}
+                onClick={async () => {
+                  setIsSavingVieValidation(true);
+                  try {
+                    await handleValidateCandidateTestSlot(vieValidationConfirmTarget);
+                    setVieValidationConfirmTarget(null);
+                  } finally {
+                    setIsSavingVieValidation(false);
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black cursor-pointer disabled:opacity-60 transition-all"
+              >
+                Oui — Validé
+              </button>
+              <button
+                type="button"
+                disabled={isSavingVieValidation}
+                onClick={async () => {
+                  setIsSavingVieValidation(true);
+                  try {
+                    await updateCandidate(vieValidationConfirmTarget.id, {
+                      test_slot_validation: null,
+                      updated_at: new Date().toISOString(),
+                    });
+                    toast.info(`${vieValidationConfirmTarget.first_name} ${vieValidationConfirmTarget.last_name} marqué Non validé`);
+                    setVieValidationConfirmTarget(null);
+                  } catch (err: any) {
+                    const msg = String(err?.message || '');
+                    const isNetworkOrServer = /521|520|522|523|524|502|503|504|web server is down|failed to fetch|<!doctype|<html/i.test(msg);
+                    toast.error(
+                      isNetworkOrServer
+                        ? 'Le serveur est momentanément indisponible. Veuillez réessayer dans quelques instants.'
+                        : (msg || 'Erreur lors de la mise à jour')
+                    );
+                  } finally {
+                    setIsSavingVieValidation(false);
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-black cursor-pointer disabled:opacity-60 transition-all"
+              >
+                Non — Non validé
+              </button>
+            </div>
+
+            <button
+              type="button"
+              disabled={isSavingVieValidation}
+              onClick={() => setVieValidationConfirmTarget(null)}
+              className="w-full py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer transition-all"
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
       )}
 
       {slotModalTarget && (

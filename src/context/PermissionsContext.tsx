@@ -315,14 +315,6 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     const canonicalSpec = normalizeSpecificActionName(subModule, specificAction);
 
-    // Directeur Administratif : accès strict aux dossiers Recrutement Immédiat (lecture & dépôt de documents)
-    if (!isEffectiveScoutAdmin() && isDirecteurAdministratifJob(getEffectiveJobTitle())) {
-      if (subModule === 'candidates' && canonicalSpec === 'recruit_now') {
-        return crudAction === 'read' || crudAction === 'update';
-      }
-      return false;
-    }
-
     const perms = (authState.permissions || []).filter(p => p && p !== 'no_permissions');
     if (perms.length === 0) return false;
 
