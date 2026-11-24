@@ -71,8 +71,8 @@ export const PLAYER_RECRUITMENT_STATUS_OPTIONS: PlayerStatusOption[] = [
   },
   {
     value: 'recruit_now',
-    label: 'Recrutement immédiatement',
-    shortLabel: 'Recrutement immédiat',
+    label: 'À recruter immédiatement',
+    shortLabel: 'À recruter immédiatement',
     description: 'Signature prioritaire et contractualisation immédiate par le Club',
     badgeClass: 'bg-emerald-500/10 text-emerald-800 border-emerald-500/40',
     colorClass: 'text-emerald-600',

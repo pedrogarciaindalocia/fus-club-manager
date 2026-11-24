@@ -258,13 +258,17 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     (!isStatusLockedForNonAdmin && (canProcessRecruitNow || isCandidateOwner))
   );
 
-  // Options de statuts disponibles : À suivre & Inviter à un test (Recrutement immédiatement retiré)
+  // Options de statuts disponibles selon les droits :
+  // - 3 statuts : À suivre, Inviter à un test, À recruter immédiatement (jamais de 'recruit_standby')
   const availableStatusOptions = useMemo(() => {
     return PLAYER_RECRUITMENT_STATUS_OPTIONS.filter(opt => {
-      if ((opt.value as string) === 'recruit_standby' || opt.value === 'recruit_now') return false;
+      if ((opt.value as string) === 'recruit_standby') return false;
+      if (opt.value === 'recruit_now') {
+        return canCreateRecruitNow || canProcessRecruitNow || isCandidateOwner || persistedCandidateStatus === 'recruit_now';
+      }
       return true;
     });
-  }, []);
+  }, [canCreateRecruitNow, canProcessRecruitNow, isCandidateOwner, persistedCandidateStatus]);
 
   const allowedCategories = useMemo(() => {
     if (isSuperAdmin || isAdmin) return RECRUITMENT_AGE_CATEGORIES;
@@ -1601,7 +1605,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         []
       );
       if (!prereq.isValid) {
-        toast.error('Passage en « Recrutement immédiatement » bloqué', {
+        toast.error('Passage en « À recruter immédiatement » bloqué', {
           description: prereq.missingReasons.join(' · '),
         });
         return;
@@ -1813,7 +1817,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         void dashboardNotificationService.dispatchTestPlanningNotification({
           type: 'recruit_now_validated',
           title: `Nouveau joueur à recruter (${ageCategory || effectivePrincipalCategory})`,
-          message: `${fullCandName || 'Un joueur'} a été validé « Recrutement immédiatement » et attend la constitution de son dossier administratif.`,
+          message: `${fullCandName || 'Un joueur'} a été validé « À recruter immédiatement » et attend la constitution de son dossier administratif.`,
           categories: ageCategory || effectivePrincipalCategory ? [ageCategory || effectivePrincipalCategory] : [],
           targetRoles: ['directeur_administratif', 'admin'],
           linkUrl: candidate?.id
@@ -2321,7 +2325,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                         scoutStateDecision === 'invitation_test' ? "bg-blue-50 text-blue-800 border-blue-300" :
                           "bg-indigo-50 text-indigo-800 border-indigo-300"
                     )}>
-                      {availableStatusOptions.find(o => o.value === scoutStateDecision)?.label || (scoutStateDecision === 'recruit_now' ? 'Recrutement immédiatement' : 'À suivre')}
+                      {availableStatusOptions.find(o => o.value === scoutStateDecision)?.label || (scoutStateDecision === 'recruit_now' ? 'À recruter immédiatement' : 'À suivre')}
                     </span>
                   </div>
 
@@ -2375,7 +2379,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                             []
                           );
                           if (!prereq.isValid) {
-                            toast.error('Validation requise avant « Recrutement immédiatement »', {
+                            toast.error('Validation requise avant « À recruter immédiatement »', {
                               description: prereq.missingReasons.join(' · '),
                             });
                             return;
@@ -2387,6 +2391,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                     >
                       <option value="to_follow">À suivre</option>
                       <option value="invitation_test">Inviter à un test</option>
+                      {(canCreateRecruitNow || canProcessRecruitNow || isCandidateOwner || scoutStateDecision === 'recruit_now') && (
+                        <option value="recruit_now">À recruter immédiatement</option>
+                      )}
                     </select>
 
                     {!canProcessRecruitNow && (
@@ -2394,7 +2401,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                         {isStatusLockedForNonAdmin
                           ? "Ce joueur a déjà le statut « Inviter à un test ». Seul un Admin ou Super Admin peut modifier ce statut ou planifier ses tests."
                           : isCandidateOwner
-                            ? "En tant que scout découvreur, vous pouvez orienter votre joueur vers « À suivre » ou « Inviter à un test » (le statut « Inviter à un test » devient ensuite verrouillé)."
+                            ? "En tant que scout découvreur, vous pouvez orienter votre joueur vers « À suivre », « Inviter à un test » ou « À recruter immédiatement » (le statut « Inviter à un test » devient ensuite verrouillé)."
                             : "Ce joueur a été détecté par un autre scout. La modification de statut est réservée à son découvreur ou à la Direction."}
                       </p>
                     )}
@@ -2432,7 +2439,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
                                 []
                               );
                               if (!prereq.isValid) {
-                                toast.error('Validation requise avant « Recrutement immédiatement »', {
+                                toast.error('Validation requise avant « À recruter immédiatement »', {
                                   description: prereq.missingReasons.join(' · '),
                                 });
                                 return;

@@ -633,7 +633,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               )}
               {latestDecision === 'recruit_now' || latestDecision === 'recruit_standby' ? (
                 <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-bold shadow-2xs">
-                  Recrutement immédiatement
+                  À recruter immédiatement
                 </span>
               ) : latestDecision === 'invitation_test' ? (
                 <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-200 border border-blue-400/30 text-[10px] font-bold shadow-2xs">
@@ -3101,7 +3101,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                     : "bg-indigo-600 text-white border-indigo-700"
                               )}>
                                 <span>
-                                  {(dispDecision === 'recruit_now' || dispDecision === 'recruit_standby') ? 'Recrutement immédiatement' :
+                                  {(dispDecision === 'recruit_now' || dispDecision === 'recruit_standby') ? 'À recruter immédiatement' :
                                     dispDecision === 'invitation_test' ? 'Inviter à un test' : 'À suivre'}
                                 </span>
                               </span>

@@ -1106,7 +1106,7 @@ export const RecruitmentV2Page: React.FC = () => {
       ].filter((e, idx, arr) => arr.findIndex((x) => x.id === e.id) === idx);
       const prereq = validateRecruitNowPrerequisites(cand, candEvals);
       if (!prereq.isValid) {
-        toast.error('Passage en « Recrutement immédiatement » bloqué', {
+        toast.error('Passage en « À recruter immédiatement » bloqué', {
           description: prereq.missingReasons.join(' · '),
         });
         return;
@@ -1171,7 +1171,7 @@ export const RecruitmentV2Page: React.FC = () => {
         void dashboardNotificationService.dispatchTestPlanningNotification({
           type: 'recruit_now_validated',
           title: `Nouveau joueur à recruter${cand.age_category ? ` (${cand.age_category})` : ''}`,
-          message: `${candFullName} a été validé « Recrutement immédiatement » par ${actorName}. Cliquez pour consulter ses informations sportives et déposer les documents.`,
+          message: `${candFullName} a été validé « À recruter immédiatement » par ${actorName}. Cliquez pour consulter ses informations sportives et déposer les documents.`,
           categories: cand.age_category ? [cand.age_category] : [],
           targetRoles: ['directeur_administratif', 'admin'],
           linkUrl: `/recruitment-v2?tab=candidates&recruitCandidateId=${cand.id}`,
@@ -1184,7 +1184,7 @@ export const RecruitmentV2Page: React.FC = () => {
       }
       const label =
         nextStatus === 'recruit_now'
-          ? 'Recrutement immédiatement'
+          ? 'À recruter immédiatement'
           : nextStatus === 'invitation_test'
             ? 'Inviter à un test'
             : 'À suivre';
@@ -1318,7 +1318,7 @@ export const RecruitmentV2Page: React.FC = () => {
     );
 
     const statusLabel =
-      currentStatus === 'recruit_now' ? 'Recrutement immédiatement' :
+      currentStatus === 'recruit_now' ? 'À recruter immédiatement' :
         currentStatus === 'invitation_test' ? 'Inviter à un test' :
           'À suivre';
 
@@ -1382,6 +1382,9 @@ export const RecruitmentV2Page: React.FC = () => {
             >
               <option value="to_follow">À suivre</option>
               <option value="invitation_test">Inviter à un test</option>
+              {(canCreateRecruitNow || currentStatus === 'recruit_now' || (isScoutManager && isOwner)) && (
+                <option value="recruit_now">À recruter immédiatement</option>
+              )}
             </select>
           </div>
         ) : (
@@ -3194,6 +3197,31 @@ export const RecruitmentV2Page: React.FC = () => {
                               </span>
                             </button>
                           </div>
+
+                          {/* Filtre Rapide : À recruter immédiatement */}
+                          <div className="inline-flex items-center p-1 bg-emerald-50 rounded-2xl border border-emerald-200/80">
+                            <button
+                              type="button"
+                              onClick={() => setDecisionFilter(prev => prev === 'recruit_now' ? 'ALL' : 'recruit_now')}
+                              className={cn(
+                                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                                decisionFilter === 'recruit_now'
+                                  ? "bg-emerald-600 text-white font-black shadow-xs ring-2 ring-emerald-400/40"
+                                  : "text-emerald-800 hover:bg-white"
+                              )}
+                              title="Filtrer uniquement les talents validés à recruter immédiatement"
+                            >
+                              <span>À recruter immédiatement</span>
+                              <span className={cn(
+                                "px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none",
+                                decisionFilter === 'recruit_now'
+                                  ? "bg-white/20 text-white"
+                                  : "bg-emerald-200 text-emerald-900"
+                              )}>
+                                {activeScopedCandidates.filter(c => isCandidateRecruitNow(c)).length}
+                              </span>
+                            </button>
+                          </div>
                         </>
                       )}
                     </div>
@@ -3520,7 +3548,7 @@ export const RecruitmentV2Page: React.FC = () => {
 
                     {decisionFilter !== 'ALL' && (
                       <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-900 font-bold border border-slate-300 flex items-center gap-1">
-                        Statut : {decisionFilter === 'recruit_now' ? 'Recrutement immédiatement' : decisionFilter === 'invitation_test' ? 'Inviter à un test' : 'À suivre'}
+                        Statut : {decisionFilter === 'recruit_now' ? 'À recruter immédiatement' : decisionFilter === 'invitation_test' ? 'Inviter à un test' : 'À suivre'}
                         <button onClick={() => setDecisionFilter('ALL')} className="hover:text-rose-600 font-bold ml-0.5">×</button>
                       </span>
                     )}
@@ -4710,7 +4738,7 @@ export const RecruitmentV2Page: React.FC = () => {
       {statusChangeConfirmTarget && (() => {
         const formatStatusLabel = (st: PlayerRecruitmentStatus) =>
           st === 'recruit_now'
-            ? 'Recrutement immédiatement'
+            ? 'À recruter immédiatement'
             : st === 'invitation_test'
               ? 'Inviter à un test'
               : 'À suivre';
