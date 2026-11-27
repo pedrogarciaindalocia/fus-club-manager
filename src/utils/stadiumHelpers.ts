@@ -3,14 +3,21 @@ import type { Tables } from '../types/supabase';
 export type Stadium = Tables<'stadiums'>;
 
 /**
- * Recherche et résout le stade officiel à domicile "FUS ACADEMY"
- * en priorisant la correspondance exacte ou partielle du nom dans la table `stadiums`.
+ * Recherche et résout le stade officiel à domicile de My Club :
+ * 0. Priorité absolue au stade explicitement marqué `is_home_stadium = true`
+ * 1. Sinon, repli sur la correspondance de nom ("FUS ACADEMY", etc.) ou `club_id`
  */
 export function getFusAcademyStadium(
   stadiums: Stadium[],
   mainClubId?: string | null
 ): Stadium | undefined {
   if (!stadiums || stadiums.length === 0) return undefined;
+
+  // 0. Stade explicitement assigné comme stade officiel de My Club
+  const explicitHome =
+    (mainClubId && stadiums.find((s) => s.is_home_stadium && s.club_id === mainClubId)) ||
+    stadiums.find((s) => s.is_home_stadium);
+  if (explicitHome) return explicitHome;
 
   // 1. Recherche par nom exact ou contenant "FUS ACADEMY" (insensible à la casse)
   const exact = stadiums.find((s) => {

@@ -1,6 +1,7 @@
 import { supabase } from '../../../lib/supabase';
 import { storageService } from '../../../services/storageService';
 import { ALLOWED_IMAGE_EXTENSIONS, ALLOWED_IMAGE_MIME_TYPES, convertHeicIfSupported } from '../../../services/mediaService';
+import { compressImageClientSide } from '../../../utils/compressImage';
 import type { AdministrativeDocument } from '../types/recruitment';
 
 export interface UploadRecruitmentDocumentOptions {
@@ -47,7 +48,10 @@ export const uploadRecruitmentDocument = async (
     throw new Error(`Le document dépasse la taille maximale autorisée de ${maxSizeMb} Mo.`);
   }
 
-  const fileToUpload = isImage ? await convertHeicIfSupported(file) : file;
+  const convertedFile = isImage ? await convertHeicIfSupported(file) : file;
+  const fileToUpload = isImage
+    ? await compressImageClientSide(convertedFile, { maxWidth: 1200, quality: 0.78, mimeType: 'image/webp' })
+    : convertedFile;
   const docId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   let finalUrl = '';
 
@@ -61,6 +65,7 @@ export const uploadRecruitmentDocument = async (
       const { error: uploadErr } = await supabase.storage
         .from('medias')
         .upload(storagePath, fileToUpload, {
+          cacheControl: '31536000',
           contentType: fileToUpload.type || (isPdf ? 'application/pdf' : 'image/jpeg'),
           upsert: false,
         });
@@ -84,7 +89,10 @@ export const uploadRecruitmentDocument = async (
       const storagePath = `scout_documents/${Date.now()}-${Math.random().toString(36).substring(2)}.${safeExt}`;
       const { error: uploadErr } = await supabase.storage
         .from('medias')
-        .upload(storagePath, fileToUpload, { contentType: 'application/pdf' });
+        .upload(storagePath, fileToUpload, {
+          cacheControl: '31536000',
+          contentType: 'application/pdf',
+        });
       if (!uploadErr) {
         const { data } = supabase.storage.from('medias').getPublicUrl(storagePath);
         if (data?.publicUrl) {
@@ -96,22 +104,13 @@ export const uploadRecruitmentDocument = async (
     if (category === 'honor_declaration') {
       throw err;
     }
-    console.warn('[uploadRecruitmentDocument] Échec upload Supabase, bascule Base64:', err);
+    console.warn('[uploadRecruitmentDocument] Échec upload Supabase:', err);
   }
 
   if (!finalUrl) {
-    finalUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          resolve(reader.result);
-        } else {
-          reject(new Error('Erreur de lecture du document sélectionné.'));
-        }
-      };
-      reader.onerror = () => reject(new Error('Impossible de lire le fichier sélectionné.'));
-      reader.readAsDataURL(fileToUpload);
-    });
+    throw new Error(
+      "Échec du téléversement vers Supabase Storage. Veuillez vérifier votre connexion et réessayer."
+    );
   }
 
   return {

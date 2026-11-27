@@ -289,7 +289,8 @@ export const dashboardNotificationService = {
     input: DispatchTestPlanningNotificationInput
   ): Promise<DashboardNotification | null> {
     const clubId = await getMyClubId();
-    const { data: authData } = await supabase.auth.getUser();
+    const { data: sessionRes } = await supabase.auth.getSession();
+    const authData = { user: sessionRes?.session?.user ?? null };
     const now = new Date().toISOString();
 
     const cleanCategories = Array.from(

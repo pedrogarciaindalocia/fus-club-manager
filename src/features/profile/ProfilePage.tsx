@@ -6,6 +6,8 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { toast } from 'sonner';
 import ImageCropperModal from '../../components/ImageCropperModal';
+import { compressImageClientSide } from '../../utils/compressImage';
+import { storageService } from '../../services/storageService';
 import { 
   User, 
   Mail, 
@@ -224,14 +226,20 @@ export const ProfilePage: React.FC = () => {
 
       let finalAvatarUrl = avatarUrl;
       if (avatarFile) {
-        const ext = avatarFile.name.split('.').pop();
+        const compressedAvatar = await compressImageClientSide(avatarFile, { maxWidth: 400, maxHeight: 400, quality: 0.8, mimeType: 'image/webp' });
+        const ext = compressedAvatar.name.split('.').pop() || 'webp';
         const fileName = `${currentUser.id}_${Date.now()}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from('staff').upload(fileName, avatarFile, {
-          upsert: true
+        const { error: uploadError } = await supabase.storage.from('staff').upload(fileName, compressedAvatar, {
+          cacheControl: '31536000',
+          contentType: compressedAvatar.type || 'image/webp',
+          upsert: true,
         });
 
         if (!uploadError) {
           const { data: { publicUrl } } = supabase.storage.from('staff').getPublicUrl(fileName);
+          if (avatarUrl && avatarUrl !== publicUrl) {
+            void storageService.deleteFile(avatarUrl);
+          }
           finalAvatarUrl = publicUrl;
         } else {
           console.warn("Storage upload warn, continuing without avatar update:", uploadError);

@@ -10,10 +10,12 @@
 
 ## 2. Interaction avec les Agents IA (@mentions)
 
-L'IA prend en compte les 6 rôles définis dans `.agents/skills/` :
+L'IA prend en compte les rôles définis dans `.agents/skills/` :
 - `@project_owner`
 - `@architect_solution`
 - `@backend_developer`
 - `@front_end_developer`
 - `@ui_ux_integrator`
+- `@supabase-usage-optimizer`
 - `@qa_tester`
+- `@github_deployer`

@@ -8,7 +8,7 @@ import {
   Building2, MapPin, Plus, Search, Trash2, Edit2,
   X, Users, Camera, Globe, CheckCircle2, Loader2,
   LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight,
-  ImageIcon
+  ImageIcon, Home
 } from 'lucide-react';
 import { storageService } from '../../services/storageService';
 import { useClubData } from '../../hooks/useClubData';
@@ -21,9 +21,10 @@ type FormState = {
   city: string;
   capacity: string;
   image_url: string;
+  is_home_stadium: boolean;
 };
 
-const EMPTY_FORM: FormState = { name: '', city: '', capacity: '', image_url: '' };
+const EMPTY_FORM: FormState = { name: '', city: '', capacity: '', image_url: '', is_home_stadium: false };
 
 const StadiumManagement: React.FC = () => {
   const { stadiums, isLoading: statsLoading, addStadium, updateStadium, deleteStadium } = useCompetitions();
@@ -51,7 +52,7 @@ const StadiumManagement: React.FC = () => {
   }, [mainClub]);
 
   /* ── Helpers ── */
-  const field = (key: keyof FormState, val: string) =>
+  const field = <K extends keyof FormState>(key: K, val: FormState[K]) =>
     setFormData(prev => ({ ...prev, [key]: val }));
 
   const openAdd = () => {
@@ -63,10 +64,11 @@ const StadiumManagement: React.FC = () => {
   const openEdit = (s: Stadium) => {
     setEditingId(s.id);
     setFormData({
-      name:      s.name,
-      city:      s.city || '',
-      capacity:  s.capacity?.toString() || '',
-      image_url: s.photo_url || (s as any).image_url || '',
+      name:            s.name,
+      city:            s.city || '',
+      capacity:        s.capacity?.toString() || '',
+      image_url:       s.photo_url || (s as any).image_url || '',
+      is_home_stadium: Boolean(s.is_home_stadium),
     });
     setShowForm(true);
   };
@@ -100,10 +102,11 @@ const StadiumManagement: React.FC = () => {
       const cleanCapacity = formData.capacity.replace(/\s/g, '');
       const photo = formData.image_url.trim() || null;
       const payload: any = {
-        name:      formData.name.trim(),
-        city:      formData.city.trim(),
-        capacity:  cleanCapacity ? parseInt(cleanCapacity, 10) : null,
-        photo_url: photo,
+        name:            formData.name.trim(),
+        city:            formData.city.trim(),
+        capacity:        cleanCapacity ? parseInt(cleanCapacity, 10) : null,
+        photo_url:       photo,
+        is_home_stadium: formData.is_home_stadium,
       };
 
       if (editingId) {
@@ -142,6 +145,10 @@ const StadiumManagement: React.FC = () => {
   }, [searchQuery, pageSize]);
 
   const isValid = formData.name.trim() && formData.city.trim();
+  const currentHomeStadium = useMemo(
+    () => stadiums.find(s => s.is_home_stadium && s.id !== editingId),
+    [stadiums, editingId]
+  );
 
   if (isLoading) {
     return <FusLogoLoader fullPage size="lg" label="Chargement des stades…" />;
@@ -227,6 +234,13 @@ const StadiumManagement: React.FC = () => {
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-500" />
+                          {stadium.is_home_stadium && (
+                            <div className="absolute top-4 left-4">
+                              <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white border-none shadow-lg px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider gap-1.5">
+                                <Home className="w-3 h-3" /> Stade My Club
+                              </Badge>
+                            </div>
+                          )}
                           <div className="absolute top-4 right-4 flex gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:translate-y-2 sm:group-hover:translate-y-0 transition-all duration-300">
                             <Button variant="secondary" size="icon" onClick={() => openEdit(stadium)} className="h-9 w-9 rounded-xl bg-white/90 backdrop-blur-md hover:bg-white shadow-lg"><Edit2 className="w-4 h-4" /></Button>
                             <Button variant="secondary" size="icon" onClick={() => setConfirmDelete(stadium.id)} className="h-9 w-9 rounded-xl bg-white/90 backdrop-blur-md hover:bg-red-50 hover:text-red-500 shadow-lg"><Trash2 className="w-4 h-4" /></Button>
@@ -290,7 +304,16 @@ const StadiumManagement: React.FC = () => {
                     <tbody className="divide-y divide-secondary/30">
                       {paginatedStadiums.map(s => (
                         <tr key={s.id} className="group hover:bg-secondary/5 transition-colors">
-                          <td className="px-8 py-3 font-black text-sm uppercase italic tracking-tighter truncate max-w-[200px]">{s.name}</td>
+                          <td className="px-8 py-3 font-black text-sm uppercase italic tracking-tighter max-w-[260px]">
+                            <div className="flex items-center gap-2.5 truncate">
+                              <span className="truncate">{s.name}</span>
+                              {s.is_home_stadium && (
+                                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg shrink-0 gap-1">
+                                  <Home className="w-2.5 h-2.5" /> My Club
+                                </Badge>
+                              )}
+                            </div>
+                          </td>
                           <td className="py-3 text-xs font-bold uppercase text-muted-foreground">{s.city}</td>
                           <td className="py-3 font-bold text-xs">{s.capacity?.toLocaleString() || 'N/A'}</td>
                           <td className="px-8 py-3 text-right">
@@ -466,6 +489,51 @@ const StadiumManagement: React.FC = () => {
                           className="h-16 px-8 rounded-2xl bg-secondary/30 border-none font-bold focus:ring-2 ring-primary/20"
                         />
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => field('is_home_stadium', !formData.is_home_stadium)}
+                      className={`w-full flex items-center justify-between gap-4 p-6 rounded-3xl border-2 text-left transition-all ${
+                        formData.is_home_stadium
+                          ? 'bg-emerald-50/80 border-emerald-500 shadow-lg shadow-emerald-500/10'
+                          : 'bg-secondary/20 border-transparent hover:border-secondary'
+                      }`}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${
+                          formData.is_home_stadium ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-muted-foreground shadow-sm'
+                        }`}>
+                          <Home className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-sm uppercase tracking-tight text-foreground">
+                              Stade de {mainClub?.club_name || 'My Club'} (Domicile)
+                            </span>
+                            {formData.is_home_stadium && (
+                              <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider">
+                                Actif
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs font-medium text-muted-foreground">
+                            Ce stade sera assigné automatiquement dès qu&apos;un match est configuré « À Domicile ».
+                          </p>
+                          {formData.is_home_stadium && currentHomeStadium && (
+                            <p className="text-[11px] font-bold text-amber-700 pt-0.5">
+                              Remplacera « {currentHomeStadium.name} » comme stade principal de My Club.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className={`w-12 h-7 rounded-full p-1 transition-colors shrink-0 ${
+                        formData.is_home_stadium ? 'bg-emerald-600' : 'bg-slate-300'
+                      }`}>
+                        <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+                          formData.is_home_stadium ? 'translate-x-5' : 'translate-x-0'
+                        }`} />
+                      </div>
+                    </button>
                  </div>
 
                  <div className="flex gap-4 pt-8 border-t border-secondary/50">

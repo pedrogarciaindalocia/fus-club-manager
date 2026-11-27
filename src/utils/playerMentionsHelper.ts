@@ -206,9 +206,8 @@ export function getLatestMention(mentions: PlayerMentionEntry[]): PlayerMentionE
 export const ORDERED_CLUB_CATEGORIES = [
   'PRO',
   'SENIOR',
-  'U23',
+  'U25',
   'U21',
-  'U19',
   'U18',
   'U17',
   'U16',

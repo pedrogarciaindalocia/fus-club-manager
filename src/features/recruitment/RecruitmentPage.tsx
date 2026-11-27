@@ -902,7 +902,7 @@ export const RecruitmentPage: React.FC = () => {
                             <div className="flex items-center gap-2 mt-0.5">
                               <span className="text-xs text-muted-foreground font-medium">{c.primary_position}</span>
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                {c.age_category || 'U19'}
+                                {c.age_category || 'U18'}
                               </span>
                             </div>
                           </div>

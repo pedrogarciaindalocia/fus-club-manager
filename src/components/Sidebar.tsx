@@ -15,7 +15,6 @@ import { useClubData } from '../hooks/useClubData';
 import { usePlugins } from '../context/PluginsContext';
 import { useLiveCursors } from '../context/LiveCursorsContext';
 import defaultClubLogo from '../assets/fus-logo.png';
-import { AuditLogger } from '../services/auditLogger';
 import UserProfileModal from './UserProfileModal';
 import { ticketService } from '../features/ticket-management/ticketService';
 
@@ -36,7 +35,7 @@ function isItemAllowedInMirror(path: string, subId?: string, role: string = '', 
   if (isSuper) return true;
 
   // Rubriques strictement Super Admin : toujours interdites pour les rôles non super admin
-  if (['/plugins', '/blog', '/store', '/users', '/logs', '/settings'].some(p => path.startsWith(p))) {
+  if (['/plugins', '/blog', '/store', '/users', '/settings'].some(p => path.startsWith(p))) {
     return false;
   }
 
@@ -229,7 +228,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const hasMirrorSubAccess = (subId?: string, path?: string): boolean => {
     const normRole = effectiveRole.toLowerCase();
     if (normRole === 'super_admin') return true;
-    if (path && ['/plugins', '/blog', '/store', '/users', '/logs', '/settings'].some(p => path.startsWith(p))) {
+    if (path && ['/plugins', '/blog', '/store', '/users', '/settings'].some(p => path.startsWith(p))) {
       return false;
     }
     if (!subId) return false;
@@ -358,7 +357,6 @@ const Sidebar: React.FC<SidebarProps> = ({
           { path: '/blog', label: 'Blog', icon: FileText },
           { path: '/store', label: 'Store', icon: LayoutTemplate },
           { path: '/users', label: 'Utilisateurs', icon: Shield },
-          { path: '/logs', label: 'Logs & Audit', icon: Activity },
           {
             path: '/tickets',
             label: 'Tickets Fus-App',
@@ -492,11 +490,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   }, [location.pathname, location.search]);
 
   const handleLogout = async () => {
-    try {
-      await AuditLogger.closeSession();
-    } catch (err) {
-      console.warn('[Sidebar] Erreur fermeture session audit:', err);
-    }
     await logout();
     navigate('/login');
   };

@@ -1050,7 +1050,7 @@ export const frmfDataService = {
     const normCategory = normalizeAgeCategory(category);
     const resultGroups = Object.keys(ds.results?.[normCategory] || {});
     const defaults =
-      normCategory === 'U21' || normCategory === 'SENIOR' || normCategory === 'U23'
+      normCategory === 'U21' || normCategory === 'SENIOR' || normCategory === 'U25'
         ? STANDARD_GROUPS_SINGLE_FIRST
         : STANDARD_GROUPS_NORTH_SOUTH;
 

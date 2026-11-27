@@ -9,7 +9,7 @@ export const useMatches = () => {
 
   const query = useQuery({
     queryKey: ['matches'],
-    queryFn: matchService.getAllMatches,
+    queryFn: () => matchService.getAllMatches(),
   });
 
   const isNetworkError = (err: any) => {
@@ -28,12 +28,12 @@ export const useMatches = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Match> }) => 
+    mutationFn: ({ id, data }: { id: string; data: Partial<Match> }) =>
       matchService.updateMatch(id, data),
     onMutate: async ({ id, data }) => {
       await queryClient.cancelQueries({ queryKey: ['matches'] });
       const previousMatches = queryClient.getQueryData<Match[]>(['matches']);
-      queryClient.setQueryData<Match[]>(['matches'], old => 
+      queryClient.setQueryData<Match[]>(['matches'], old =>
         (old || []).map(m => m.id === id ? { ...m, ...data } : m)
       );
       return { previousMatches, id, data };

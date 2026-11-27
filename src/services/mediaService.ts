@@ -138,11 +138,8 @@ export const DEFAULT_FOLDERS: MediaFolder[] = [
   { id: 'a0000000-0000-0000-0000-000000000016', name: 'U16', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/U16', created_at: new Date().toISOString() },
   { id: 'a0000000-0000-0000-0000-000000000017', name: 'U17', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/U17', created_at: new Date().toISOString() },
   { id: 'a0000000-0000-0000-0000-000000000018', name: 'U18', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/U18', created_at: new Date().toISOString() },
-  { id: 'a0000000-0000-0000-0000-000000000019', name: 'U19', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/U19', created_at: new Date().toISOString() },
-  { id: 'a0000000-0000-0000-0000-000000000020', name: 'U20', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/U20', created_at: new Date().toISOString() },
   { id: 'a0000000-0000-0000-0000-000000000021', name: 'U21', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/U21', created_at: new Date().toISOString() },
-  { id: 'a0000000-0000-0000-0000-000000000022', name: 'U22', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/U22', created_at: new Date().toISOString() },
-  { id: 'a0000000-0000-0000-0000-000000000023', name: 'U23', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/U23', created_at: new Date().toISOString() },
+  { id: 'a0000000-0000-0000-0000-000000000025', name: 'U25', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/U25', created_at: new Date().toISOString() },
   { id: 'a0000000-0000-0000-0000-000000000024', name: 'Équipe Première', parent_id: 'a0000000-0000-0000-0000-000000000002', path: '/Joueurs/Équipe Première', created_at: new Date().toISOString() },
 
   // Sous-dossiers Staff : Exacts selon le tableau de bord FUS Club
@@ -694,15 +691,15 @@ export const mediaService = {
     // Déterminer le type MIME effectif (notamment si le navigateur envoie une chaîne vide pour .heic/.heif)
     const effectiveMimeType = processedFile.type || (
       processedFile.name.toLowerCase().endsWith('.heic') ? 'image/heic' :
-      processedFile.name.toLowerCase().endsWith('.heif') ? 'image/heif' :
-      'image/jpeg'
+        processedFile.name.toLowerCase().endsWith('.heif') ? 'image/heif' :
+          'image/jpeg'
     );
 
-    // 1. Upload dans Supabase Storage (bucket 'medias')
+    // 1. Upload dans Supabase Storage (bucket 'medias') avec cache CDN 1 an
     const { error: uploadError } = await supabase.storage
       .from('medias')
       .upload(storagePath, processedFile, {
-        cacheControl: '3600',
+        cacheControl: '31536000',
         upsert: true,
         contentType: effectiveMimeType,
       });
@@ -713,6 +710,7 @@ export const mediaService = {
       try {
         await supabase.storage.createBucket('medias', { public: true });
         await supabase.storage.from('medias').upload(storagePath, processedFile, {
+          cacheControl: '31536000',
           upsert: true,
           contentType: effectiveMimeType,
         });

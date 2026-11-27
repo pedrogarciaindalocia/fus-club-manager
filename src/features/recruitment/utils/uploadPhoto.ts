@@ -24,20 +24,9 @@ export const uploadRecruitmentPhoto = async (
     const publicUrl = await storageService.uploadFile(file, storageType);
     if (publicUrl) return publicUrl;
   } catch (err) {
-    console.warn(`[RecruitmentPhoto] Échec upload Supabase dans le bucket 'scouts' (${storageType}), bascule automatique en Base64:`, err);
+    console.warn(`[RecruitmentPhoto] Échec upload Supabase (${storageType}):`, err);
+    throw err;
   }
 
-  // Fallback fiable FileReader
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
-      } else {
-        reject(new Error("Erreur de conversion de l'image"));
-      }
-    };
-    reader.onerror = () => reject(new Error("Impossible de lire le fichier sélectionné"));
-    reader.readAsDataURL(file);
-  });
+  throw new Error("Échec du téléversement vers Supabase Storage. Veuillez réessayer.");
 };

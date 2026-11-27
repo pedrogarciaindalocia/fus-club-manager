@@ -135,6 +135,13 @@ export async function dispatchMatchPushNotification(record: PushNotificationReco
         break;
       }
 
+      case 'operator_revoked': {
+        const catStr = category ? `[${category}] ` : '';
+        title = record.title || `${catStr}🔄 Relève Opérateur`;
+        bodyText = record.body || `La gestion du match FUS vs ${opponentName} a été transférée à un autre opérateur.`;
+        break;
+      }
+
       default:
         if (record.title && record.body) {
           title = record.title;
@@ -158,7 +165,7 @@ export async function dispatchMatchPushNotification(record: PushNotificationReco
       const token = entry.token?.trim();
       if (!token || !token.startsWith('ExponentPushToken[')) continue;
 
-      if (eventType === 'operator_assigned' && targetUserId) {
+      if ((eventType === 'operator_assigned' || eventType === 'operator_revoked') && targetUserId) {
         if (String((entry as any).user_id || '').toLowerCase() !== String(targetUserId).toLowerCase()) continue;
         eligibleTokens.push(token);
         continue;

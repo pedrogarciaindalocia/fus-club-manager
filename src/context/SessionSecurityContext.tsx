@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { AuditLogger } from '../services/auditLogger';
 import { PresenceTracker } from '../services/presenceService';
 import { useClubData } from '../hooks/useClubData';
 import { ConcurrentSessionModal } from '../components/security/ConcurrentSessionModal';
@@ -116,8 +115,6 @@ export const SessionSecurityProvider: React.FC<{ children: React.ReactNode }> = 
   useEffect(() => {
     const timer = setInterval(async () => {
       const now = Date.now();
-      const currentStoredSession = AuditLogger.getCurrentSession();
-      if (!currentStoredSession) return;
 
       // CAS 0 : Délai d'inactivité désactivé (0)
       if (isTimeoutDisabled) {
@@ -158,7 +155,6 @@ export const SessionSecurityProvider: React.FC<{ children: React.ReactNode }> = 
             duration: 8000,
           });
 
-          await AuditLogger.closeSessionWithReason('EXPIRED');
           await supabase.auth.signOut();
           window.location.href = '/login?reason=inactivity';
         }
@@ -168,69 +164,11 @@ export const SessionSecurityProvider: React.FC<{ children: React.ReactNode }> = 
     return () => clearInterval(timer);
   }, [totalTimeoutSeconds]);
 
-  // 3. Surveillance de session concurrente (toutes les 12 secondes)
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      if (!hasAlertedRef.current) {
-        const serverStatus = await AuditLogger.checkCurrentSessionStatus();
-        if (serverStatus === 'TERMINATED_CONCURRENT') {
-          hasAlertedRef.current = true;
-          setShowConcurrentModal(true);
-        }
-      }
-    }, 12000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // 4. Écoute Supabase Realtime instantanée sur les changements de user_sessions
-  useEffect(() => {
-    const currentStoredSession = AuditLogger.getCurrentSession();
-    if (!currentStoredSession?.session_id) return;
-
-    const channel = supabase
-      .channel(`session_guard_${currentStoredSession.session_id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'user_sessions',
-          filter: `session_id=eq.${currentStoredSession.session_id}`
-        },
-        (payload: any) => {
-          if (payload.new?.status === 'TERMINATED_CONCURRENT' && !hasAlertedRef.current) {
-            hasAlertedRef.current = true;
-            setShowConcurrentModal(true);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  // 5. Présence temps réel & initialisation automatique de session d'audit
+  // 3. Présence temps réel
   useEffect(() => {
     const syncUser = async (user: { id: string; email?: string | null; user_metadata?: any } | null | undefined) => {
       if (user?.id) {
         PresenceTracker.connect({ id: user.id, email: user.email ?? null }, 'web');
-
-        // Initialiser ou restaurer la session dans user_sessions si non encore active
-        const curSession = AuditLogger.getCurrentSession();
-        if (!curSession || curSession.user_id !== user.id || curSession.status !== 'ACTIVE') {
-          try {
-            await AuditLogger.startSession(
-              user.id,
-              user.email ?? null,
-              user.user_metadata?.role || 'super_admin'
-            );
-          } catch (e) {
-            console.warn('[SessionSecurityContext] Erreur auto-démarrage session audit:', e);
-          }
-        }
       } else {
         PresenceTracker.disconnect();
       }
@@ -262,7 +200,6 @@ export const SessionSecurityProvider: React.FC<{ children: React.ReactNode }> = 
 
   const handleConfirmConcurrentLogout = async () => {
     setShowConcurrentModal(false);
-    await AuditLogger.closeSessionWithReason('TERMINATED_CONCURRENT');
     await supabase.auth.signOut();
     window.location.href = '/login?reason=concurrent_session';
   };

@@ -97,7 +97,7 @@ export const PlayerVideoModal: React.FC<PlayerVideoModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                {candidate.primary_position} • {candidate.age_category || 'U19'} • {candidate.current_club || 'Club actuel non renseigné'}
+                {candidate.primary_position} • {candidate.age_category || 'U18'} • {candidate.current_club || 'Club actuel non renseigné'}
               </p>
             </div>
           </div>

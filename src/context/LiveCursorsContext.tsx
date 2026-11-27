@@ -105,7 +105,6 @@ const PAGE_SECTION_LABELS: Record<string, string> = {
   '/blog': 'Gestion du Blog',
   '/store': 'Gestion du Store',
   '/users': 'Gestion des Utilisateurs',
-  '/logs': 'Logs & Audit Sessions',
   '/profile': 'Profil Utilisateur',
 };
 
@@ -156,7 +155,6 @@ export function getVisibleSectionsForRole(role?: string, jobTitle?: string | nul
     { id: 'tickets', name: 'Support & Tickets Fus-App', path: '/tickets', category: 'Support', allowed: isSuper },
     { id: 'settings', name: 'Paramètres Club & Logo', path: '/settings', category: 'Administration', allowed: isSuper },
     { id: 'users', name: 'Gestion des Utilisateurs', path: '/users', category: 'Administration', allowed: isSuper },
-    { id: 'logs', name: 'Logs & Audit Sessions', path: '/logs', category: 'Administration', allowed: isSuper },
     { id: 'plugins', name: 'Gestion des Plugins', path: '/plugins', category: 'Administration', allowed: isSuper },
   ];
 }

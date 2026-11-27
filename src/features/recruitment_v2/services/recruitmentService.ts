@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { supabase, supabaseAdmin } from '../../../lib/supabase';
 import { getMyClubId } from '../../../services/_helpers';
-import { AuditLogger } from '../../../services/auditLogger';
 import type {
   Scout,
   TrialCandidate,
@@ -612,7 +611,7 @@ export const recruitmentService = {
             email: email,
             role_title: roleTitle,
             recruitment_region: 'Rabat-Salé-Kénitra',
-            assigned_categories: ['U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U21', 'U23', 'Sénior'],
+            assigned_categories: ['U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U21', 'U25', 'SENIOR'],
             assigned_teams: [],
             status: p.is_active !== false ? 'active' : 'inactive',
             recruited_date: p.created_at ? p.created_at.split('T')[0] : '2024-01-01',
@@ -859,6 +858,61 @@ export const recruitmentService = {
       }
     }
 
+    // 5. Fallback Auth direct via signUp autonome (sans altérer la session courante de l'administrateur)
+    try {
+      const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
+      const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+      if (supabaseUrl && supabaseAnonKey) {
+        const isolatedAuthClient = createClient(supabaseUrl, supabaseAnonKey, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+          }
+        });
+
+        const { data: signUpData, error: signUpErr } = await isolatedAuthClient.auth.signUp({
+          email: cleanEmail,
+          password: tempPassword,
+          options: {
+            data: {
+              full_name: fullName,
+              system_role: finalRole,
+              job_title: finalTitle,
+              phone_number: phone || null,
+            }
+          }
+        });
+
+        if (!signUpErr && signUpData?.user?.id) {
+          const authUserId = signUpData.user.id;
+          await dbClient.from('user_profiles').upsert({
+            id: authUserId,
+            full_name: fullName,
+            phone_number: phone || null,
+            system_role: finalRole,
+            job_title: finalTitle,
+            force_password_change: true,
+            is_active: true,
+            updated_at: new Date().toISOString()
+          });
+          return { success: true, message: 'Compte utilisateur créé via Supabase Auth', userId: authUserId };
+        }
+        if (signUpErr) {
+          console.warn('[RecruitmentService] Isolated signUp notice:', signUpErr.message);
+        }
+      }
+    } catch (e4) {
+      console.warn('[RecruitmentService] Isolated signUp exception:', e4);
+    }
+
+    if (!userId) {
+      return {
+        success: false,
+        message: "Impossible d'initialiser le compte d'authentification Supabase. Veuillez vous assurer que la fonction RPC 'admin_provision_user_credentials' est déployée sur votre base de données Supabase."
+      };
+    }
+
     return { success: true, userId: userId || undefined };
   },
 
@@ -1061,7 +1115,6 @@ export const recruitmentService = {
         if (error) {
           console.warn(`[RecruitmentService] Erreur Supabase deleteScout (${id}):`, error.message);
         } else {
-          AuditLogger.logDelete('RECRUITMENT', 'SCOUTS', id, null, `Suppression scout ${id}`);
         }
       } catch (err) {
         console.warn(`[RecruitmentService] Exception deleteScout (${id}):`, err);
@@ -1105,7 +1158,6 @@ export const recruitmentService = {
         if (error) {
           console.warn('[RecruitmentService] Erreur Supabase deleteScouts:', error.message);
         } else {
-          AuditLogger.logDelete('RECRUITMENT', 'SCOUTS', validUuids.join(','), null, `Suppression multiple de ${validUuids.length} scouts`);
         }
       } catch (err) {
         console.warn('[RecruitmentService] Exception deleteScouts:', err);
@@ -1294,14 +1346,14 @@ export const recruitmentService = {
               (d as any).honor_declaration_document !== undefined
                 ? (d as any).honor_declaration_document
                 : ('honor_declaration_document' in parsedMeta
-                    ? parsedMeta.honor_declaration_document
-                    : (loc?.honor_declaration_document ?? null)),
+                  ? parsedMeta.honor_declaration_document
+                  : (loc?.honor_declaration_document ?? null)),
             test_slot_validation:
               (d as any).test_slot_validation !== undefined
                 ? (d as any).test_slot_validation
                 : ('test_slot_validation' in parsedMeta
-                    ? parsedMeta.test_slot_validation
-                    : (loc?.test_slot_validation ?? null)),
+                  ? parsedMeta.test_slot_validation
+                  : (loc?.test_slot_validation ?? null)),
             contract_type: loc?.contract_type || (d as any).contract_type || parsedMeta.contract_type,
             administrative_status: loc?.administrative_status || (d as any).administrative_status || parsedMeta.administrative_status,
             admin_notes: loc?.admin_notes || (d as any).admin_notes || parsedMeta.admin_notes,
@@ -1406,13 +1458,6 @@ export const recruitmentService = {
         const list = getLocal<TrialCandidate[]>(KEY_CANDIDATES, []);
         setLocal(KEY_CANDIDATES, [merged, ...list.filter(c => c.id !== merged.id && c.id !== newCand.id)]);
 
-        AuditLogger.logCreate(
-          'RECRUITMENT',
-          'TRIAL_CANDIDATE',
-          merged.id,
-          merged,
-          `Création du talent détecté ${merged.first_name} ${merged.last_name} (${merged.primary_position} - ${merged.age_category || 'U13'})`
-        );
 
         await this.addTimelineEvent({
           candidate_id: merged.id,
@@ -1522,14 +1567,6 @@ export const recruitmentService = {
           : [updatedCandidate, ...list];
         setLocal(KEY_CANDIDATES, nextList);
 
-        AuditLogger.logUpdate(
-          'RECRUITMENT',
-          'TRIAL_CANDIDATE',
-          id,
-          {},
-          updates,
-          `Mise à jour fiche candidat ${updatedCandidate.first_name} ${updatedCandidate.last_name}`
-        );
 
         return updatedCandidate as TrialCandidate;
       }
@@ -1576,7 +1613,6 @@ export const recruitmentService = {
           console.error(`[RecruitmentService] Erreur Supabase deleteCandidate (${cleanId}):`, error.message);
           throw new Error(error.message);
         } else {
-          AuditLogger.logDelete('RECRUITMENT', 'TRIAL_CANDIDATE', cleanId, null, `Suppression candidat ${cleanId}`);
         }
       } catch (err: any) {
         console.error(`[RecruitmentService] Exception réseau deleteCandidate (${cleanId}):`, err);
@@ -1607,7 +1643,6 @@ export const recruitmentService = {
           console.error(`[RecruitmentService] Erreur Supabase deleteCandidates:`, error.message);
           throw new Error(error.message);
         } else {
-          AuditLogger.logDelete('RECRUITMENT', 'TRIAL_CANDIDATES', validUuids.join(','), null, `Suppression multiple de ${validUuids.length} candidats`);
         }
       } catch (err: any) {
         console.error(`[RecruitmentService] Exception réseau deleteCandidates:`, err);
@@ -1640,7 +1675,6 @@ export const recruitmentService = {
           console.error(`[RecruitmentService] Erreur Supabase archiveCandidates:`, error.message);
           throw new Error(error.message);
         } else {
-          AuditLogger.logUpdate('RECRUITMENT', 'TRIAL_CANDIDATES', validUuids.join(','), { pipeline_stage: 'archived' }, `Archivage multiple de ${validUuids.length} candidats`);
         }
       } catch (err: any) {
         console.error(`[RecruitmentService] Exception réseau archiveCandidates:`, err);
@@ -1699,7 +1733,7 @@ export const recruitmentService = {
             training_ground: parsedNotesData.training_ground || 'Terrain Synthétique 1',
             target_team: parsedNotesData.target_team || 'Académie FUS',
             test_type: parsedNotesData.test_type || (parsedNotesData.match_id ? 'trial_match' : 'comprehensive'),
-            age_category: s.category_age || 'U19',
+            age_category: s.category_age || 'U18',
             status: (s.status as any) || 'scheduled',
             notes: parsedNotesData.description !== undefined
               ? (parsedNotesData.description || undefined)
@@ -1791,7 +1825,7 @@ export const recruitmentService = {
         match_name: test.match_name || null,
         end_time: test.end_time || '12:00',
         training_ground: test.training_ground || 'Terrain Synthétique 1',
-        target_team: test.target_team || `Académie FUS ${test.age_category || 'U19'}`,
+        target_team: test.target_team || `Académie FUS ${test.age_category || 'U18'}`,
         test_type: test.test_type || (test.match_id ? 'trial_match' : 'comprehensive'),
       });
 
@@ -1812,7 +1846,7 @@ export const recruitmentService = {
         session_time: formattedTime,
         location: test.location || 'Complexe Sportif FUS - Terrain 1',
         lead_scout_name: 'Staff Technique & Détection',
-        category_age: test.age_category || (test as any).category_age || 'U19',
+        category_age: test.age_category || (test as any).category_age || 'U18',
         status: validStatus,
         notes: notesPayload,
       });
@@ -1824,13 +1858,6 @@ export const recruitmentService = {
       if (error) {
         console.warn('[RecruitmentService] Erreur Supabase createTestsBatch trial_sessions:', error.message);
       } else {
-        AuditLogger.logCreate(
-          'PLAYERS',
-          'TRIAL_SESSION',
-          createdTests.map(t => t.id).join(','),
-          createdTests,
-          `Planification groupée de ${createdTests.length} session(s) détection`
-        );
       }
     } catch (err) {
       console.warn('[RecruitmentService] Exception Supabase createTestsBatch trial_sessions:', err);
@@ -1965,7 +1992,6 @@ export const recruitmentService = {
         if (error) {
           console.warn(`[RecruitmentService] Erreur Supabase updateTest (${id}):`, error.message);
         } else {
-          AuditLogger.logUpdate('PLAYERS', 'TRIAL_SESSION', id, existing, updates, `Mise à jour séance test ${updates.test_name || id}`);
         }
       }
     } catch (err) {
@@ -2013,13 +2039,6 @@ export const recruitmentService = {
         throw new Error('Suppression bloquée côté base de données (permissions RLS sur trial_sessions).');
       }
 
-      AuditLogger.logDelete(
-        'PLAYERS',
-        'TRIAL_SESSION',
-        validUuids.join(','),
-        null,
-        `Suppression multiple de ${validUuids.length} session(s) de test`
-      );
     }
 
     const list = getLocal<PlayerTest[]>(KEY_TESTS, initialMockTests);
@@ -2301,17 +2320,14 @@ export const recruitmentService = {
           if (insertErr) {
             console.error('[RecruitmentService] Erreur Supabase insert fallback:', insertErr.message);
           } else {
-            AuditLogger.logCreate('RECRUITMENT', 'CANDIDATE_EVALUATION', newId, newEval, `Insertion fallback rapport évaluation ${newId}`);
           }
         } else {
-          AuditLogger.logUpdate('RECRUITMENT', 'CANDIDATE_EVALUATION', newId, existingEval, newEval, `Mise à jour rapport évaluation ${newId}`);
         }
       } else {
         const { error } = await supabase.from('candidate_evaluations').insert([payload]);
         if (error) {
           console.warn('[RecruitmentService] Erreur Supabase saveEvaluation, persistance en local:', error.message);
         } else {
-          AuditLogger.logCreate('RECRUITMENT', 'CANDIDATE_EVALUATION', newId, newEval, `Enregistrement évaluation candidat ${newEval.overall_score}/10 (${newEval.verdict})`);
         }
       }
     } catch (err) {
@@ -2492,7 +2508,6 @@ export const recruitmentService = {
         if (error) {
           console.warn(`[RecruitmentService] Erreur Supabase deleteEvaluation (${id}):`, error.message);
         } else {
-          AuditLogger.logDelete('RECRUITMENT', 'CANDIDATE_EVALUATION', id, null, `Suppression rapport évaluation ${id}`);
         }
       }
     } catch (err) {
@@ -2542,7 +2557,6 @@ export const recruitmentService = {
         if (error) {
           console.warn(`[RecruitmentService] Erreur Supabase deleteEvaluations:`, error.message);
         } else {
-          AuditLogger.logDelete('RECRUITMENT', 'CANDIDATE_EVALUATION', validUuids.join(','), null, `Suppression multiple de ${validUuids.length} rapports`);
         }
       }
     } catch (err) {

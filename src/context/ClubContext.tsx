@@ -193,12 +193,23 @@ export const ClubProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addStadium = async (stadium: any) => {
     const added = await competitionService.addStadium(stadium);
-    setStadiums(prev => [...prev, added]);
+    setStadiums(prev => [
+      ...(added.is_home_stadium ? prev.map(s => ({ ...s, is_home_stadium: false })) : prev),
+      added,
+    ]);
   };
 
   const updateStadium = async (id: string, stadium: Partial<Stadium>) => {
     const updated = await competitionService.updateStadium(id, stadium);
-    setStadiums(prev => prev.map(s => s.id === updated.id ? updated : s));
+    setStadiums(prev =>
+      prev.map(s =>
+        s.id === updated.id
+          ? updated
+          : updated.is_home_stadium
+          ? { ...s, is_home_stadium: false }
+          : s
+      )
+    );
   };
 
   const deleteStadium = async (id: string) => {

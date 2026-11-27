@@ -495,7 +495,7 @@ export const TrialSessionPlannerForm: React.FC<TrialSessionPlannerFormProps> = (
                     </span>
                   </div>
                   <span className="text-[9px] font-black uppercase text-slate-400 shrink-0">
-                    {c.age_category || 'U19'}
+                    {c.age_category || 'U18'}
                   </span>
                 </div>
               );

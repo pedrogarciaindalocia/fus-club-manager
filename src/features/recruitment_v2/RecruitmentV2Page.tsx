@@ -534,9 +534,9 @@ export const RecruitmentV2Page: React.FC = () => {
   // Helper US-DASH-120 : Catégorie d'âge réelle calculée systématiquement via la date de naissance
   const getCandidateEffectiveCategory = React.useCallback((c: TrialCandidate): string => {
     if (c.birth_date) {
-      return getAgeCategoryFromBirthDate(c.birth_date, c.age_category || 'U19');
+      return getAgeCategoryFromBirthDate(c.birth_date, c.age_category || 'U18');
     }
-    return normalizeAgeCategory(c.age_category || 'U19');
+    return normalizeAgeCategory(c.age_category || 'U18');
   }, []);
 
   const todayStr = new Date().toLocaleDateString('en-CA');
@@ -853,7 +853,8 @@ export const RecruitmentV2Page: React.FC = () => {
   };
 
   const canValidateCandidateSlot = (cand: TrialCandidate): boolean => {
-    if (!cand || isScoutManager || isResponsableVieUser || isResponsableMagasinierUser || isCoachUser || isVideoAnalystUser || isDirecteurAdministratifUser) return false;
+    if (!cand || isScoutManager || isResponsableMagasinierUser || isCoachUser || isVideoAnalystUser || isDirecteurAdministratifUser) return false;
+    if (isResponsableVieUser) return true;
     return Boolean(canScheduleTests);
   };
 
@@ -935,7 +936,7 @@ export const RecruitmentV2Page: React.FC = () => {
       await deleteTests(exclusiveSessionIds);
     }
 
-    const baseCategory = cand.age_category || template?.age_category || 'U19';
+    const baseCategory = cand.age_category || template?.age_category || 'U18';
     const newSessionsPayload = dateList.map((dateIso) => ({
       candidate_id: cand.id,
       candidate_ids: [cand.id],
@@ -1010,9 +1011,10 @@ export const RecruitmentV2Page: React.FC = () => {
 
     const validationInfo: TestSlotValidationInfo = {
       status: 'validated',
-      validated_by: authState?.user?.full_name || currentScout?.full_name || 'Scout Manager',
+      validated_by: authState?.user?.full_name || (isResponsableVieUser ? 'Responsable de Vie' : currentScout?.full_name || 'Direction'),
       validated_at: new Date().toISOString(),
       validated_dates: summary?.allDates || [],
+      ...(isResponsableVieUser ? { adjusted_by_role: 'Responsable de Vie' } : {}),
     };
 
     await updateCandidate(cand.id, {
@@ -1433,10 +1435,10 @@ export const RecruitmentV2Page: React.FC = () => {
                   interval={interval}
                   allCandidateTestDates={candTestSummary?.allDates}
                   sessions={candTestSummary?.sessions}
-                  readOnly={!canScheduleTests}
+                  readOnly={!canScheduleTests && !isResponsableVieUser}
                   slotValidation={slotValidation}
                   canValidateSlot={allowSlotAction}
-                  canOpenSlotModal={allowSlotAction}
+                  canOpenSlotModal={Boolean(allowSlotAction && !isResponsableVieUser)}
                   isAdminSlotEditor={canScheduleTests}
                   customTitle={
                     isResponsableVieUser
@@ -1468,7 +1470,92 @@ export const RecruitmentV2Page: React.FC = () => {
       </div>
     );
   };
-  // Scout Report Wizard state
+  const resolveHostingStatus = (cand: TrialCandidate): 'pending' | 'validated' | 'rejected' => {
+    const st = cand.test_slot_validation?.status;
+    if (st === 'validated') return 'validated';
+    if (st === 'rejected') return 'rejected';
+    return 'pending';
+  };
+
+  const renderHostingBadge = (cand: TrialCandidate, compact = false) => {
+    const candStatus = resolveCandidateStatus(cand);
+    const hostingStatus = resolveHostingStatus(cand);
+    const validatedBy = cand.test_slot_validation?.validated_by;
+    const validatedAt = cand.test_slot_validation?.validated_at;
+
+    const badgeConfig = {
+      validated: {
+        label: 'Validé pour hébergement',
+        wrapper: 'border-emerald-300 bg-emerald-50 text-emerald-800',
+        hover: 'hover:bg-emerald-100',
+        dot: 'bg-emerald-500',
+        ring: 'ring-2 ring-emerald-200',
+        title: `Validé pour hébergement par ${validatedBy || 'Responsable de Vie'}${validatedAt ? ` le ${new Date(validatedAt).toLocaleDateString('fr-FR')}` : ''}`,
+      },
+      rejected: {
+        label: 'Non validé',
+        wrapper: 'border-rose-300 bg-rose-50 text-rose-700',
+        hover: 'hover:bg-rose-100',
+        dot: 'bg-rose-500',
+        ring: 'ring-2 ring-rose-200',
+        title: `Hébergement non validé par ${validatedBy || 'Responsable de Vie'}${validatedAt ? ` le ${new Date(validatedAt).toLocaleDateString('fr-FR')}` : ''}`,
+      },
+      pending: {
+        label: 'En cours',
+        wrapper: 'border-amber-300 bg-amber-50 text-amber-800',
+        hover: 'hover:bg-amber-100',
+        dot: 'bg-amber-500',
+        ring: 'ring-2 ring-amber-200 animate-pulse',
+        title: "En cours — En attente de décision d'hébergement par le Responsable de Vie",
+      },
+    }[hostingStatus];
+
+    if (isResponsableVieUser) {
+      return (
+        <button
+          type="button"
+          onClick={() => setVieValidationConfirmTarget(cand)}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer shadow-2xs whitespace-nowrap',
+            compact ? 'px-2.5 py-1' : 'px-3 py-1.5',
+            badgeConfig.wrapper,
+            badgeConfig.hover
+          )}
+          title="Cliquer pour choisir le statut d'hébergement (En cours, Validé pour hébergement, Non validé)"
+        >
+          <span className={cn('w-2 h-2 rounded-full shrink-0', badgeConfig.dot)} />
+          <span>{badgeConfig.label}</span>
+        </button>
+      );
+    }
+
+    if (candStatus !== 'invitation_test' && hostingStatus === 'pending') {
+      return (
+        <span
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-[11px] font-bold select-none whitespace-nowrap"
+          title="Non concerné (le joueur n'est pas en invitation test)"
+        >
+          <span className="w-2 h-2 rounded-full bg-slate-300 shrink-0" />
+          <span>Non requis</span>
+        </span>
+      );
+    }
+
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-xl border text-[11px] font-black shadow-2xs select-none whitespace-nowrap',
+          compact ? 'px-2.5 py-1' : 'px-3 py-1.5',
+          badgeConfig.wrapper
+        )}
+        title={badgeConfig.title}
+      >
+        <span className={cn('w-2.5 h-2.5 rounded-full shrink-0', badgeConfig.dot, badgeConfig.ring)} />
+        <span>{badgeConfig.label}</span>
+      </span>
+    );
+  };
+
   const [isReportWizardOpen, setIsReportWizardOpen] = useState(false);
   const [vieValidationConfirmTarget, setVieValidationConfirmTarget] = useState<TrialCandidate | null>(null);
   const [statusChangeConfirmTarget, setStatusChangeConfirmTarget] = useState<{
@@ -1630,19 +1717,24 @@ export const RecruitmentV2Page: React.FC = () => {
 
       // Diffuser la notification en temps réel pour le scout / scout manager ciblé
       try {
-        await supabase.channel('scouting_missions_broadcast_alerts').send({
-          type: 'broadcast',
-          event: 'mission_assigned',
-          payload: {
-            scoutId: targetScout.id,
-            scoutName: targetScout.full_name,
-            candidateId: targetCandidate.id,
-            candidateName: `${targetCandidate.first_name} ${targetCandidate.last_name}`,
-            missionTitle: missionData.missionTitle,
-            missionDescription: missionData.missionDescription,
-            assignedBy: assignerName,
-          },
-        });
+        const alertChannel = supabase.channel('scouting_missions_broadcast_alerts');
+        try {
+          await alertChannel.send({
+            type: 'broadcast',
+            event: 'mission_assigned',
+            payload: {
+              scoutId: targetScout.id,
+              scoutName: targetScout.full_name,
+              candidateId: targetCandidate.id,
+              candidateName: `${targetCandidate.first_name} ${targetCandidate.last_name}`,
+              missionTitle: missionData.missionTitle,
+              missionDescription: missionData.missionDescription,
+              assignedBy: assignerName,
+            },
+          });
+        } finally {
+          supabase.removeChannel(alertChannel);
+        }
       } catch (broadcastErr) {
         console.warn('Notice broadcast mission notification:', broadcastErr);
       }
@@ -1817,14 +1909,19 @@ export const RecruitmentV2Page: React.FC = () => {
       }
 
       // Diffuser l'événement en direct pour que le Panier de Détection se recharge immédiatement
-      await supabase.channel('scouting_basket_realtime').send({
-        type: 'broadcast',
-        event: 'basket_player_restored',
-        payload: {
-          candidateId: targetCandidate.id,
-          candidateName: candFullName,
-        },
-      });
+      const basketChannel = supabase.channel('scouting_basket_realtime');
+      try {
+        await basketChannel.send({
+          type: 'broadcast',
+          event: 'basket_player_restored',
+          payload: {
+            candidateId: targetCandidate.id,
+            candidateName: candFullName,
+          },
+        });
+      } finally {
+        supabase.removeChannel(basketChannel);
+      }
     } catch (basketErr) {
       console.warn('[handleUnassignMission] Erreur réintégration au panier:', basketErr);
     }
@@ -1832,16 +1929,21 @@ export const RecruitmentV2Page: React.FC = () => {
     // Diffuser la notification en temps réel
     if (previousScoutId) {
       try {
-        await supabase.channel('scouting_missions_broadcast_alerts').send({
-          type: 'broadcast',
-          event: 'mission_recalled',
-          payload: {
-            scoutId: previousScoutId,
-            candidateId: targetCandidate.id,
-            candidateName: `${targetCandidate.first_name} ${targetCandidate.last_name}`,
-            withdrawnBy: assignerName,
-          },
-        });
+        const recallChannel = supabase.channel('scouting_missions_broadcast_alerts');
+        try {
+          await recallChannel.send({
+            type: 'broadcast',
+            event: 'mission_recalled',
+            payload: {
+              scoutId: previousScoutId,
+              candidateId: targetCandidate.id,
+              candidateName: `${targetCandidate.first_name} ${targetCandidate.last_name}`,
+              withdrawnBy: assignerName,
+            },
+          });
+        } finally {
+          supabase.removeChannel(recallChannel);
+        }
       } catch (broadcastErr) {
         console.warn('Notice broadcast unassign error:', broadcastErr);
       }
@@ -1924,7 +2026,7 @@ export const RecruitmentV2Page: React.FC = () => {
         phone: (authState.user as any).phone_number || '',
         role_title: authState.user.job_title || (isScoutManager ? 'Scout Manager' : 'Scout'),
         recruitment_region: 'Rabat-Salé-Kénitra',
-        assigned_categories: ['U15', 'U17', 'U19'],
+        assigned_categories: ['U15', 'U17', 'U18'],
         assigned_teams: [],
         status: 'active' as const,
         recruited_date: '2024-01-01',
@@ -2040,7 +2142,7 @@ export const RecruitmentV2Page: React.FC = () => {
         phone: '',
         role_title: isScoutManager ? 'Scout Manager' : isAdmin ? 'Administrateur' : 'Scout',
         recruitment_region: 'Rabat-Salé-Kénitra',
-        assigned_categories: ['U15', 'U17', 'U19'],
+        assigned_categories: ['U15', 'U17', 'U18'],
         assigned_teams: [],
         status: 'active' as const,
         recruited_date: '2024-01-01',
@@ -3407,8 +3509,8 @@ export const RecruitmentV2Page: React.FC = () => {
                         </select>
                       </div>
 
-                      {/* 3. Pied Fort (masqué pour Directeur Administratif) */}
-                      {!isDirecteurAdministratifUser && (
+                      {/* 3. Pied Fort (masqué pour Directeur Administratif et Responsable Magasinier) */}
+                      {!isDirecteurAdministratifUser && !isResponsableMagasinierUser && (
                         <div>
                           <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">
                             Pied Fort
@@ -3657,8 +3759,10 @@ export const RecruitmentV2Page: React.FC = () => {
                             <th className="py-3.5 px-3 text-center">Scores Détecteur (5 Piliers)</th>
                           )}
                           <th className="py-3.5 px-3">{isOnlyRecruitNowUser ? 'Dossier Administratif' : 'Statut'}</th>
-                          {isResponsableVieUser && (
-                            <th className="py-3.5 px-3 text-center whitespace-nowrap">Validé</th>
+                          {(isResponsableVieUser || isRecruitmentAdmin) && !isOnlyRecruitNowUser && (
+                            <th className="py-3.5 px-3 text-center whitespace-nowrap">
+                              {isResponsableVieUser ? 'Validé' : 'Hébergement (Resp. Vie)'}
+                            </th>
                           )}
                           {!isOnlyRecruitNowUser && !isVideoAnalystUser && (
                             <th className="py-3.5 px-3 text-center whitespace-nowrap">Déclaration sur l'honneur</th>
@@ -3883,33 +3987,10 @@ export const RecruitmentV2Page: React.FC = () => {
                                 {renderCandidateStatusControl(c)}
                               </td>
 
-                              {/* Colonne Validé (Responsable de Vie : confirmation Oui / Non sans ajustement de créneau) */}
-                              {isResponsableVieUser && (
+                              {/* Colonne Validé / Hébergement (3 statuts : En cours, Validé pour hébergement, Non validé) */}
+                              {(isResponsableVieUser || isRecruitmentAdmin) && !isOnlyRecruitNowUser && (
                                 <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                                  {(() => {
-                                    const isValidated = c.test_slot_validation?.status === 'validated';
-                                    return (
-                                      <button
-                                        type="button"
-                                        onClick={() => setVieValidationConfirmTarget(c)}
-                                        className={cn(
-                                          'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer shadow-2xs whitespace-nowrap',
-                                          isValidated
-                                            ? 'border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
-                                            : 'border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700'
-                                        )}
-                                        title="Cliquer pour confirmer la validation (Oui ou Non)"
-                                      >
-                                        <span
-                                          className={cn(
-                                            'w-2 h-2 rounded-full shrink-0',
-                                            isValidated ? 'bg-emerald-500' : 'bg-rose-500'
-                                          )}
-                                        />
-                                        <span>{isValidated ? 'Validé' : 'Non validé'}</span>
-                                      </button>
-                                    );
-                                  })()}
+                                  {renderHostingBadge(c, false)}
                                 </td>
                               )}
 
@@ -4186,30 +4267,14 @@ export const RecruitmentV2Page: React.FC = () => {
                             const activeScoutId = currentScout?.id || authState?.user?.id || '';
                             const activeScoutName = (currentScout?.full_name || authState?.user?.full_name || '').toLowerCase().trim();
                             return (
-                            <div className="pt-2 mt-2 border-t border-slate-100 flex flex-wrap gap-1.5 text-[11px]">
-                              {isRecruitmentAdmin && (() => {
-                                const discScout = c.discovering_scout_name;
-                                const assScout = c.assigned_scout_name;
-                                const isSame = !assScout || (discScout && discScout.trim().toLowerCase() === assScout.trim().toLowerCase());
+                              <div className="pt-2 mt-2 border-t border-slate-100 flex flex-wrap gap-1.5 text-[11px]">
+                                {isRecruitmentAdmin && (() => {
+                                  const discScout = c.discovering_scout_name;
+                                  const assScout = c.assigned_scout_name;
+                                  const isSame = !assScout || (discScout && discScout.trim().toLowerCase() === assScout.trim().toLowerCase());
 
-                                if (isSame && discScout) {
-                                  return (
-                                    <ScoutAvatar
-                                      scoutId={c.discovering_scout_id}
-                                      scoutName={discScout}
-                                      scouts={scouts}
-                                      size="xs"
-                                      showBadge
-                                      showPhone
-                                      badgePrefix="Scout :"
-                                      className="bg-blue-50/90 text-blue-800 border border-blue-200/80 shadow-2xs"
-                                    />
-                                  );
-                                }
-
-                                return (
-                                  <>
-                                    {discScout && (
+                                  if (isSame && discScout) {
+                                    return (
                                       <ScoutAvatar
                                         scoutId={c.discovering_scout_id}
                                         scoutName={discScout}
@@ -4217,53 +4282,69 @@ export const RecruitmentV2Page: React.FC = () => {
                                         size="xs"
                                         showBadge
                                         showPhone
-                                        badgePrefix="Scout A :"
+                                        badgePrefix="Scout :"
                                         className="bg-blue-50/90 text-blue-800 border border-blue-200/80 shadow-2xs"
                                       />
-                                    )}
-                                    {assScout && (isRecruitmentAdmin || Boolean(
-                                      (activeScoutId && (c.assigned_scout_id === activeScoutId || c.active_mission?.assigned_to_id === activeScoutId)) ||
-                                      (activeScoutName && assScout.toLowerCase().trim() === activeScoutName)
-                                    )) && (
+                                    );
+                                  }
+
+                                  return (
+                                    <>
+                                      {discScout && (
                                         <ScoutAvatar
-                                          scoutId={c.assigned_scout_id}
-                                          scoutName={assScout}
+                                          scoutId={c.discovering_scout_id}
+                                          scoutName={discScout}
                                           scouts={scouts}
                                           size="xs"
                                           showBadge
-                                          badgePrefix="Scout B :"
-                                          className="bg-purple-50/90 text-purple-800 border border-purple-200/80 shadow-2xs"
+                                          showPhone
+                                          badgePrefix="Scout A :"
+                                          className="bg-blue-50/90 text-blue-800 border border-blue-200/80 shadow-2xs"
                                         />
                                       )}
-                                  </>
-                                );
-                              })()}
-                              {c.active_mission?.mission_title && (isRecruitmentAdmin || Boolean(
-                                (activeScoutId && c.active_mission.assigned_to_id === activeScoutId) ||
-                                (activeScoutName && c.active_mission.assigned_to_name && c.active_mission.assigned_to_name.toLowerCase().trim() === activeScoutName) ||
-                                (authState?.user?.id && c.active_mission.assigned_to_id === authState.user.id)
-                              )) && (
-                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200 truncate max-w-full">
-                                    <span>🎯 {c.active_mission.mission_title}</span>
-                                    {c.active_mission.acknowledged_at ? (
-                                      <span className="text-[9px] text-emerald-700 font-extrabold bg-emerald-100 px-1 rounded">✓ Reçu</span>
-                                    ) : (
-                                      <span className="text-[9px] text-amber-700 font-bold bg-amber-100 px-1 rounded animate-pulse">⏳ Attente</span>
-                                    )}
-                                  </span>
+                                      {assScout && (isRecruitmentAdmin || Boolean(
+                                        (activeScoutId && (c.assigned_scout_id === activeScoutId || c.active_mission?.assigned_to_id === activeScoutId)) ||
+                                        (activeScoutName && assScout.toLowerCase().trim() === activeScoutName)
+                                      )) && (
+                                          <ScoutAvatar
+                                            scoutId={c.assigned_scout_id}
+                                            scoutName={assScout}
+                                            scouts={scouts}
+                                            size="xs"
+                                            showBadge
+                                            badgePrefix="Scout B :"
+                                            className="bg-purple-50/90 text-purple-800 border border-purple-200/80 shadow-2xs"
+                                          />
+                                        )}
+                                    </>
+                                  );
+                                })()}
+                                {c.active_mission?.mission_title && (isRecruitmentAdmin || Boolean(
+                                  (activeScoutId && c.active_mission.assigned_to_id === activeScoutId) ||
+                                  (activeScoutName && c.active_mission.assigned_to_name && c.active_mission.assigned_to_name.toLowerCase().trim() === activeScoutName) ||
+                                  (authState?.user?.id && c.active_mission.assigned_to_id === authState.user.id)
+                                )) && (
+                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-bold border border-indigo-200 truncate max-w-full">
+                                      <span>🎯 {c.active_mission.mission_title}</span>
+                                      {c.active_mission.acknowledged_at ? (
+                                        <span className="text-[9px] text-emerald-700 font-extrabold bg-emerald-100 px-1 rounded">✓ Reçu</span>
+                                      ) : (
+                                        <span className="text-[9px] text-amber-700 font-bold bg-amber-100 px-1 rounded animate-pulse">⏳ Attente</span>
+                                      )}
+                                    </span>
+                                  )}
+                                {isRecruitmentAdmin && c.recruiter_name && !c.assigned_scout_name && (
+                                  <ScoutAvatar
+                                    scoutId={c.recruiter_id}
+                                    scoutName={c.recruiter_name}
+                                    scouts={scouts}
+                                    size="xs"
+                                    showBadge
+                                    badgePrefix="Recruteur :"
+                                    className="bg-amber-50/90 text-amber-900 border border-amber-200/80 shadow-2xs"
+                                  />
                                 )}
-                              {isRecruitmentAdmin && c.recruiter_name && !c.assigned_scout_name && (
-                                <ScoutAvatar
-                                  scoutId={c.recruiter_id}
-                                  scoutName={c.recruiter_name}
-                                  scouts={scouts}
-                                  size="xs"
-                                  showBadge
-                                  badgePrefix="Recruteur :"
-                                  className="bg-amber-50/90 text-amber-900 border border-amber-200/80 shadow-2xs"
-                                />
-                              )}
-                            </div>
+                              </div>
                             );
                           })()}
                         </div>
@@ -4273,6 +4354,16 @@ export const RecruitmentV2Page: React.FC = () => {
                           <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider shrink-0 mt-1.5">Statut</span>
                           {renderCandidateStatusControl(c, false, 'end')}
                         </div>
+
+                        {/* Voyant Hébergement (Responsable de Vie / Scout Admin) en mode Grille */}
+                        {(isResponsableVieUser || isRecruitmentAdmin) && !isOnlyRecruitNowUser && (resolveCandidateStatus(c) === 'invitation_test' || c.test_slot_validation?.status === 'validated' || c.test_slot_validation?.status === 'rejected') && (
+                          <div className="pt-2 border-t flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                            <span className="text-[10px] uppercase font-black text-slate-500 tracking-wider shrink-0">
+                              Hébergement (Resp. Vie)
+                            </span>
+                            {renderHostingBadge(c, true)}
+                          </div>
+                        )}
 
                         {/* Déclaration sur l'honneur (masquée pour Directeur Administratif et Analyste Vidéo) */}
                         {!isOnlyRecruitNowUser && !isVideoAnalystUser && (resolveCandidateStatus(c) === 'invitation_test' || Boolean(getHonorDeclarationDocument(c))) && (
@@ -4573,7 +4664,7 @@ export const RecruitmentV2Page: React.FC = () => {
                                 {c.primary_position || 'N/A'}
                               </span>
                               <span className="px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 font-bold text-[10px]">
-                                {c.age_category || 'U19'}
+                                {c.age_category || 'U18'}
                               </span>
                             </div>
                           </td>
@@ -4804,84 +4895,149 @@ export const RecruitmentV2Page: React.FC = () => {
         );
       })()}
 
-      {vieValidationConfirmTarget && (
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
-          onClick={() => !isSavingVieValidation && setVieValidationConfirmTarget(null)}
-        >
+      {vieValidationConfirmTarget && (() => {
+        const currentHostingStatus = resolveHostingStatus(vieValidationConfirmTarget);
+        const updateHostingStatus = async (nextStatus: 'pending' | 'rejected') => {
+          setIsSavingVieValidation(true);
+          try {
+            const nextValidation: TestSlotValidationInfo = {
+              ...(vieValidationConfirmTarget.test_slot_validation || {}),
+              status: nextStatus,
+              validated_by: authState?.user?.full_name || 'Responsable de Vie',
+              validated_at: new Date().toISOString(),
+              adjusted_by_role: 'Responsable de Vie',
+            };
+            await updateCandidate(vieValidationConfirmTarget.id, {
+              test_slot_validation: nextValidation,
+              updated_at: new Date().toISOString(),
+            });
+            toast.info(
+              nextStatus === 'pending'
+                ? `${vieValidationConfirmTarget.first_name} ${vieValidationConfirmTarget.last_name} : hébergement remis En cours`
+                : `${vieValidationConfirmTarget.first_name} ${vieValidationConfirmTarget.last_name} marqué Non validé`
+            );
+            setVieValidationConfirmTarget(null);
+          } catch (err: any) {
+            const msg = String(err?.message || '');
+            const isNetworkOrServer = /521|520|522|523|524|502|503|504|web server is down|failed to fetch|<!doctype|<html/i.test(msg);
+            toast.error(
+              isNetworkOrServer
+                ? 'Le serveur est momentanément indisponible. Veuillez réessayer dans quelques instants.'
+                : (msg || 'Erreur lors de la mise à jour')
+            );
+          } finally {
+            setIsSavingVieValidation(false);
+          }
+        };
+
+        return (
           <div
-            className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden p-6 space-y-5"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+            onClick={() => !isSavingVieValidation && setVieValidationConfirmTarget(null)}
           >
-            <div className="space-y-1.5">
-              <h3 className="text-base font-black text-slate-900">
-                Confirmer l'hébergement
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Joueur : <span className="font-bold text-slate-900">{vieValidationConfirmTarget.first_name} {vieValidationConfirmTarget.last_name}</span>.
-                <br />
-                Souhaitez-vous confirmer l'hébergement pendant la période de test ?
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2.5 pt-1">
-              <button
-                type="button"
-                disabled={isSavingVieValidation}
-                onClick={async () => {
-                  setIsSavingVieValidation(true);
-                  try {
-                    await handleValidateCandidateTestSlot(vieValidationConfirmTarget);
-                    setVieValidationConfirmTarget(null);
-                  } finally {
-                    setIsSavingVieValidation(false);
-                  }
-                }}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black cursor-pointer disabled:opacity-60 transition-all"
-              >
-                Oui — Validé
-              </button>
-              <button
-                type="button"
-                disabled={isSavingVieValidation}
-                onClick={async () => {
-                  setIsSavingVieValidation(true);
-                  try {
-                    await updateCandidate(vieValidationConfirmTarget.id, {
-                      test_slot_validation: null,
-                      updated_at: new Date().toISOString(),
-                    });
-                    toast.info(`${vieValidationConfirmTarget.first_name} ${vieValidationConfirmTarget.last_name} marqué Non validé`);
-                    setVieValidationConfirmTarget(null);
-                  } catch (err: any) {
-                    const msg = String(err?.message || '');
-                    const isNetworkOrServer = /521|520|522|523|524|502|503|504|web server is down|failed to fetch|<!doctype|<html/i.test(msg);
-                    toast.error(
-                      isNetworkOrServer
-                        ? 'Le serveur est momentanément indisponible. Veuillez réessayer dans quelques instants.'
-                        : (msg || 'Erreur lors de la mise à jour')
-                    );
-                  } finally {
-                    setIsSavingVieValidation(false);
-                  }
-                }}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-black cursor-pointer disabled:opacity-60 transition-all"
-              >
-                Non — Non validé
-              </button>
-            </div>
-
-            <button
-              type="button"
-              disabled={isSavingVieValidation}
-              onClick={() => setVieValidationConfirmTarget(null)}
-              className="w-full py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer transition-all"
+            <div
+              className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden p-6 space-y-5"
+              onClick={(e) => e.stopPropagation()}
             >
-              Annuler
-            </button>
+              <div className="space-y-1.5">
+                <h3 className="text-base font-black text-slate-900">
+                  Statut d'hébergement (Session Test)
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Joueur : <span className="font-bold text-slate-900">{vieValidationConfirmTarget.first_name} {vieValidationConfirmTarget.last_name}</span>.
+                  <br />
+                  Sélectionnez le statut d'hébergement pour la période de test :
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2.5 pt-1">
+                <button
+                  type="button"
+                  disabled={isSavingVieValidation}
+                  onClick={() => updateHostingStatus('pending')}
+                  className={cn(
+                    'w-full py-2.5 px-4 rounded-xl border text-xs font-black cursor-pointer disabled:opacity-60 transition-all flex items-center justify-between',
+                    currentHostingStatus === 'pending'
+                      ? 'bg-amber-100 border-amber-400 text-amber-900 ring-2 ring-amber-200'
+                      : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800'
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                    <span>En cours (Par défaut)</span>
+                  </span>
+                  {currentHostingStatus === 'pending' && (
+                    <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900">
+                      Actuel
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSavingVieValidation}
+                  onClick={async () => {
+                    setIsSavingVieValidation(true);
+                    try {
+                      await handleValidateCandidateTestSlot(vieValidationConfirmTarget);
+                      setVieValidationConfirmTarget(null);
+                    } finally {
+                      setIsSavingVieValidation(false);
+                    }
+                  }}
+                  className={cn(
+                    'w-full py-2.5 px-4 rounded-xl border text-xs font-black cursor-pointer disabled:opacity-60 transition-all flex items-center justify-between',
+                    currentHostingStatus === 'validated'
+                      ? 'bg-emerald-700 border-emerald-700 text-white ring-2 ring-emerald-200'
+                      : 'bg-emerald-600 hover:bg-emerald-700 border-emerald-600 text-white'
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-white" />
+                    <span>Validé pour hébergement</span>
+                  </span>
+                  {currentHostingStatus === 'validated' && (
+                    <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white">
+                      Actuel
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSavingVieValidation}
+                  onClick={() => updateHostingStatus('rejected')}
+                  className={cn(
+                    'w-full py-2.5 px-4 rounded-xl border text-xs font-black cursor-pointer disabled:opacity-60 transition-all flex items-center justify-between',
+                    currentHostingStatus === 'rejected'
+                      ? 'bg-rose-100 border-rose-400 text-rose-800 ring-2 ring-rose-200'
+                      : 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700'
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                    <span>Non validé</span>
+                  </span>
+                  {currentHostingStatus === 'rejected' && (
+                    <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-200/80 text-rose-900">
+                      Actuel
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                disabled={isSavingVieValidation}
+                onClick={() => setVieValidationConfirmTarget(null)}
+                className="w-full py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer transition-all"
+              >
+                Annuler
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {slotModalTarget && (
         <TestSlotChangeModal
@@ -5222,7 +5378,7 @@ export const RecruitmentV2Page: React.FC = () => {
                 {selectedCandidates.map(cand => (
                   <div key={cand.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded-lg hover:bg-slate-100">
                     <span className="font-bold text-slate-800">{cand.first_name} {cand.last_name}</span>
-                    <span className="text-[10px] text-slate-500 font-medium">{cand.primary_position} • {cand.age_category || 'U19'}</span>
+                    <span className="text-[10px] text-slate-500 font-medium">{cand.primary_position} • {cand.age_category || 'U18'}</span>
                   </div>
                 ))}
               </div>
@@ -5347,7 +5503,7 @@ export const RecruitmentV2Page: React.FC = () => {
                 {selectedCandidates.map(cand => (
                   <div key={cand.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded-lg hover:bg-slate-100">
                     <span className="font-bold text-slate-800">{cand.first_name} {cand.last_name}</span>
-                    <span className="text-[10px] text-slate-500 font-medium">{cand.primary_position} • {cand.age_category || 'U19'}</span>
+                    <span className="text-[10px] text-slate-500 font-medium">{cand.primary_position} • {cand.age_category || 'U18'}</span>
                   </div>
                 ))}
               </div>

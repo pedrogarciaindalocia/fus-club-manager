@@ -420,6 +420,17 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return hasSubModuleAccess('teams', 'read') || hasSubModuleAccess('teams', 'update');
     }
 
+    if (action === 'assign_operator') {
+      const normSys = String(authState.user?.system_role || '').toLowerCase();
+      return (
+        normSys === 'admin' ||
+        hasSpecificActionAccess('matches', 'assign_operator', 'read') ||
+        hasSpecificActionAccess('matches', 'assign_operator', 'create') ||
+        hasSpecificActionAccess('matches', 'assign_operator', 'update') ||
+        perms.includes('assign_operator')
+      );
+    }
+
     if (action === 'create_match' || action === 'plan_match' || action === 'schedule_match') {
       return (
         hasSpecificActionAccess('matches', 'plan_match', 'create') ||
@@ -454,7 +465,8 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (action === 'manage_matches') {
       return (
         hasSpecificActionAccess('matches', 'manage_match_played', 'update') ||
-        hasSubModuleAccess('matches', 'update')
+        hasSubModuleAccess('matches', 'update') ||
+        perms.includes('manage_matches')
       );
     }
 
@@ -506,7 +518,7 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const hasCategoryRestriction = Boolean(authState.userCategories && authState.userCategories.length > 0);
   const allowedCategories = hasCategoryRestriction
     ? authState.userCategories.map(c => normalizeAgeCategory(c))
-    : ['U7', 'U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U21', 'Senior', 'PRO'];
+    : ['U7', 'U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U21', 'U25', 'SENIOR', 'PRO'];
 
   const canManageCategory = (category: string | null | undefined): boolean => {
     // 0. Le Super Admin dispose d'un accès absolu sans restriction à toutes les catégories

@@ -26,7 +26,6 @@ import {
 } from '../../../components/metrics/PlayerPerformanceRadarChart';
 import { PlayerPerformanceEvolutionChart } from '../../../components/metrics/PlayerPerformanceEvolutionChart';
 import { PerformanceDateCalendarPicker } from './PerformanceDateCalendarPicker';
-import { AuditLogger } from '../../../services/auditLogger';
 import {
   playerPerformanceService,
   type PlayerPerformanceEvaluation,
@@ -787,23 +786,6 @@ export const PlayerMentionModal: React.FC<PlayerMentionModalProps> = ({
           currentJobTitle
         );
 
-        void AuditLogger.logUpdate(
-          'PLAYERS',
-          'PLAYER_PERFORMANCE',
-          updated.id,
-          previousSnapshot,
-          {
-            technique_score: updated.technique_score,
-            tactique_score: updated.tactique_score,
-            physique_score: updated.physique_score,
-            mental_score: updated.mental_score,
-            global_score: updated.global_score,
-            position_code: updated.position_code,
-            evaluation_date: updated.evaluation_date,
-          },
-          `Mise à jour performance Shortlist de ${player.full_name} (${formatReadableDate(perfSelectedDate)}) : ${updated.global_score}/10`
-        );
-
         await reloadPlayerEvaluations();
         setSelectedEvalId(updated.id);
         setIsEditingPerf(false);
@@ -838,19 +820,6 @@ export const PlayerMentionModal: React.FC<PlayerMentionModalProps> = ({
           currentJobTitle
         );
 
-        void AuditLogger.logCreate(
-          'PLAYERS',
-          'PLAYER_PERFORMANCE',
-          created.id,
-          {
-            player_id: created.player_id,
-            evaluation_date: created.evaluation_date,
-            position_code: created.position_code,
-            global_score: created.global_score,
-          },
-          `Enregistrement performance Shortlist de ${player.full_name} (${formatReadableDate(perfSelectedDate)}) : ${created.global_score}/10`
-        );
-
         await reloadPlayerEvaluations();
         setSelectedEvalId(created.id);
         setIsCreatingPerf(false);
@@ -874,18 +843,6 @@ export const PlayerMentionModal: React.FC<PlayerMentionModalProps> = ({
         playerId: player.id,
         matchId: ev.match_id || null,
       });
-
-      void AuditLogger.logDelete(
-        'PLAYERS',
-        'PLAYER_PERFORMANCE',
-        ev.id,
-        {
-          player_id: ev.player_id,
-          evaluation_date: ev.evaluation_date,
-          global_score: ev.global_score,
-        },
-        `Suppression performance Shortlist de ${player.full_name} (${formatReadableDate(ev.evaluation_date)})`
-      );
 
       await reloadPlayerEvaluations();
       setConfirmDeletePerf(false);

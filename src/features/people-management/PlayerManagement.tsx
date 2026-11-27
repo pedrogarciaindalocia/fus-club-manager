@@ -287,7 +287,7 @@ const PlayerManagement: React.FC = () => {
       if (age <= 17) return 'U17';
       if (age <= 18) return 'U18';
       if (age <= 21) return 'U21'; // 19, 20 et 21 ans sont en catégorie U21
-      if (age <= 23) return 'U23';
+      if (age <= 25) return 'U25';
     }
     return 'SENIOR';
   };
@@ -1575,22 +1575,20 @@ const PlayerManagement: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setRosterTab('active')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-                        rosterTab === 'active'
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${rosterTab === 'active'
                           ? 'bg-background text-foreground shadow-sm'
                           : 'text-muted-foreground hover:text-foreground'
-                      }`}
+                        }`}
                     >
                       Effectif Actif ({players.length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setRosterTab('departures')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
-                        rosterTab === 'departures'
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${rosterTab === 'departures'
                           ? 'bg-amber-600 text-white shadow-sm'
                           : 'text-muted-foreground hover:text-foreground'
-                      }`}
+                        }`}
                     >
                       <ArrowRightLeft className="w-3.5 h-3.5" />
                       <span>Sorties &amp; Transferts ({departures.length})</span>
@@ -1658,596 +1656,596 @@ const PlayerManagement: React.FC = () => {
             {/* Secondary Actions - Scrollable on mobile */}
             {rosterTab === 'active' && (
               <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0">
-              {/* Bouton mode sélection */}
-              <Button
-                variant={selectionMode ? 'default' : 'outline'}
-                onClick={() => { setSelectionMode(s => !s); setSelectedIds(new Set()); }}
-                className={`h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs gap-2 transition-all shrink-0 ${selectionMode ? 'bg-amber-500 hover:bg-amber-600 border-amber-500 text-white shadow-lg' : 'border-slate-200 text-slate-500'}`}
-              >
-                <CheckSquare className="w-4 h-4" />
-                {selectionMode ? `${selectedIds.size}` : <span className="hidden sm:inline">Sélectionner</span>}
-              </Button>
-
-              {selectionMode && selectedIds.size > 0 && (
+                {/* Bouton mode sélection */}
                 <Button
-                  variant="destructive"
-                  disabled={isBulkDeleting}
-                  onClick={async () => {
-                    if (!canDeletePlayer) {
-                      toast.error("Suppression non autorisée.");
-                      return;
-                    }
-                    const toDelete = paginatedPlayers
-                      .filter(p => selectedIds.has(p.id))
-                      .filter(p => {
-                        const cat = teams.find(t => t.id === p.team_id)?.category || (p as any).category;
-                        return canManageCategory(cat);
-                      })
-                      .map(p => p.id);
-                    if (toDelete.length === 0) {
-                      toast.error("Aucun joueur supprimable dans vos catégories assignées.");
-                      return;
-                    }
-                    if (!confirm(`Supprimer ${toDelete.length} joueur${toDelete.length > 1 ? 's' : ''} et leurs photos définitivement ?`)) return;
-                    await bulkDeletePlayers(toDelete);
-                    setSelectedIds(new Set());
-                    setSelectionMode(false);
-                  }}
-                  className="h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs gap-2 bg-red-600 hover:bg-red-700 shadow-lg shrink-0"
+                  variant={selectionMode ? 'default' : 'outline'}
+                  onClick={() => { setSelectionMode(s => !s); setSelectedIds(new Set()); }}
+                  className={`h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs gap-2 transition-all shrink-0 ${selectionMode ? 'bg-amber-500 hover:bg-amber-600 border-amber-500 text-white shadow-lg' : 'border-slate-200 text-slate-500'}`}
                 >
-                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Supprimer {selectedIds.size}</span>
-                  <span className="sm:hidden">{selectedIds.size}</span>
+                  <CheckSquare className="w-4 h-4" />
+                  {selectionMode ? `${selectedIds.size}` : <span className="hidden sm:inline">Sélectionner</span>}
                 </Button>
-              )}
 
-              {selectionMode && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const selectableIds = paginatedPlayers
-                      .filter(p => {
+                {selectionMode && selectedIds.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    disabled={isBulkDeleting}
+                    onClick={async () => {
+                      if (!canDeletePlayer) {
+                        toast.error("Suppression non autorisée.");
+                        return;
+                      }
+                      const toDelete = paginatedPlayers
+                        .filter(p => selectedIds.has(p.id))
+                        .filter(p => {
+                          const cat = teams.find(t => t.id === p.team_id)?.category || (p as any).category;
+                          return canManageCategory(cat);
+                        })
+                        .map(p => p.id);
+                      if (toDelete.length === 0) {
+                        toast.error("Aucun joueur supprimable dans vos catégories assignées.");
+                        return;
+                      }
+                      if (!confirm(`Supprimer ${toDelete.length} joueur${toDelete.length > 1 ? 's' : ''} et leurs photos définitivement ?`)) return;
+                      await bulkDeletePlayers(toDelete);
+                      setSelectedIds(new Set());
+                      setSelectionMode(false);
+                    }}
+                    className="h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs gap-2 bg-red-600 hover:bg-red-700 shadow-lg shrink-0"
+                  >
+                    {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    <span className="hidden sm:inline">Supprimer {selectedIds.size}</span>
+                    <span className="sm:hidden">{selectedIds.size}</span>
+                  </Button>
+                )}
+
+                {selectionMode && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const selectableIds = paginatedPlayers
+                        .filter(p => {
+                          const cat = getPlayerCategory(p);
+                          return canDeletePlayer && canManageCategory(cat);
+                        })
+                        .map(p => p.id);
+                      const allSelected = selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id));
+                      setSelectedIds(allSelected ? new Set() : new Set(selectableIds));
+                    }}
+                    className="h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs gap-2 border-slate-200 shrink-0"
+                  >
+                    {(() => {
+                      const selectable = paginatedPlayers.filter(p => {
                         const cat = getPlayerCategory(p);
                         return canDeletePlayer && canManageCategory(cat);
-                      })
-                      .map(p => p.id);
-                    const allSelected = selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id));
-                    setSelectedIds(allSelected ? new Set() : new Set(selectableIds));
-                  }}
-                  className="h-9 sm:h-11 px-3 sm:px-5 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs gap-2 border-slate-200 shrink-0"
-                >
-                  {(() => {
-                    const selectable = paginatedPlayers.filter(p => {
-                      const cat = getPlayerCategory(p);
-                      return canDeletePlayer && canManageCategory(cat);
-                    });
-                    return selectable.length > 0 && selectable.every(p => selectedIds.has(p.id)) ? 'Tout désélect.' : 'Tout sélect.';
-                  })()}
-                </Button>
-              )}
-            </div>
+                      });
+                      return selectable.length > 0 && selectable.every(p => selectedIds.has(p.id)) ? 'Tout désélect.' : 'Tout sélect.';
+                    })()}
+                  </Button>
+                )}
+              </div>
             )}
           </div>
 
           {rosterTab === 'active' && (
-          <>
-          {/* Filters Bar */}
-          <div className="flex flex-col gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border shadow-sm">
-            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Rechercher par nom ou numéro..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 h-10 sm:h-11 bg-secondary/30 border-transparent focus:bg-white transition-all rounded-xl font-medium text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-              <div className="flex bg-secondary/30 p-1 rounded-xl w-full overflow-x-auto no-scrollbar">
-                {visibleFilterCategories.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setCategoryFilter(cat)}
-                    className={`flex-1 sm:flex-none px-2 sm:px-3 py-2 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${categoryFilter === cat ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex bg-secondary/30 p-1 rounded-xl w-full sm:w-auto">
-                {(['ALL', 'GK', 'DF', 'MF', 'FW'] as const).map((pos) => (
-                  <button
-                    key={pos}
-                    onClick={() => setPositionFilter(pos)}
-                    className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${positionFilter === pos ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                  >
-                    {pos}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Content Area */}
-          {displayMode === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {paginatedPlayers.map((player) => (
-                <div key={player.id}>
-                  <Card className="group relative overflow-hidden border-secondary hover:border-primary/20 hover:shadow-2xl transition-all duration-500 bg-white rounded-[2rem]">
-                    <CardContent className="p-0">
-                      {/* Card Header Illustration */}
-                      <div className="h-24 bg-gradient-to-br from-secondary to-secondary/50 relative overflow-hidden">
-                        {/* Club Logo + Category Badge stacked */}
-                        {mainClub?.logo_url && (
-                          <div className="absolute top-3 left-3 flex flex-col items-center gap-2">
-                            <div className="w-16 h-16 rounded-full bg-white shadow-lg p-2">
-                              <img src={mainClub.logo_url} alt="Club" className="w-full h-full object-contain rounded-full" />
-                            </div>
-                            <Badge className="bg-white/90 backdrop-blur-sm text-primary font-black text-[10px] uppercase tracking-widest border-none shadow-md px-3 py-1">
-                              {getPlayerCategory(player)}
-                            </Badge>
-                          </div>
-                        )}
-                        <div className="absolute top-3 right-4 text-3xl font-black italic text-black/5 select-none transition-all group-hover:text-primary/10">
-                          {(player.jersey_number !== undefined && player.jersey_number !== null) ? player.jersey_number : '—'}
-                        </div>
-                      </div>
-
-                      <div className="px-6 pb-6 -mt-8 relative z-10 text-center">
-                        <div className="w-20 h-20 rounded-2xl bg-white border-4 border-white shadow-xl overflow-hidden mx-auto mb-4 group-hover:scale-105 transition-transform duration-500">
-                          <img src={(player.photo_url && player.photo_url !== 'null') ? player.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(player.full_name)}&background=random&color=fff&size=200`} alt={player.full_name} className="w-full h-full object-cover" />
-                        </div>
-
-                        <h3 className="font-black text-lg tracking-tight uppercase group-hover:text-primary transition-colors truncate">{player.full_name}</h3>
-                        <div className="flex items-center justify-center mt-1 mb-2">
-                          <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-lg border ${getPositionDetails(player.position).badgeBg}`}>
-                            {getPositionDetails(player.position).code} — {getPositionDetails(player.position).label}
-                          </span>
-                        </div>
-
-                        {/* Badge Statut Effectif */}
-                        <div className="mb-3 flex items-center justify-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-2.5 py-1">
-                          <Sparkles className="w-3 h-3 text-emerald-600" />
-                          <span className="text-[9px] font-black text-emerald-700 uppercase tracking-wider">
-                            Effectif Officiel
-                          </span>
-                        </div>
-
-                        {/* Badge surclassement ou sous-classement actif */}
-                        {activeByPlayerId[player.id] && (() => {
-                          const activeMob = activeByPlayerId[player.id];
-                          return (
-                            <div className="mb-3 flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 border bg-orange-50 border-orange-200 text-orange-600">
-                              <ArrowUpCircle className="w-3 h-3 text-orange-500" />
-                              <span className="text-[10px] font-black uppercase tracking-widest">
-                                SURCLASSÉ → {activeMob.target_category}
-                              </span>
-                            </div>
-                          );
-                        })()}
-
-                        <div className="flex items-center justify-between pt-4 border-t border-secondary">
-                          <div className="flex gap-2">
-                            <Button variant="secondary" size="icon" onClick={() => handleViewPlayer(player)} className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-primary hover:text-white transition-all" title="Consulter le détail">
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            {canUpdatePlayer && canManageCategory(getPlayerCategory(player)) && (
-                              <Button variant="secondary" size="icon" onClick={() => handleOpenEdit(player)} className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-primary hover:text-white transition-all" title="Modifier">
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                            )}
-                            {canReadSurclass && canManageCategory(getPlayerCategory(player)) && (() => {
-                              const activeMob = activeByPlayerId[player.id];
-                              return (
-                                <Button
-                                  variant="secondary"
-                                  size="icon"
-                                  onClick={() => handleOpenSurclassement(player)}
-                                  title={activeMob ? 'Gérer le surclassement (Matchs planifiés)' : 'Surclasser sur des matchs à venir'}
-                                  className={`h-9 w-9 rounded-xl transition-all ${activeMob
-                                    ? 'bg-orange-100 text-orange-600 hover:bg-orange-200'
-                                    : 'bg-secondary/50 hover:bg-orange-500 hover:text-white'
-                                    }`}
-                                >
-                                  {activeMob
-                                    ? <RotateCcw className="w-4 h-4" />
-                                    : <ArrowUpCircle className="w-4 h-4" />
-                                  }
-                                </Button>
-                              );
-                            })()}
-                            {canCreateDeparture && canManageCategory(getPlayerCategory(player)) && (
-                              <Button
-                                variant="secondary"
-                                size="icon"
-                                onClick={() => handleOpenDepartureModal('create', { player })}
-                                title="Déclarer une sortie / transfert"
-                                className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-amber-600 hover:text-white transition-all"
-                              >
-                                <ArrowRightLeft className="w-4 h-4" />
-                              </Button>
-                            )}
-                          </div>
-                          {selectionMode ? (
-                            canDeletePlayer && canManageCategory(getPlayerCategory(player)) ? (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setSelectedIds(prev => { const n = new Set(prev); n.has(player.id) ? n.delete(player.id) : n.add(player.id); return n; }); }}
-                                className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all ${selectedIds.has(player.id) ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500'}`}
-                              >
-                                {selectedIds.has(player.id) ? <CheckSquare className="w-4 h-4" /> : <div className="w-4 h-4 rounded border-2 border-current" />}
-                              </button>
-                            ) : (
-                              <div className="w-9 h-9" />
-                            )
-                          ) : (
-                            <div className="flex items-center gap-1">
-                              {!canManageCategory(getPlayerCategory(player)) ? (
-                                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
-                                  Consultation seule
-                                </span>
-                              ) : (
-                                <>
-                                  {canDeletePlayer && (
-                                    <Button variant="ghost" size="icon" onClick={() => setPlayerToDelete(player)} title="Supprimer définitivement" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-all">
-                                      <Trash2 className="w-4 h-4 text-rose-600" />
-                                    </Button>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="bg-white border rounded-[2rem] overflow-hidden shadow-sm">
-              <table className="w-full">
-                <thead className="bg-secondary/10 border-b">
-                  <tr>
-                    <th className="text-left px-8 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        Joueur
-                        {mainClub?.logo_url && categoryFilter !== 'ALL' && (
-                          <img src={mainClub.logo_url} alt="Club" className="w-6 h-6 object-contain" />
-                        )}
-                      </div>
-                    </th>
-                    <th className="text-left py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Nationalité</th>
-                    <th className="text-left py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Position</th>
-                    <th className="text-left py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Catégorie</th>
-                    <th className="text-right px-8 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-secondary/30">
-                  {paginatedPlayers.map((player) => (
-                    <tr key={player.id} className="group hover:bg-secondary/5 transition-colors">
-                      <td className="px-8 py-3">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-secondary/30 overflow-hidden border-2 border-white shadow-md">
-                            <img src={(player.photo_url && player.photo_url !== 'null') ? player.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(player.full_name)}&background=random&color=fff&size=200`} className="w-full h-full object-cover" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <p className="font-black text-sm uppercase italic tracking-tighter leading-none">{player.full_name}</p>
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 text-[8px] font-black uppercase">
-                                ⭐ Signé FUS
-                              </span>
-                            </div>
-                            <p className="text-[10px] font-bold text-muted-foreground mt-1 uppercase">
-                              #{(player.jersey_number !== undefined && player.jersey_number !== null) ? player.jersey_number : '—'}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 text-xs font-bold">{player.nationality}</td>
-                      <td className="py-3">
-                        <span
-                          className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md border shadow-2xs ${getPositionDetails(player.position).badgeBg}`}
-                          title={getPositionDetails(player.position).label}
-                        >
-                          <span>{getPositionDetails(player.position).code}</span>
-                          <span className="opacity-75 font-semibold text-[8px] hidden 2xl:inline">· {getPositionDetails(player.position).label}</span>
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[9px] font-black border-primary/20 text-primary uppercase">
-                            {getPlayerCategory(player)}
-                          </Badge>
-                          {activeByPlayerId[player.id] && (() => {
-                            const activeMob = activeByPlayerId[player.id];
-                            const isSousClass = isLowerCategory(activeMob.original_category, activeMob.target_category);
-                            return (
-                              <Badge className={`text-[9px] font-black uppercase gap-1 border ${isSousClass
-                                ? 'bg-sky-100 text-sky-700 border-sky-200'
-                                : 'bg-orange-100 text-orange-600 border-orange-200'
-                                }`}>
-                                {isSousClass ? (
-                                  <ArrowDownCircle className="w-2.5 h-2.5 text-sky-600" />
-                                ) : (
-                                  <ArrowUpCircle className="w-2.5 h-2.5 text-orange-500" />
-                                )}
-                                {activeMob.target_category}
-                              </Badge>
-                            );
-                          })()}
-                        </div>
-                      </td>
-                      <td className="px-8 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {selectionMode ? (
-                            canDeletePlayer && canManageCategory(getPlayerCategory(player)) ? (
-                              <button
-                                onClick={() => setSelectedIds(prev => { const n = new Set(prev); n.has(player.id) ? n.delete(player.id) : n.add(player.id); return n; })}
-                                className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all ${selectedIds.has(player.id) ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500'}`}
-                              >
-                                {selectedIds.has(player.id) ? <CheckSquare className="w-4 h-4" /> : <div className="w-4 h-4 rounded border-2 border-current" />}
-                              </button>
-                            ) : (
-                              <div className="w-9 h-9" />
-                            )
-                          ) : (
-                            <>
-                              <Button variant="ghost" size="icon" onClick={() => handleViewPlayer(player)} className="h-9 w-9 rounded-xl hover:bg-white hover:shadow-md transition-all" title="Consulter le détail">
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                              {canReadPlayerStats && (
-                                <Button variant="ghost" size="icon" onClick={() => setCalendarModalPlayer(player)} className="h-9 w-9 rounded-xl hover:bg-blue-50 hover:text-blue-600 hover:shadow-md transition-all" title="Calendrier & Stats Matchs Joueur">
-                                  <Calendar className="w-4 h-4 text-blue-600" />
-                                </Button>
-                              )}
-                              {!canManageCategory(getPlayerCategory(player)) ? (
-                                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200 ml-1">
-                                  Consultation seule
-                                </span>
-                              ) : (
-                                <>
-                                  {canUpdatePlayer && (
-                                    <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(player)} className="h-9 w-9 rounded-xl hover:bg-white hover:shadow-md transition-all" title="Modifier">
-                                      <Edit2 className="w-4 h-4" />
-                                    </Button>
-                                  )}
-                                  {canReadSurclass && (() => {
-                                    const activeMob = activeByPlayerId[player.id];
-                                    return (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleOpenSurclassement(player)}
-                                        title={activeMob ? 'Gérer le surclassement (Matchs planifiés)' : 'Surclasser sur des matchs à venir'}
-                                        className={`h-9 w-9 rounded-xl transition-all ${activeMob
-                                          ? 'text-orange-500 bg-orange-50 hover:bg-orange-100'
-                                          : 'text-muted-foreground hover:text-orange-500 hover:bg-orange-50'
-                                          }`}
-                                      >
-                                        {activeMob
-                                          ? <RotateCcw className="w-4 h-4" />
-                                          : <ArrowUpCircle className="w-4 h-4" />
-                                        }
-                                      </Button>
-                                    );
-                                  })()}
-                                  {canCreateDeparture && (
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => handleOpenDepartureModal('create', { player })}
-                                      title="Déclarer une sortie / transfert"
-                                      className="h-9 w-9 rounded-xl text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-all"
-                                    >
-                                      <ArrowRightLeft className="w-4 h-4" />
-                                    </Button>
-                                  )}
-                                  {canDeletePlayer && (
-                                    <Button variant="ghost" size="icon" onClick={() => setPlayerToDelete(player)} title="Supprimer définitivement" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-all">
-                                      <Trash2 className="w-4 h-4 text-rose-600" />
-                                    </Button>
-                                  )}
-                                </>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6 pt-6">
-              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-60">
-                Affichage {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredPlayers.length)} sur {filteredPlayers.length}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="w-9 h-9 rounded-xl bg-white border-secondary"><ChevronLeft className="w-4 h-4" /></Button>
-                {Array.from({ length: totalPages }).map((_, i) => (
-                  <Button key={i} variant={currentPage === i + 1 ? 'default' : 'ghost'} size="sm" onClick={() => setCurrentPage(i + 1)} className={`w-9 h-9 rounded-xl font-black text-[11px] ${currentPage === i + 1 ? 'shadow-lg shadow-primary/20 bg-primary' : 'bg-white border-secondary border'}`}>{i + 1}</Button>
-                ))}
-                <Button variant="outline" size="icon" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} className="w-9 h-9 rounded-xl bg-white border-secondary"><ChevronRight className="w-4 h-4" /></Button>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase text-muted-foreground opacity-50">Par page:</span>
-                <select value={pageSize} onChange={(e) => setPageSize(parseInt(e.target.value))} className="h-9 w-16 rounded-xl bg-white border border-secondary font-black text-xs px-2 appearance-none cursor-pointer text-center">
-                  {[10, 15, 20, 25, 50].map(v => <option key={v} value={v}>{v}</option>)}
-                </select>
-              </div>
-            </div>
-          )}
-            </>
-            )}
-
-            {rosterTab === 'departures' && canReadDeparture && (
-              <div className="space-y-4">
-                {/* Barre de recherche du registre des sorties */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-card border shadow-sm">
+            <>
+              {/* Filters Bar */}
+              <div className="flex flex-col gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border shadow-sm">
+                <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
-                      placeholder="Rechercher un joueur, un club de destination ou un type de sortie..."
-                      value={departureSearch}
-                      onChange={e => setDepartureSearch(e.target.value)}
-                      className="pl-10 h-10 bg-secondary/30 border-transparent focus:bg-background rounded-xl text-sm"
+                      placeholder="Rechercher par nom ou numéro..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10 h-10 sm:h-11 bg-secondary/30 border-transparent focus:bg-white transition-all rounded-xl font-medium text-sm"
                     />
                   </div>
                 </div>
 
-                {departuresLoading ? (
-                  <div className="p-10 text-center rounded-2xl bg-card border text-sm text-muted-foreground">
-                    Chargement des sorties et transferts…
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+                  <div className="flex bg-secondary/30 p-1 rounded-xl w-full overflow-x-auto no-scrollbar">
+                    {visibleFilterCategories.map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setCategoryFilter(cat)}
+                        className={`flex-1 sm:flex-none px-2 sm:px-3 py-2 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${categoryFilter === cat ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
                   </div>
-                ) : filteredDepartures.length === 0 ? (
-                  <div className="p-10 text-center rounded-2xl bg-card border border-dashed space-y-2">
-                    <ArrowRightLeft className="w-8 h-8 text-amber-500 mx-auto" />
-                    <p className="text-sm font-bold text-foreground">
-                      Aucune sortie ou transfert enregistré
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Les transferts, prêts, fins de contrat et libérations apparaîtront ici.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="bg-card border rounded-2xl overflow-hidden shadow-sm">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                            <th className="py-3 px-4">Joueur</th>
-                            <th className="py-3 px-4">Type</th>
-                            <th className="py-3 px-4">Destination</th>
-                            <th className="py-3 px-4">Date</th>
-                            <th className="py-3 px-4">Indemnité</th>
-                            <th className="py-3 px-4">Statut</th>
-                            <th className="py-3 px-4 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border/60">
-                          {filteredDepartures.map(dep => {
-                            const typeMeta = DEPARTURE_TYPE_META[dep.departure_type];
-                            const statusMeta = DEPARTURE_STATUS_META[dep.status];
-                            const depCat = (dep.team_id && teams.find(t => t.id === dep.team_id)?.category) || 'SENIOR';
-                            const canManageDepCat = canManageCategory(depCat);
 
-                            return (
-                              <tr key={dep.id} className="hover:bg-muted/20 transition-colors">
-                                <td className="py-2.5 px-4">
-                                  <div className="flex items-center gap-2.5">
-                                    {dep.player?.photo_url ? (
-                                      <img
-                                        src={dep.player.photo_url}
-                                        alt={dep.player.full_name}
-                                        className="w-8 h-8 rounded-full object-cover border"
-                                      />
-                                    ) : (
-                                      <div className="w-8 h-8 rounded-full bg-amber-500/15 text-amber-600 flex items-center justify-center text-xs font-black">
-                                        {(dep.player?.full_name || 'J')[0]}
-                                      </div>
-                                    )}
-                                    <div className="min-w-0">
-                                      <p className="text-xs font-bold text-foreground truncate">
-                                        {dep.player?.full_name || 'Joueur'}
-                                      </p>
-                                      <p className="text-[10px] text-muted-foreground truncate">
-                                        {depCat} · {dep.player?.position || 'Poste N/A'}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="py-2.5 px-4">
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeMeta?.badgeClass || ''}`}>
-                                    {typeMeta?.label || dep.departure_type}
+                  <div className="flex bg-secondary/30 p-1 rounded-xl w-full sm:w-auto">
+                    {(['ALL', 'GK', 'DF', 'MF', 'FW'] as const).map((pos) => (
+                      <button
+                        key={pos}
+                        onClick={() => setPositionFilter(pos)}
+                        className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${positionFilter === pos ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                      >
+                        {pos}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Content Area */}
+              {displayMode === 'grid' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {paginatedPlayers.map((player) => (
+                    <div key={player.id}>
+                      <Card className="group relative overflow-hidden border-secondary hover:border-primary/20 hover:shadow-2xl transition-all duration-500 bg-white rounded-[2rem]">
+                        <CardContent className="p-0">
+                          {/* Card Header Illustration */}
+                          <div className="h-24 bg-gradient-to-br from-secondary to-secondary/50 relative overflow-hidden">
+                            {/* Club Logo + Category Badge stacked */}
+                            {mainClub?.logo_url && (
+                              <div className="absolute top-3 left-3 flex flex-col items-center gap-2">
+                                <div className="w-16 h-16 rounded-full bg-white shadow-lg p-2">
+                                  <img src={mainClub.logo_url} alt="Club" className="w-full h-full object-contain rounded-full" />
+                                </div>
+                                <Badge className="bg-white/90 backdrop-blur-sm text-primary font-black text-[10px] uppercase tracking-widest border-none shadow-md px-3 py-1">
+                                  {getPlayerCategory(player)}
+                                </Badge>
+                              </div>
+                            )}
+                            <div className="absolute top-3 right-4 text-3xl font-black italic text-black/5 select-none transition-all group-hover:text-primary/10">
+                              {(player.jersey_number !== undefined && player.jersey_number !== null) ? player.jersey_number : '—'}
+                            </div>
+                          </div>
+
+                          <div className="px-6 pb-6 -mt-8 relative z-10 text-center">
+                            <div className="w-20 h-20 rounded-2xl bg-white border-4 border-white shadow-xl overflow-hidden mx-auto mb-4 group-hover:scale-105 transition-transform duration-500">
+                              <img src={(player.photo_url && player.photo_url !== 'null') ? player.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(player.full_name)}&background=random&color=fff&size=200`} alt={player.full_name} className="w-full h-full object-cover" />
+                            </div>
+
+                            <h3 className="font-black text-lg tracking-tight uppercase group-hover:text-primary transition-colors truncate">{player.full_name}</h3>
+                            <div className="flex items-center justify-center mt-1 mb-2">
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-lg border ${getPositionDetails(player.position).badgeBg}`}>
+                                {getPositionDetails(player.position).code} — {getPositionDetails(player.position).label}
+                              </span>
+                            </div>
+
+                            {/* Badge Statut Effectif */}
+                            <div className="mb-3 flex items-center justify-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-2.5 py-1">
+                              <Sparkles className="w-3 h-3 text-emerald-600" />
+                              <span className="text-[9px] font-black text-emerald-700 uppercase tracking-wider">
+                                Effectif Officiel
+                              </span>
+                            </div>
+
+                            {/* Badge surclassement ou sous-classement actif */}
+                            {activeByPlayerId[player.id] && (() => {
+                              const activeMob = activeByPlayerId[player.id];
+                              return (
+                                <div className="mb-3 flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 border bg-orange-50 border-orange-200 text-orange-600">
+                                  <ArrowUpCircle className="w-3 h-3 text-orange-500" />
+                                  <span className="text-[10px] font-black uppercase tracking-widest">
+                                    SURCLASSÉ → {activeMob.target_category}
                                   </span>
-                                </td>
-                                <td className="py-2.5 px-4 text-xs font-medium text-foreground">
-                                  <span className="inline-flex items-center gap-1">
-                                    <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
-                                    {dep.destination_club || '—'}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-4 text-xs text-muted-foreground font-mono">
-                                  {dep.departure_date}
-                                </td>
-                                <td className="py-2.5 px-4 text-xs font-bold text-foreground">
-                                  {dep.transfer_fee !== null && dep.transfer_fee !== undefined ? (
-                                    <span className="inline-flex items-center gap-1">
-                                      <Coins className="w-3.5 h-3.5 text-amber-500" />
-                                      {dep.transfer_fee.toLocaleString('fr-FR')} {dep.currency}
+                                </div>
+                              );
+                            })()}
+
+                            <div className="flex items-center justify-between pt-4 border-t border-secondary">
+                              <div className="flex gap-2">
+                                <Button variant="secondary" size="icon" onClick={() => handleViewPlayer(player)} className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-primary hover:text-white transition-all" title="Consulter le détail">
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                                {canUpdatePlayer && canManageCategory(getPlayerCategory(player)) && (
+                                  <Button variant="secondary" size="icon" onClick={() => handleOpenEdit(player)} className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-primary hover:text-white transition-all" title="Modifier">
+                                    <Edit2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                {canReadSurclass && canManageCategory(getPlayerCategory(player)) && (() => {
+                                  const activeMob = activeByPlayerId[player.id];
+                                  return (
+                                    <Button
+                                      variant="secondary"
+                                      size="icon"
+                                      onClick={() => handleOpenSurclassement(player)}
+                                      title={activeMob ? 'Gérer le surclassement (Matchs planifiés)' : 'Surclasser sur des matchs à venir'}
+                                      className={`h-9 w-9 rounded-xl transition-all ${activeMob
+                                        ? 'bg-orange-100 text-orange-600 hover:bg-orange-200'
+                                        : 'bg-secondary/50 hover:bg-orange-500 hover:text-white'
+                                        }`}
+                                    >
+                                      {activeMob
+                                        ? <RotateCcw className="w-4 h-4" />
+                                        : <ArrowUpCircle className="w-4 h-4" />
+                                      }
+                                    </Button>
+                                  );
+                                })()}
+                                {canCreateDeparture && canManageCategory(getPlayerCategory(player)) && (
+                                  <Button
+                                    variant="secondary"
+                                    size="icon"
+                                    onClick={() => handleOpenDepartureModal('create', { player })}
+                                    title="Déclarer une sortie / transfert"
+                                    className="h-9 w-9 rounded-xl bg-secondary/50 hover:bg-amber-600 hover:text-white transition-all"
+                                  >
+                                    <ArrowRightLeft className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                              {selectionMode ? (
+                                canDeletePlayer && canManageCategory(getPlayerCategory(player)) ? (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setSelectedIds(prev => { const n = new Set(prev); n.has(player.id) ? n.delete(player.id) : n.add(player.id); return n; }); }}
+                                    className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all ${selectedIds.has(player.id) ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500'}`}
+                                  >
+                                    {selectedIds.has(player.id) ? <CheckSquare className="w-4 h-4" /> : <div className="w-4 h-4 rounded border-2 border-current" />}
+                                  </button>
+                                ) : (
+                                  <div className="w-9 h-9" />
+                                )
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  {!canManageCategory(getPlayerCategory(player)) ? (
+                                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
+                                      Consultation seule
                                     </span>
                                   ) : (
-                                    <span className="text-muted-foreground">—</span>
+                                    <>
+                                      {canDeletePlayer && (
+                                        <Button variant="ghost" size="icon" onClick={() => setPlayerToDelete(player)} title="Supprimer définitivement" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-all">
+                                          <Trash2 className="w-4 h-4 text-rose-600" />
+                                        </Button>
+                                      )}
+                                    </>
                                   )}
-                                </td>
-                                <td className="py-2.5 px-4">
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusMeta?.badgeClass || ''}`}>
-                                    {statusMeta?.label || dep.status}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white border rounded-[2rem] overflow-hidden shadow-sm">
+                  <table className="w-full">
+                    <thead className="bg-secondary/10 border-b">
+                      <tr>
+                        <th className="text-left px-8 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            Joueur
+                            {mainClub?.logo_url && categoryFilter !== 'ALL' && (
+                              <img src={mainClub.logo_url} alt="Club" className="w-6 h-6 object-contain" />
+                            )}
+                          </div>
+                        </th>
+                        <th className="text-left py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Nationalité</th>
+                        <th className="text-left py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Position</th>
+                        <th className="text-left py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Catégorie</th>
+                        <th className="text-right px-8 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-secondary/30">
+                      {paginatedPlayers.map((player) => (
+                        <tr key={player.id} className="group hover:bg-secondary/5 transition-colors">
+                          <td className="px-8 py-3">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 rounded-xl bg-secondary/30 overflow-hidden border-2 border-white shadow-md">
+                                <img src={(player.photo_url && player.photo_url !== 'null') ? player.photo_url : `https://ui-avatars.com/api/?name=${encodeURIComponent(player.full_name)}&background=random&color=fff&size=200`} className="w-full h-full object-cover" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-black text-sm uppercase italic tracking-tighter leading-none">{player.full_name}</p>
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 text-[8px] font-black uppercase">
+                                    ⭐ Signé FUS
                                   </span>
-                                </td>
-                                <td className="py-2.5 px-4 text-right">
-                                  <div className="flex items-center justify-end gap-1">
+                                </div>
+                                <p className="text-[10px] font-bold text-muted-foreground mt-1 uppercase">
+                                  #{(player.jersey_number !== undefined && player.jersey_number !== null) ? player.jersey_number : '—'}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 text-xs font-bold">{player.nationality}</td>
+                          <td className="py-3">
+                            <span
+                              className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-md border shadow-2xs ${getPositionDetails(player.position).badgeBg}`}
+                              title={getPositionDetails(player.position).label}
+                            >
+                              <span>{getPositionDetails(player.position).code}</span>
+                              <span className="opacity-75 font-semibold text-[8px] hidden 2xl:inline">· {getPositionDetails(player.position).label}</span>
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[9px] font-black border-primary/20 text-primary uppercase">
+                                {getPlayerCategory(player)}
+                              </Badge>
+                              {activeByPlayerId[player.id] && (() => {
+                                const activeMob = activeByPlayerId[player.id];
+                                const isSousClass = isLowerCategory(activeMob.original_category, activeMob.target_category);
+                                return (
+                                  <Badge className={`text-[9px] font-black uppercase gap-1 border ${isSousClass
+                                    ? 'bg-sky-100 text-sky-700 border-sky-200'
+                                    : 'bg-orange-100 text-orange-600 border-orange-200'
+                                    }`}>
+                                    {isSousClass ? (
+                                      <ArrowDownCircle className="w-2.5 h-2.5 text-sky-600" />
+                                    ) : (
+                                      <ArrowUpCircle className="w-2.5 h-2.5 text-orange-500" />
+                                    )}
+                                    {activeMob.target_category}
+                                  </Badge>
+                                );
+                              })()}
+                            </div>
+                          </td>
+                          <td className="px-8 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {selectionMode ? (
+                                canDeletePlayer && canManageCategory(getPlayerCategory(player)) ? (
+                                  <button
+                                    onClick={() => setSelectedIds(prev => { const n = new Set(prev); n.has(player.id) ? n.delete(player.id) : n.add(player.id); return n; })}
+                                    className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all ${selectedIds.has(player.id) ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500'}`}
+                                  >
+                                    {selectedIds.has(player.id) ? <CheckSquare className="w-4 h-4" /> : <div className="w-4 h-4 rounded border-2 border-current" />}
+                                  </button>
+                                ) : (
+                                  <div className="w-9 h-9" />
+                                )
+                              ) : (
+                                <>
+                                  <Button variant="ghost" size="icon" onClick={() => handleViewPlayer(player)} className="h-9 w-9 rounded-xl hover:bg-white hover:shadow-md transition-all" title="Consulter le détail">
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                  {canReadPlayerStats && (
+                                    <Button variant="ghost" size="icon" onClick={() => setCalendarModalPlayer(player)} className="h-9 w-9 rounded-xl hover:bg-blue-50 hover:text-blue-600 hover:shadow-md transition-all" title="Calendrier & Stats Matchs Joueur">
+                                      <Calendar className="w-4 h-4 text-blue-600" />
+                                    </Button>
+                                  )}
+                                  {!canManageCategory(getPlayerCategory(player)) ? (
+                                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200 ml-1">
+                                      Consultation seule
+                                    </span>
+                                  ) : (
+                                    <>
+                                      {canUpdatePlayer && (
+                                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(player)} className="h-9 w-9 rounded-xl hover:bg-white hover:shadow-md transition-all" title="Modifier">
+                                          <Edit2 className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      {canReadSurclass && (() => {
+                                        const activeMob = activeByPlayerId[player.id];
+                                        return (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => handleOpenSurclassement(player)}
+                                            title={activeMob ? 'Gérer le surclassement (Matchs planifiés)' : 'Surclasser sur des matchs à venir'}
+                                            className={`h-9 w-9 rounded-xl transition-all ${activeMob
+                                              ? 'text-orange-500 bg-orange-50 hover:bg-orange-100'
+                                              : 'text-muted-foreground hover:text-orange-500 hover:bg-orange-50'
+                                              }`}
+                                          >
+                                            {activeMob
+                                              ? <RotateCcw className="w-4 h-4" />
+                                              : <ArrowUpCircle className="w-4 h-4" />
+                                            }
+                                          </Button>
+                                        );
+                                      })()}
+                                      {canCreateDeparture && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => handleOpenDepartureModal('create', { player })}
+                                          title="Déclarer une sortie / transfert"
+                                          className="h-9 w-9 rounded-xl text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-all"
+                                        >
+                                          <ArrowRightLeft className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      {canDeletePlayer && (
+                                        <Button variant="ghost" size="icon" onClick={() => setPlayerToDelete(player)} title="Supprimer définitivement" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-all">
+                                          <Trash2 className="w-4 h-4 text-rose-600" />
+                                        </Button>
+                                      )}
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6 pt-6">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-60">
+                    Affichage {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredPlayers.length)} sur {filteredPlayers.length}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="icon" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="w-9 h-9 rounded-xl bg-white border-secondary"><ChevronLeft className="w-4 h-4" /></Button>
+                    {Array.from({ length: totalPages }).map((_, i) => (
+                      <Button key={i} variant={currentPage === i + 1 ? 'default' : 'ghost'} size="sm" onClick={() => setCurrentPage(i + 1)} className={`w-9 h-9 rounded-xl font-black text-[11px] ${currentPage === i + 1 ? 'shadow-lg shadow-primary/20 bg-primary' : 'bg-white border-secondary border'}`}>{i + 1}</Button>
+                    ))}
+                    <Button variant="outline" size="icon" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} className="w-9 h-9 rounded-xl bg-white border-secondary"><ChevronRight className="w-4 h-4" /></Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase text-muted-foreground opacity-50">Par page:</span>
+                    <select value={pageSize} onChange={(e) => setPageSize(parseInt(e.target.value))} className="h-9 w-16 rounded-xl bg-white border border-secondary font-black text-xs px-2 appearance-none cursor-pointer text-center">
+                      {[10, 15, 20, 25, 50].map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {rosterTab === 'departures' && canReadDeparture && (
+            <div className="space-y-4">
+              {/* Barre de recherche du registre des sorties */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-card border shadow-sm">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Rechercher un joueur, un club de destination ou un type de sortie..."
+                    value={departureSearch}
+                    onChange={e => setDepartureSearch(e.target.value)}
+                    className="pl-10 h-10 bg-secondary/30 border-transparent focus:bg-background rounded-xl text-sm"
+                  />
+                </div>
+              </div>
+
+              {departuresLoading ? (
+                <div className="p-10 text-center rounded-2xl bg-card border text-sm text-muted-foreground">
+                  Chargement des sorties et transferts…
+                </div>
+              ) : filteredDepartures.length === 0 ? (
+                <div className="p-10 text-center rounded-2xl bg-card border border-dashed space-y-2">
+                  <ArrowRightLeft className="w-8 h-8 text-amber-500 mx-auto" />
+                  <p className="text-sm font-bold text-foreground">
+                    Aucune sortie ou transfert enregistré
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Les transferts, prêts, fins de contrat et libérations apparaîtront ici.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-card border rounded-2xl overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                          <th className="py-3 px-4">Joueur</th>
+                          <th className="py-3 px-4">Type</th>
+                          <th className="py-3 px-4">Destination</th>
+                          <th className="py-3 px-4">Date</th>
+                          <th className="py-3 px-4">Indemnité</th>
+                          <th className="py-3 px-4">Statut</th>
+                          <th className="py-3 px-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {filteredDepartures.map(dep => {
+                          const typeMeta = DEPARTURE_TYPE_META[dep.departure_type];
+                          const statusMeta = DEPARTURE_STATUS_META[dep.status];
+                          const depCat = (dep.team_id && teams.find(t => t.id === dep.team_id)?.category) || 'SENIOR';
+                          const canManageDepCat = canManageCategory(depCat);
+
+                          return (
+                            <tr key={dep.id} className="hover:bg-muted/20 transition-colors">
+                              <td className="py-2.5 px-4">
+                                <div className="flex items-center gap-2.5">
+                                  {dep.player?.photo_url ? (
+                                    <img
+                                      src={dep.player.photo_url}
+                                      alt={dep.player.full_name}
+                                      className="w-8 h-8 rounded-full object-cover border"
+                                    />
+                                  ) : (
+                                    <div className="w-8 h-8 rounded-full bg-amber-500/15 text-amber-600 flex items-center justify-center text-xs font-black">
+                                      {(dep.player?.full_name || 'J')[0]}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-foreground truncate">
+                                      {dep.player?.full_name || 'Joueur'}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground truncate">
+                                      {depCat} · {dep.player?.position || 'Poste N/A'}
+                                    </p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-4">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeMeta?.badgeClass || ''}`}>
+                                  {typeMeta?.label || dep.departure_type}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4 text-xs font-medium text-foreground">
+                                <span className="inline-flex items-center gap-1">
+                                  <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                                  {dep.destination_club || '—'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4 text-xs text-muted-foreground font-mono">
+                                {dep.departure_date}
+                              </td>
+                              <td className="py-2.5 px-4 text-xs font-bold text-foreground">
+                                {dep.transfer_fee !== null && dep.transfer_fee !== undefined ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Coins className="w-3.5 h-3.5 text-amber-500" />
+                                    {dep.transfer_fee.toLocaleString('fr-FR')} {dep.currency}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-4">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusMeta?.badgeClass || ''}`}>
+                                  {statusMeta?.label || dep.status}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleOpenDepartureModal('view', { departure: dep })}
+                                    title="Consulter le dossier"
+                                    className="h-8 w-8 rounded-lg"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </Button>
+                                  {canUpdateDeparture && canManageDepCat && (
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      onClick={() => handleOpenDepartureModal('view', { departure: dep })}
-                                      title="Consulter le dossier"
-                                      className="h-8 w-8 rounded-lg"
+                                      onClick={() => handleOpenDepartureModal('edit', { departure: dep })}
+                                      title="Modifier le dossier"
+                                      className="h-8 w-8 rounded-lg hover:text-amber-600"
                                     >
-                                      <Eye className="w-3.5 h-3.5" />
+                                      <Edit2 className="w-3.5 h-3.5" />
                                     </Button>
-                                    {canUpdateDeparture && canManageDepCat && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleOpenDepartureModal('edit', { departure: dep })}
-                                        title="Modifier le dossier"
-                                        className="h-8 w-8 rounded-lg hover:text-amber-600"
-                                      >
-                                        <Edit2 className="w-3.5 h-3.5" />
-                                      </Button>
-                                    )}
-                                    {canDeleteDeparture && canManageDepCat && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={async () => {
-                                          try {
-                                            await playerDepartureService.deleteDeparture(dep.id, dep.player_id, true);
-                                            await refreshDepartures();
-                                            toast.success('Sortie supprimée et joueur réintégré dans l’effectif actif.');
-                                          } catch (err: any) {
-                                            toast.error(err?.message || 'Erreur lors de la suppression.');
-                                          }
-                                        }}
-                                        title="Supprimer & réintégrer dans l'effectif actif"
-                                        className="h-8 w-8 rounded-lg text-rose-500 hover:bg-rose-500/10"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </Button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                  )}
+                                  {canDeleteDeparture && canManageDepCat && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={async () => {
+                                        try {
+                                          await playerDepartureService.deleteDeparture(dep.id, dep.player_id, true);
+                                          await refreshDepartures();
+                                          toast.success('Sortie supprimée et joueur réintégré dans l’effectif actif.');
+                                        } catch (err: any) {
+                                          toast.error(err?.message || 'Erreur lors de la suppression.');
+                                        }
+                                      }}
+                                      title="Supprimer & réintégrer dans l'effectif actif"
+                                      className="h-8 w-8 rounded-lg text-rose-500 hover:bg-rose-500/10"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : viewState === 'FORM' ? (
         <div
@@ -2881,84 +2879,84 @@ const PlayerManagement: React.FC = () => {
 
               {/* ── 2. Top Stats Bar (Ruban BeSoccer Exact) ── */}
               {canReadPlayerStats && (
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-white p-3.5 rounded-3xl border border-secondary/70 shadow-sm">
-                {/* Matchs */}
-                <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-800 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
-                    <Trophy className="w-5 h-5 text-amber-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.matches || 0}</span>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-white p-3.5 rounded-3xl border border-secondary/70 shadow-sm">
+                  {/* Matchs */}
+                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-800 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
+                      <Trophy className="w-5 h-5 text-amber-500" />
                     </div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Matchs</p>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.matches || 0}</span>
+                      </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Matchs</p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Minutes */}
-                <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 text-blue-600 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
-                    <Clock className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.minutes || 0}&apos;</span>
+                  {/* Minutes */}
+                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 text-blue-600 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
+                      <Clock className="w-5 h-5" />
                     </div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Minutes</p>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.minutes || 0}&apos;</span>
+                      </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Minutes</p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Buts */}
-                <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 text-emerald-600 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
-                    <Target className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.goals || 0}</span>
-                      <span className="text-[10px] font-black text-emerald-600 flex items-center">
-                        ▲ {displayStats?.minutes && displayStats.minutes > 0 ? ((displayStats.goals / displayStats.minutes) * 90).toFixed(2) : '0.00'}/90&apos;
-                      </span>
+                  {/* Buts */}
+                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 text-emerald-600 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
+                      <Target className="w-5 h-5" />
                     </div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Buts</p>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.goals || 0}</span>
+                        <span className="text-[10px] font-black text-emerald-600 flex items-center">
+                          ▲ {displayStats?.minutes && displayStats.minutes > 0 ? ((displayStats.goals / displayStats.minutes) * 90).toFixed(2) : '0.00'}/90&apos;
+                        </span>
+                      </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Buts</p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Passes D */}
-                <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
-                    <Zap className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.assists || 0}</span>
-                      <span className="text-[10px] font-black text-emerald-600 flex items-center">
-                        ▲ {displayStats?.minutes && displayStats.minutes > 0 ? ((displayStats.assists / displayStats.minutes) * 90).toFixed(2) : '0.00'}/90&apos;
-                      </span>
+                  {/* Passes D */}
+                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-xs border border-slate-200">
+                      <Zap className="w-5 h-5" />
                     </div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Passes D.</p>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-slate-900 leading-none">{displayStats?.assists || 0}</span>
+                        <span className="text-[10px] font-black text-emerald-600 flex items-center">
+                          ▲ {displayStats?.minutes && displayStats.minutes > 0 ? ((displayStats.assists / displayStats.minutes) * 90).toFixed(2) : '0.00'}/90&apos;
+                        </span>
+                      </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Passes D.</p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Cartons */}
-                <div className="col-span-2 sm:col-span-1 flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center gap-1 shrink-0 shadow-xs border border-slate-200">
-                    <div className="w-2.5 h-3.5 bg-amber-400 rounded-[2px]" />
-                    <div className="w-2.5 h-3.5 bg-rose-500 rounded-[2px]" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-xl font-black text-amber-500 leading-none">{displayStats?.yellowCards || 0}</span>
-                      <span className="text-xl font-black text-slate-400 leading-none">/</span>
-                      <span className="text-xl font-black text-rose-500 leading-none">{displayStats?.redCards || 0}</span>
-                      <span className="text-[10px] font-black text-rose-600 flex items-center ml-1">
-                        ▼ {displayStats?.minutes && displayStats.minutes > 0 ? (((displayStats.yellowCards + displayStats.redCards) / displayStats.minutes) * 90).toFixed(2) : '0.00'}/90&apos;
-                      </span>
+                  {/* Cartons */}
+                  <div className="col-span-2 sm:col-span-1 flex items-center gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center gap-1 shrink-0 shadow-xs border border-slate-200">
+                      <div className="w-2.5 h-3.5 bg-amber-400 rounded-[2px]" />
+                      <div className="w-2.5 h-3.5 bg-rose-500 rounded-[2px]" />
                     </div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Cartons J/R</p>
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xl font-black text-amber-500 leading-none">{displayStats?.yellowCards || 0}</span>
+                        <span className="text-xl font-black text-slate-400 leading-none">/</span>
+                        <span className="text-xl font-black text-rose-500 leading-none">{displayStats?.redCards || 0}</span>
+                        <span className="text-[10px] font-black text-rose-600 flex items-center ml-1">
+                          ▼ {displayStats?.minutes && displayStats.minutes > 0 ? (((displayStats.yellowCards + displayStats.redCards) / displayStats.minutes) * 90).toFixed(2) : '0.00'}/90&apos;
+                        </span>
+                      </div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mt-0.5">Cartons J/R</p>
+                    </div>
                   </div>
                 </div>
-              </div>
               )}
 
               {/* ── 3. RANGÉE 1 (3 BLOCS SUR 3) ── */}
@@ -3092,176 +3090,176 @@ const PlayerManagement: React.FC = () => {
 
                 {/* BLOC 2/3 (Centre) : Dernier Match réellement disputé par ce joueur */}
                 {canReadPlayerStats && (
-                <div
-                  role={lastMatchData?.id ? 'button' : undefined}
-                  tabIndex={lastMatchData?.id ? 0 : undefined}
-                  onClick={() => lastMatchData?.id && handleOpenMatchOverview(lastMatchData.id)}
-                  onKeyDown={(e) => {
-                    if (lastMatchData?.id && (e.key === 'Enter' || e.key === ' ')) {
-                      e.preventDefault();
-                      handleOpenMatchOverview(lastMatchData.id);
-                    }
-                  }}
-                  title={lastMatchData?.id ? 'Ouvrir la vue complète de ce match' : undefined}
-                  className={`bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between transition-all ${lastMatchData?.id ? 'cursor-pointer hover:border-primary/40 hover:shadow-md group' : ''
-                    }`}
-                >
-                  {lastMatchData ? (
-                    <>
-                      <div>
-                        <div className="border-b border-secondary/60 pb-3 mb-3 flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 group-hover:text-primary transition-colors">
-                              Dernier Match
-                            </h3>
-                            <p className="text-[11px] font-medium text-muted-foreground truncate">
-                              {lastMatchData.compName}, {lastMatchData.timeAgoStr} • {lastMatchData.isHome ? 'Domicile' : 'Extérieur'}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
-                            {lastMatchData.isSurclasse && lastMatchData.category && (
-                              <Badge
-                                variant="outline"
-                                title={`Match disputé en surclassement (${lastMatchData.category})`}
-                                className="border-amber-300 bg-amber-50 text-amber-800 text-[9px] sm:text-[10px] font-black uppercase px-1.5 sm:px-2 py-0.5"
-                              >
-                                ↑ Surclassé {lastMatchData.category}
+                  <div
+                    role={lastMatchData?.id ? 'button' : undefined}
+                    tabIndex={lastMatchData?.id ? 0 : undefined}
+                    onClick={() => lastMatchData?.id && handleOpenMatchOverview(lastMatchData.id)}
+                    onKeyDown={(e) => {
+                      if (lastMatchData?.id && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault();
+                        handleOpenMatchOverview(lastMatchData.id);
+                      }
+                    }}
+                    title={lastMatchData?.id ? 'Ouvrir la vue complète de ce match' : undefined}
+                    className={`bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between transition-all ${lastMatchData?.id ? 'cursor-pointer hover:border-primary/40 hover:shadow-md group' : ''
+                      }`}
+                  >
+                    {lastMatchData ? (
+                      <>
+                        <div>
+                          <div className="border-b border-secondary/60 pb-3 mb-3 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 group-hover:text-primary transition-colors">
+                                Dernier Match
+                              </h3>
+                              <p className="text-[11px] font-medium text-muted-foreground truncate">
+                                {lastMatchData.compName}, {lastMatchData.timeAgoStr} • {lastMatchData.isHome ? 'Domicile' : 'Extérieur'}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
+                              {lastMatchData.isSurclasse && lastMatchData.category && (
+                                <Badge
+                                  variant="outline"
+                                  title={`Match disputé en surclassement (${lastMatchData.category})`}
+                                  className="border-amber-300 bg-amber-50 text-amber-800 text-[9px] sm:text-[10px] font-black uppercase px-1.5 sm:px-2 py-0.5"
+                                >
+                                  ↑ Surclassé {lastMatchData.category}
+                                </Badge>
+                              )}
+                              <Badge variant="outline" className="border-slate-200 text-slate-600 text-[10px] font-bold">
+                                {lastMatchData.statusLabel}
                               </Badge>
-                            )}
-                            <Badge variant="outline" className="border-slate-200 text-slate-600 text-[10px] font-bold">
-                              {lastMatchData.statusLabel}
-                            </Badge>
-                            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-                          </div>
-                        </div>
-
-                        {/* Face à face Domicile (gauche) - Extérieur (droite) & Score exact */}
-                        <div className="flex items-center justify-between py-3 px-1 gap-2">
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {lastMatchData.homeLogo ? (
-                              <img src={lastMatchData.homeLogo} alt={lastMatchData.homeAbbr} className="w-8 h-8 object-contain shrink-0" />
-                            ) : (
-                              <div className={`w-8 h-8 rounded-full font-black text-[10px] flex items-center justify-center shrink-0 ${lastMatchData.isHome ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700'}`}>
-                                {lastMatchData.homeAbbr}
-                              </div>
-                            )}
-                            <span className={`text-xs font-black truncate ${lastMatchData.isHome ? 'text-slate-900' : 'text-slate-700'}`}>
-                              {lastMatchData.homeName}
-                            </span>
+                              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                            </div>
                           </div>
 
-                          <div className="px-2 text-center shrink-0">
-                            <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                              {lastMatchData.hasScore ? `${lastMatchData.sHome} - ${lastMatchData.sAway}` : '— : —'}
-                            </span>
+                          {/* Face à face Domicile (gauche) - Extérieur (droite) & Score exact */}
+                          <div className="flex items-center justify-between py-3 px-1 gap-2">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {lastMatchData.homeLogo ? (
+                                <img src={lastMatchData.homeLogo} alt={lastMatchData.homeAbbr} className="w-8 h-8 object-contain shrink-0" />
+                              ) : (
+                                <div className={`w-8 h-8 rounded-full font-black text-[10px] flex items-center justify-center shrink-0 ${lastMatchData.isHome ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700'}`}>
+                                  {lastMatchData.homeAbbr}
+                                </div>
+                              )}
+                              <span className={`text-xs font-black truncate ${lastMatchData.isHome ? 'text-slate-900' : 'text-slate-700'}`}>
+                                {lastMatchData.homeName}
+                              </span>
+                            </div>
+
+                            <div className="px-2 text-center shrink-0">
+                              <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                                {lastMatchData.hasScore ? `${lastMatchData.sHome} - ${lastMatchData.sAway}` : '— : —'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                              <span className={`text-xs font-black truncate text-right ${!lastMatchData.isHome ? 'text-slate-900' : 'text-slate-700'}`}>
+                                {lastMatchData.awayName}
+                              </span>
+                              {lastMatchData.awayLogo ? (
+                                <img src={lastMatchData.awayLogo} alt={lastMatchData.awayAbbr} className="w-8 h-8 object-contain shrink-0" />
+                              ) : (
+                                <div className={`w-8 h-8 rounded-full font-black text-[10px] flex items-center justify-center shrink-0 ${!lastMatchData.isHome ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700'}`}>
+                                  {lastMatchData.awayAbbr}
+                                </div>
+                              )}
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
-                            <span className={`text-xs font-black truncate text-right ${!lastMatchData.isHome ? 'text-slate-900' : 'text-slate-700'}`}>
-                              {lastMatchData.awayName}
-                            </span>
-                            {lastMatchData.awayLogo ? (
-                              <img src={lastMatchData.awayLogo} alt={lastMatchData.awayAbbr} className="w-8 h-8 object-contain shrink-0" />
-                            ) : (
-                              <div className={`w-8 h-8 rounded-full font-black text-[10px] flex items-center justify-center shrink-0 ${!lastMatchData.isHome ? 'bg-primary text-white' : 'bg-slate-200 text-slate-700'}`}>
-                                {lastMatchData.awayAbbr}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                          {/* Timeline réelle de participation du joueur */}
+                          {(() => {
+                            const total = Math.max(1, lastMatchData.totalMinutes || 90);
+                            const startPct = lastMatchData.subInMinute != null
+                              ? Math.min(95, Math.max(0, (lastMatchData.subInMinute / total) * 100))
+                              : 0;
+                            const endMin = lastMatchData.subOutMinute != null
+                              ? lastMatchData.subOutMinute
+                              : (lastMatchData.subInMinute != null ? Math.min(total, lastMatchData.subInMinute + lastMatchData.playedMinutes) : lastMatchData.playedMinutes);
+                            const endPct = Math.min(100, Math.max(startPct + 3, (endMin / total) * 100));
 
-                        {/* Timeline réelle de participation du joueur */}
-                        {(() => {
-                          const total = Math.max(1, lastMatchData.totalMinutes || 90);
-                          const startPct = lastMatchData.subInMinute != null
-                            ? Math.min(95, Math.max(0, (lastMatchData.subInMinute / total) * 100))
-                            : 0;
-                          const endMin = lastMatchData.subOutMinute != null
-                            ? lastMatchData.subOutMinute
-                            : (lastMatchData.subInMinute != null ? Math.min(total, lastMatchData.subInMinute + lastMatchData.playedMinutes) : lastMatchData.playedMinutes);
-                          const endPct = Math.min(100, Math.max(startPct + 3, (endMin / total) * 100));
+                            return (
+                              <div className="mt-5 pt-2">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-[10px] font-black uppercase text-slate-400">Timeline du Match</span>
+                                  <div className="flex items-center gap-1 text-slate-600 text-xs font-black">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>{lastMatchData.totalMinutes}&apos;</span>
+                                  </div>
+                                </div>
 
-                          return (
-                            <div className="mt-5 pt-2">
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-[10px] font-black uppercase text-slate-400">Timeline du Match</span>
-                                <div className="flex items-center gap-1 text-slate-600 text-xs font-black">
-                                  <Clock className="w-3.5 h-3.5" />
-                                  <span>{lastMatchData.totalMinutes}&apos;</span>
+                                <div className="relative w-full h-2.5 bg-slate-100 rounded-full overflow-visible">
+                                  <div
+                                    className="absolute top-0 bottom-0 bg-[#2e7d32] rounded-full"
+                                    style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
+                                  />
+                                  {lastMatchData.goalMinutes.map((gMin, idx) => (
+                                    <div
+                                      key={`${gMin}-${idx}`}
+                                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex flex-col items-center"
+                                      style={{ left: `${Math.min(94, Math.max(6, (gMin / total) * 100))}%` }}
+                                    >
+                                      <div className="w-1 h-4 bg-white border border-slate-300 rounded-full -mt-0.5 shadow-xs" />
+                                      <div className="flex flex-col items-center mt-1">
+                                        <span className="text-xs leading-none">⚽</span>
+                                        <span className="text-[9px] font-black text-[#2e7d32]">{gMin}&apos;</span>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
+                            );
+                          })()}
+                        </div>
 
-                              <div className="relative w-full h-2.5 bg-slate-100 rounded-full overflow-visible">
-                                <div
-                                  className="absolute top-0 bottom-0 bg-[#2e7d32] rounded-full"
-                                  style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
-                                />
-                                {lastMatchData.goalMinutes.map((gMin, idx) => (
-                                  <div
-                                    key={`${gMin}-${idx}`}
-                                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex flex-col items-center"
-                                    style={{ left: `${Math.min(94, Math.max(6, (gMin / total) * 100))}%` }}
-                                  >
-                                    <div className="w-1 h-4 bg-white border border-slate-300 rounded-full -mt-0.5 shadow-xs" />
-                                    <div className="flex flex-col items-center mt-1">
-                                      <span className="text-xs leading-none">⚽</span>
-                                      <span className="text-[9px] font-black text-[#2e7d32]">{gMin}&apos;</span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
+                        <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <span className="font-semibold text-slate-700 truncate">{lastMatchData.roleLabel}</span>
+                          {lastMatchData.rating != null ? (
+                            <span className="text-[10px] font-black text-emerald-700 uppercase shrink-0">
+                              Note : {lastMatchData.rating.toFixed(1)}/10
+                            </span>
+                          ) : lastMatchData.hasScore ? (
+                            <span className={`text-[10px] font-black uppercase shrink-0 ${lastMatchData.isWin ? 'text-emerald-600' : lastMatchData.isDraw ? 'text-amber-600' : 'text-rose-600'
+                              }`}>
+                              {lastMatchData.isWin ? 'Victoire' : lastMatchData.isDraw ? 'Match nul' : 'Défaite'}
+                            </span>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex-1 flex flex-col justify-between">
+                        <div className="border-b border-secondary/60 pb-3 mb-3 flex items-center justify-between">
+                          <div>
+                            <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                              Dernier Match
+                            </h3>
+                            <p className="text-[11px] font-medium text-muted-foreground">
+                              Aucune rencontre disputée
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="border-slate-200 text-slate-400 text-[10px] font-bold">
+                            En attente
+                          </Badge>
+                        </div>
 
-                      <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                        <span className="font-semibold text-slate-700 truncate">{lastMatchData.roleLabel}</span>
-                        {lastMatchData.rating != null ? (
-                          <span className="text-[10px] font-black text-emerald-700 uppercase shrink-0">
-                            Note : {lastMatchData.rating.toFixed(1)}/10
-                          </span>
-                        ) : lastMatchData.hasScore ? (
-                          <span className={`text-[10px] font-black uppercase shrink-0 ${lastMatchData.isWin ? 'text-emerald-600' : lastMatchData.isDraw ? 'text-amber-600' : 'text-rose-600'
-                            }`}>
-                            {lastMatchData.isWin ? 'Victoire' : lastMatchData.isDraw ? 'Match nul' : 'Défaite'}
-                          </span>
-                        ) : null}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex-1 flex flex-col justify-between">
-                      <div className="border-b border-secondary/60 pb-3 mb-3 flex items-center justify-between">
-                        <div>
-                          <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
-                            Dernier Match
-                          </h3>
-                          <p className="text-[11px] font-medium text-muted-foreground">
-                            Aucune rencontre disputée
+                        <div className="my-4 p-5 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-1.5">
+                          <Calendar className="w-6 h-6 text-slate-400 mx-auto" />
+                          <p className="text-xs font-bold text-slate-700">
+                            Aucun match joué pour le moment
+                          </p>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            Le dernier match de {selectedPlayer.full_name} s&apos;affichera ici dès sa participation à une rencontre terminée.
                           </p>
                         </div>
-                        <Badge variant="outline" className="border-slate-200 text-slate-400 text-[10px] font-bold">
-                          En attente
-                        </Badge>
-                      </div>
 
-                      <div className="my-4 p-5 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-1.5">
-                        <Calendar className="w-6 h-6 text-slate-400 mx-auto" />
-                        <p className="text-xs font-bold text-slate-700">
-                          Aucun match joué pour le moment
-                        </p>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed">
-                          Le dernier match de {selectedPlayer.full_name} s&apos;affichera ici dès sa participation à une rencontre terminée.
-                        </p>
+                        <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Statut : 0 match joué</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">—</span>
+                        </div>
                       </div>
-
-                      <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Statut : 0 match joué</span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">—</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
                 )}
 
                 {/* BLOC 3/3 (Droite) : FUSTV / Média Vidéo Joueur (Image 5 BeSoccer) */}
@@ -3429,147 +3427,147 @@ const PlayerManagement: React.FC = () => {
 
                 {/* BLOC 2/3 (Centre) : Forme Lors des Derniers Matchs (Image 4 BeSoccer) */}
                 {canReadPlayerStats && (
-                <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
-                  <div>
-                    {/* En-tête avec barre verte/rouge BeSoccer */}
-                    <div className="flex items-center justify-between border-b border-secondary/60 pb-3 mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-4 bg-emerald-500 rounded-full" />
-                        <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
-                          Forme lors des derniers matchs
-                        </h3>
+                  <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 flex flex-col justify-between">
+                    <div>
+                      {/* En-tête avec barre verte/rouge BeSoccer */}
+                      <div className="flex items-center justify-between border-b border-secondary/60 pb-3 mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-4 bg-emerald-500 rounded-full" />
+                          <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                            Forme lors des derniers matchs
+                          </h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => selectedPlayer && setCalendarModalPlayer(selectedPlayer)}
+                          className="text-[10px] font-black text-emerald-600 uppercase cursor-pointer hover:underline"
+                        >
+                          PLUS
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => selectedPlayer && setCalendarModalPlayer(selectedPlayer)}
-                        className="text-[10px] font-black text-emerald-600 uppercase cursor-pointer hover:underline"
-                      >
-                        PLUS
-                      </button>
-                    </div>
 
-                    {/* Les 4 colonnes de matchs BeSoccer */}
-                    {recentFormMatches.length > 0 ? (
-                      <div className="grid grid-cols-4 divide-x divide-slate-100 -mx-2">
-                        {recentFormMatches.map((m: any) => (
-                          <div
-                            key={m.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => handleOpenMatchOverview(m.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                handleOpenMatchOverview(m.id);
-                              }
-                            }}
-                            title="Ouvrir la vue complète de ce match"
-                            className="px-2 py-1.5 text-center space-y-1.5 rounded-xl hover:bg-slate-50 active:scale-[0.98] transition-all cursor-pointer group focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          >
-                            {/* Logos face à face */}
-                            <div className="flex items-center justify-center gap-1">
-                              {m.fusLogo ? (
-                                <img src={m.fusLogo} alt={m.fusAbbr} className="w-5 h-5 object-contain" />
-                              ) : (
-                                <div className="w-5 h-5 rounded-full bg-primary text-white text-[8px] font-black flex items-center justify-center">
-                                  {m.fusAbbr}
-                                </div>
-                              )}
-                              {m.oppLogo ? (
-                                <img src={m.oppLogo} alt={m.oppAbbr} className="w-5 h-5 object-contain" />
-                              ) : (
-                                <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[8px] font-black flex items-center justify-center">
-                                  {m.oppAbbr}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Abréviation match */}
-                            <p className="text-[10px] font-black text-slate-800 truncate" title={`${m.oppName} (${m.isHome ? 'Domicile' : 'Extérieur'})`}>
-                              {m.isHome ? `${m.fusAbbr} - ${m.oppAbbr}` : `${m.oppAbbr} - ${m.fusAbbr}`}
-                            </p>
-
-                            {/* Score réel du point de vue FUS */}
-                            <p className={`text-base font-black ${!m.hasScore ? 'text-slate-400' : m.isWin ? 'text-emerald-600' : m.isDraw ? 'text-amber-500' : 'text-rose-600'
-                              }`}>
-                              {m.hasScore ? `${m.fusScore} - ${m.oppScore}` : '- -'}
-                            </p>
-
-                            {/* Date */}
-                            <p className="text-[9px] font-bold text-muted-foreground leading-none">{m.dateStr}</p>
-
-                            {/* Badge Compétition réel */}
-                            <div className="pt-0.5">
-                              <span className="text-[8px] font-black uppercase text-slate-500 truncate block">
-                                🏆 {m.compLabel}
-                              </span>
-                            </div>
-
-                            {/* Mention de la catégorie surclassée */}
-                            {m.isSurclasse && m.matchCategory && (
-                              <div className="pt-0.5 flex justify-center">
-                                <span
-                                  title={`Match disputé en surclassement (${m.matchCategory})`}
-                                  className="inline-block max-w-full px-1.5 py-0.5 rounded-full bg-amber-100/90 text-amber-800 border border-amber-200 text-[8px] font-black uppercase leading-tight truncate"
-                                >
-                                  ↑ Surclassé {m.matchCategory}
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Minutes en pill vert pastel BeSoccer */}
-                            <div className="pt-1">
-                              <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-100/70 text-emerald-800 text-[9px] font-black">
-                                {m.minutes}&apos;
-                              </span>
-                            </div>
-
-                            {/* But ⚽ si marqué */}
-                            {m.goals > 0 && (
-                              <div className="flex items-center justify-center gap-0.5 text-xs">
-                                <span>⚽</span>
-                                {m.goals > 1 && (
-                                  <span className="w-3.5 h-3.5 rounded-full bg-primary text-white text-[8px] font-black flex items-center justify-center">
-                                    {m.goals}
-                                  </span>
+                      {/* Les 4 colonnes de matchs BeSoccer */}
+                      {recentFormMatches.length > 0 ? (
+                        <div className="grid grid-cols-4 divide-x divide-slate-100 -mx-2">
+                          {recentFormMatches.map((m: any) => (
+                            <div
+                              key={m.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleOpenMatchOverview(m.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleOpenMatchOverview(m.id);
+                                }
+                              }}
+                              title="Ouvrir la vue complète de ce match"
+                              className="px-2 py-1.5 text-center space-y-1.5 rounded-xl hover:bg-slate-50 active:scale-[0.98] transition-all cursor-pointer group focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            >
+                              {/* Logos face à face */}
+                              <div className="flex items-center justify-center gap-1">
+                                {m.fusLogo ? (
+                                  <img src={m.fusLogo} alt={m.fusAbbr} className="w-5 h-5 object-contain" />
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full bg-primary text-white text-[8px] font-black flex items-center justify-center">
+                                    {m.fusAbbr}
+                                  </div>
+                                )}
+                                {m.oppLogo ? (
+                                  <img src={m.oppLogo} alt={m.oppAbbr} className="w-5 h-5 object-contain" />
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[8px] font-black flex items-center justify-center">
+                                    {m.oppAbbr}
+                                  </div>
                                 )}
                               </div>
-                            )}
 
-                            {/* Évolution : Flèche haut en vert (victoire), bas en rouge (défaite), tiret (nul) */}
-                            <div className="pt-1.5 flex items-center justify-center">
-                              {m.isWin ? (
-                                <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 font-black text-[10px]" title="Victoire (+3 pts)">
-                                  <TrendingUp className="w-3 h-3 text-emerald-600 stroke-[3]" />
-                                  <span>▲ +3</span>
-                                </div>
-                              ) : m.isLoss ? (
-                                <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/30 text-rose-700 font-black text-[10px]" title="Défaite (0 pt)">
-                                  <TrendingDown className="w-3 h-3 text-rose-600 stroke-[3]" />
-                                  <span>▼ 0</span>
-                                </div>
-                              ) : (
-                                <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-700 font-black text-[10px]" title="Match Nul (1 pt)">
-                                  <span className="text-xs font-black leading-none">=</span>
-                                  <span>1 pt</span>
+                              {/* Abréviation match */}
+                              <p className="text-[10px] font-black text-slate-800 truncate" title={`${m.oppName} (${m.isHome ? 'Domicile' : 'Extérieur'})`}>
+                                {m.isHome ? `${m.fusAbbr} - ${m.oppAbbr}` : `${m.oppAbbr} - ${m.fusAbbr}`}
+                              </p>
+
+                              {/* Score réel du point de vue FUS */}
+                              <p className={`text-base font-black ${!m.hasScore ? 'text-slate-400' : m.isWin ? 'text-emerald-600' : m.isDraw ? 'text-amber-500' : 'text-rose-600'
+                                }`}>
+                                {m.hasScore ? `${m.fusScore} - ${m.oppScore}` : '- -'}
+                              </p>
+
+                              {/* Date */}
+                              <p className="text-[9px] font-bold text-muted-foreground leading-none">{m.dateStr}</p>
+
+                              {/* Badge Compétition réel */}
+                              <div className="pt-0.5">
+                                <span className="text-[8px] font-black uppercase text-slate-500 truncate block">
+                                  🏆 {m.compLabel}
+                                </span>
+                              </div>
+
+                              {/* Mention de la catégorie surclassée */}
+                              {m.isSurclasse && m.matchCategory && (
+                                <div className="pt-0.5 flex justify-center">
+                                  <span
+                                    title={`Match disputé en surclassement (${m.matchCategory})`}
+                                    className="inline-block max-w-full px-1.5 py-0.5 rounded-full bg-amber-100/90 text-amber-800 border border-amber-200 text-[8px] font-black uppercase leading-tight truncate"
+                                  >
+                                    ↑ Surclassé {m.matchCategory}
+                                  </span>
                                 </div>
                               )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="py-8 text-center text-xs text-muted-foreground bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                        Aucun match officiel récent enregistré.
-                      </div>
-                    )}
-                  </div>
 
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Feuilles de match officielles</span>
-                    <span className="text-slate-500 font-bold">{recentFormMatches.length} disputés</span>
+                              {/* Minutes en pill vert pastel BeSoccer */}
+                              <div className="pt-1">
+                                <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-100/70 text-emerald-800 text-[9px] font-black">
+                                  {m.minutes}&apos;
+                                </span>
+                              </div>
+
+                              {/* But ⚽ si marqué */}
+                              {m.goals > 0 && (
+                                <div className="flex items-center justify-center gap-0.5 text-xs">
+                                  <span>⚽</span>
+                                  {m.goals > 1 && (
+                                    <span className="w-3.5 h-3.5 rounded-full bg-primary text-white text-[8px] font-black flex items-center justify-center">
+                                      {m.goals}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Évolution : Flèche haut en vert (victoire), bas en rouge (défaite), tiret (nul) */}
+                              <div className="pt-1.5 flex items-center justify-center">
+                                {m.isWin ? (
+                                  <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 font-black text-[10px]" title="Victoire (+3 pts)">
+                                    <TrendingUp className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                                    <span>▲ +3</span>
+                                  </div>
+                                ) : m.isLoss ? (
+                                  <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/30 text-rose-700 font-black text-[10px]" title="Défaite (0 pt)">
+                                    <TrendingDown className="w-3 h-3 text-rose-600 stroke-[3]" />
+                                    <span>▼ 0</span>
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-700 font-black text-[10px]" title="Match Nul (1 pt)">
+                                    <span className="text-xs font-black leading-none">=</span>
+                                    <span>1 pt</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="py-8 text-center text-xs text-muted-foreground bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                          Aucun match officiel récent enregistré.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Feuilles de match officielles</span>
+                      <span className="text-slate-500 font-bold">{recentFormMatches.length} disputés</span>
+                    </div>
                   </div>
-                </div>
                 )}
 
                 {/* BLOC 3/3 (Droite) : Position sur le Terrain (Mini-Terrain Vert Tactique BeSoccer) */}
@@ -3693,156 +3691,155 @@ const PlayerManagement: React.FC = () => {
 
               {/* ── 3B. RÉSUMÉ DES 4 PILIERS DE PERFORMANCE ── */}
               {canReadPlayerStats && (
-              <PlayerFourPillarsSummaryBlock
-                player={selectedPlayer}
-                rawPlayerMatches={rawPlayerMatches}
-                opponentClubs={opponentClubs}
-                mainClub={mainClub}
-                onNavigateToEvaluation={() => navigate('/player-performance')}
-              />
+                <PlayerFourPillarsSummaryBlock
+                  player={selectedPlayer}
+                  rawPlayerMatches={rawPlayerMatches}
+                  opponentClubs={opponentClubs}
+                  mainClub={mainClub}
+                  onNavigateToEvaluation={() => navigate('/player-performance')}
+                />
               )}
 
               {/* ── 4. COURBE D'ÉVOLUTION DES MENTIONS (SHORTLIST OFFICIELLE) ── */}
               {canReadPlayerStats && (
-              <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 space-y-4">
-                {!isScout && (canCreatePlayerStats || canUpdatePlayerStats || canDeletePlayerStats) && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
-                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-800">
-                      <Award className="w-4 h-4 text-emerald-600" />
-                      <span>Gestion des Mentions Datées ({selectedPlayerMentions.length})</span>
-                    </div>
-                    {!showMentionEditor ? (
-                      canCreatePlayerStats ? (
+                <div className="bg-white rounded-3xl border border-secondary/70 shadow-sm p-6 space-y-4">
+                  {!isScout && (canCreatePlayerStats || canUpdatePlayerStats || canDeletePlayerStats) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-800">
+                        <Award className="w-4 h-4 text-emerald-600" />
+                        <span>Gestion des Mentions Datées ({selectedPlayerMentions.length})</span>
+                      </div>
+                      {!showMentionEditor ? (
+                        canCreatePlayerStats ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingMentionEntry(null);
+                              setMentionFormDate(new Date().toISOString().slice(0, 10));
+                              setMentionFormComment('');
+                              setShowMentionEditor(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-black cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Ajouter une mention</span>
+                          </button>
+                        ) : canUpdatePlayerStats ? (
+                          <span className="text-[11px] font-medium text-slate-500">
+                            Cliquez sur un point de la courbe pour le modifier
+                          </span>
+                        ) : null
+                      ) : (
                         <button
                           type="button"
                           onClick={() => {
+                            setShowMentionEditor(false);
                             setEditingMentionEntry(null);
-                            setMentionFormDate(new Date().toISOString().slice(0, 10));
-                            setMentionFormComment('');
-                            setShowMentionEditor(true);
                           }}
-                          className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-black cursor-pointer"
+                          className="inline-flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 text-xs font-black cursor-pointer"
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Ajouter une mention</span>
-                        </button>
-                      ) : canUpdatePlayerStats ? (
-                        <span className="text-[11px] font-medium text-slate-500">
-                          Cliquez sur un point de la courbe pour le modifier
-                        </span>
-                      ) : null
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowMentionEditor(false);
-                          setEditingMentionEntry(null);
-                        }}
-                        className="inline-flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 text-xs font-black cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        <span>Fermer le formulaire</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {showMentionEditor && !isScout && ((editingMentionEntry && canUpdatePlayerStats) || (!editingMentionEntry && canCreatePlayerStats)) && (
-                  <form
-                    onSubmit={handleSavePlayerMention}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-black text-slate-900">
-                        {editingMentionEntry
-                          ? `Modifier la mention du ${normalizeMentionDate(editingMentionEntry.mention_date)}`
-                          : 'Nouvelle mention datée'}
-                      </span>
-                      {editingMentionEntry && canDeletePlayerStats && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void handleDeletePlayerMentionPoint({
-                              id: editingMentionEntry.id,
-                              mention: editingMentionEntry.mention,
-                              mention_date: normalizeMentionDate(editingMentionEntry.mention_date),
-                              label: getMentionMeta(editingMentionEntry.mention).label,
-                              score: getMentionMeta(editingMentionEntry.mention).score,
-                              hex: getMentionMeta(editingMentionEntry.mention).hex,
-                              dateLabel: normalizeMentionDate(editingMentionEntry.mention_date),
-                              fullDateLabel: normalizeMentionDate(editingMentionEntry.mention_date),
-                              comment: editingMentionEntry.comment || '',
-                            })
-                          }
-                          className="inline-flex items-center gap-1 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 px-3 py-1.5 text-[11px] font-black cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Supprimer</span>
+                          <X className="w-3.5 h-3.5" />
+                          <span>Fermer le formulaire</span>
                         </button>
                       )}
                     </div>
+                  )}
 
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                      {MENTION_OPTIONS.map(opt => {
-                        const isAct = mentionFormLevel === opt.id;
-                        return (
+                  {showMentionEditor && !isScout && ((editingMentionEntry && canUpdatePlayerStats) || (!editingMentionEntry && canCreatePlayerStats)) && (
+                    <form
+                      onSubmit={handleSavePlayerMention}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-black text-slate-900">
+                          {editingMentionEntry
+                            ? `Modifier la mention du ${normalizeMentionDate(editingMentionEntry.mention_date)}`
+                            : 'Nouvelle mention datée'}
+                        </span>
+                        {editingMentionEntry && canDeletePlayerStats && (
                           <button
-                            key={opt.id}
                             type="button"
-                            onClick={() => setMentionFormLevel(opt.id)}
-                            className={`rounded-xl border-2 px-3 py-2 text-xs font-black transition cursor-pointer ${
-                              isAct
-                                ? opt.activeButtonClass
-                                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                            }`}
+                            onClick={() =>
+                              void handleDeletePlayerMentionPoint({
+                                id: editingMentionEntry.id,
+                                mention: editingMentionEntry.mention,
+                                mention_date: normalizeMentionDate(editingMentionEntry.mention_date),
+                                label: getMentionMeta(editingMentionEntry.mention).label,
+                                score: getMentionMeta(editingMentionEntry.mention).score,
+                                hex: getMentionMeta(editingMentionEntry.mention).hex,
+                                dateLabel: normalizeMentionDate(editingMentionEntry.mention_date),
+                                fullDateLabel: normalizeMentionDate(editingMentionEntry.mention_date),
+                                comment: editingMentionEntry.comment || '',
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 px-3 py-1.5 text-[11px] font-black cursor-pointer"
                           >
-                            {opt.label}
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Supprimer</span>
                           </button>
-                        );
-                      })}
-                    </div>
+                        )}
+                      </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <input
-                        type="date"
-                        required
-                        value={mentionFormDate}
-                        onChange={e => setMentionFormDate(e.target.value)}
-                        className="h-9 px-3 rounded-xl border border-slate-300 bg-white text-xs font-bold text-slate-900"
-                      />
-                      <input
-                        type="text"
-                        value={mentionFormComment}
-                        onChange={e => setMentionFormComment(e.target.value)}
-                        placeholder="Observation (optionnel)..."
-                        className="sm:col-span-2 h-9 px-3 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-900"
-                      />
-                    </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {MENTION_OPTIONS.map(opt => {
+                          const isAct = mentionFormLevel === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => setMentionFormLevel(opt.id)}
+                              className={`rounded-xl border-2 px-3 py-2 text-xs font-black transition cursor-pointer ${isAct
+                                  ? opt.activeButtonClass
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                                }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="submit"
-                        disabled={isSavingMention}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-black text-white px-4 py-2 text-xs font-black cursor-pointer"
-                      >
-                        {isSavingMention ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5 text-amber-400" />}
-                        <span>{editingMentionEntry ? 'Mettre à jour' : 'Enregistrer la mention'}</span>
-                      </button>
-                    </div>
-                  </form>
-                )}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        <input
+                          type="date"
+                          required
+                          value={mentionFormDate}
+                          onChange={e => setMentionFormDate(e.target.value)}
+                          className="h-9 px-3 rounded-xl border border-slate-300 bg-white text-xs font-bold text-slate-900"
+                        />
+                        <input
+                          type="text"
+                          value={mentionFormComment}
+                          onChange={e => setMentionFormComment(e.target.value)}
+                          placeholder="Observation (optionnel)..."
+                          className="sm:col-span-2 h-9 px-3 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-900"
+                        />
+                      </div>
 
-                <PlayerMentionsChart
-                  mentions={selectedPlayerMentions}
-                  height={220}
-                  title="Courbe d'évolution des mentions (Shortlist Officielle)"
-                  emptyMessage={`Aucune mention enregistrée pour ${selectedPlayer.full_name}. Ajoutez une mention ci-dessus ou depuis la Shortlist Officielle pour tracer sa progression.`}
-                  selectedEntryId={editingMentionEntry?.id || null}
-                  selectedMentionDate={showMentionEditor ? normalizeMentionDate(mentionFormDate) : null}
-                  onSelectEntry={!isScout && canUpdatePlayerStats ? handleSelectPlayerMentionPoint : undefined}
-                  onDeleteEntry={!isScout && canDeletePlayerStats ? handleDeletePlayerMentionPoint : undefined}
-                />
-              </div>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="submit"
+                          disabled={isSavingMention}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-black text-white px-4 py-2 text-xs font-black cursor-pointer"
+                        >
+                          {isSavingMention ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5 text-amber-400" />}
+                          <span>{editingMentionEntry ? 'Mettre à jour' : 'Enregistrer la mention'}</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  <PlayerMentionsChart
+                    mentions={selectedPlayerMentions}
+                    height={220}
+                    title="Courbe d'évolution des mentions (Shortlist Officielle)"
+                    emptyMessage={`Aucune mention enregistrée pour ${selectedPlayer.full_name}. Ajoutez une mention ci-dessus ou depuis la Shortlist Officielle pour tracer sa progression.`}
+                    selectedEntryId={editingMentionEntry?.id || null}
+                    selectedMentionDate={showMentionEditor ? normalizeMentionDate(mentionFormDate) : null}
+                    onSelectEntry={!isScout && canUpdatePlayerStats ? handleSelectPlayerMentionPoint : undefined}
+                    onDeleteEntry={!isScout && canDeletePlayerStats ? handleDeletePlayerMentionPoint : undefined}
+                  />
+                </div>
               )}
 
               {/* ── 5. RANGÉE 3 : POSITION DE L'ÉQUIPE DANS LA COMPÉTITION (CLASSEMENT CATÉGORIE & SURCLASSEMENT) ── */}
@@ -3871,8 +3868,8 @@ const PlayerManagement: React.FC = () => {
                       type="button"
                       onClick={() => setStandingsTab('official')}
                       className={`h-8 sm:h-9 px-3.5 rounded-xl font-black uppercase tracking-wider text-[10px] sm:text-[11px] flex items-center gap-1.5 transition-all ${standingsTab === 'official'
-                          ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
-                          : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
+                        : 'text-slate-600 hover:text-slate-900'
                         }`}
                     >
                       <Trophy className="w-3.5 h-3.5 text-primary" />
@@ -3889,8 +3886,8 @@ const PlayerManagement: React.FC = () => {
                         type="button"
                         onClick={() => setStandingsTab('surclassement')}
                         className={`h-8 sm:h-9 px-3.5 rounded-xl font-black uppercase tracking-wider text-[10px] sm:text-[11px] flex items-center gap-1.5 transition-all ${standingsTab === 'surclassement'
-                            ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20'
-                            : 'text-slate-600 hover:text-slate-900'
+                          ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20'
+                          : 'text-slate-600 hover:text-slate-900'
                           }`}
                       >
                         <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -3928,8 +3925,8 @@ const PlayerManagement: React.FC = () => {
                             type="button"
                             onClick={() => setSelectedStandingsGroup(grp)}
                             className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition-all ${isGrpActive
-                                ? 'bg-slate-900 text-white shadow-xs'
-                                : 'text-slate-600 hover:text-slate-900'
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
                               }`}
                           >
                             {grp}
@@ -4038,8 +4035,8 @@ const PlayerManagement: React.FC = () => {
                                 <tr
                                   key={row.team_key || row.club_id}
                                   className={`transition-colors ${isFus
-                                      ? 'bg-red-50/80 font-bold hover:bg-red-100/70 border-l-4 border-l-[#DC2626]'
-                                      : 'hover:bg-slate-50/80'
+                                    ? 'bg-red-50/80 font-bold hover:bg-red-100/70 border-l-4 border-l-[#DC2626]'
+                                    : 'hover:bg-slate-50/80'
                                     }`}
                                 >
                                   <td className="py-2 px-3 text-center">
@@ -4105,17 +4102,17 @@ const PlayerManagement: React.FC = () => {
                               <tr
                                 key={row.team_key || row.club_id}
                                 className={`transition-colors ${isFus
-                                    ? 'bg-primary/5 font-bold hover:bg-primary/10 border-l-4 border-l-primary'
-                                    : 'hover:bg-slate-50/80'
+                                  ? 'bg-primary/5 font-bold hover:bg-primary/10 border-l-4 border-l-primary'
+                                  : 'hover:bg-slate-50/80'
                                   }`}
                               >
                                 <td className="py-2 px-3 text-center">
                                   <span
                                     className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-black ${row.position === 1
-                                        ? 'bg-amber-400 text-slate-950 shadow-xs'
-                                        : row.position <= 3
-                                          ? 'bg-slate-200 text-slate-800'
-                                          : 'text-slate-500'
+                                      ? 'bg-amber-400 text-slate-950 shadow-xs'
+                                      : row.position <= 3
+                                        ? 'bg-slate-200 text-slate-800'
+                                        : 'text-slate-500'
                                       }`}
                                   >
                                     {row.position}
@@ -4160,10 +4157,10 @@ const PlayerManagement: React.FC = () => {
                                   {hasPlayed ? (
                                     <span
                                       className={`px-1 py-0.5 rounded text-[10px] ${row.goal_difference > 0
-                                          ? 'text-emerald-700 bg-emerald-50'
-                                          : row.goal_difference < 0
-                                            ? 'text-rose-700 bg-rose-50'
-                                            : 'text-slate-600 bg-slate-100'
+                                        ? 'text-emerald-700 bg-emerald-50'
+                                        : row.goal_difference < 0
+                                          ? 'text-rose-700 bg-rose-50'
+                                          : 'text-slate-600 bg-slate-100'
                                         }`}
                                     >
                                       {row.goal_difference > 0 ? `+${row.goal_difference}` : row.goal_difference}

@@ -14,22 +14,19 @@ const CATEGORY_META: Record<string, {
   bg: string; lightBg: string; text: string; border: string;
   gradient: string; emoji: string;
 }> = {
-  PRO:    { bg: '#F59E0B', lightBg: '#FEF3C7', text: '#92400E', border: '#F59E0B', gradient: 'from-yellow-400 to-amber-500',   emoji: '🏆' },
-  SENIOR: { bg: '#F97316', lightBg: '#FFEDD5', text: '#9A3412', border: '#F97316', gradient: 'from-orange-400 to-red-500',     emoji: '⚽' },
-  U23:    { bg: '#EF4444', lightBg: '#FEE2E2', text: '#991B1B', border: '#EF4444', gradient: 'from-red-400 to-rose-500',       emoji: '🔴' },
-  U22:    { bg: '#F43F5E', lightBg: '#FFE4E6', text: '#9F1239', border: '#F43F5E', gradient: 'from-rose-400 to-red-500',       emoji: '🍅' },
-  U21:    { bg: '#EC4899', lightBg: '#FCE7F3', text: '#9D174D', border: '#EC4899', gradient: 'from-pink-400 to-fuchsia-500',   emoji: '🌸' },
-  U20:    { bg: '#D946EF', lightBg: '#FAE8FF', text: '#86198F', border: '#D946EF', gradient: 'from-fuchsia-400 to-purple-500', emoji: '🍇' },
-  U19:    { bg: '#8B5CF6', lightBg: '#EDE9FE', text: '#5B21B6', border: '#8B5CF6', gradient: 'from-violet-400 to-purple-600',  emoji: '💜' },
-  U18:    { bg: '#7C3AED', lightBg: '#EDE9FE', text: '#5B21B6', border: '#7C3AED', gradient: 'from-purple-500 to-indigo-600',  emoji: '🔮' },
-  U17:    { bg: '#6366F1', lightBg: '#E0E7FF', text: '#3730A3', border: '#6366F1', gradient: 'from-indigo-400 to-blue-600',    emoji: '🔵' },
-  U16:    { bg: '#3B82F6', lightBg: '#DBEAFE', text: '#1D4ED8', border: '#3B82F6', gradient: 'from-blue-400 to-cyan-600',      emoji: '💙' },
-  U15:    { bg: '#06B6D4', lightBg: '#CFFAFE', text: '#0E7490', border: '#06B6D4', gradient: 'from-cyan-400 to-teal-500',      emoji: '🩵' },
-  U14:    { bg: '#0891B2', lightBg: '#CFFAFE', text: '#155E75', border: '#0891B2', gradient: 'from-cyan-500 to-blue-600',      emoji: '💠' },
-  U13:    { bg: '#14B8A6', lightBg: '#CCFBF1', text: '#0F766E', border: '#14B8A6', gradient: 'from-teal-400 to-emerald-500',   emoji: '🩷' },
-  U11:    { bg: '#22C55E', lightBg: '#DCFCE7', text: '#15803D', border: '#22C55E', gradient: 'from-green-400 to-emerald-500',  emoji: '💚' },
-  U9:     { bg: '#84CC16', lightBg: '#ECFCCB', text: '#3F6212', border: '#84CC16', gradient: 'from-lime-400 to-green-500',     emoji: '🟢' },
-  U7:     { bg: '#10B981', lightBg: '#D1FAE5', text: '#065F46', border: '#10B981', gradient: 'from-emerald-400 to-teal-600',   emoji: '🌱' },
+  PRO: { bg: '#F59E0B', lightBg: '#FEF3C7', text: '#92400E', border: '#F59E0B', gradient: 'from-yellow-400 to-amber-500', emoji: '🏆' },
+  SENIOR: { bg: '#F97316', lightBg: '#FFEDD5', text: '#9A3412', border: '#F97316', gradient: 'from-orange-400 to-red-500', emoji: '⚽' },
+  U25: { bg: '#EF4444', lightBg: '#FEE2E2', text: '#991B1B', border: '#EF4444', gradient: 'from-red-400 to-rose-500', emoji: '🔴' },
+  U21: { bg: '#EC4899', lightBg: '#FCE7F3', text: '#9D174D', border: '#EC4899', gradient: 'from-pink-400 to-fuchsia-500', emoji: '🌸' },
+  U18: { bg: '#7C3AED', lightBg: '#EDE9FE', text: '#5B21B6', border: '#7C3AED', gradient: 'from-purple-500 to-indigo-600', emoji: '🔮' },
+  U17: { bg: '#6366F1', lightBg: '#E0E7FF', text: '#3730A3', border: '#6366F1', gradient: 'from-indigo-400 to-blue-600', emoji: '🔵' },
+  U16: { bg: '#3B82F6', lightBg: '#DBEAFE', text: '#1D4ED8', border: '#3B82F6', gradient: 'from-blue-400 to-cyan-600', emoji: '💙' },
+  U15: { bg: '#06B6D4', lightBg: '#CFFAFE', text: '#0E7490', border: '#06B6D4', gradient: 'from-cyan-400 to-teal-500', emoji: '🩵' },
+  U14: { bg: '#0891B2', lightBg: '#CFFAFE', text: '#155E75', border: '#0891B2', gradient: 'from-cyan-500 to-blue-600', emoji: '💠' },
+  U13: { bg: '#14B8A6', lightBg: '#CCFBF1', text: '#0F766E', border: '#14B8A6', gradient: 'from-teal-400 to-emerald-500', emoji: '🩷' },
+  U11: { bg: '#22C55E', lightBg: '#DCFCE7', text: '#15803D', border: '#22C55E', gradient: 'from-green-400 to-emerald-500', emoji: '💚' },
+  U9: { bg: '#84CC16', lightBg: '#ECFCCB', text: '#3F6212', border: '#84CC16', gradient: 'from-lime-400 to-green-500', emoji: '🟢' },
+  U7: { bg: '#10B981', lightBg: '#D1FAE5', text: '#065F46', border: '#10B981', gradient: 'from-emerald-400 to-teal-600', emoji: '🌱' },
 };
 
 type ViewMode = 'grid' | 'table';
@@ -51,12 +48,12 @@ export default function ClubRosterPage() {
       const topPosition = Object.entries(positions).sort((a, b) => b[1] - a[1])[0]?.[0];
       const avgAge = catPlayers.length > 0
         ? Math.round(
-            catPlayers.reduce((sum, p) => {
-              if (!p.date_of_birth) return sum;
-              const age = new Date().getFullYear() - new Date(p.date_of_birth).getFullYear();
-              return sum + age;
-            }, 0) / (catPlayers.filter(p => p.date_of_birth).length || 1)
-          )
+          catPlayers.reduce((sum, p) => {
+            if (!p.date_of_birth) return sum;
+            const age = new Date().getFullYear() - new Date(p.date_of_birth).getFullYear();
+            return sum + age;
+          }, 0) / (catPlayers.filter(p => p.date_of_birth).length || 1)
+        )
         : null;
       return {
         name: cat,
@@ -97,18 +94,16 @@ export default function ClubRosterPage() {
         <div className="flex items-center gap-2 bg-secondary/50 rounded-xl p-1 border border-border">
           <button
             onClick={() => setViewMode('grid')}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all ${
-              viewMode === 'grid' ? 'bg-white shadow-sm text-primary border border-border/50' : 'text-muted-foreground hover:text-foreground'
-            }`}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-primary border border-border/50' : 'text-muted-foreground hover:text-foreground'
+              }`}
           >
             <LayoutGrid className="w-4 h-4" />
             Grille
           </button>
           <button
             onClick={() => setViewMode('table')}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all ${
-              viewMode === 'table' ? 'bg-white shadow-sm text-primary border border-border/50' : 'text-muted-foreground hover:text-foreground'
-            }`}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-primary border border-border/50' : 'text-muted-foreground hover:text-foreground'
+              }`}
           >
             <List className="w-4 h-4" />
             Tableau
@@ -149,9 +144,8 @@ export default function ClubRosterPage() {
                 whileHover={!isEmpty ? { scale: 1.04, y: -3 } : {}}
                 whileTap={!isEmpty ? { scale: 0.97 } : {}}
                 onClick={() => !isEmpty && handleCategoryClick(cat)}
-                className={`relative overflow-hidden rounded-2xl border-2 bg-white shadow-sm transition-all duration-200 flex flex-col ${
-                  isEmpty ? 'opacity-40 cursor-default border-border' : 'cursor-pointer hover:shadow-lg'
-                }`}
+                className={`relative overflow-hidden rounded-2xl border-2 bg-white shadow-sm transition-all duration-200 flex flex-col ${isEmpty ? 'opacity-40 cursor-default border-border' : 'cursor-pointer hover:shadow-lg'
+                  }`}
                 style={{ borderColor: isEmpty ? undefined : m.border }}
               >
                 {/* Gradient top bar */}
@@ -231,9 +225,8 @@ export default function ClubRosterPage() {
                 return (
                   <tr
                     key={cat}
-                    className={`border-b border-border last:border-0 transition-colors ${
-                      isEmpty ? 'opacity-40' : 'hover:bg-secondary/30 cursor-pointer'
-                    }`}
+                    className={`border-b border-border last:border-0 transition-colors ${isEmpty ? 'opacity-40' : 'hover:bg-secondary/30 cursor-pointer'
+                      }`}
                     onClick={() => !isEmpty && handleCategoryClick(cat)}
                   >
                     <td className="px-6 py-3.5">

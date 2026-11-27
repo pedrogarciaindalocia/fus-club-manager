@@ -452,7 +452,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [heightCm, setHeightCm] = useState<number | ''>(150);
   const [weightKg, setWeightKg] = useState<number | ''>(65);
   const [ageCategory, setAgeCategory] = useState(
-    candidate?.age_category || (allowedCategories[0] || 'U19')
+    candidate?.age_category || (allowedCategories[0] || 'U18')
   );
 
   useEffect(() => {
@@ -579,8 +579,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   };
 
   const getSuggestedAgeCategory = (ageVal: number | null): string => {
-    let cat = 'U19';
-    if (ageVal === null) cat = allowedCategories[0] || 'U19';
+    let cat = 'U18';
+    if (ageVal === null) cat = allowedCategories[0] || 'U18';
     else if (ageVal <= 9) cat = 'U9';
     else if (ageVal === 10) cat = 'U10';
     else if (ageVal === 11) cat = 'U11';
@@ -591,9 +591,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     else if (ageVal === 16) cat = 'U16';
     else if (ageVal === 17) cat = 'U17';
     else if (ageVal === 18) cat = 'U18';
-    else if (ageVal === 19) cat = 'U19';
     else if (ageVal <= 21) cat = 'U21';
-    else if (ageVal <= 23) cat = 'U23';
+    else if (ageVal <= 25) cat = 'U25';
     else cat = 'SENIOR';
 
     if (allowedCategories.length > 0 && !allowedCategories.includes(cat)) {
@@ -624,7 +623,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         return getAgeCategoryFromBirthDate(birthDate, ageCategory);
       }
     }
-    return normalizeAgeCategory(ageCategory || 'U19');
+    return normalizeAgeCategory(ageCategory || 'U18');
   }, [birthDate, ageCategory]);
 
   const surclassementTargetCategory = useMemo(() => {
@@ -688,8 +687,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setWeightKg(candidate.weight_kg ?? 65);
       // Règle Métier US-DASH-120 : Priorité absolue à la date de naissance pour déterminer la catégorie réelle
       const realCategory = candidate.birth_date
-        ? getAgeCategoryFromBirthDate(candidate.birth_date, candidate.age_category || 'U19')
-        : normalizeAgeCategory(candidate.age_category || 'U19');
+        ? getAgeCategoryFromBirthDate(candidate.birth_date, candidate.age_category || 'U18')
+        : normalizeAgeCategory(candidate.age_category || 'U18');
       setAgeCategory(realCategory);
       setCurrentClub(candidate.current_club || '');
       setPreviousClubs(candidate.previous_clubs || '');

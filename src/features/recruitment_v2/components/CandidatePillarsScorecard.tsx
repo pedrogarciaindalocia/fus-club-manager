@@ -565,7 +565,7 @@ export const CandidatePillarsScorecard: React.FC<CandidatePillarsScorecardProps>
                     {candidate.first_name} {candidate.last_name}
                   </h4>
                   <span className="px-1.5 py-0.2 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-                    {candidate.age_category || 'U19'}
+                    {candidate.age_category || 'U18'}
                   </span>
                   <span className="font-semibold text-slate-600 text-xs">
                     {getFrenchPositionLabel(candidate.primary_position)}

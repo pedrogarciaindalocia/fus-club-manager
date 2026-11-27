@@ -137,9 +137,8 @@ const AGE_CATEGORIES = [
   { id: 'ALL', label: 'Toutes' },
   { id: 'PRO', label: 'PRO' },
   { id: 'SENIOR', label: 'SENIOR' },
-  { id: 'U23', label: 'U23' },
+  { id: 'U25', label: 'U25' },
   { id: 'U21', label: 'U21' },
-  { id: 'U19', label: 'U19' },
   { id: 'U18', label: 'U18' },
   { id: 'U17', label: 'U17' },
   { id: 'U16', label: 'U16' },
@@ -736,15 +735,15 @@ export const OfficialShortlistPage: React.FC = () => {
                 type="button"
                 onClick={() => handleSelectTargetCategory(cat.id)}
                 className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer ${isSelected
-                    ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow-sm'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                  ? 'bg-slate-900 dark:bg-emerald-600 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
                   }`}
               >
                 <span>{cat.label}</span>
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${isSelected
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                     }`}
                 >
                   {count}
@@ -923,8 +922,8 @@ export const OfficialShortlistPage: React.FC = () => {
 
                                 <div
                                   className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center font-black text-xs text-white shadow-xl border-2 transition-all overflow-hidden ${player.mention_meta
-                                      ? 'bg-slate-950 border-emerald-400 ring-2 ring-white/30'
-                                      : 'bg-slate-950 border-white/40'
+                                    ? 'bg-slate-950 border-emerald-400 ring-2 ring-white/30'
+                                    : 'bg-slate-950 border-white/40'
                                     }`}
                                 >
                                   {player.photo_url ? (
@@ -945,8 +944,8 @@ export const OfficialShortlistPage: React.FC = () => {
                                 {/* Mention badge */}
                                 <div
                                   className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 z-30 whitespace-nowrap rounded-full border px-2 py-0.5 text-[9.5px] font-black shadow-lg ${player.mention_meta
-                                      ? player.mention_meta.badgeClass
-                                      : 'bg-slate-800 text-slate-300 border-slate-500'
+                                    ? player.mention_meta.badgeClass
+                                    : 'bg-slate-800 text-slate-300 border-slate-500'
                                     }`}
                                 >
                                   {player.mention_meta ? player.mention_meta.shortLabel : 'Mention ?'}
@@ -1064,8 +1063,8 @@ export const OfficialShortlistPage: React.FC = () => {
                       </span>
                       <span
                         className={`mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${player.mention_meta
-                            ? player.mention_meta.badgeClass
-                            : 'border-slate-600 bg-slate-700 text-slate-300'
+                          ? player.mention_meta.badgeClass
+                          : 'border-slate-600 bg-slate-700 text-slate-300'
                           }`}
                       >
                         <Award className="h-2.5 w-2.5" />

@@ -11,6 +11,8 @@ const DEFAULT_FUS_CLUB_ID = '45642829-a3d7-48de-afdd-3c45a1ced474';
 import { usePermissions } from '../../context/PermissionsContext';
 import { useClubData } from '../../hooks/useClubData';
 import { resolvePreferredViewMode } from '../../utils/viewModePreference';
+import { compressImageClientSide } from '../../utils/compressImage';
+import { storageService } from '../../services/storageService';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -73,7 +75,6 @@ import {
 } from 'lucide-react';
 import ImageCropperModal from '../../components/ImageCropperModal';
 import { FusLogoLoader } from '../../components/ui/FusLogoLoader';
-import { AuditLogger } from '../../services/auditLogger';
 import { PLAYER_CATEGORIES } from '../../constants';
 import {
   getRoleConfig,
@@ -181,12 +182,28 @@ export interface PermissionDefinition {
 
 export const MATCH_GLOBAL_PLANNING_PERMISSIONS: PermissionDefinition[] = [
   {
-    key: 'schedule_match',
-    label: 'Planification des matchs',
-    desc: 'Créer, fixer les dates et horaires des rencontres officielles et amicales (/matches/new)',
+    key: 'manage_matches',
+    label: 'Gestion des matchs',
+    desc: 'Gérer l\'ensemble des opérations du match (planification, programmation, composition, feuille, chronomètre live) à l’exception de l’évaluation des joueurs',
     target: 'mobile',
     category: 'match_management',
-    badge: 'Planning'
+    badge: 'Gestion Match'
+  },
+  {
+    key: 'evaluate_players',
+    label: 'Évaluation des joueurs',
+    desc: 'Évaluer et noter les performances des joueurs sur le terrain (Radar 4 piliers, critères, notes & mentions)',
+    target: 'mobile',
+    category: 'match_management',
+    badge: 'Évaluation'
+  },
+  {
+    key: 'scout_basket_opponent',
+    label: 'Panier Détection Adversaire & Potentiel',
+    desc: 'Sélectionner un joueur adverse dans la composition du match et l\'ajouter au panier avec sa note de potentiel vers la rubrique Missions (Recrutement & Détection V2)',
+    target: 'mobile',
+    category: 'match_management',
+    badge: 'Panier Missions'
   }
 ];
 
@@ -210,6 +227,14 @@ export const SCOUT_MOBILE_PERMISSIONS: PermissionDefinition[] = [
     target: 'mobile',
     category: 'scout_mobile',
     badge: 'Rapport'
+  },
+  {
+    key: 'scout_basket_opponent',
+    label: 'Panier Détection Adversaire (Switcher)',
+    desc: 'Ajouter un joueur adverse au panier via le switcher de FUS-APP (transféré dans la rubrique Missions V2)',
+    target: 'mobile',
+    category: 'scout_mobile',
+    badge: 'Panier'
   },
   {
     key: 'scout_evaluate_radar',
@@ -874,17 +899,26 @@ Direction Générale — FUS Rabat`;
     fetchTeams();
     fetchOperableMatches();
 
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleMatchesReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        fetchOperableMatches();
+      }, 400);
+    };
+
     const matchesSub = supabase
-      .channel('user-mgmt-matches-sub')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
-        fetchOperableMatches();
-      })
-      .on('broadcast', { event: 'match_acknowledged' }, () => {
-        fetchOperableMatches();
-      })
+      .channel(`user-mgmt-matches-sub-${DEFAULT_FUS_CLUB_ID}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'matches', filter: `club_id=eq.${DEFAULT_FUS_CLUB_ID}` },
+        scheduleMatchesReload
+      )
+      .on('broadcast', { event: 'match_acknowledged' }, scheduleMatchesReload)
       .subscribe();
 
     return () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
       supabase.removeChannel(matchesSub);
     };
   }, []);
@@ -1406,23 +1440,30 @@ Direction Générale — FUS Rabat`;
         });
         if (provRes.userId) {
           createdUserId = provRes.userId;
+        } else if (!provRes.success && provRes.message) {
+          throw new Error(provRes.message);
         }
-      } catch (provErr) {
+      } catch (provErr: any) {
         console.warn('[UserManagement] provisionUserCredentials notice:', provErr);
+        throw new Error(provErr?.message || "Échec lors de la création des identifiants de l'utilisateur.");
       }
 
       if (!createdUserId) {
-        createdUserId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `user-${Date.now()}`;
+        throw new Error("Impossible d'associer un identifiant Supabase Auth valide à cet utilisateur.");
       }
 
       // Upload avatar si présent
       let createdAvatarUrl = formData.avatar_url;
       if (avatarFile) {
         try {
-          const tempId = createdUserId || `user-${Date.now()}`;
-          const fileExt = avatarFile.name.split('.').pop();
+          const tempId = createdUserId;
+          const compressedAvatar = await compressImageClientSide(avatarFile, { maxWidth: 400, maxHeight: 400, quality: 0.8, mimeType: 'image/webp' });
+          const fileExt = compressedAvatar.name.split('.').pop() || 'webp';
           const fileName = `${tempId}-${Math.random()}.${fileExt}`;
-          const { error: uploadError } = await supabase.storage.from('staff').upload(fileName, avatarFile);
+          const { error: uploadError } = await supabase.storage.from('staff').upload(fileName, compressedAvatar, {
+            cacheControl: '31536000',
+            contentType: compressedAvatar.type || 'image/webp',
+          });
           if (!uploadError) {
             const { data: { publicUrl } } = supabase.storage.from('staff').getPublicUrl(fileName);
             createdAvatarUrl = publicUrl;
@@ -1448,7 +1489,7 @@ Direction Générale — FUS Rabat`;
           is_active: formData.is_active !== false
         });
       if (insertErr) {
-        console.warn('[UserManagement] user_profiles insert notice:', insertErr.message);
+        throw new Error(`Erreur lors de l'enregistrement du profil utilisateur : ${insertErr.message}`);
       }
 
       // 4. Synchronisation Scout dans la table scouts : UNIQUEMENT si l'intitulé de poste est strictement 'Scout'
@@ -1526,13 +1567,6 @@ Direction Générale — FUS Rabat`;
       }
 
       toast.success("Utilisateur créé avec succès ! Identifiants générés.");
-      AuditLogger.logCreate(
-        'USERS',
-        'USER',
-        createdUserId || 'new-user',
-        formData,
-        `Création du compte utilisateur ${formData.full_name || formData.email} (${formData.system_role})`
-      );
 
       // Bascule automatique vers l'Étape 2 (Restitution des Identifiants & Envoi WhatsApp)
       setCreatedCredentials({
@@ -1573,12 +1607,19 @@ Direction Générale — FUS Rabat`;
       let finalAvatarUrl = formData.avatar_url;
 
       if (avatarFile) {
-        const fileExt = avatarFile.name.split('.').pop();
+        const compressedAvatar = await compressImageClientSide(avatarFile, { maxWidth: 400, maxHeight: 400, quality: 0.8, mimeType: 'image/webp' });
+        const fileExt = compressedAvatar.name.split('.').pop() || 'webp';
         const fileName = `${currentUserId}-${Math.random()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from('staff').upload(fileName, avatarFile);
+        const { error: uploadError } = await supabase.storage.from('staff').upload(fileName, compressedAvatar, {
+          cacheControl: '31536000',
+          contentType: compressedAvatar.type || 'image/webp',
+        });
 
         if (!uploadError) {
           const { data: { publicUrl } } = supabase.storage.from('staff').getPublicUrl(fileName);
+          if (formData.avatar_url && formData.avatar_url !== publicUrl) {
+            void storageService.deleteFile(formData.avatar_url);
+          }
           finalAvatarUrl = publicUrl;
         }
       }
@@ -1918,15 +1959,6 @@ Direction Générale — FUS Rabat`;
         setModalMode('none');
       }
 
-      AuditLogger.logUpdate(
-        'USERS',
-        'USER',
-        selectedUserId,
-        {},
-        formData,
-        `Mise à jour du compte utilisateur ${formData.full_name || formData.email}`
-      );
-
       await fetchUsers();
     } catch (err: any) {
       toast.error(err.message || "Erreur lors de la mise à jour.");
@@ -2072,13 +2104,6 @@ Direction Générale — FUS Rabat`;
         toast.success("Utilisateur supprimé définitivement avec succès.");
       }
 
-      AuditLogger.logDelete(
-        'USERS',
-        'USER',
-        id,
-        oldUser || null,
-        `Suppression définitive du compte utilisateur ${oldUser?.full_name || oldUser?.email || id}${releasedCount > 0 ? ` (${releasedCount} joueur(s) libéré(s))` : ''}`
-      );
       fetchUsers();
     } catch (err: any) {
       console.error('Erreur lors de la suppression:', err);
@@ -3920,7 +3945,7 @@ Direction Générale — FUS Rabat`;
                                       : 'text-blue-900/80 dark:text-blue-200 hover:bg-blue-500/15'
                                       }`}
                                   >
-                                    <span>⚽ Planification Match</span>
+                                    <span>⚽ Gestion de Match</span>
                                     <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${mobileAppSubTab === 'match' ? 'bg-white/20 text-white' : 'bg-blue-500/20 text-blue-800 dark:text-blue-300'
                                       }`}>
                                       {MATCH_GLOBAL_PLANNING_PERMISSIONS.filter(p => formData.permissions_overrides[p.key]).length}/{MATCH_GLOBAL_PLANNING_PERMISSIONS.length}
@@ -3949,11 +3974,11 @@ Direction Générale — FUS Rabat`;
                                     <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                                     <div className="space-y-1 text-[11px] text-blue-900/90 dark:text-blue-200/90">
                                       <span className="font-bold text-blue-950 dark:text-blue-100 flex items-center gap-1.5">
-                                        <span>Habilitations Opérations Terrain & Direct</span>
-                                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-red-500/15 text-red-600 font-bold uppercase">Section 4 Dédiée</span>
+                                        <span>Habilitations Match & Terrain (fus-app)</span>
+                                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-700 dark:text-blue-300 font-bold uppercase">Actions Dédiées</span>
                                       </span>
                                       <p className="leading-relaxed">
-                                        La permission ci-dessous est globale et concerne uniquement la création de futurs matchs. Toutes les autres habilitations terrain (<strong>Live Tracking, Modification de feuille, Changement de système de jeu, Report et Évaluation</strong>) sont désormais gérées exclusivement dans la <strong>Section 4 « Matchs Assignés pour Opérations Live »</strong> ci-dessous.
+                                        La permission « <strong>Gestion des matchs</strong> » englobe toutes les opérations de match (compo, feuille, direct, live et planification). L'« <strong>Évaluation des joueurs</strong> » (radar, critères) et le « <strong>Panier Détection Adversaire & Potentiel</strong> » (transfert vers les Missions V2) sont activables de manière indépendante.
                                       </p>
                                     </div>
                                   </div>

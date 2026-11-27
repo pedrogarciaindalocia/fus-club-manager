@@ -32,6 +32,15 @@ export const competitionService = {
     }
     delete payload.image_url;
 
+    // Garantir un seul stade principal My Club par club
+    if (payload.is_home_stadium) {
+      await supabase
+        .from('stadiums')
+        .update({ is_home_stadium: false })
+        .eq('club_id', clubId)
+        .eq('is_home_stadium', true);
+    }
+
     const { data, error } = await supabase
       .from('stadiums')
       .insert([{ ...payload, club_id: clubId }])
@@ -47,6 +56,17 @@ export const competitionService = {
       payload.photo_url = payload.image_url;
     }
     delete payload.image_url;
+
+    // Garantir un seul stade principal My Club par club
+    if (payload.is_home_stadium) {
+      const clubId = await getMyClubId();
+      await supabase
+        .from('stadiums')
+        .update({ is_home_stadium: false })
+        .eq('club_id', clubId)
+        .neq('id', id)
+        .eq('is_home_stadium', true);
+    }
 
     const { data, error } = await supabase
       .from('stadiums')

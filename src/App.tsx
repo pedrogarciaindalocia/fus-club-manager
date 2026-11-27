@@ -48,7 +48,6 @@ import StoreManagement from './features/store-management/StoreManagement';
 import ProfilePage from './features/profile/ProfilePage';
 import UserManagement from './features/user-management/UserManagement';
 import ArbitresPage from './features/people-management/ArbitresPage';
-import AuditLogsPage from './features/audit-logs/AuditLogsPage';
 import RecruitmentPage from './features/recruitment/RecruitmentPage';
 import RecruitmentV2Page from './features/recruitment_v2/RecruitmentV2Page';
 import AddPlayerPage from './features/recruitment_v2/AddPlayerPage';
@@ -101,7 +100,6 @@ const pageTitles: Record<string, string> = {
   '/blog': 'Gestion du Blog',
   '/store': 'Gestion du Store',
   '/users': 'Gestion des Utilisateurs',
-  '/logs': 'Administration — Logs & Audit',
 };
 
 // -------------------------------------------------------
@@ -200,7 +198,6 @@ const AppContent: React.FC = () => {
   const isSystemPath =
     location.pathname.startsWith('/plugins') ||
     location.pathname.startsWith('/users') ||
-    location.pathname.startsWith('/logs') ||
     location.pathname.startsWith('/blog') ||
     location.pathname.startsWith('/store') ||
     location.pathname.startsWith('/settings');
@@ -383,7 +380,6 @@ const AppContent: React.FC = () => {
                 <UserManagement />
               </ProtectedRoute>
             } />
-            <Route path="/logs" element={<AuditLogsPage />} />
             <Route path="/tickets" element={<TicketsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/media" element={<MediaManagementPage />} />

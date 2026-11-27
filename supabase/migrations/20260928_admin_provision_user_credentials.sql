@@ -11,6 +11,10 @@ ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS system_role VARCHAR(50
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS job_title VARCHAR(150);
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS phone_number VARCHAR(50);
 
+-- Supprimer la fonction existante pour éviter l'erreur 42P13 (cannot remove parameter defaults)
+DROP FUNCTION IF EXISTS public.admin_provision_user_credentials(uuid, text, text, text, text, text, text);
+DROP FUNCTION IF EXISTS public.admin_provision_user_credentials;
+
 -- Fonction RPC universelle pour provisionner ou mettre à jour les identifiants d'un utilisateur
 CREATE OR REPLACE FUNCTION public.admin_provision_user_credentials(
   target_user_id uuid,
@@ -36,8 +40,15 @@ DECLARE
   actual_user_id uuid;
 BEGIN
   calling_user_id := auth.uid();
-  IF calling_user_id IS NULL AND auth.role() <> 'service_role' THEN
-    RAISE EXCEPTION 'Non autorisé: Utilisateur non authentifié';
+  -- Si un utilisateur est authentifié avec une session active, vérifier qu'il s'agit d'un rôle autorisé
+  IF calling_user_id IS NOT NULL AND auth.role() <> 'service_role' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.user_profiles
+      WHERE id = calling_user_id
+        AND lower(system_role) IN ('super_admin', 'admin', 'scout_admin', 'direction', 'technical_director')
+    ) THEN
+      RAISE EXCEPTION 'Non autorisé: Réservé aux administrateurs';
+    END IF;
   END IF;
 
   IF temp_password IS NULL OR length(trim(temp_password)) < 6 THEN
@@ -145,3 +156,4 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.admin_provision_user_credentials(uuid, text, text, text, text, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_provision_user_credentials(uuid, text, text, text, text, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_provision_user_credentials(uuid, text, text, text, text, text, text) TO anon;

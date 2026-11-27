@@ -30,6 +30,18 @@ import { toast } from 'sonner';
 import { OpponentSquadModal } from '../club-management/components/OpponentSquadModal';
 import type { Match, Player, MatchPhase } from '../../types';
 import { getFusAcademyStadium } from '../../utils/stadiumHelpers';
+import {
+  FUS_APP_FULL_MATCH_KEYS,
+  buildFullOperatorPermissionsMap,
+  canUserAssignMatchOperator,
+  fetchEligibleOperators,
+  grantOperatorOverrides,
+  isOperatorEditableMatchStatus,
+  resolveOperatorRoleLabel,
+  revokeOperatorOverridesIfNoActiveMatches,
+  type OperatorCandidate,
+} from '../../services/operatorAssignmentService';
+import { dispatchMatchPushNotification } from '../../services/pushNotificationSender';
 
 interface ScheduleMatchWizardProps {
   onBack: () => void;
@@ -228,6 +240,14 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
 
   // Step 2
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
+  const [availableOperators, setAvailableOperators] = useState<OperatorCandidate[]>([]);
+  const [operatorSearchQuery, setOperatorSearchQuery] = useState('');
+  const [selectedOperator, setSelectedOperator] = useState<{
+    id: string;
+    name: string;
+    role: string;
+    avatar_url: string | null;
+  } | null>(null);
 
   // Auto-sélection automatique du stade FUS ACADEMY à Domicile
   useEffect(() => {
@@ -492,6 +512,22 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         setSelectedStaffIds(initialMatch.staff_ids.map(String));
       }
 
+      // Opérateur FUS-APP
+      const initOpId = (initialMatch as any).live_operator_id || rawLineup?.live_operator?.id || null;
+      const initOpName = (initialMatch as any).live_operator_name || rawLineup?.live_operator?.name || null;
+      const initOpRole = (initialMatch as any).live_operator_role || rawLineup?.live_operator?.role || 'Opérateur Live';
+      const initOpAvatar = (initialMatch as any).live_operator_avatar_url || rawLineup?.live_operator?.avatar_url || null;
+      if (initOpId && initOpName) {
+        setSelectedOperator({
+          id: String(initOpId),
+          name: String(initOpName),
+          role: String(initOpRole),
+          avatar_url: initOpAvatar ? String(initOpAvatar) : null,
+        });
+      } else {
+        setSelectedOperator(null);
+      }
+
       // Starting XI
       setManualPositions(Boolean(rawLineup?.manual_positions));
       setOpponentManualPositions(Boolean(rawLineup?.opponent_manual_positions));
@@ -557,7 +593,28 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
   }, [initialMatch]);
 
   // Check permissions
-  const { canManageCategory, authState } = usePermissions();
+  const { canManageCategory, authState, isSuperAdmin, can, hasSpecificActionAccess } = usePermissions();
+  const canAssignWizardOperator =
+    isOperatorEditableMatchStatus(initialMatch?.status) &&
+    canUserAssignMatchOperator({
+      isSuperAdmin,
+      systemRole: authState?.user?.system_role,
+      can,
+      hasSpecificActionAccess,
+    });
+
+  useEffect(() => {
+    if (!canAssignWizardOperator) return;
+    let mounted = true;
+    fetchEligibleOperators()
+      .then((ops) => {
+        if (mounted) setAvailableOperators(ops);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [canAssignWizardOperator]);
   const ALLOWED_CATEGORIES = Array.from(new Set([
     ...CATEGORIES.filter(c => canManageCategory(c)),
     ...(authState.userCategories || [])
@@ -853,7 +910,16 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
           match_type: setup.match_type,
           pitch_number: pitch_number || null,
           internal_opposition: internalMeta,
-          live_operator: (initialMatch?.lineup as any)?.live_operator ?? null,
+          live_operator: selectedOperator
+            ? {
+                id: selectedOperator.id,
+                name: selectedOperator.name,
+                role: selectedOperator.role,
+                avatar_url: selectedOperator.avatar_url,
+                permissions: buildFullOperatorPermissionsMap(),
+              }
+            : null,
+          operator_history: ((initialMatch?.lineup as any)?.operator_history as any[]) ?? undefined,
           manual_positions: manualPositions,
           opponent_manual_positions: opponentManualPositions,
           jerseyOverrides: Object.fromEntries(
@@ -873,11 +939,11 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         opponent_lineup: opponentLineup,
         opponent_subs: opponentSubs,
         staff_ids: selectedStaffIds,
-        ...(initialMatch?.live_operator_id ? { live_operator_id: initialMatch.live_operator_id } : {}),
-        ...(initialMatch?.live_operator_name ? { live_operator_name: initialMatch.live_operator_name } : {}),
-        ...(initialMatch?.live_operator_role ? { live_operator_role: initialMatch.live_operator_role } : {}),
-        ...(initialMatch?.live_operator_avatar_url ? { live_operator_avatar_url: initialMatch.live_operator_avatar_url } : {}),
-        ...(initialMatch?.live_operator_permissions ? { live_operator_permissions: initialMatch.live_operator_permissions } : {}),
+        live_operator_id: selectedOperator?.id ?? null,
+        live_operator_name: selectedOperator?.name ?? null,
+        live_operator_role: selectedOperator?.role ?? null,
+        live_operator_avatar_url: selectedOperator?.avatar_url ?? null,
+        live_operator_permissions: selectedOperator ? [...FUS_APP_FULL_MATCH_KEYS] : null,
         referee_central_id: selectedReferees.central_id,
         referee_assistant1_id: selectedReferees.assistant1_id,
         referee_assistant2_id: selectedReferees.assistant2_id,
@@ -900,12 +966,45 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
         penalty_score_home: initialMatch?.penalty_score_home ?? 0,
         penalty_score_away: initialMatch?.penalty_score_away ?? 0,
       };
+      const prevOperatorId =
+        (initialMatch as any)?.live_operator_id ||
+        ((initialMatch?.lineup as any)?.live_operator?.id as string | undefined) ||
+        null;
+
+      let savedMatchResult: any = null;
       if (initialMatch) {
-        await updateMatch({ id: initialMatch.id, data: matchPayload });
+        savedMatchResult = await updateMatch({ id: initialMatch.id, data: matchPayload });
         toast.success("✅ Match orchestré et mis à jour avec succès !");
       } else {
-        await addMatch(matchPayload);
+        savedMatchResult = await addMatch(matchPayload);
         toast.success("🎉 Match planifié avec succès !");
+      }
+
+      const resolvedMatchId = savedMatchResult?.id || initialMatch?.id || null;
+      if (selectedOperator) {
+        await grantOperatorOverrides(selectedOperator.id).catch(() => {});
+      }
+      if (prevOperatorId && prevOperatorId !== selectedOperator?.id && resolvedMatchId) {
+        await revokeOperatorOverridesIfNoActiveMatches(prevOperatorId, resolvedMatchId).catch(() => {});
+      }
+      if (
+        selectedOperator &&
+        resolvedMatchId &&
+        String(prevOperatorId || '').toLowerCase() !== String(selectedOperator.id).toLowerCase()
+      ) {
+        const oppLabel = getOpponentName(setup.opponent_id);
+        dispatchMatchPushNotification({
+          match_id: resolvedMatchId,
+          type: 'operator_assigned',
+          category: setup.category,
+          operator_id: selectedOperator.id,
+          target_user_id: selectedOperator.id,
+          operator_name: selectedOperator.name,
+          operator_role: selectedOperator.role,
+          operator_avatar_url: selectedOperator.avatar_url,
+          title: `🎙️ Opérateur Match Assigné [${setup.category || 'FUS'}]`,
+          body: `${selectedOperator.name}, vous êtes désigné Opérateur Live pour le match FUS vs ${oppLabel}.`,
+        }).catch(() => {});
       }
       onSuccess?.();
       onBack();
@@ -1932,7 +2031,121 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
           )}
 
           {currentStep === 'staff' && (
-            <div key="staff" className="p-12 space-y-10 flex-1">
+            <div key="staff" className="p-12 space-y-12 flex-1">
+              {canAssignWizardOperator && (
+                <div className="p-8 rounded-[2.5rem] bg-slate-950 text-white border border-slate-800 shadow-2xl space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-xl">
+                        🎙️
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black uppercase tracking-wider text-white">
+                          Opérateur FUS-APP (Terrain & Direct)
+                        </h3>
+                        <p className="text-xs text-slate-400 font-medium">
+                          Désignez le collaborateur chargé du suivi mobile en direct pour ce match à venir
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {selectedOperator ? (
+                        <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-emerald-500/15 border border-emerald-500/30">
+                          <span className="text-xs font-black text-emerald-300">
+                            ✓ {selectedOperator.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedOperator(null)}
+                            className="p-1 rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition-colors cursor-pointer"
+                            title="Retirer l'opérateur"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/10 text-slate-300">
+                          Non assigné (Optionnel)
+                        </span>
+                      )}
+                      <div className="relative w-56">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={operatorSearchQuery}
+                          onChange={(e) => setOperatorSearchQuery(e.target.value)}
+                          placeholder="Chercher un opérateur..."
+                          className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-white/10 border border-white/15 text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-56 overflow-y-auto pr-1">
+                    {availableOperators
+                      .filter((op) => {
+                        const q = operatorSearchQuery.trim().toLowerCase();
+                        if (!q) return true;
+                        return (
+                          op.full_name.toLowerCase().includes(q) ||
+                          (op.job_title || '').toLowerCase().includes(q)
+                        );
+                      })
+                      .map((op) => {
+                        const isOpSelected = selectedOperator?.id === op.id;
+                        const roleLabel = resolveOperatorRoleLabel(op);
+                        return (
+                          <button
+                            key={op.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedOperator(
+                                isOpSelected
+                                  ? null
+                                  : {
+                                      id: op.id,
+                                      name: op.full_name,
+                                      role: roleLabel,
+                                      avatar_url: op.avatar_url,
+                                    }
+                              )
+                            }
+                            className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                              isOpSelected
+                                ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg'
+                                : 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10'
+                            }`}
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-slate-800 border border-white/15 overflow-hidden flex items-center justify-center shrink-0 font-black text-xs">
+                              {op.avatar_url ? (
+                                <img src={op.avatar_url} alt={op.full_name} className="w-full h-full object-cover" />
+                              ) : (
+                                op.full_name
+                                  .split(' ')
+                                  .map((n) => n[0])
+                                  .join('')
+                                  .slice(0, 2)
+                                  .toUpperCase()
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-black truncate">{op.full_name}</p>
+                              <p
+                                className={`text-[10px] font-bold truncate ${
+                                  isOpSelected ? 'text-indigo-100' : 'text-slate-400'
+                                }`}
+                              >
+                                {roleLabel}
+                              </p>
+                            </div>
+                            {isOpSelected && <Check className="w-4 h-4 text-white shrink-0 stroke-[3]" />}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
               <SectionTitle icon={<Briefcase className="w-5 h-5 text-primary" />} title="Membres du Staff" subtitle="Désignez les membres techniques présents pour cette rencontre" />
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
                 {staff.map(member => {
@@ -2791,6 +3004,7 @@ const ScheduleMatchWizard: React.FC<ScheduleMatchWizardProps> = ({ onBack, onSuc
                       />
                     )}
                     <InfoRow label="Encadrement Staff" value={`${selectedStaffIds.length} membres`} />
+                    <InfoRow label="Opérateur FUS-APP" value={selectedOperator ? `🎙️ ${selectedOperator.name}` : 'Non assigné'} />
                     <InfoRow label="Terrain" value={setup.is_home && setup.match_type === 'amical' ? getStadiumName(setup.stadium_id) : (setup.is_home ? 'Domicile' : 'Extérieur')} />
                     <InfoRow label="Système Adverse" value={opponentFormation} />
                   </div>

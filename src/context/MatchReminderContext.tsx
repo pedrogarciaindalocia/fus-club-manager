@@ -51,13 +51,15 @@ export const MatchReminderProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const fetchMatches = async () => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     try {
       const today = new Date().toISOString().split('T')[0];
       const { data, error } = await supabase
         .from('matches')
-        .select('*, opponent:clubs!opponent_id(name)')
+        .select('id, match_date, match_time, status, opponent:clubs!opponent_id(name)')
         .eq('status', 'scheduled')
-        .eq('match_date', today);
+        .eq('match_date', today)
+        .limit(30);
 
       if (!error && data) {
         setUpcomingMatches(data);
@@ -69,7 +71,7 @@ export const MatchReminderProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     fetchMatches();
-    const refreshInterval = setInterval(fetchMatches, 60 * 1000);
+    const refreshInterval = setInterval(fetchMatches, 5 * 60 * 1000);
     return () => clearInterval(refreshInterval);
   }, []);
 
@@ -224,19 +226,27 @@ export const MatchReminderProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
-  // Surveillance périodique : rappels et auto-clôture toutes les 30 secondes
+  // Surveillance périodique : rappels locaux (aucune requête réseau)
   useEffect(() => {
     intervalRef.current = setInterval(checkReminders, 30000);
-    autoTerminateIntervalRef.current = setInterval(checkAutoTerminateMatches, 30000);
-    
-    // Première vérification immédiate au montage
-    checkAutoTerminateMatches();
-
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [upcomingMatches, reminderInterval, maxReminders]);
+
+  // Auto-clôture des matchs expirés : vérifiée toutes les 5 min uniquement si l'onglet est visible
+  useEffect(() => {
+    const runAutoTerminate = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      void checkAutoTerminateMatches();
+    };
+    autoTerminateIntervalRef.current = setInterval(runAutoTerminate, 5 * 60 * 1000);
+    runAutoTerminate();
+
+    return () => {
       if (autoTerminateIntervalRef.current) clearInterval(autoTerminateIntervalRef.current);
     };
-  }, [upcomingMatches, reminderInterval, maxReminders, checkAutoTerminateMatches]);
+  }, [checkAutoTerminateMatches]);
 
   return (
     <MatchReminderContext.Provider value={{

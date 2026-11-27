@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { validateFileSecurity } from './mediaService';
+import { compressImageClientSide } from '../utils/compressImage';
 
 export type StorageUploadType =
   | 'leagues'
@@ -67,14 +68,22 @@ export const storageService = {
       defaultFolderId: 'a0000000-0000-0000-0000-000000000001',
     };
 
-    const fileExt = file.name.split('.').pop() || 'jpg';
+    const fileToUpload = file.type.startsWith('image/')
+      ? await compressImageClientSide(file, { maxWidth: 1200, quality: 0.78, mimeType: 'image/webp' })
+      : file;
+
+    const fileExt = fileToUpload.name.split('.').pop() || 'jpg';
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
     const filePath = strategy.resolvePath(fileName);
 
-    // 1. Upload file to specific bucket
+    // 1. Upload file to specific bucket with long-lived CDN cache
     const { error: uploadError } = await supabase.storage
       .from(strategy.bucket)
-      .upload(filePath, file);
+      .upload(filePath, fileToUpload, {
+        cacheControl: '31536000',
+        contentType: fileToUpload.type || 'image/jpeg',
+        upsert: false,
+      });
 
     if (uploadError) {
       console.error(`[StorageService] Échec upload image (${type}):`, uploadError);
@@ -89,12 +98,12 @@ export const storageService = {
     // 3. Enregistrement dans media_files avec dossier par défaut pour visibilité immédiate dans l'Espace Média
     const mediaFileRecord = {
       id: crypto.randomUUID ? crypto.randomUUID() : `local-${Date.now()}-${Math.random()}`,
-      name: file.name,
+      name: fileToUpload.name,
       folder_id: strategy.defaultFolderId,
       storage_path: filePath,
       public_url: data.publicUrl,
-      file_size: file.size,
-      mime_type: file.type || 'image/jpeg',
+      file_size: fileToUpload.size,
+      mime_type: fileToUpload.type || 'image/jpeg',
       created_at: new Date().toISOString(),
     };
 
@@ -109,7 +118,7 @@ export const storageService = {
           file_size: mediaFileRecord.file_size,
           mime_type: mediaFileRecord.mime_type,
         }])
-        .select()
+        .select('id')
         .single();
 
       if (dbInsert?.id) {

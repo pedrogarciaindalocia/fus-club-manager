@@ -39,7 +39,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { usePermissions } from '../../context/PermissionsContext';
-import { OFFICIAL_JOB_TITLES, resolveCanonicalJobTitle } from '../../constants/roles';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { PlayerPitchHoverCard, type PlayerPitchStats } from './components/PlayerPitchHoverCard';
@@ -51,8 +50,13 @@ import { useStaff } from '../../hooks/useStaff';
 import { matchService } from '../../services/matchService';
 import { MatchDriveVideoModal } from './components/MatchDriveVideoModal';
 import { MatchDriveVideoCard } from './components/MatchDriveVideoCard';
+import { OperatorAssignmentModal } from './components/OperatorAssignmentModal';
+import {
+  canUserAssignMatchOperator,
+  isLiveMatchStatus,
+  isOperatorEditableMatchStatus,
+} from '../../services/operatorAssignmentService';
 import { supabase } from '../../lib/supabase';
-import { dispatchMatchPushNotification } from '../../services/pushNotificationSender';
 import { frmfDataService, type FRMFDataset } from '../../services/frmfDataService';
 import { computeFrmfFaceToFaceSummary } from '../../utils/championshipTimelineHelper';
 import type { Match } from '../../types';
@@ -72,21 +76,6 @@ interface MatchOverviewPanelProps {
 // Tactical Formation Coordinates imported from centralized module
 import { getFormationPositions, inferMatchFormat } from './tacticalFormations';
 import { resolveDisplayLineupEntries } from './utils/lineupPositionHelper';
-
-const FUS_APP_FULL_MATCH_KEYS = [
-  'live_tracking',
-  'modify_match',
-  'change_formation',
-  'postpone_match',
-  'evaluate_players',
-] as const;
-
-const getInitials = (name: string) => {
-  if (!name) return '';
-  const parts = name.trim().split(' ');
-  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-};
 
 const StatBar: React.FC<{ label: string; home: number; away: number; icon?: string; unit?: string }> = ({
   label, home, away, icon, unit = ''
@@ -193,177 +182,23 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
     }
   }, [match?.id]);
 
-  const { hasSpecificActionAccess, isSuperAdmin } = usePermissions();
-  const normMatchStatus = String(match.status || '').toLowerCase();
-  const isOperatorEditableStatus =
-    normMatchStatus === 'scheduled' ||
-    normMatchStatus === 'live' ||
-    normMatchStatus === 'programmed' ||
-    normMatchStatus === 'upcoming' ||
-    normMatchStatus === 'halftime';
+  const { hasSpecificActionAccess, isSuperAdmin, authState, can } = usePermissions();
+  const isOperatorEditableStatus = isOperatorEditableMatchStatus(match.status);
+  const isMatchLiveNow = isLiveMatchStatus(match.status);
   const canAssignOperator =
     isOperatorEditableStatus &&
-    (isSuperAdmin ||
-      hasSpecificActionAccess('matches', 'assign_operator', 'create') ||
-      hasSpecificActionAccess('matches', 'assign_operator', 'update'));
+    canUserAssignMatchOperator({
+      isSuperAdmin,
+      systemRole: authState?.user?.system_role,
+      can,
+      hasSpecificActionAccess,
+    });
 
   const [isOperatorModalOpen, setIsOperatorModalOpen] = useState(false);
-  const [availableOperators, setAvailableOperators] = useState<Array<{
-    id: string;
-    full_name: string;
-    job_title?: string | null;
-    system_role?: string | null;
-    avatar_url?: string | null;
-    permissions_overrides?: Record<string, any> | null;
-  }>>([]);
-  const [loadingOperators, setLoadingOperators] = useState(false);
-  const [operatorSearch, setOperatorSearch] = useState('');
-  const [operatorJobFilter, setOperatorJobFilter] = useState<string>('ALL');
-  const [selectedOpId, setSelectedOpId] = useState<string>('');
-  const [savingOperator, setSavingOperator] = useState(false);
 
-  const openOperatorModal = async () => {
+  const openOperatorModal = () => {
     if (!isOperatorEditableStatus) return;
     setIsOperatorModalOpen(true);
-    setOperatorSearch('');
-    setOperatorJobFilter('ALL');
-    const currentId = operatorDetails.id || (match as any).live_operator_id || '';
-    setSelectedOpId(currentId);
-
-    setLoadingOperators(true);
-    try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('id, full_name, job_title, system_role, avatar_url, is_active')
-        .order('full_name', { ascending: true });
-
-      if (!error && data) {
-        const mapped = data
-          .filter((u: any) => {
-            if (u.is_active === false) return false;
-            const normSys = (u.system_role || '').toLowerCase();
-            const normJob = (u.job_title || '').toLowerCase();
-            if (
-              normSys.includes('scout') ||
-              normJob.includes('scout') ||
-              normJob.includes('détection') ||
-              normJob.includes('recruteur')
-            ) {
-              return false;
-            }
-            return true;
-          })
-          .map((u: any) => ({
-            id: u.id,
-            full_name: u.full_name || 'Collaborateur',
-            job_title: resolveCanonicalJobTitle(u.job_title) || u.job_title || null,
-            system_role: u.system_role,
-            avatar_url: u.avatar_url,
-          }));
-        setAvailableOperators(mapped);
-      }
-    } catch (e) {
-      console.warn('[MatchOverviewPanel] Error loading operators:', e);
-    } finally {
-      setLoadingOperators(false);
-    }
-  };
-
-  const handleSelectOperatorUser = (op: (typeof availableOperators)[number]) => {
-    setSelectedOpId(op.id);
-  };
-
-  const handleSaveOperator = async () => {
-    if (!isOperatorEditableStatus) return;
-    const chosen = availableOperators.find((u) => u.id === selectedOpId);
-    if (!chosen) {
-      toast.error('Veuillez sélectionner un opérateur.');
-      return;
-    }
-    setSavingOperator(true);
-    try {
-      const opRole =
-        chosen.job_title ||
-        (chosen.system_role === 'admin'
-          ? 'Administrateur'
-          : chosen.system_role === 'super_admin'
-          ? 'Super Administrateur'
-          : 'Opérateur Live');
-
-      const fullMatchPerms: Record<string, boolean> = {};
-      FUS_APP_FULL_MATCH_KEYS.forEach((k) => {
-        fullMatchPerms[k] = true;
-      });
-
-      const curLineup = match.lineup && typeof match.lineup === 'object' ? { ...(match.lineup as any) } : {};
-      const updatedLineup = {
-        ...curLineup,
-        live_operator: {
-          id: chosen.id,
-          name: chosen.full_name,
-          role: opRole,
-          avatar_url: chosen.avatar_url || null,
-          permissions: fullMatchPerms,
-        },
-      };
-
-      const { error: matchErr } = await supabase
-        .from('matches')
-        .update({
-          live_operator_id: chosen.id,
-          live_operator_name: chosen.full_name,
-          live_operator_role: opRole,
-          live_operator_avatar_url: chosen.avatar_url || null,
-          lineup: updatedLineup,
-        })
-        .eq('id', match.id);
-
-      if (matchErr) throw matchErr;
-
-      await supabase
-        .from('user_permissions_overrides')
-        .delete()
-        .eq('user_id', chosen.id)
-        .in('permission_id', [...FUS_APP_FULL_MATCH_KEYS]);
-
-      const permsToInsert = FUS_APP_FULL_MATCH_KEYS.map((k) => ({
-        user_id: chosen.id,
-        permission_id: k,
-      }));
-      await supabase.from('user_permissions_overrides').insert(permsToInsert);
-
-      setOperatorDetails({
-        id: chosen.id,
-        name: chosen.full_name,
-        role: opRole,
-        avatar_url: chosen.avatar_url || null,
-      });
-      (match as any).live_operator_id = chosen.id;
-      (match as any).live_operator_name = chosen.full_name;
-      (match as any).live_operator_role = opRole;
-      (match as any).live_operator_avatar_url = chosen.avatar_url || null;
-      (match as any).live_operator_permissions = fullMatchPerms;
-
-      toast.success(`Opérateur ${chosen.full_name} assigné (accès complet sur ce match sur FUS-APP).`);
-      setIsOperatorModalOpen(false);
-
-      dispatchMatchPushNotification({
-        match_id: match.id,
-        type: 'operator_assigned',
-        category: match.category,
-        operator_id: chosen.id,
-        operator_name: chosen.full_name,
-        operator_role: opRole,
-        operator_avatar_url: chosen.avatar_url || null,
-        title: `🎙️ Opérateur Match Assigné [${match.category || 'FUS'}]`,
-        body: `${chosen.full_name} a été désigné Opérateur Live pour le match FUS vs ${opponentName}.`,
-      }).catch(() => {});
-    } catch (err) {
-      console.error('[MatchOverviewPanel] Error saving operator:', err);
-      toast.error("Erreur lors de l'enregistrement de l'opérateur.");
-    } finally {
-      setSavingOperator(false);
-    }
   };
 
   // Opérateur Live Fus-App (Nom, Prénom, Photo, Poste)
@@ -423,42 +258,6 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
           avatar_url: opAvatar || null,
         });
         return;
-      }
-
-      if (match.id && isMounted && !isAuditLogsReadBlocked) {
-        try {
-          const { data: logs, error: logsErr } = await supabase
-            .from('audit_logs')
-            .select('user_id, metadata')
-            .or(`entity_id.eq.${match.id},metadata->>match_id.eq.${match.id}`)
-            .not('user_id', 'is', null)
-            .limit(1);
-          if (logsErr) {
-            const errCode = String((logsErr as any).code || '');
-            if (errCode === '42501' || (logsErr as any).status === 401) {
-              isAuditLogsReadBlocked = true;
-            }
-          }
-          if (logs && logs.length > 0 && logs[0].user_id) {
-            const uid = logs[0].user_id;
-            const { data: prof } = await supabase
-              .from('user_profiles')
-              .select('id, full_name, first_name, last_name, avatar_url, job_title, system_role')
-              .eq('id', uid)
-              .maybeSingle();
-            if (prof && isMounted) {
-              const resolvedFullName = prof.full_name || `${prof.first_name || ''} ${prof.last_name || ''}`.trim();
-              const resolvedRole = prof.job_title || (prof.system_role === 'admin' ? 'Administrateur' : prof.system_role === 'super_admin' ? 'Super Administrateur' : 'Opérateur Live');
-              setOperatorDetails({
-                id: prof.id,
-                name: resolvedFullName || 'Opérateur Live',
-                role: resolvedRole || 'Opérateur Live Fus-App',
-                avatar_url: prof.avatar_url || null,
-              });
-              return;
-            }
-          }
-        } catch (_) { }
       }
 
       if (isMounted) {
@@ -1574,9 +1373,17 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
                   <button
                     type="button"
                     onClick={openOperatorModal}
-                    className="text-[9px] font-black px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors cursor-pointer"
+                    className={`text-[9px] font-black px-2.5 py-0.5 rounded-full border transition-colors cursor-pointer flex items-center gap-1 ${
+                      isMatchLiveNow
+                        ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                        : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                    }`}
                   >
-                    {operatorDetails.name ? 'Changer' : '+ Choisir'}
+                    {operatorDetails.name
+                      ? isMatchLiveNow
+                        ? '🔄 Relève Live'
+                        : 'Changer'
+                      : '+ Choisir'}
                   </button>
                 )}
                 <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase flex items-center gap-1 ${match.status === 'live'
@@ -2246,15 +2053,6 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
           </div>
         )}
 
-        {/* Floating Grab Indicator Handle on hover */}
-        <div
-          className="absolute top-2.5 right-2.5 z-30 opacity-80 group-hover/block:opacity-100 transition-opacity bg-slate-950/85 hover:bg-slate-900 text-slate-200 hover:text-white px-2.5 py-1 rounded-lg text-[9px] font-black flex items-center gap-1.5 shadow-lg border border-slate-700/80 backdrop-blur cursor-grab active:cursor-grabbing select-none"
-          title="Glisser pour déplacer et repositionner ce bloc"
-        >
-          <GripVertical className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Glisser</span>
-        </div>
-
         {content}
       </div>
     );
@@ -2411,187 +2209,27 @@ export const MatchOverviewPanel: React.FC<MatchOverviewPanelProps> = ({
         {renderColumn('col3', 'lg:col-span-4')}
       </div>
 
-      {/* Modal : Choix de l'opérateur FUS-APP & Permissions Match */}
-      {isOperatorModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center">
-                  <UserCheck className="w-5 h-5 text-indigo-300" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider">
-                    Opérateur FUS-APP
-                  </h3>
-                  <p className="text-[11px] text-slate-300">
-                    Choisissez l'utilisateur qui gérera ce match sur FUS-APP (accès complet à la rencontre)
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsOperatorModalOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto space-y-5">
-              {/* 1. Sélection de l'opérateur */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-xs font-black uppercase tracking-wider text-slate-800">
-                    1. Choisir l'opérateur FUS-APP
-                  </label>
-                  <div className="relative w-56">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={operatorSearch}
-                      onChange={(e) => setOperatorSearch(e.target.value)}
-                      placeholder="Rechercher un membre..."
-                      className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                {loadingOperators ? (
-                  <div className="py-6 text-center text-xs text-slate-500">Chargement des utilisateurs...</div>
-                ) : (
-                  <>
-                    {/* Filtre par intitulé de poste (OFFICIAL_JOB_TITLES) */}
-                    {(() => {
-                      const extraTitles = availableOperators
-                        .map((u) => resolveCanonicalJobTitle(u.job_title))
-                        .filter((t) => t && !(OFFICIAL_JOB_TITLES as readonly string[]).includes(t));
-                      const jobTitles = Array.from(new Set([...OFFICIAL_JOB_TITLES, ...extraTitles]))
-                        .filter((t) => !t.toLowerCase().includes('scout'));
-
-                      return (
-                        <div className="space-y-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                            Filtrer par intitulé de poste
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setOperatorJobFilter('ALL')}
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer ${
-                                operatorJobFilter === 'ALL'
-                                  ? 'bg-slate-900 text-white border-slate-900'
-                                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                              }`}
-                            >
-                              Tous ({availableOperators.length})
-                            </button>
-                            {jobTitles.map((jt) => {
-                              const count = availableOperators.filter(
-                                (u) => resolveCanonicalJobTitle(u.job_title) === jt
-                              ).length;
-                              const active = operatorJobFilter === jt;
-                              return (
-                                <button
-                                  key={jt}
-                                  type="button"
-                                  onClick={() => setOperatorJobFilter(jt)}
-                                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer ${
-                                    active
-                                      ? 'bg-indigo-600 text-white border-indigo-600'
-                                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                                  }`}
-                                >
-                                  {jt} ({count})
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
-                      {availableOperators
-                        .filter((u) => {
-                          const resolvedJob = resolveCanonicalJobTitle(u.job_title) || u.system_role || 'Collaborateur';
-                          if (operatorJobFilter !== 'ALL' && resolveCanonicalJobTitle(u.job_title) !== operatorJobFilter) {
-                            return false;
-                          }
-                          const q = operatorSearch.trim().toLowerCase();
-                          if (!q) return true;
-                          return (
-                            u.full_name.toLowerCase().includes(q) ||
-                            resolvedJob.toLowerCase().includes(q)
-                          );
-                        })
-                        .map((op) => {
-                          const isSelected = selectedOpId === op.id;
-                          return (
-                            <button
-                              key={op.id}
-                              type="button"
-                              onClick={() => handleSelectOperatorUser(op)}
-                              className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                                isSelected
-                                  ? 'bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500/30'
-                                  : 'bg-white border-slate-200 hover:bg-slate-50'
-                              }`}
-                            >
-                              {op.avatar_url ? (
-                                <img
-                                  src={op.avatar_url}
-                                  alt={op.full_name}
-                                  className="w-9 h-9 rounded-lg object-cover shrink-0 border border-slate-200"
-                                />
-                              ) : (
-                                <div className="w-9 h-9 rounded-lg bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
-                                  {getInitials(op.full_name)}
-                                </div>
-                              )}
-                              <div className="min-w-0 flex-1">
-                                <div className="text-xs font-bold text-slate-900 truncate">
-                                  {op.full_name}
-                                </div>
-                                <div className="text-[10px] text-slate-500 truncate">
-                                  {op.job_title || op.system_role || 'Collaborateur'}
-                                </div>
-                              </div>
-                              {isSelected && (
-                                <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                                  <Check className="w-3 h-3 stroke-[3]" />
-                                </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setIsOperatorModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/70 cursor-pointer"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                disabled={!selectedOpId || savingOperator}
-                onClick={handleSaveOperator}
-                className="px-5 py-2 rounded-xl text-xs font-black bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
-              >
-                <Check className="w-4 h-4" />
-                {savingOperator ? 'Enregistrement...' : 'Enregistrer'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal : Choix ou Passation Live de l'opérateur FUS-APP */}
+      <OperatorAssignmentModal
+        isOpen={isOperatorModalOpen}
+        onClose={() => setIsOperatorModalOpen(false)}
+        match={match}
+        opponentName={opponentName}
+        onAssigned={(res) => {
+          setOperatorDetails({
+            id: res.id,
+            name: res.name,
+            role: res.role,
+            avatar_url: res.avatar_url,
+          });
+          (match as any).live_operator_id = res.id;
+          (match as any).live_operator_name = res.name;
+          (match as any).live_operator_role = res.role;
+          (match as any).live_operator_avatar_url = res.avatar_url;
+          (match as any).live_operator_permissions = res.permissions;
+          (match as any).lineup = res.lineup;
+        }}
+      />
 
       {/* Modal Post-Match Video Drive */}
       <MatchDriveVideoModal

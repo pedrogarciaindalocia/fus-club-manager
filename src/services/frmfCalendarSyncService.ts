@@ -17,7 +17,6 @@ import {
   type FrmfCalendarRoundUpdateItem,
 } from '../utils/frmfCalendarSyncEngine';
 import { getMyClubId } from './_helpers';
-import { AuditLogger } from './auditLogger';
 import { frmfDataService, type FRMFDatabaseStatus } from './frmfDataService';
 
 export interface FrmfCalendarDatabaseAuditResponse extends FrmfCalendarAuditResult {
@@ -484,22 +483,6 @@ export const frmfCalendarSyncService = {
       }
     }
 
-    if (createdCount > 0) {
-      void AuditLogger.log({
-        action: 'CREATE',
-        module: 'MATCHES',
-        entity_type: 'MATCH_BATCH_SYNC',
-        description: `Synchronisation Calendrier My Club depuis FRMF : ${createdCount} match(s) ajouté(s), ${skippedCount} ignoré(s)`,
-        metadata: {
-          createdCount,
-          skippedCount,
-          createdClubsCount,
-          createdMatchIds,
-          source: 'frmf_matches',
-        },
-      });
-    }
-
     return {
       createdCount,
       skippedCount,
@@ -636,21 +619,6 @@ export const frmfCalendarSyncService = {
         }
         errors.push(`${item.category} ${item.targetRoundName} (vs ${oppLabel}) : ${getErrorMessage(err)}`);
       }
-    }
-
-    if (updatedCount > 0) {
-      void AuditLogger.log({
-        action: 'UPDATE',
-        module: 'MATCHES',
-        entity_type: 'MATCH_BATCH_ROUND_SYNC',
-        description: `Synchronisation des journées Calendrier My Club depuis FRMF : ${updatedCount} match(s) mis à jour`,
-        metadata: {
-          updatedCount,
-          skippedCount,
-          updatedMatchIds,
-          source: 'frmf_matches',
-        },
-      });
     }
 
     return {

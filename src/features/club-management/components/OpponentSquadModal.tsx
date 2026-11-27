@@ -8,8 +8,8 @@ import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { Badge } from '../../../components/ui/badge';
 import { Card, CardContent } from '../../../components/ui/card';
-import { 
-  X, Plus, Edit2, Trash2, Camera, Search, User, Shield, 
+import {
+  X, Plus, Edit2, Trash2, Camera, Search, User, Shield,
   Loader2, Filter, CheckCircle2, Ruler, Weight, Globe, Footprints, Sparkles, AlertCircle,
   ImageIcon, Scissors
 } from 'lucide-react';
@@ -23,10 +23,8 @@ export const OPPONENT_CATEGORIES = [
   'TOUTES',
   'SENIOR',
   'PRO',
-  'U23',
+  'U25',
   'U21',
-  'U20',
-  'U19',
   'U18',
   'U17',
   'U16',
@@ -47,7 +45,7 @@ import { ConfirmDialog } from '../../../components/ui/confirm-dialog';
 export const OpponentSquadModal: React.FC<OpponentSquadModalProps> = ({ isOpen, onClose, club }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('TOUTES');
   const { players, isLoading, addOpponentPlayer, addManyOpponentPlayers, updateOpponentPlayer, deleteOpponentPlayer } = useOpponentPlayers(
-    club.id, 
+    club.id,
     selectedCategory === 'TOUTES' ? undefined : selectedCategory
   );
   const [isGenerating, setIsGenerating] = useState(false);
@@ -251,13 +249,13 @@ export const OpponentSquadModal: React.FC<OpponentSquadModalProps> = ({ isOpen, 
     (p.position || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const clubLogo = (club.logo_url && club.logo_url !== 'null') 
-    ? club.logo_url 
+  const clubLogo = (club.logo_url && club.logo_url !== 'null')
+    ? club.logo_url
     : `https://ui-avatars.com/api/?name=${encodeURIComponent(club.name)}&background=020617&color=fff&size=200`;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md overflow-y-auto">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
@@ -282,8 +280,8 @@ export const OpponentSquadModal: React.FC<OpponentSquadModalProps> = ({ isOpen, 
             </div>
           </div>
 
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="w-12 h-12 rounded-2xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all z-10"
           >
             <X className="w-6 h-6" />

@@ -1,7 +1,7 @@
  
 # 📈 Orchestrated Workflow for **fus‑dashboard** Agents
 
-> This document defines a **coherent and efficient** end‑to‑end process that synchronises the six agents (Architecte Solution, Développeur Front‑end, Développeur Backend, Intégrateur UI/UX, Testeur QA, Chef de projet). All artefacts are stored in the Antigravity brain directory so any agent can retrieve them via `view_file`.
+> This document defines a **coherent and efficient** end‑to‑end process that synchronises the orchestrated agents (Architecte Solution, Développeur Front‑end, Développeur Backend, Intégrateur UI/UX, Auditeur & Optimiseur Supabase, Testeur QA, Chef de projet, Responsable Déploiement GitHub). All artefacts are stored in the Antigravity brain directory so any agent can retrieve them via `view_file`.
 
 ---
 
@@ -63,12 +63,21 @@
 3. **Integrate** chart libraries (`chart.js`, `recharts`).
 4. **Commit** a UI showcase artifact `ui_components.md` describing each component.
 5. **Mark** progress in `project_status.md` as *"Front‑end prototype ready"*.
-6. **Request** UI/UX review for visual fidelity.
+6. **Request** UI/UX review for visual fidelity and notify `@supabase-usage-optimizer` before QA whenever Supabase queries, Storage, Realtime, or Auth flows are added or modified.
 
 ---
 
-## 6️⃣ QA & Validation (Testeur QA)
-1. **Read** all artefacts: architecture, backend, UI components, design system.
+## 6️⃣ Audit & Optimisation Quotas Supabase (Auditeur Supabase)
+1. **Read** `backend_schema.md`, SQL migrations (`supabase_schema.sql`, `supabase_rls.sql`, `supabase_rpc.sql`), and scan frontend/hooks code (`.from(`, `.rpc(`, `.storage`, `.channel(`, `.auth.`).
+2. **Audit** the 5 Supabase Free Plan metrics: **Egress** (avoid `select('*')`, enforce pagination & `staleTime`, filter/clean Realtime channels), **Database Size**, **File Storage** (pre-upload compression, orphan cleanup, `cacheControl`), **MAU** (`getSession()` vs `getUser()`, auth loops), and **Log Ingestion & Log Query** (no polling loops, silent 4xx/5xx retries, or verbose Edge Function logs).
+3. **Produce** the structured audit report `supabase_usage_audit.md` (efficiency score, `[CRITIQUE]`/`[MOYEN]`/`[FAIBLE]` issues with before/after snippets, SQL & architecture recommendations).
+4. **Update** `project_status.md` with *"Supabase quota audit complete"*.
+5. **If `[CRITIQUE]` issues are found**, route fixes back to `@backend_developer` and/or `@front_end_developer` before entering QA.
+
+---
+
+## 7️⃣ QA & Validation (Testeur QA)
+1. **Read** all artefacts: architecture, backend, UI components, design system, and `supabase_usage_audit.md`.
 2. **Generate** `test_plan.md` covering:
    - Functional/e2e tests (Playwright/Detox).
    - Performance benchmarks.
@@ -82,16 +91,16 @@
 
 ---
 
-## 7️⃣ Review & Release (Chef de projet)
-1. **Review** artefacts: architecture, design system, UI components, QA report.
+## 8️⃣ Review & Release (Chef de projet)
+1. **Review** artefacts: architecture, design system, UI components, `supabase_usage_audit.md`, QA report.
 2. **Approve** or **request changes** (loop back to the appropriate agent).
 3. Once approved, **create** `release_notes.md` summarising new features and migrations.
-4. **Trigger** the CI/CD pipeline (represented as artefact `ci_pipeline.md`).
+4. **Trigger** the CI/CD pipeline (`@github_deployer`, represented as artefact `ci_pipeline.md`).
 5. **Mark** the sprint as **Done** in `project_status.md`.
 
 ---
 
-## 8️⃣ Continuous Feedback Loop
+## 9️⃣ Continuous Feedback Loop
 - After each sprint, the **Chef de projet** runs a **retrospective** and updates `process_improvements.md`.
 - All agents read this file at the start of the next sprint to incorporate lessons learned.
 
@@ -112,6 +121,7 @@ ui_mockup_v1.png
 animations_spec.md
 accessibility_checklist.md
 ui_components.md
+supabase_usage_audit.md
 test_plan.md
 qa_report.md
 security_issues.md
@@ -141,6 +151,9 @@ Produce the UI design system (`design_system.md`) and high‑fidelity mock‑up.
 
 @front_end_developer
 Implement the navigation bar and integrate the design system.
+
+@supabase-usage-optimizer
+Auditer les requêtes Supabase (frontend, hooks, Storage, Realtime) et les migrations SQL pour optimiser les quotas (Egress, DB, Storage, MAU, Logs) et générer `supabase_usage_audit.md`.
 
 @qa_tester
 Run the end‑to‑end test suite and generate `qa_report.md`.

@@ -39,15 +39,6 @@ class PresenceService {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', () => {
-        if (this.userId) {
-          // Déconnexion signalée en base
-          navigator.sendBeacon?.(
-            `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/user_profiles?id=eq.${this.userId}`,
-            JSON.stringify({ biometric_device_id: 'OFFLINE:web', updated_at: new Date().toISOString() })
-          );
-        }
-      });
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && this.userId) {
           supabase
@@ -64,13 +55,14 @@ class PresenceService {
   private startHeartbeat(userId: string) {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       supabase
         .from('user_profiles')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', userId)
         .then()
         .catch(() => {});
-    }, 25000);
+    }, 5 * 60 * 1000);
   }
 
   private stopHeartbeat() {

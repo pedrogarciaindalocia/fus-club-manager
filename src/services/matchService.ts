@@ -9,14 +9,33 @@ import { dispatchMatchPushNotification } from './pushNotificationSender';
 // -------------------------------------------------------
 
 export const matchService = {
-  async getAllMatches(): Promise<(Match & { lineup: MatchLineup; staff_ids: string[] })[]> {
+  async getAllMatches(page = 0, pageSize = 500): Promise<(Match & { lineup: MatchLineup; staff_ids: string[] })[]> {
     const clubId = await getMyClubId();
+    const safePage = typeof page === 'number' && Number.isFinite(page) && page >= 0 ? page : 0;
+    const safeSize = typeof pageSize === 'number' && Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 500;
+    const from = safePage * safeSize;
+    const to = from + safeSize - 1;
 
     const { data, error } = await supabase
       .from('matches')
-      .select('*, match_players(player_id, is_starting, position_index, rating, rating_comment), match_staff(staff_id)')
+      .select(`
+        id, club_id, team_id, opponent_id, league_id, stadium_id,
+        category, match_date, match_time, status, is_home,
+        score_home, score_away, formation, opponent_formation, lineup,
+        half_duration_minutes, time_elapsed_seconds, current_half,
+        added_time_first_half, added_time_second_half,
+        penalty_score_home, penalty_score_away,
+        enable_extra_time, enable_penalties,
+        match_phase, notes, video_url,
+        opponent_lineup, opponent_subs, opponent_lineup_positions,
+        live_operator_id, live_operator_name, live_operator_role, live_operator_avatar_url,
+        created_at, updated_at,
+        match_players(player_id, is_starting, position_index, rating, rating_comment),
+        match_staff(staff_id)
+      `)
       .eq('club_id', clubId)
-      .order('match_date', { ascending: false });
+      .order('match_date', { ascending: false })
+      .range(from, to);
 
     if (error) {
       if (error.code === 'PGRST204' || error.code === 'PGRST205') return [];
@@ -27,7 +46,7 @@ export const matchService = {
       // Build startingXI array with correct ordering using position_index
       const startingPlayers = m.match_players?.filter((p: any) => p.is_starting) ?? [];
       const substitutes = m.match_players?.filter((p: any) => !p.is_starting).map((p: any) => p.player_id) ?? [];
-      
+
       // Sort by position_index if available, otherwise maintain original order (backward compatibility)
       const sortedStarters = startingPlayers.sort((a: any, b: any) => {
         // If position_index is null/undefined, treat as -1 (will be at the end)
@@ -35,7 +54,7 @@ export const matchService = {
         const idxB = b.position_index ?? -1;
         return idxA - idxB;
       });
-      
+
       // Build startingXI array (11 slots)
       const startingXI: string[] = Array(11).fill('');
       sortedStarters.forEach((p: any) => {
@@ -45,7 +64,7 @@ export const matchService = {
           startingXI[idx] = p.player_id;
         }
       });
-      
+
       const resolvedOperatorId = m.live_operator_id || (m.lineup as any)?.live_operator?.id || null;
       const resolvedOperatorName = m.live_operator_name || (m.lineup as any)?.live_operator?.name || null;
       const resolvedOperatorRole = m.live_operator_role || (m.lineup as any)?.live_operator?.role || null;
@@ -78,19 +97,19 @@ export const matchService = {
   ): Promise<Match> {
     const clubId = await getMyClubId();
 
-    if (!match.team_id)     throw new Error('team_id est obligatoire');
+    if (!match.team_id) throw new Error('team_id est obligatoire');
     if (!match.opponent_id) throw new Error('opponent_id est obligatoire');
 
     // Extract fields handled separately or not yet in DB schema
-    const { 
-      lineup, 
-      staff_ids, 
-      opponent_lineup, 
-      opponent_subs, 
-      match_type, 
+    const {
+      lineup,
+      staff_ids,
+      opponent_lineup,
+      opponent_subs,
+      match_type,
       match_format,
       round_name,
-      ...payload 
+      ...payload
     } = match as any;
 
     const mergedLineup = lineup ? {
@@ -125,10 +144,10 @@ export const matchService = {
     (['opponent_id', 'league_id', 'stadium_id', 'team_id'] as const).forEach(f => {
       if (dbPayload[f] === '') dbPayload[f] = null;
     });
-    
+
     // Safely try to include opponent fields (they require the migration to be run)
     if (opponent_lineup !== undefined) dbPayload.opponent_lineup = opponent_lineup;
-    if (opponent_subs !== undefined)   dbPayload.opponent_subs   = opponent_subs;
+    if (opponent_subs !== undefined) dbPayload.opponent_subs = opponent_subs;
 
     const { data, error } = await supabase
       .from('matches')
@@ -139,8 +158,8 @@ export const matchService = {
     if (error) {
       // If columns don't exist yet (400 / PGRST204 / PGRST205), retry with safe payload stripped of missing columns
       const isColumnError = error.code === 'PGRST204' || error.code === 'PGRST205' ||
-        error.message?.includes('referee_') || error.message?.includes('opponent_lineup') || 
-        error.message?.includes('opponent_subs') || error.message?.includes('column') || 
+        error.message?.includes('referee_') || error.message?.includes('opponent_lineup') ||
+        error.message?.includes('opponent_subs') || error.message?.includes('column') ||
         (error as any)?.status === 400;
 
       if (isColumnError) {
@@ -289,20 +308,20 @@ export const matchService = {
 
     const d2 = await supabase.from('player_match_stats').delete().eq('match_id', id);
     if (d2.error && d2.error.code !== 'PGRST205') console.error('Error deleting player_match_stats:', d2.error);
-    
+
     const d3 = await supabase.from('match_stats').delete().eq('match_id', id);
     if (d3.error && d3.error.code !== 'PGRST205') console.error('Error deleting match_stats:', d3.error);
-    
+
     const d4 = await supabase.from('match_players').delete().eq('match_id', id);
     if (d4.error && d4.error.code !== 'PGRST205') console.error('Error deleting match_players:', d4.error);
-    
+
     const d5 = await supabase.from('match_staff').delete().eq('match_id', id);
     if (d5.error && d5.error.code !== 'PGRST205') console.error('Error deleting match_staff:', d5.error);
 
-    
+
     const d6 = await supabase.from('match_events').delete().eq('match_id', id);
     if (d6.error && d6.error.code !== 'PGRST205') console.error('Error deleting match_events:', d6.error);
-    
+
     const { error } = await supabase.from('matches').delete().eq('id', id);
     if (error) {
       console.error('Error deleting match:', error);
@@ -401,14 +420,14 @@ export const matchService = {
       ...(isUuidSetId ? { metric_set_id: performanceMeta?.metricSetId } : {}),
       ...(performanceMeta?.pillarScores || performanceMeta?.criteriaScores
         ? {
-            pillar_scores: {
-              ...(performanceMeta.pillarScores || {}),
-              metric_set_id: performanceMeta.metricSetId || null,
-              metric_set_name: performanceMeta.metricSetName || null,
-              position_code: performanceMeta.positionCode || null,
-              criteria_scores: performanceMeta.criteriaScores || {},
-            },
-          }
+          pillar_scores: {
+            ...(performanceMeta.pillarScores || {}),
+            metric_set_id: performanceMeta.metricSetId || null,
+            metric_set_name: performanceMeta.metricSetName || null,
+            position_code: performanceMeta.positionCode || null,
+            criteria_scores: performanceMeta.criteriaScores || {},
+          },
+        }
         : {}),
     };
 
@@ -506,8 +525,8 @@ export const matchService = {
     const { error } = await supabase.from('match_events').insert([event]);
     if (error) throw error;
     try {
-      dispatchMatchPushNotification(event).catch(() => {});
-    } catch {}
+      dispatchMatchPushNotification(event).catch(() => { });
+    } catch { }
   },
 
   async updateEvent(id: string, updates: Updates<'match_events'>): Promise<void> {

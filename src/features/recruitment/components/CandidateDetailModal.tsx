@@ -109,14 +109,14 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   {candidate.primary_position}
                 </span>
                 <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/40">
-                  {candidate.age_category || 'U19'}
+                  {candidate.age_category || 'U18'}
                 </span>
                 <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded bg-white/20 text-white">
                   {candidate.pipeline_stage.replace('_', ' ')}
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Club : {candidate.current_club || 'Sans club'} • Nationalité : {candidate.nationality} • Catégorie : {candidate.age_category || 'U19'}
+                Club : {candidate.current_club || 'Sans club'} • Nationalité : {candidate.nationality} • Catégorie : {candidate.age_category || 'U18'}
               </p>
             </div>
           </div>

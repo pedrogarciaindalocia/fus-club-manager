@@ -7,15 +7,15 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 // ENUMS PostgreSQL (miroir exact des CREATE TYPE)
 // -------------------------------------------------------
 
-export type MatchStatus       = 'scheduled' | 'live' | 'paused' | 'halftime' | 'finished' | 'cancelled' | 'postponed' | 'extra_time' | 'penalties';
-export type MatchPhase        = 'league' | 'won' | 'lost' | 'round_of_32' | 'round_of_16' | 'quarter_final' | 'semi_final' | 'final' | 'third_place';
-export type BackupStatus      = 'pending' | 'running' | 'completed' | 'failed';
-export type BackupType        = 'full' | 'database_only' | 'storage_only';
+export type MatchStatus = 'scheduled' | 'live' | 'paused' | 'halftime' | 'finished' | 'cancelled' | 'postponed' | 'extra_time' | 'penalties';
+export type MatchPhase = 'league' | 'won' | 'lost' | 'round_of_32' | 'round_of_16' | 'quarter_final' | 'semi_final' | 'final' | 'third_place';
+export type BackupStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type BackupType = 'full' | 'database_only' | 'storage_only';
 export type BackupDestination = 'local' | 'google_drive' | 'onedrive' | 'desktop';
-export type BlogPostStatus    = 'draft' | 'published';
-export type AgeCategory       = 'U13' | 'U14' | 'U15' | 'U16' | 'U17' | 'U18' | 'U19' | 'U20' | 'U21' | 'U22' | 'U23' | 'OTHER';
-export type PreferredFoot     = 'left' | 'right' | 'both';
-export type MatchEventType    =
+export type BlogPostStatus = 'draft' | 'published';
+export type AgeCategory = 'SENIOR' | 'U25' | 'U21' | 'U18' | 'U17' | 'U16' | 'U15' | 'U14' | 'U13' | 'U12' | 'U11' | 'U10' | 'U9' | 'OTHER';
+export type PreferredFoot = 'left' | 'right' | 'both';
+export type MatchEventType =
   | 'goal' | 'own_goal' | 'assist'
   | 'yellow_card' | 'red_card'
   | 'substitution'
@@ -130,6 +130,7 @@ export interface Database {
           photo_url: string | null;
           capacity: number | null;
           is_active: boolean;
+          is_home_stadium?: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -141,6 +142,7 @@ export interface Database {
           photo_url?: string | null;
           capacity?: number | null;
           is_active?: boolean;
+          is_home_stadium?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -711,7 +713,7 @@ export interface Database {
 
     Functions: {
       get_my_club_id: { Args: Record<never, never>; Returns: string };
-      is_club_admin:  { Args: Record<never, never>; Returns: boolean };
+      is_club_admin: { Args: Record<never, never>; Returns: boolean };
     };
   };
 }

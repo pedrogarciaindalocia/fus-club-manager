@@ -474,6 +474,18 @@ export const MediaManagementPage: React.FC = () => {
     }
     cleanPath = cleanPath.replace(/^\/+/, '');
 
+    if (file.public_url) {
+      try {
+        const res = await fetch(file.public_url, { cache: 'force-cache' });
+        if (res.ok) {
+          const blob = await res.blob();
+          return { blob, fileName: file.name };
+        }
+      } catch (e) {
+        console.warn(`[Download] Fetch CDN échoué pour ${file.public_url}, fallback download():`, e);
+      }
+    }
+
     if (cleanPath) {
       try {
         const { data, error } = await supabase.storage.from('medias').download(cleanPath);
@@ -481,19 +493,7 @@ export const MediaManagementPage: React.FC = () => {
           return { blob: data, fileName: file.name };
         }
       } catch (e) {
-        console.warn(`[Download] Storage download échoué pour ${cleanPath}, tentative fetch:`, e);
-      }
-    }
-
-    if (file.public_url) {
-      try {
-        const res = await fetch(file.public_url);
-        if (res.ok) {
-          const blob = await res.blob();
-          return { blob, fileName: file.name };
-        }
-      } catch (e) {
-        console.warn(`[Download] Fetch échoué pour ${file.public_url}:`, e);
+        console.warn(`[Download] Storage download échoué pour ${cleanPath}:`, e);
       }
     }
 

@@ -17,7 +17,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
-import { isHigherCategory, surclassementService } from '../../services/surclassementService';
+import { isHigherCategory, isEligibleForSurclassement, isLowerCategory, surclassementService } from '../../services/surclassementService';
 import type { Player, Team, PlayerSurclassement } from '../../types';
 import type { SurclassementWithDetails } from '../../services/surclassementService';
 import { useQueryClient } from '@tanstack/react-query';
@@ -41,10 +41,8 @@ const fmtDate = (d: string) => {
 const CAT_COLORS: Record<string, string> = {
   SENIOR: 'bg-amber-500',
   PRO: 'bg-amber-600',
-  U23: 'bg-yellow-500',
+  U25: 'bg-yellow-500',
   U21: 'bg-yellow-400',
-  U20: 'bg-emerald-500',
-  U19: 'bg-lime-500',
   U18: 'bg-purple-600',
   U17: 'bg-green-500',
   U16: 'bg-emerald-500',
@@ -116,12 +114,13 @@ export default function SurclassementModal({
   const [targetJerseyNumber, setTargetJerseyNumber] = useState<string>('');
   const [notes, setNotes] = useState('');
 
-  // ── Chargement des matchs de toute date (catégories supérieures uniquement) ──
+  // ── Chargement des matchs éligibles (matchs à venir uniquement, catégories supérieures ou exception U25 <-> SENIOR) ──
   useEffect(() => {
     let isMounted = true;
     const fetchUpcomingMatches = async () => {
       try {
         setLoadingMatches(true);
+        const todayStr = new Date().toISOString().slice(0, 10);
         const { data, error } = await supabase
           .from('matches')
           .select(`
@@ -130,6 +129,8 @@ export default function SurclassementModal({
             club:clubs!club_id(id, name, logo_url),
             league:leagues!league_id(name)
           `)
+          .gte('match_date', todayStr)
+          .not('status', 'in', '("finished","completed","cancelled")')
           .order('match_date', { ascending: true });
 
         if (error) throw error;
@@ -137,9 +138,9 @@ export default function SurclassementModal({
 
         const raw = (data || []) as any[];
 
-        // RÈGLE MÉTIER STRICTE :
-        // Uniquement les matchs en catégorie strictement supérieure (UX -> UX+1, UX+2...)
-        // Le sous-classement (UX-1) est formellement interdit et impossible par règlement
+        // RÈGLE MÉTIER FUS :
+        // 1. Proposer uniquement les matchs À VENIR (non terminés)
+        // 2. Éligibilité : catégorie supérieure (U14 -> U15, U16...) OU exception bidirectionnelle U25 <-> SENIOR
         const { data: activeAssignments, error: assignmentsError } = await supabase
           .from('player_surclassements')
           .select('id, notes, original_category, target_category, target_jersey_number')
@@ -156,7 +157,7 @@ export default function SurclassementModal({
         });
 
         const higherMatches = raw.filter(m =>
-          m.category && isHigherCategory(currentCategory, m.category)
+          m.category && isEligibleForSurclassement(currentCategory, m.category)
         ).map(m => {
           const assignment = assignmentsByMatch.get(String(m.id));
           if (!assignment || m.lineup?.surclasses?.[player.id]) return m;
@@ -380,8 +381,8 @@ export default function SurclassementModal({
           <button
             onClick={() => setTab('action')}
             className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${tab === 'action'
-                ? 'text-orange-600 border-b-2 border-orange-500 bg-white'
-                : 'text-muted-foreground hover:text-foreground'
+              ? 'text-orange-600 border-b-2 border-orange-500 bg-white'
+              : 'text-muted-foreground hover:text-foreground'
               }`}
           >
             <Calendar className="w-4 h-4" />
@@ -390,8 +391,8 @@ export default function SurclassementModal({
           <button
             onClick={() => setTab('history')}
             className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${tab === 'history'
-                ? 'text-orange-600 border-b-2 border-orange-500 bg-white'
-                : 'text-muted-foreground hover:text-foreground'
+              ? 'text-orange-600 border-b-2 border-orange-500 bg-white'
+              : 'text-muted-foreground hover:text-foreground'
               }`}
           >
             <Clock className="w-4 h-4" />
@@ -451,10 +452,10 @@ export default function SurclassementModal({
                         <Calendar className="w-6 h-6" />
                       </div>
                       <h4 className="font-black text-sm text-slate-800 uppercase tracking-tight">
-                        Aucun match supérieur planifié
+                        Aucun match à venir éligible
                       </h4>
                       <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                        Le surclassement est autorisé uniquement vers une catégorie strictement supérieure (ex: {currentCategory} ➔ U18, U19 ou Pro).
+                        Seuls les matchs à venir d'une catégorie supérieure (ou de la passerelle U25 &harr; SENIOR) sont affichés.
                         Planifiez d'abord un match dans le Calendrier pour pouvoir y affecter ce joueur.
                       </p>
                     </div>
@@ -480,8 +481,8 @@ export default function SurclassementModal({
                           >
                             {/* Checkbox visuelle */}
                             <div className={`w-5 h-5 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${isSelected
-                                ? 'bg-orange-500 text-white'
-                                : 'border-2 border-slate-300 bg-white'
+                              ? 'bg-orange-500 text-white'
+                              : 'border-2 border-slate-300 bg-white'
                               }`}>
                               {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
                             </div>
@@ -664,8 +665,8 @@ export default function SurclassementModal({
                       <div
                         key={s.id}
                         className={`rounded-2xl p-4 border transition-all ${s.status === 'active'
-                            ? 'bg-orange-50/70 border-orange-200'
-                            : 'bg-slate-50 border-slate-200 opacity-80'
+                          ? 'bg-orange-50/70 border-orange-200'
+                          : 'bg-slate-50 border-slate-200 opacity-80'
                           }`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -685,8 +686,8 @@ export default function SurclassementModal({
                           </div>
                           <Badge
                             className={`border-none text-[9px] font-black uppercase ${s.status === 'active'
-                                ? 'bg-orange-500 text-white'
-                                : 'bg-slate-200 text-slate-700'
+                              ? 'bg-orange-500 text-white'
+                              : 'bg-slate-200 text-slate-700'
                               }`}
                           >
                             {s.status === 'active' ? 'Actif' : 'Clôturé'}

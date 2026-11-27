@@ -8,6 +8,11 @@ import { useMatchEvents } from '../../hooks/useMatchEvents';
 import { useOpponentPlayers } from '../../hooks/useOpponentPlayers';
 import { usePermissions } from '../../context/PermissionsContext';
 import { inferMatchFormat } from './tacticalFormations';
+import { OperatorAssignmentModal } from './components/OperatorAssignmentModal';
+import {
+  canUserAssignMatchOperator,
+  isOperatorEditableMatchStatus,
+} from '../../services/operatorAssignmentService';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { 
@@ -38,7 +43,6 @@ import {
   Radio,
   History
 } from 'lucide-react';
-import { AuditLogger } from '../../services/auditLogger';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { MatchStatus } from '../../types';
@@ -66,15 +70,47 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
 
   const isSuperAdmin = Boolean(authState?.isRealSuperAdmin || authState?.user?.system_role === 'super_admin');
   const currentUserId = authState?.user?.id;
-  const operatorId = (match as any)?.live_operator_id;
-  const operatorName = (match as any)?.live_operator_name;
-  const isDesignatedOperator = Boolean(currentUserId && operatorId && currentUserId === operatorId);
+  const [isOperatorModalOpen, setIsOperatorModalOpen] = useState(false);
+  const [operatorOverride, setOperatorOverride] = useState<{
+    id: string | null;
+    name: string | null;
+    role: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    setOperatorOverride(null);
+  }, [matchId, (match as any)?.live_operator_id, (match as any)?.live_operator_name]);
+
+  const operatorId =
+    operatorOverride !== null
+      ? operatorOverride.id
+      : (match as any)?.live_operator_id || (match?.lineup as any)?.live_operator?.id || null;
+  const operatorName =
+    operatorOverride !== null
+      ? operatorOverride.name
+      : (match as any)?.live_operator_name || (match?.lineup as any)?.live_operator?.name || null;
+
+  const canAssignOperator =
+    isOperatorEditableMatchStatus(match?.status) &&
+    canUserAssignMatchOperator({
+      isSuperAdmin,
+      systemRole: authState?.user?.system_role,
+      can,
+      hasSpecificActionAccess,
+    });
+
+  const isDesignatedOperator = Boolean(
+    currentUserId && operatorId && String(currentUserId).toLowerCase() === String(operatorId).toLowerCase()
+  );
   const hasMatchOperatorAuthority = isSuperAdmin || (operatorId ? isDesignatedOperator : isSuperAdmin);
   const canLiveCreate = hasMatchOperatorAuthority && (isSuperAdmin || hasSpecificActionAccess('matches', 'live_tracking', 'create'));
   const canLiveUpdate = hasMatchOperatorAuthority && (isSuperAdmin || hasSpecificActionAccess('matches', 'live_tracking', 'update'));
   const canLiveDelete = hasMatchOperatorAuthority && (isSuperAdmin || hasSpecificActionAccess('matches', 'live_tracking', 'delete'));
   const canOperateThisMatch = canLiveCreate || canLiveUpdate || canLiveDelete;
   const currentOpName = operatorName || authState?.user?.name || authState?.user?.email?.split('@')[0] || 'Opérateur';
+
+  const opponentObj = opponentClubs.find(c => c.id === match?.opponent_id);
+  const opponentDisplayName = opponentObj?.name || 'Adversaire';
 
   const getMatchLabel = useCallback(() => {
     if (!match) return 'Match Live';
@@ -90,37 +126,27 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
   const [loadingMatchLogs, setLoadingMatchLogs] = useState(false);
 
   const loadMatchAuditLogs = useCallback(async () => {
-    if (!matchId) return;
-    setLoadingMatchLogs(true);
-    try {
-      const { data } = await supabase
-        .from('audit_logs')
-        .select('*')
-        .or(`entity_id.eq.${matchId},metadata->>match_id.eq.${matchId}`)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      if (data) setMatchAuditLogs(data);
-    } catch (_) {}
-    finally { setLoadingMatchLogs(false); }
-  }, [matchId]);
-
-  useEffect(() => {
-    loadMatchAuditLogs();
-    const ch = supabase
-      .channel(`live_audit_${matchId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'audit_logs' },
-        (payload) => {
-          const l = payload.new as any;
-          if (l.entity_id === matchId || l.metadata?.match_id === matchId) {
-            setMatchAuditLogs(prev => [l, ...prev.filter(x => x.id !== l.id)]);
-          }
-        }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [matchId, loadMatchAuditLogs]);
+    const historyFromLineup = Array.isArray((match?.lineup as any)?.operator_history)
+      ? (match?.lineup as any).operator_history.map((h: any) => ({
+          id: `op-hist-${h.id}`,
+          created_at: h.timestamp,
+          user_email: '',
+          description:
+            h.action === 'unassigned'
+              ? `Retrait de l'opérateur ${h.previous_operator_name || ''}`
+              : h.previous_operator_name && h.previous_operator_id !== h.new_operator_id
+              ? `Passation Live : remplacement de ${h.previous_operator_name} par ${h.new_operator_name}${h.reason ? ` — Motif : ${h.reason}` : ''}`
+              : `Assignation de ${h.new_operator_name} comme opérateur FUS-APP`,
+          metadata: {
+            operator_name: h.changed_by_name || 'Administration Club',
+            minute: h.minute,
+            event_type: h.action === 'live_handover' ? 'RELÈVE LIVE' : 'OPÉRATEUR',
+          },
+        }))
+      : [];
+    setLoadingMatchLogs(false);
+    setMatchAuditLogs(historyFromLineup);
+  }, [match?.lineup]);
 
   // --- Match Configuration ---
   const matchConfig: MatchTimingConfig = {
@@ -348,17 +374,6 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
      if (confirm('Supprimer cet événement ?')) {
         const evt = events.find(e => e.id === id);
         await deleteEventHook(id);
-        void AuditLogger.logLiveMatchOperation({
-          matchId,
-          matchLabel: getMatchLabel(),
-          action: 'DELETE',
-          description: `Événement ${evt?.type || 'action'} (${evt?.minute || 0}') supprimé par ${currentOpName}`,
-          operatorName: currentOpName,
-          minute: evt?.minute || 0,
-          score: `${homeScore} - ${awayScore}`,
-          period: matchPhase,
-          metadata: { event_id: id, event_type: evt?.type }
-        });
         loadMatchAuditLogs();
      }
   };
@@ -407,33 +422,11 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
     try {
       if (editingEventId) {
          await updateEventHook({ id: editingEventId, updates: payload });
-         void AuditLogger.logLiveMatchOperation({
-           matchId,
-           matchLabel: getMatchLabel(),
-           action: 'UPDATE',
-           description: `Événement ${eventType.toUpperCase()} modifié par ${currentOpName} à la ${Math.floor(cursorTime / 60)}e minute`,
-           operatorName: currentOpName,
-           minute: Math.floor(cursorTime / 60),
-           score: `${homeScore} - ${awayScore}`,
-           period: matchPhase,
-           metadata: payload
-         });
       } else {
          await addEventHook(payload);
          const targetPlayer = isOpponent
            ? (inPlayerName || outPlayerName || 'Adversaire')
            : (players.find(p => p.id === playerUuid)?.full_name || 'Joueur FUS');
-         void AuditLogger.logLiveMatchOperation({
-           matchId,
-           matchLabel: getMatchLabel(),
-           action: 'CREATE',
-           description: `${eventType.toUpperCase()} enregistré par ${currentOpName} : ${targetPlayer} (${isOpponent ? 'Adversaire' : 'FUS'}) à la ${Math.floor(cursorTime / 60)}e minute`,
-           operatorName: currentOpName,
-           minute: Math.floor(cursorTime / 60),
-           score: `${homeScore} - ${awayScore}`,
-           period: matchPhase,
-           metadata: { ...payload, player_name: targetPlayer }
-         });
 
          if (eventType === 'goal') {
             const weScored = !isOpponent;
@@ -520,17 +513,6 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
         updated_at: nowIso
       }
     });
-    void AuditLogger.logLiveMatchOperation({
-      matchId,
-      matchLabel: getMatchLabel(),
-      action: 'START_LIVE',
-      description: `Coup d'envoi donné par ${currentOpName} (00:00)`,
-      operatorName: currentOpName,
-      minute: 0,
-      score: '0-0',
-      period: 'first_half',
-      metadata: { kickoff_at: nowIso }
-    });
     loadMatchAuditLogs();
     toast.success("⚽ Coup d'envoi donné ! Le match passe en direct et le chronomètre officiel est lancé.");
   };
@@ -583,16 +565,6 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
         updated_at: new Date().toISOString()
       }
     });
-    void AuditLogger.logLiveMatchOperation({
-      matchId,
-      matchLabel: getMatchLabel(),
-      action: 'RESUME_LIVE',
-      description: `Chronomètre repris par ${currentOpName} (${formatTime(totalElapsedSeconds)})`,
-      operatorName: currentOpName,
-      minute: Math.floor(totalElapsedSeconds / 60),
-      score: `${homeScore} - ${awayScore}`,
-      period: currentHalf === 2 ? 'second_half' : 'first_half'
-    });
     loadMatchAuditLogs();
   };
 
@@ -603,16 +575,6 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
     }
     setIsActive(false);
     setPauseStartTime(Date.now());
-    void AuditLogger.logLiveMatchOperation({
-      matchId,
-      matchLabel: getMatchLabel(),
-      action: 'PAUSE_LIVE',
-      description: `Chronomètre mis en pause par ${currentOpName} (${formatTime(totalElapsedSeconds)})`,
-      operatorName: currentOpName,
-      minute: Math.floor(totalElapsedSeconds / 60),
-      score: `${homeScore} - ${awayScore}`,
-      period: matchPhase
-    });
     loadMatchAuditLogs();
   };
 
@@ -632,16 +594,6 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
         current_half: 2,
         status: 'live'
       }
-    });
-    void AuditLogger.logLiveMatchOperation({
-      matchId,
-      matchLabel: getMatchLabel(),
-      action: 'PERIOD_CHANGE',
-      description: `Coup d'envoi 2ème mi-temps lancé par ${currentOpName}`,
-      operatorName: currentOpName,
-      minute: Math.floor(totalElapsedSeconds / 60),
-      score: `${homeScore} - ${awayScore}`,
-      period: 'second_half'
     });
     loadMatchAuditLogs();
   };
@@ -663,16 +615,6 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
         status: 'extra_time'
       }
     });
-    void AuditLogger.logLiveMatchOperation({
-      matchId,
-      matchLabel: getMatchLabel(),
-      action: 'PERIOD_CHANGE',
-      description: `Prolongations démarrées par ${currentOpName}`,
-      operatorName: currentOpName,
-      minute: Math.floor(totalElapsedSeconds / 60),
-      score: `${homeScore} - ${awayScore}`,
-      period: 'extra_time_first'
-    });
     loadMatchAuditLogs();
   };
 
@@ -685,16 +627,6 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
       data: {
         status: 'penalties'
       }
-    });
-    void AuditLogger.logLiveMatchOperation({
-      matchId,
-      matchLabel: getMatchLabel(),
-      action: 'PERIOD_CHANGE',
-      description: `Passage aux tirs au but validé par ${currentOpName}`,
-      operatorName: currentOpName,
-      minute: Math.floor(totalElapsedSeconds / 60),
-      score: `${homeScore} - ${awayScore}`,
-      period: 'penalties'
     });
     loadMatchAuditLogs();
   };
@@ -710,17 +642,6 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
             time_elapsed_seconds: totalElapsedSeconds,
             current_half: currentHalf,
           }
-        });
-        void AuditLogger.logLiveMatchOperation({
-          matchId,
-          matchLabel: getMatchLabel(),
-          action: 'END_MATCH',
-          description: `Match clôturé par ${currentOpName} avec le score final ${homeScore} - ${awayScore}`,
-          operatorName: currentOpName,
-          minute: Math.floor(totalElapsedSeconds / 60),
-          score: `${homeScore} - ${awayScore}`,
-          period: 'finished',
-          metadata: { score_home: homeScore, score_away: awayScore }
         });
         loadMatchAuditLogs();
         await onMatchFinished?.();
@@ -817,16 +738,6 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
     });
 
     const currentTabScore = `TAB ${team === 'home' && result === 'scored' ? penaltyHomeScore + 1 : penaltyHomeScore}-${team === 'away' && result === 'scored' ? penaltyAwayScore + 1 : penaltyAwayScore}`;
-    void AuditLogger.logLiveMatchOperation({
-      matchId,
-      matchLabel: getMatchLabel(),
-      action: 'CREATE',
-      description: `Tir au but ${team === 'home' ? 'Home' : 'Away'} #${playerNumber} : ${result === 'scored' ? 'Marqué ✅' : 'Manqué ❌'} (${currentTabScore}) par ${currentOpName}`,
-      operatorName: currentOpName,
-      score: currentTabScore,
-      period: 'penalties',
-      metadata: { team, playerNumber, result }
-    });
     loadMatchAuditLogs();
   };
 
@@ -866,13 +777,13 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
         
         {/* Bannière Opérateur Live & Privilèges */}
         {operatorName ? (
-          <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-xs shadow-md">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-xs shadow-md">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl bg-red-600/20 text-red-500 border border-red-500/30 flex items-center justify-center font-black">
                 🎙️
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-white">Opérateur Live Désigné : {operatorName}</span>
                   {isDesignatedOperator && (
                     <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
@@ -887,26 +798,53 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
                 </p>
               </div>
             </div>
-            {!canOperateThisMatch && (
-              <span className="px-3 py-1 rounded-xl text-[10px] font-black uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                Mode Consultation Seule
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {canAssignOperator && (
+                <button
+                  type="button"
+                  onClick={() => setIsOperatorModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl text-[10.5px] font-black uppercase bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/40 transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                  Changer l'opérateur
+                </button>
+              )}
+              {!canOperateThisMatch && (
+                <span className="px-3 py-1 rounded-xl text-[10px] font-black uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                  Mode Consultation Seule
+                </span>
+              )}
+            </div>
           </div>
         ) : (
-          !isSuperAdmin && (
-            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between shadow-sm">
-              <div className="flex items-center gap-2.5">
-                <Shield className="w-4 h-4 text-amber-400 shrink-0" />
-                <p className="text-[11px] leading-relaxed">
-                  <strong>Aucun opérateur n'a été désigné pour ce match :</strong> Seul le <strong>Super Administrateur</strong> a les commandes de gestion et de déclenchement du direct.
-                </p>
-              </div>
-              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0">
-                Lecture Seule
-              </span>
+          <div className="p-3.5 rounded-2xl bg-slate-900 border border-amber-500/40 text-amber-200 text-xs flex flex-wrap items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <Shield className="w-4 h-4 text-amber-400 shrink-0" />
+              <p className="text-[11px] leading-relaxed">
+                <strong>Aucun opérateur FUS-APP n'est désigné pour ce match :</strong>{' '}
+                {isSuperAdmin
+                  ? 'Vous pilotez en tant que Super Administrateur, ou vous pouvez assigner un opérateur mobile.'
+                  : 'Seul le Super Administrateur ou un opérateur assigné a les commandes du direct.'}
+              </p>
             </div>
-          )
+            <div className="flex items-center gap-2">
+              {canAssignOperator && (
+                <button
+                  type="button"
+                  onClick={() => setIsOperatorModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl text-[10.5px] font-black uppercase bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/40 transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Assigner un opérateur
+                </button>
+              )}
+              {!isSuperAdmin && (
+                <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0">
+                  Lecture Seule
+                </span>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Scoreboard Header */}
@@ -2269,6 +2207,30 @@ const LiveTracking: React.FC<{ matchId: string; onMatchFinished?: () => Promise<
           </div>
         )}
       </AnimatePresence>
+
+      {/* Modale d'Assignation / Passation Live d'Opérateur FUS-APP */}
+      <OperatorAssignmentModal
+        isOpen={isOperatorModalOpen}
+        onClose={() => setIsOperatorModalOpen(false)}
+        match={match}
+        opponentName={opponentDisplayName}
+        matchMinute={Math.floor((isActive ? totalElapsedSeconds : cursorTime) / 60)}
+        onAssigned={(res) => {
+          setOperatorOverride({
+            id: res.id,
+            name: res.name,
+            role: res.role,
+          });
+          if (match) {
+            (match as any).live_operator_id = res.id;
+            (match as any).live_operator_name = res.name;
+            (match as any).live_operator_role = res.role;
+            (match as any).live_operator_avatar_url = res.avatar_url;
+            (match as any).lineup = res.lineup;
+          }
+          loadMatchAuditLogs();
+        }}
+      />
       </div>
     </div>
   );

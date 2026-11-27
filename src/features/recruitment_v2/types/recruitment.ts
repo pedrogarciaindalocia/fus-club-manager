@@ -32,14 +32,14 @@ export const RECRUITMENT_CATEGORY_GROUPS: CategoryGroup[] = [
     label: 'Pôle Formation (Académie & Élite)',
     shortLabel: 'Formation',
     badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
-    categories: ['U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U20', 'U21', 'U22'],
+    categories: ['U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U21'],
   },
   {
     id: 'senior',
     label: 'Pôle Senior (Équipe Première & Espoirs)',
     shortLabel: 'Senior',
     badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
-    categories: ['U23', 'SENIOR'],
+    categories: ['U25', 'SENIOR'],
   },
 ];
 
@@ -90,7 +90,7 @@ export const RECRUITMENT_AGE_CATEGORIES = PLAYER_CATEGORIES;
 /** Ordre chronologique croissant des catégories FUS (pour calcul du surclassement) */
 const ORDERED_AGE_CATEGORIES = [
   'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16',
-  'U17', 'U18', 'U19', 'U20', 'U21', 'U22', 'U23', 'SENIOR',
+  'U17', 'U18', 'U21', 'U25', 'SENIOR',
 ] as const;
 
 export type RecruitmentAgeCategory = typeof RECRUITMENT_AGE_CATEGORIES[number];
@@ -154,8 +154,8 @@ export function resolveSurclassementInfo(params: {
   hasReports?: boolean;
 }): ResolvedSurclassementInfo {
   const effectiveBase = params.birthDate
-    ? getAgeCategoryFromBirthDate(params.birthDate, params.baseCategory || 'U19')
-    : normalizeAgeCategory(params.baseCategory || 'U19');
+    ? getAgeCategoryFromBirthDate(params.birthDate, params.baseCategory || 'U18')
+    : normalizeAgeCategory(params.baseCategory || 'U18');
 
   // Règle métier : si le joueur n'a aucun rapport (0 rapport), il n'y a pas de surclassement
   if (params.hasReports === false || (params.isUpgraded === false && !params.rawSurclass && !params.upgradedCount)) {
@@ -290,7 +290,7 @@ export function calculateCandidateAge(birthDateStr?: string | null): number | nu
  * Déduit automatiquement la catégorie d'âge officielle FUS à partir de l'année de naissance
  * selon la règle saisonnière (âge année civile + 1, ex: né en 2012 en 2026 -> 14 + 1 = 15 -> U15).
  */
-export function getAgeCategoryFromBirthDate(birthDateStr?: string | null, fallbackCategory = 'U19'): string {
+export function getAgeCategoryFromBirthDate(birthDateStr?: string | null, fallbackCategory = 'U18'): string {
   if (!birthDateStr) return fallbackCategory;
   const yearMatch = String(birthDateStr).trim().match(/^(\d{4})/);
   const birth = new Date(birthDateStr);
@@ -310,11 +310,8 @@ export function getAgeCategoryFromBirthDate(birthDateStr?: string | null, fallba
   if (seasonAge === 16) return 'U16';
   if (seasonAge === 17) return 'U17';
   if (seasonAge === 18) return 'U18';
-  if (seasonAge === 19) return 'U19';
-  if (seasonAge === 20) return 'U20';
-  if (seasonAge === 21) return 'U21';
-  if (seasonAge === 22) return 'U22';
-  if (seasonAge === 23) return 'U23';
+  if (seasonAge >= 19 && seasonAge <= 21) return 'U21';
+  if (seasonAge >= 22 && seasonAge <= 25) return 'U25';
   return 'SENIOR';
 }
 
@@ -337,8 +334,8 @@ export function getPoleFromCategory(category?: string | null): CategoryGroup | n
  */
 export function groupCategoriesByPole(categories: readonly string[] | string[]) {
   const labelliseCats = ['U9', 'U10', 'U11', 'U12'];
-  const formationCats = ['U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U20', 'U21', 'U22'];
-  const seniorCats = ['U23', 'SENIOR'];
+  const formationCats = ['U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U21'];
+  const seniorCats = ['U25', 'SENIOR'];
 
   const inLabellise = categories.filter(c => labelliseCats.includes(c));
   const inFormation = categories.filter(c => formationCats.includes(c));
@@ -353,7 +350,7 @@ export function groupCategoriesByPole(categories: readonly string[] | string[]) 
   };
 }
 
-export type PipelineStage = 
+export type PipelineStage =
   | 'prospect'          // New Prospect
   | 'scouted'           // Observed
   | 'recommended'       // Recommended
@@ -368,7 +365,7 @@ export type PipelineStage =
   | 'academy'           // Academy
   | 'archived';         // Archivé
 
-export type EvaluationVerdict = 
+export type EvaluationVerdict =
   | 'reject'
   | 'monitor'
   | 'additional_test'
@@ -444,7 +441,7 @@ export interface AdministrativeDocument {
 }
 
 export interface TestSlotValidationInfo {
-  status: 'pending' | 'validated' | 'change_requested';
+  status: 'pending' | 'validated' | 'rejected' | 'change_requested';
   validated_by?: string;
   validated_at?: string;
   validated_dates?: string[];
@@ -490,9 +487,9 @@ export function validateRecruitNowPrerequisites(
   const hasHonorDeclaration = Boolean(getHonorDeclarationDocument(candidate)?.url);
   const candEvals = candidate?.id
     ? [
-        ...evaluations.filter((e) => e.candidate_id === candidate.id),
-        ...(candidate.evaluations || []),
-      ].filter((e, idx, arr) => arr.findIndex((x) => x.id === e.id) === idx)
+      ...evaluations.filter((e) => e.candidate_id === candidate.id),
+      ...(candidate.evaluations || []),
+    ].filter((e, idx, arr) => arr.findIndex((x) => x.id === e.id) === idx)
     : [...(candidate?.evaluations || [])];
   const hasEvaluation = candEvals.length > 0;
 
@@ -616,7 +613,7 @@ export const REFERENCE_PLAYER_STYLES: ReferencePlayerGroup[] = [
 // 2. CANDIDATE & SPORTING PROFILE (Including Guardian for minors)
 export interface TrialCandidate {
   id: string;
-  
+
   // État Civil & Identité
   first_name: string;
   last_name: string;

@@ -67,9 +67,10 @@ import type { Match } from '../../types';
 
 export const getCategoryBadgeClass = (category?: string | null): string => {
    const cat = (category || '').toUpperCase().trim();
+   if (cat.includes('U25')) return 'bg-red-600 text-white border-red-500 shadow-red-500/20';
    if (cat.includes('U21')) return 'bg-blue-600 text-white border-blue-500 shadow-blue-500/20';
-   if (cat.includes('U19')) return 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-500/20';
-   if (cat.includes('U17')) return 'bg-purple-600 text-white border-purple-500 shadow-purple-500/20';
+   if (cat.includes('U18')) return 'bg-purple-600 text-white border-purple-500 shadow-purple-500/20';
+   if (cat.includes('U17')) return 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-500/20';
    if (cat.includes('U16')) return 'bg-violet-600 text-white border-violet-500 shadow-violet-500/20';
    if (cat.includes('U15')) return 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-500/20';
    if (cat.includes('U14') || cat.includes('U13')) return 'bg-teal-600 text-white border-teal-500 shadow-teal-500/20';
@@ -209,17 +210,17 @@ const MatchListItem: React.FC<MatchListItemProps> = ({
             </div>
          </div>
 
-            {/* Catégorie FUS & Journée de Championnat (US-UX-126 & US-MATCH-134 & US-DASH-148) */}
-            <div className="absolute top-3 left-11 z-10 flex items-center gap-1.5">
-               <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-[#FF3737] text-white shadow-md border border-white/20">
-                  {match.category || 'Équipe'}
+         {/* Catégorie FUS & Journée de Championnat (US-UX-126 & US-MATCH-134 & US-DASH-148) */}
+         <div className="absolute top-3 left-11 z-10 flex items-center gap-1.5">
+            <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-[#FF3737] text-white shadow-md border border-white/20">
+               {match.category || 'Équipe'}
+            </span>
+            {isLeague && Boolean(match.round_name || (match as any).lineup?.round_name) && (
+               <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-900 text-white shadow-xs border border-slate-700">
+                  {match.round_name || (match as any).lineup?.round_name}
                </span>
-               {isLeague && Boolean(match.round_name || (match as any).lineup?.round_name) && (
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-900 text-white shadow-xs border border-slate-700">
-                     {match.round_name || (match as any).lineup?.round_name}
-                  </span>
-               )}
-            </div>
+            )}
+         </div>
 
          {/* Statut LIVE ou Type de match badge en haut à droite */}
          <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
@@ -477,10 +478,11 @@ const MatchManagementPage: React.FC = () => {
    const [pendingFrmfSyncCount, setPendingFrmfSyncCount] = useState<number>(0);
 
    // Permissions Spécifiques (mini-CRUDs indépendants)
-   const canReadAssignOperator = hasSpecificActionAccess('matches', 'assign_operator', 'read');
-   const canCreateAssignOperator = hasSpecificActionAccess('matches', 'assign_operator', 'create');
-   const canUpdateAssignOperator = hasSpecificActionAccess('matches', 'assign_operator', 'update');
-   const canDeleteAssignOperator = hasSpecificActionAccess('matches', 'assign_operator', 'delete');
+   const isClubAdminRole = String(authState?.user?.system_role || '').toLowerCase() === 'admin';
+   const canReadAssignOperator = isClubAdminRole || hasSpecificActionAccess('matches', 'assign_operator', 'read');
+   const canCreateAssignOperator = isClubAdminRole || hasSpecificActionAccess('matches', 'assign_operator', 'create');
+   const canUpdateAssignOperator = isClubAdminRole || hasSpecificActionAccess('matches', 'assign_operator', 'update');
+   const canDeleteAssignOperator = isClubAdminRole || hasSpecificActionAccess('matches', 'assign_operator', 'delete');
    const hasAssignOperatorPerm = can('assign_operator') || canReadAssignOperator || canCreateAssignOperator || canUpdateAssignOperator || canDeleteAssignOperator;
 
    const canCreatePlanMatch = hasSpecificActionAccess('matches', 'plan_match', 'create') || canCreateAssignOperator || can('assign_operator');
@@ -606,8 +608,8 @@ const MatchManagementPage: React.FC = () => {
       const amfClub = opponentClubs.find(
          c =>
             (c.name?.toUpperCase().trim() === 'AMF' ||
-             c.short_name?.toUpperCase().trim() === 'AMF' ||
-             (c.name?.toLowerCase().includes('academie mohammed vi') && !c.name?.toLowerCase().includes('association'))) &&
+               c.short_name?.toUpperCase().trim() === 'AMF' ||
+               (c.name?.toLowerCase().includes('academie mohammed vi') && !c.name?.toLowerCase().includes('association'))) &&
             c.name?.toUpperCase().trim() !== 'AAMF' &&
             c.short_name?.toUpperCase().trim() !== 'AAMF'
       );
@@ -1579,9 +1581,8 @@ const MatchManagementPage: React.FC = () => {
                                  <button
                                     type="button"
                                     onClick={() => setIsExactDatePickerOpen(true)}
-                                    className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all border shadow-2xs group cursor-pointer ${
-                                       dateFilter ? 'bg-slate-900 text-white border-slate-900' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                                    }`}
+                                    className={`h-7 sm:h-8 px-2.5 sm:px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all border shadow-2xs group cursor-pointer ${dateFilter ? 'bg-slate-900 text-white border-slate-900' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                       }`}
                                     title="Ouvrir le calendrier pour choisir une date exacte"
                                  >
                                     <Calendar className={`w-3.5 h-3.5 shrink-0 ${dateFilter ? 'text-white' : 'text-[#FF3737]'}`} />
@@ -1843,35 +1844,32 @@ const MatchManagementPage: React.FC = () => {
                                              setListFilter('all');
                                              setTimeout(() => centerDayInView(formattedDate, true), 80);
                                           }}
-                                          className={`relative h-10 sm:h-11 rounded-xl flex flex-col items-center justify-center p-1 transition-all cursor-pointer group border ${
-                                             isSelectedCell
+                                          className={`relative h-10 sm:h-11 rounded-xl flex flex-col items-center justify-center p-1 transition-all cursor-pointer group border ${isSelectedCell
                                                 ? 'bg-[#16a34a] text-white border-[#16a34a] shadow-md shadow-emerald-600/30 font-black scale-105 z-10'
                                                 : isTodayCell
                                                    ? 'bg-emerald-50 text-[#16a34a] border-emerald-300 font-black'
                                                    : isCurrentMonth
                                                       ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-100'
                                                       : 'bg-slate-50/40 text-slate-300 border-transparent hover:bg-slate-100/50'
-                                          } ${dragOverDate === formattedDate ? 'border-primary ring-2 ring-primary/40 bg-emerald-100/80 scale-105' : ''}`}
+                                             } ${dragOverDate === formattedDate ? 'border-primary ring-2 ring-primary/40 bg-emerald-100/80 scale-105' : ''}`}
                                           title={`${formattedDate}${count > 0 ? ` (${count} match${count > 1 ? 's' : ''})` : ''}`}
                                        >
-                                          <span className={`text-[11px] sm:text-xs leading-none font-black ${
-                                             isSelectedCell ? 'text-white' : isTodayCell ? 'text-[#16a34a]' : isCurrentMonth ? 'text-slate-800' : 'text-slate-400'
-                                          }`}>
+                                          <span className={`text-[11px] sm:text-xs leading-none font-black ${isSelectedCell ? 'text-white' : isTodayCell ? 'text-[#16a34a]' : isCurrentMonth ? 'text-slate-800' : 'text-slate-400'
+                                             }`}>
                                              {date.getDate()}
                                           </span>
 
                                           {/* Badge compteur de matchs ou pastille */}
                                           {count > 0 && (
                                              <div className="flex items-center gap-0.5 mt-0.5">
-                                                <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-full leading-tight ${
-                                                   isSelectedCell
+                                                <span className={`text-[8px] font-black px-1.5 py-0.2 rounded-full leading-tight ${isSelectedCell
                                                       ? 'bg-white/25 text-white'
                                                       : hasLive
                                                          ? 'bg-red-600 text-white animate-pulse'
                                                          : hasScheduled
                                                             ? 'bg-emerald-600 text-white'
                                                             : 'bg-slate-200 text-slate-700'
-                                                }`}>
+                                                   }`}>
                                                    {count}
                                                 </span>
                                              </div>
@@ -1921,15 +1919,15 @@ const MatchManagementPage: React.FC = () => {
                            {/* ── COLONNE DROITE : Matchs de la journée sélectionnée (US-DASH-145) ── */}
                            <div className="lg:col-span-7 xl:col-span-8 space-y-4">
                               {(() => {
-                              const activeDate = dateFilter || calendarSelectedDate || todayStr;
-                              const panelMatches = matches.filter(m => {
-                                 if (!canManageCategory(m.category)) return false;
-                                 if (m.match_date !== activeDate) return false;
-                                 if (categoryFilter !== 'All' && normalizeAgeCategory(m.category) !== categoryFilter) return false;
-                                 return matchBelongsToLeague(m, leagueFilter);
-                              });
-                              const selDate = new Date(activeDate + 'T00:00:00');
-                              const dayLabel = isNaN(selDate.getTime()) ? activeDate : selDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
+                                 const activeDate = dateFilter || calendarSelectedDate || todayStr;
+                                 const panelMatches = matches.filter(m => {
+                                    if (!canManageCategory(m.category)) return false;
+                                    if (m.match_date !== activeDate) return false;
+                                    if (categoryFilter !== 'All' && normalizeAgeCategory(m.category) !== categoryFilter) return false;
+                                    return matchBelongsToLeague(m, leagueFilter);
+                                 });
+                                 const selDate = new Date(activeDate + 'T00:00:00');
+                                 const dayLabel = isNaN(selDate.getTime()) ? activeDate : selDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
 
                                  if (panelMatches.length === 0) {
                                     return (
@@ -2216,7 +2214,7 @@ const MatchManagementPage: React.FC = () => {
                                     </div>
                                  );
                               })()
-                           }
+                              }
                            </div>
                         </div>
                      ) : viewMode === 'table' ? (

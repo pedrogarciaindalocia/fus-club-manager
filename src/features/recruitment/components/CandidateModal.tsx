@@ -54,7 +54,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const { opponentClubs = [] } = useClubData();
   const [activeSection, setActiveSection] = useState<'scout' | 'civil' | 'sport' | 'evaluation' | 'report'>('scout');
   const [activeEvalTab, setActiveEvalTab] = useState<'tech' | 'tact' | 'phys' | 'ment'>('tech');
-  
+
   const { authState } = usePermissions();
   const isSuperAdmin = Boolean(
     (authState?.roles ?? []).includes('super_admin') ||
@@ -67,13 +67,13 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [inlineNewCriterionName, setInlineNewCriterionName] = useState('');
   const [editingCriterion, setEditingCriterion] = useState<{ pillar: ScoutPillarKey; oldName: string } | null>(null);
   const [editingCriterionNewName, setEditingCriterionNewName] = useState('');
-  
+
   // Evaluation States
   const [techReport, setTechReport] = useState('');
   const [tactReport, setTactReport] = useState('');
   const [physReport, setPhysReport] = useState('');
   const [mentReport, setMentReport] = useState('');
-  
+
   const [strengths, setStrengths] = useState('');
   const [weaknesses, setWeaknesses] = useState('');
   const [projection, setProjection] = useState('');
@@ -202,7 +202,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   const [preferredFoot, setPreferredFoot] = useState<FootType>('Droitier');
   const [heightCm, setHeightCm] = useState<number | ''>(150);
   const [weightKg, setWeightKg] = useState<number | ''>(65);
-  const [ageCategory, setAgeCategory] = useState('U19');
+  const [ageCategory, setAgeCategory] = useState('U18');
   const [surclassement, setSurclassement] = useState('0C');
   const [currentClub, setCurrentClub] = useState('');
   const [previousClubs, setPreviousClubs] = useState('');
@@ -240,14 +240,14 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
   const [discoveringScoutId, setDiscoveringScoutId] = useState(candidate?.discovering_scout_id || scouts[0]?.id || '');
   const [recruiterId, setRecruiterId] = useState(candidate?.recruiter_id || scouts[0]?.id || '');
-  
+
   // Lieu de Découverte Géographique en Cascade
   const [discoveryContinent, setDiscoveryContinent] = useState('Afrique');
   const [discoveryCountry, setDiscoveryCountry] = useState('Maroc');
   const [discoveryCity, setDiscoveryCity] = useState('Rabat');
   const [discoveryCustomCity, setDiscoveryCustomCity] = useState('');
   const [discoveryLocation, setDiscoveryLocation] = useState('Rabat, Maroc');
-  
+
   const [discoveryMatch, setDiscoveryMatch] = useState('');
   const [priority, setPriority] = useState<RecommendationPriority>('high');
   const [initialScore, setInitialScore] = useState<number | null>(null);
@@ -271,7 +271,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
   };
 
   const getSuggestedAgeCategory = (ageVal: number | null): string => {
-    if (ageVal === null) return 'U19';
+    if (ageVal === null) return 'U18';
     if (ageVal <= 7) return 'U7';
     if (ageVal <= 9) return 'U9';
     if (ageVal <= 11) return 'U11';
@@ -281,9 +281,8 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
     if (ageVal === 16) return 'U16';
     if (ageVal === 17) return 'U17';
     if (ageVal === 18) return 'U18';
-    if (ageVal === 19) return 'U19';
     if (ageVal <= 21) return 'U21';
-    if (ageVal <= 23) return 'U23';
+    if (ageVal <= 25) return 'U25';
     return 'SENIOR';
   };
 
@@ -327,7 +326,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       setPreferredFoot(candidate.preferred_foot || 'Droitier');
       setHeightCm(candidate.height_cm ?? 150);
       setWeightKg(candidate.weight_kg ?? 65);
-      setAgeCategory(normalizeAgeCategory(candidate.age_category || 'U19'));
+      setAgeCategory(normalizeAgeCategory(candidate.age_category || 'U18'));
       setSurclassement(candidate.surclassement || '0C');
       setCurrentClub(candidate.current_club || '');
       setPreviousClubs(candidate.previous_clubs || '');
@@ -344,7 +343,7 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
 
       setDiscoveringScoutId(candidate.discovering_scout_id || scoutMembers[0]?.id || scouts[0]?.id || '');
       setRecruiterId(candidate.recruiter_id || recruiterMembers[0]?.id || scouts[0]?.id || '');
-      
+
       if (candidate.discovery_location) {
         setDiscoveryLocation(candidate.discovery_location);
         let found = false;
@@ -795,34 +794,34 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
       projection.trim() ||
       Object.keys(criterionScores).length > 0
     );
-    
+
     const evaluationPayload = hasEvalData ? {
-        candidate_id: '',
-        evaluator_id: discoveringScoutId || undefined,
-        evaluator_name: selectedScout?.full_name || 'Scout',
-        evaluator_role: selectedScout?.role_title || 'Scout',
-        evaluation_date: new Date().toISOString().split('T')[0],
-        tech_report: techReport.trim() || undefined,
-        tact_report: tactReport.trim() || undefined,
-        phys_report: physReport.trim() || undefined,
-        ment_report: mentReport.trim() || undefined,
-        technical_score: techScore,
-        physical_score: physScore,
-        tactical_score: tactScore,
-        mental_score: mentScore,
-        overall_score: overallScore,
-        verdict: 'undecided' as const,
-        strengths: strengths.trim() || undefined,
-        weaknesses: weaknesses.trim() || undefined,
-        projection: projection.trim() || undefined,
-        criteria_scores: Object.fromEntries(
-          Object.entries(criterionScores).map(([key, value]) => {
-            // Revert back from pillar-label to just label for DB mapping
-            // Note: If labels duplicate across pillars, last one wins, but Supabase schema uses simple mapping
-            const label = key.split('-').slice(1).join('-');
-            return [label, value];
-          })
-        ),
+      candidate_id: '',
+      evaluator_id: discoveringScoutId || undefined,
+      evaluator_name: selectedScout?.full_name || 'Scout',
+      evaluator_role: selectedScout?.role_title || 'Scout',
+      evaluation_date: new Date().toISOString().split('T')[0],
+      tech_report: techReport.trim() || undefined,
+      tact_report: tactReport.trim() || undefined,
+      phys_report: physReport.trim() || undefined,
+      ment_report: mentReport.trim() || undefined,
+      technical_score: techScore,
+      physical_score: physScore,
+      tactical_score: tactScore,
+      mental_score: mentScore,
+      overall_score: overallScore,
+      verdict: 'undecided' as const,
+      strengths: strengths.trim() || undefined,
+      weaknesses: weaknesses.trim() || undefined,
+      projection: projection.trim() || undefined,
+      criteria_scores: Object.fromEntries(
+        Object.entries(criterionScores).map(([key, value]) => {
+          // Revert back from pillar-label to just label for DB mapping
+          // Note: If labels duplicate across pillars, last one wins, but Supabase schema uses simple mapping
+          const label = key.split('-').slice(1).join('-');
+          return [label, value];
+        })
+      ),
     } : undefined;
 
     setIsSubmitting(true);
@@ -916,9 +915,9 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
               </p>
             </div>
           </div>
-            <button onClick={onClose} className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 font-bold hover:bg-slate-200 transition-colors flex items-center gap-2 text-sm">
-              <X className="w-4 h-4" /> Annuler
-            </button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 font-bold hover:bg-slate-200 transition-colors flex items-center gap-2 text-sm">
+            <X className="w-4 h-4" /> Annuler
+          </button>
         </div>
 
         {/* Navigation des 5 sous-onglets du formulaire */}
@@ -953,801 +952,801 @@ export const CandidateModal: React.FC<CandidateModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="overflow-y-auto custom-scrollbar flex-1">
           <div className="p-6 space-y-4 max-w-4xl mx-auto w-full">
-          {/* SECTION 1 : ÉTAT CIVIL & STATUT */}
-          {activeSection === 'civil' && (
-            <div className="space-y-4">
-              {/* Photo Officielle du Joueur */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-50 to-slate-100/60 border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
-                <div className="relative group shrink-0">
-                  <div className="w-20 h-20 rounded-2xl border-2 border-slate-300 bg-white overflow-hidden shadow-xs flex items-center justify-center">
-                    {photoUrl ? (
-                      <img
-                        src={photoUrl}
-                        alt="Photo joueur"
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <User className="w-9 h-9 text-slate-300" />
-                    )}
-                  </div>
-                  {photoUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setPhotoUrl('')}
-                      className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-md hover:bg-rose-600 transition-colors"
-                      title="Supprimer la photo"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                <div className="space-y-1.5 flex-1 text-center sm:text-left">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 flex items-center justify-center sm:justify-start gap-1.5">
-                        <Camera className="w-3.5 h-3.5 text-primary" />
-                        Photo Officielle du Joueur
-                      </h4>
-                      <p className="text-[11px] text-muted-foreground">
-                        Téléversez une photo nette (portrait face, maillot ou tenue de sport). Formats JPG, PNG, WebP (max 10 Mo).
-                      </p>
+            {/* SECTION 1 : ÉTAT CIVIL & STATUT */}
+            {activeSection === 'civil' && (
+              <div className="space-y-4">
+                {/* Photo Officielle du Joueur */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-50 to-slate-100/60 border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
+                  <div className="relative group shrink-0">
+                    <div className="w-20 h-20 rounded-2xl border-2 border-slate-300 bg-white overflow-hidden shadow-xs flex items-center justify-center">
+                      {photoUrl ? (
+                        <img
+                          src={photoUrl}
+                          alt="Photo joueur"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <User className="w-9 h-9 text-slate-300" />
+                      )}
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-end">
+                    {photoUrl && (
                       <button
                         type="button"
-                        onClick={() => setMediaPickerOpen(true)}
-                        className="px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 bg-slate-50 hover:bg-primary/10 border border-slate-200 hover:border-primary/40 text-slate-800 shadow-xs"
+                        onClick={() => setPhotoUrl('')}
+                        className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-md hover:bg-rose-600 transition-colors"
+                        title="Supprimer la photo"
                       >
-                        <ImageIcon className="w-3.5 h-3.5 text-primary" />
-                        <span>Médiathèque</span>
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                    )}
+                  </div>
 
-                      <label className={cn(
-                        "px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs",
-                        isUploadingPhoto
-                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                          : "bg-primary text-white hover:bg-primary/95 hover:scale-[1.02] active:scale-98 shadow-primary/20"
-                      )}>
-                        {isUploadingPhoto ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Chargement...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-3.5 h-3.5" />
-                            <span>{photoUrl ? 'Changer' : 'Téléverser'}</span>
-                          </>
-                        )}
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                          disabled={isUploadingPhoto}
-                          onChange={handlePhotoUpload}
-                          className="hidden"
-                        />
-                      </label>
+                  <div className="space-y-1.5 flex-1 text-center sm:text-left">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center justify-center sm:justify-start gap-1.5">
+                          <Camera className="w-3.5 h-3.5 text-primary" />
+                          Photo Officielle du Joueur
+                        </h4>
+                        <p className="text-[11px] text-muted-foreground">
+                          Téléversez une photo nette (portrait face, maillot ou tenue de sport). Formats JPG, PNG, WebP (max 10 Mo).
+                        </p>
+                      </div>
 
-                      {photoUrl && (
+                      <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-end">
                         <button
                           type="button"
-                          onClick={() => setPhotoUrl('')}
-                          className="p-2 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-all border border-slate-200"
-                          title="Supprimer la photo"
+                          onClick={() => setMediaPickerOpen(true)}
+                          className="px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 bg-slate-50 hover:bg-primary/10 border border-slate-200 hover:border-primary/40 text-slate-800 shadow-xs"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <ImageIcon className="w-3.5 h-3.5 text-primary" />
+                          <span>Médiathèque</span>
                         </button>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* Champ URL direct optionnel */}
-                  <div className="pt-1">
-                    <input
-                      type="url"
-                      value={photoUrl}
-                      onChange={(e) => setPhotoUrl(e.target.value)}
-                      placeholder="Ou collez directement l'URL d'une image (optionnel)..."
-                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-[11px] bg-white font-normal text-slate-700 outline-none focus:ring-1 focus:ring-primary/20"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Statut du Joueur / Pipeline avec mise en évidence de l'icône */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-800">
-                    Statut de la Candidature / Joueur Détecté *
-                  </label>
-                  <span className="text-[10px] text-muted-foreground font-medium">
-                    Sélectionnez l'étape courante
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {[
-                    { id: 'registered', label: 'Inscrit', icon: UserCheck, desc: 'Fiche créée' },
-                    { id: 'in_trial', label: 'En Test', icon: Zap, desc: 'Essai en cours' },
-                    { id: 'selected', label: 'Retenu', icon: Star, desc: 'Validé FUS' },
-                    { id: 'on_hold', label: 'En Réserve', icon: Clock, desc: 'Suivi ultérieur' },
-                    { id: 'rejected', label: 'Non Retenu', icon: XCircle, desc: 'Clôturé' },
-                  ].map((st) => {
-                    const Icon = st.icon;
-                    const isSelected = status === st.id;
-                    return (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => setStatus(st.id as CandidateStatus)}
-                        className={cn(
-                          "p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1.5",
-                          isSelected
-                            ? "bg-white border-primary ring-2 ring-primary/25 shadow-sm font-bold"
-                            : "bg-white/60 border-slate-200 text-slate-500 hover:bg-white"
-                        )}
-                      >
-                        <div className={cn(
-                          "w-8 h-8 rounded-lg flex items-center justify-center transition-transform",
-                          isSelected
-                            ? "bg-primary text-white shadow-md shadow-primary/30 scale-110"
-                            : "bg-slate-100 text-slate-400"
+                        <label className={cn(
+                          "px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs",
+                          isUploadingPhoto
+                            ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                            : "bg-primary text-white hover:bg-primary/95 hover:scale-[1.02] active:scale-98 shadow-primary/20"
                         )}>
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <span className={cn("text-[11px] font-bold block leading-tight", isSelected ? "text-primary" : "text-slate-700")}>
-                            {st.label}
-                          </span>
-                          <span className="text-[9px] text-muted-foreground block">{st.desc}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Prénom *</label>
-                  <input
-                    type="text"
-                    required
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="Ex: Amine"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Nom *</label>
-                  <input
-                    type="text"
-                    required
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Ex: El Idrissi"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-              </div>
+                          {isUploadingPhoto ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Chargement...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{photoUrl ? 'Changer' : 'Téléverser'}</span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                            disabled={isUploadingPhoto}
+                            onChange={handlePhotoUpload}
+                            className="hidden"
+                          />
+                        </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Date de Naissance</label>
-                  <input
-                    type="date"
-                    value={birthDate}
-                    onChange={(e) => handleBirthDateChange(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Lieu de Naissance</label>
-                  <input
-                    type="text"
-                    value={birthPlace}
-                    onChange={(e) => setBirthPlace(e.target.value)}
-                    placeholder="Ex: Salé, Rabat..."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Sélecteur géographique en cascade (Continent, Pays avec drapeau, Ville, Nationalité) */}
-              <div className="pt-2 border-t border-slate-100">
-                <PlayerGeographyFields
-                  continent={continent}
-                  onContinentChange={setContinent}
-                  country={country}
-                  onCountryChange={(newCountry, flag, defaultNat) => {
-                    setCountry(newCountry);
-                    setNationality(defaultNat);
-                  }}
-                  city={city}
-                  onCityChange={(newCity) => {
-                    setCity(newCity);
-                    if (!birthPlace || birthPlace === city) {
-                      setBirthPlace(newCity);
-                    }
-                  }}
-                  birthPlace={birthPlace}
-                  onBirthPlaceChange={setBirthPlace}
-                  nationality={nationality}
-                  onNationalityChange={setNationality}
-                />
-              </div>
-
-              <div className="pt-2 border-t">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Téléphone Joueur</label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+212 6 XX XX XX XX"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Adresse de Résidence</label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Quartier, Ville, Code Postal"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
-                />
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'sport' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Poste Principal *</label>
-                  <select
-                    value={primaryPosition}
-                    onChange={(e) => setPrimaryPosition(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-slate-50 hover:bg-white transition-colors"
-                  >
-                    <option value="" disabled>Sélectionner le poste principal</option>
-                    {positions.map(p => (
-                      <option key={p.id} value={p.code}>
-                        {getMetricPositionFrenchName(p)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Poste Secondaire</label>
-                  <select
-                    value={secondaryPosition}
-                    onChange={(e) => setSecondaryPosition(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-slate-50 hover:bg-white transition-colors"
-                  >
-                    <option value="">Aucun</option>
-                    {positions.map(p => (
-                      <option key={p.id} value={p.code}>
-                        {getMetricPositionFrenchName(p)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Pied Fort *</label>
-                  <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-                    {(['Droitier', 'Gaucher', 'Ambidextre'] as FootType[]).map(foot => (
-                      <button
-                        key={foot}
-                        type="button"
-                        onClick={() => setPreferredFoot(foot)}
-                        className={cn(
-                          "py-2 text-[11px] font-bold rounded-xl border transition-all truncate px-1",
-                          preferredFoot === foot ? "bg-primary text-white border-primary" : "bg-slate-50 text-slate-700"
+                        {photoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setPhotoUrl('')}
+                            className="p-2 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-all border border-slate-200"
+                            title="Supprimer la photo"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
-                      >
-                        {foot}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                      </div>
+                    </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Taille Estimée (cm)</label>
-                  <input
-                    type="number"
-                    value={heightCm}
-                    onChange={(e) => setHeightCm(e.target.value ? Number(e.target.value) : '')}
-                    placeholder="150"
-                    className="w-full px-3 py-2 rounded-xl border text-xs font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Poids Estimé (kg)</label>
-                  <input
-                    type="number"
-                    value={weightKg}
-                    onChange={(e) => setWeightKg(e.target.value ? Number(e.target.value) : '')}
-                    placeholder="65"
-                    className="w-full px-3 py-2 rounded-xl border text-xs font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Catégorie d'Âge</label>
-                  <select
-                    value={ageCategory}
-                    onChange={(e) => setAgeCategory(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border text-xs bg-white cursor-pointer"
-                  >
-                    {RECRUITMENT_AGE_CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Surclassement</label>
-                  <select
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white cursor-pointer"
-                    value={surclassement}
-                    onChange={(e) => setSurclassement(e.target.value)}
-                  >
-                    <option value="0C">0C (Pas de surclassement)</option>
-                    <option value="+1C">+1C (Surclassé d'une catégorie)</option>
-                    <option value="+2C">+2C (Surclassé de deux catégories)</option>
-                    <option value="+3C">+3C (Surclassé de trois catégories)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
-                {/* Club Actuel */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-medium text-slate-700">Club Actuel</label>
-                  <input
-                    type="text"
-                    value={currentClub}
-                    onChange={(e) => setCurrentClub(e.target.value)}
-                    placeholder="Ex: AS FAR, FUS Rabat, WAC..."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium"
-                  />
-                </div>
-
-                {/* Clubs Précédents */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-medium text-slate-700">Clubs Précédents / Formation</label>
-                  <input
-                    type="text"
-                    value={previousClubs}
-                    onChange={(e) => setPreviousClubs(e.target.value)}
-                    placeholder="Ex: AS FAR, KAC, Académie..."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Matchs</label>
-                  <input
-                    type="number"
-                    value={matchesPlayed}
-                    onChange={(e) => setMatchesPlayed(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full px-3 py-2 rounded-xl border text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Minutes</label>
-                  <input
-                    type="number"
-                    value={minutesPlayed}
-                    onChange={(e) => setMinutesPlayed(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full px-3 py-2 rounded-xl border text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Buts</label>
-                  <input
-                    type="number"
-                    value={goals}
-                    onChange={(e) => setGoals(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full px-3 py-2 rounded-xl border text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Passes D.</label>
-                  <input
-                    type="number"
-                    value={assists}
-                    onChange={(e) => setAssists(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full px-3 py-2 rounded-xl border text-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Match (Club X vs Club Y)</label>
-                <input
-                  type="text"
-                  value={nationalSelections}
-                  onChange={(e) => setNationalSelections(e.target.value)}
-                  placeholder="Ex: FUS Rabat vs Raja Casablanca"
-                  className="w-full px-3.5 py-2.5 rounded-xl border text-xs font-medium"
-                />
-              </div>
-
-              {/* Vidéo Highlights & Détection (YouTube ou Google Drive) */}
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 space-y-4 shadow-lg">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-                    <Video className="w-4 h-4 text-red-400" />
-                    Vidéo Highlights & Détection
-                  </label>
-                  <span className="text-[10px] text-slate-400 font-medium">YouTube ou Google Drive</span>
-                </div>
-
-                {/* Sélecteur de type */}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setVideoType('none'); setVideoUrl(''); }}
-                    className={cn(
-                      "flex-1 py-2 rounded-xl text-xs font-bold transition-all border",
-                      videoType === 'none'
-                        ? "bg-slate-600 text-white border-slate-500 shadow-sm"
-                        : "bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-300"
-                    )}
-                  >
-                    Aucun
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVideoType('youtube')}
-                    className={cn(
-                      "flex-1 py-2 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-2",
-                      videoType === 'youtube'
-                        ? "bg-red-600 text-white border-red-500 shadow-md shadow-red-900/40"
-                        : "bg-slate-800 text-red-400 border-slate-700 hover:border-red-600/50 hover:text-red-300"
-                    )}
-                  >
-                    {/* YouTube icon */}
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                    </svg>
-                    Lien YouTube
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVideoType('drive')}
-                    className={cn(
-                      "flex-1 py-2 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-2",
-                      videoType === 'drive'
-                        ? "bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-900/40"
-                        : "bg-slate-800 text-emerald-400 border-slate-700 hover:border-emerald-600/50 hover:text-emerald-300"
-                    )}
-                  >
-                    {/* Drive icon */}
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M4.433 22.396l2.788-4.828H22.5l-2.787 4.828H4.433zm5.023-4.828l-4.3-7.444 7.845-13.58 4.301 7.443-7.846 13.581zM1.5 17.568l4.3-7.444h8.6l-4.3 7.444H1.5z"/>
-                    </svg>
-                    Google Drive
-                  </button>
-                </div>
-
-                {/* Champ Source (visible toujours) */}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wider">Source</label>
-                  <input
-                    type="text"
-                    value={videoSource}
-                    onChange={(e) => setVideoSource(e.target.value)}
-                    placeholder="Ex: Canal officiel FUS, Match Ligue U17, Tournoi de Marrakech..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-700 border border-slate-600 text-xs text-white placeholder:text-slate-500 outline-none focus:ring-2 ring-primary/30 focus:border-primary/50 transition-colors"
-                  />
-                </div>
-
-                {/* Champ URL */}
-                {videoType !== 'none' && (
-                  <div className="space-y-3">
-                    <div className="relative">
+                    {/* Champ URL direct optionnel */}
+                    <div className="pt-1">
                       <input
                         type="url"
-                        value={videoUrl}
-                        onChange={(e) => handleVideoUrlChange(e.target.value)}
-                        placeholder={
-                          videoType === 'youtube'
-                            ? "https://www.youtube.com/watch?v=... ou https://youtu.be/..."
-                            : "https://drive.google.com/file/d/.../view?usp=sharing"
-                        }
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-700 border border-slate-600 text-xs font-mono text-white placeholder:text-slate-500 pr-24 focus:ring-2 ring-primary/30 outline-none focus:border-primary/50 transition-colors"
+                        value={photoUrl}
+                        onChange={(e) => setPhotoUrl(e.target.value)}
+                        placeholder="Ou collez directement l'URL d'une image (optionnel)..."
+                        className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-[11px] bg-white font-normal text-slate-700 outline-none focus:ring-1 focus:ring-primary/20"
                       />
-                      {videoUrl && (
-                        <a
-                          href={videoUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-slate-600 hover:bg-slate-500 text-[10px] font-bold text-white flex items-center gap-1 transition-colors"
+                    </div>
+                  </div>
+                </div>
+
+                {/* Statut du Joueur / Pipeline avec mise en évidence de l'icône */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800">
+                      Statut de la Candidature / Joueur Détecté *
+                    </label>
+                    <span className="text-[10px] text-muted-foreground font-medium">
+                      Sélectionnez l'étape courante
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    {[
+                      { id: 'registered', label: 'Inscrit', icon: UserCheck, desc: 'Fiche créée' },
+                      { id: 'in_trial', label: 'En Test', icon: Zap, desc: 'Essai en cours' },
+                      { id: 'selected', label: 'Retenu', icon: Star, desc: 'Validé FUS' },
+                      { id: 'on_hold', label: 'En Réserve', icon: Clock, desc: 'Suivi ultérieur' },
+                      { id: 'rejected', label: 'Non Retenu', icon: XCircle, desc: 'Clôturé' },
+                    ].map((st) => {
+                      const Icon = st.icon;
+                      const isSelected = status === st.id;
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setStatus(st.id as CandidateStatus)}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1.5",
+                            isSelected
+                              ? "bg-white border-primary ring-2 ring-primary/25 shadow-sm font-bold"
+                              : "bg-white/60 border-slate-200 text-slate-500 hover:bg-white"
+                          )}
                         >
-                          <ExternalLink className="w-3 h-3" /> Ouvrir
-                        </a>
+                          <div className={cn(
+                            "w-8 h-8 rounded-lg flex items-center justify-center transition-transform",
+                            isSelected
+                              ? "bg-primary text-white shadow-md shadow-primary/30 scale-110"
+                              : "bg-slate-100 text-slate-400"
+                          )}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className={cn("text-[11px] font-bold block leading-tight", isSelected ? "text-primary" : "text-slate-700")}>
+                              {st.label}
+                            </span>
+                            <span className="text-[9px] text-muted-foreground block">{st.desc}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Prénom *</label>
+                    <input
+                      type="text"
+                      required
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="Ex: Amine"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Nom *</label>
+                    <input
+                      type="text"
+                      required
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Ex: El Idrissi"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Date de Naissance</label>
+                    <input
+                      type="date"
+                      value={birthDate}
+                      onChange={(e) => handleBirthDateChange(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Lieu de Naissance</label>
+                    <input
+                      type="text"
+                      value={birthPlace}
+                      onChange={(e) => setBirthPlace(e.target.value)}
+                      placeholder="Ex: Salé, Rabat..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Sélecteur géographique en cascade (Continent, Pays avec drapeau, Ville, Nationalité) */}
+                <div className="pt-2 border-t border-slate-100">
+                  <PlayerGeographyFields
+                    continent={continent}
+                    onContinentChange={setContinent}
+                    country={country}
+                    onCountryChange={(newCountry, flag, defaultNat) => {
+                      setCountry(newCountry);
+                      setNationality(defaultNat);
+                    }}
+                    city={city}
+                    onCityChange={(newCity) => {
+                      setCity(newCity);
+                      if (!birthPlace || birthPlace === city) {
+                        setBirthPlace(newCity);
+                      }
+                    }}
+                    birthPlace={birthPlace}
+                    onBirthPlaceChange={setBirthPlace}
+                    nationality={nationality}
+                    onNationalityChange={setNationality}
+                  />
+                </div>
+
+                <div className="pt-2 border-t">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Téléphone Joueur</label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+212 6 XX XX XX XX"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Adresse de Résidence</label>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Quartier, Ville, Code Postal"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs"
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'sport' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Poste Principal *</label>
+                    <select
+                      value={primaryPosition}
+                      onChange={(e) => setPrimaryPosition(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-slate-50 hover:bg-white transition-colors"
+                    >
+                      <option value="" disabled>Sélectionner le poste principal</option>
+                      {positions.map(p => (
+                        <option key={p.id} value={p.code}>
+                          {getMetricPositionFrenchName(p)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Poste Secondaire</label>
+                    <select
+                      value={secondaryPosition}
+                      onChange={(e) => setSecondaryPosition(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-slate-50 hover:bg-white transition-colors"
+                    >
+                      <option value="">Aucun</option>
+                      {positions.map(p => (
+                        <option key={p.id} value={p.code}>
+                          {getMetricPositionFrenchName(p)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Pied Fort *</label>
+                    <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                      {(['Droitier', 'Gaucher', 'Ambidextre'] as FootType[]).map(foot => (
+                        <button
+                          key={foot}
+                          type="button"
+                          onClick={() => setPreferredFoot(foot)}
+                          className={cn(
+                            "py-2 text-[11px] font-bold rounded-xl border transition-all truncate px-1",
+                            preferredFoot === foot ? "bg-primary text-white border-primary" : "bg-slate-50 text-slate-700"
+                          )}
+                        >
+                          {foot}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Taille Estimée (cm)</label>
+                    <input
+                      type="number"
+                      value={heightCm}
+                      onChange={(e) => setHeightCm(e.target.value ? Number(e.target.value) : '')}
+                      placeholder="150"
+                      className="w-full px-3 py-2 rounded-xl border text-xs font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Poids Estimé (kg)</label>
+                    <input
+                      type="number"
+                      value={weightKg}
+                      onChange={(e) => setWeightKg(e.target.value ? Number(e.target.value) : '')}
+                      placeholder="65"
+                      className="w-full px-3 py-2 rounded-xl border text-xs font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Catégorie d'Âge</label>
+                    <select
+                      value={ageCategory}
+                      onChange={(e) => setAgeCategory(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border text-xs bg-white cursor-pointer"
+                    >
+                      {RECRUITMENT_AGE_CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Surclassement</label>
+                    <select
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white cursor-pointer"
+                      value={surclassement}
+                      onChange={(e) => setSurclassement(e.target.value)}
+                    >
+                      <option value="0C">0C (Pas de surclassement)</option>
+                      <option value="+1C">+1C (Surclassé d'une catégorie)</option>
+                      <option value="+2C">+2C (Surclassé de deux catégories)</option>
+                      <option value="+3C">+3C (Surclassé de trois catégories)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                  {/* Club Actuel */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-slate-700">Club Actuel</label>
+                    <input
+                      type="text"
+                      value={currentClub}
+                      onChange={(e) => setCurrentClub(e.target.value)}
+                      placeholder="Ex: AS FAR, FUS Rabat, WAC..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium"
+                    />
+                  </div>
+
+                  {/* Clubs Précédents */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-slate-700">Clubs Précédents / Formation</label>
+                    <input
+                      type="text"
+                      value={previousClubs}
+                      onChange={(e) => setPreviousClubs(e.target.value)}
+                      placeholder="Ex: AS FAR, KAC, Académie..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Matchs</label>
+                    <input
+                      type="number"
+                      value={matchesPlayed}
+                      onChange={(e) => setMatchesPlayed(e.target.value ? Number(e.target.value) : '')}
+                      className="w-full px-3 py-2 rounded-xl border text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Minutes</label>
+                    <input
+                      type="number"
+                      value={minutesPlayed}
+                      onChange={(e) => setMinutesPlayed(e.target.value ? Number(e.target.value) : '')}
+                      className="w-full px-3 py-2 rounded-xl border text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Buts</label>
+                    <input
+                      type="number"
+                      value={goals}
+                      onChange={(e) => setGoals(e.target.value ? Number(e.target.value) : '')}
+                      className="w-full px-3 py-2 rounded-xl border text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Passes D.</label>
+                    <input
+                      type="number"
+                      value={assists}
+                      onChange={(e) => setAssists(e.target.value ? Number(e.target.value) : '')}
+                      className="w-full px-3 py-2 rounded-xl border text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Match (Club X vs Club Y)</label>
+                  <input
+                    type="text"
+                    value={nationalSelections}
+                    onChange={(e) => setNationalSelections(e.target.value)}
+                    placeholder="Ex: FUS Rabat vs Raja Casablanca"
+                    className="w-full px-3.5 py-2.5 rounded-xl border text-xs font-medium"
+                  />
+                </div>
+
+                {/* Vidéo Highlights & Détection (YouTube ou Google Drive) */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700 space-y-4 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                      <Video className="w-4 h-4 text-red-400" />
+                      Vidéo Highlights & Détection
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-medium">YouTube ou Google Drive</span>
+                  </div>
+
+                  {/* Sélecteur de type */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setVideoType('none'); setVideoUrl(''); }}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl text-xs font-bold transition-all border",
+                        videoType === 'none'
+                          ? "bg-slate-600 text-white border-slate-500 shadow-sm"
+                          : "bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-300"
+                      )}
+                    >
+                      Aucun
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVideoType('youtube')}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-2",
+                        videoType === 'youtube'
+                          ? "bg-red-600 text-white border-red-500 shadow-md shadow-red-900/40"
+                          : "bg-slate-800 text-red-400 border-slate-700 hover:border-red-600/50 hover:text-red-300"
+                      )}
+                    >
+                      {/* YouTube icon */}
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                      </svg>
+                      Lien YouTube
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVideoType('drive')}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-2",
+                        videoType === 'drive'
+                          ? "bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-900/40"
+                          : "bg-slate-800 text-emerald-400 border-slate-700 hover:border-emerald-600/50 hover:text-emerald-300"
+                      )}
+                    >
+                      {/* Drive icon */}
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M4.433 22.396l2.788-4.828H22.5l-2.787 4.828H4.433zm5.023-4.828l-4.3-7.444 7.845-13.58 4.301 7.443-7.846 13.581zM1.5 17.568l4.3-7.444h8.6l-4.3 7.444H1.5z" />
+                      </svg>
+                      Google Drive
+                    </button>
+                  </div>
+
+                  {/* Champ Source (visible toujours) */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wider">Source</label>
+                    <input
+                      type="text"
+                      value={videoSource}
+                      onChange={(e) => setVideoSource(e.target.value)}
+                      placeholder="Ex: Canal officiel FUS, Match Ligue U17, Tournoi de Marrakech..."
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-700 border border-slate-600 text-xs text-white placeholder:text-slate-500 outline-none focus:ring-2 ring-primary/30 focus:border-primary/50 transition-colors"
+                    />
+                  </div>
+
+                  {/* Champ URL */}
+                  {videoType !== 'none' && (
+                    <div className="space-y-3">
+                      <div className="relative">
+                        <input
+                          type="url"
+                          value={videoUrl}
+                          onChange={(e) => handleVideoUrlChange(e.target.value)}
+                          placeholder={
+                            videoType === 'youtube'
+                              ? "https://www.youtube.com/watch?v=... ou https://youtu.be/..."
+                              : "https://drive.google.com/file/d/.../view?usp=sharing"
+                          }
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-700 border border-slate-600 text-xs font-mono text-white placeholder:text-slate-500 pr-24 focus:ring-2 ring-primary/30 outline-none focus:border-primary/50 transition-colors"
+                        />
+                        {videoUrl && (
+                          <a
+                            href={videoUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-slate-600 hover:bg-slate-500 text-[10px] font-bold text-white flex items-center gap-1 transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3" /> Ouvrir
+                          </a>
+                        )}
+                      </div>
+
+                      <p className="text-[10px] text-slate-400">
+                        {videoType === 'youtube'
+                          ? "✦ Collez l'URL YouTube — un aperçu intégré apparaîtra automatiquement ci-dessous."
+                          : "✦ Collez le lien de partage Google Drive. Assurez-vous que les droits d'accès sont définis sur « Tous les utilisateurs avec le lien »."}
+                      </p>
+
+                      {/* ── YouTube embed full width ─────────────────────── */}
+                      {videoType === 'youtube' && extractYouTubeId(videoUrl) && (
+                        <div className="rounded-xl overflow-hidden border border-slate-600 bg-black w-full shadow-inner" style={{ aspectRatio: '16/9' }}>
+                          <iframe
+                            src={`https://www.youtube.com/embed/${extractYouTubeId(videoUrl)}?rel=0&modestbranding=1`}
+                            title="Aperçu Highlights Joueur"
+                            className="w-full h-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        </div>
+                      )}
+
+                      {/* Placeholder si YouTube sans vidéo valide */}
+                      {videoType === 'youtube' && videoUrl && !extractYouTubeId(videoUrl) && (
+                        <div className="rounded-xl border border-dashed border-slate-600 bg-slate-800/50 flex flex-col items-center justify-center py-8 gap-2">
+                          <svg className="w-8 h-8 text-red-500 opacity-60" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                          </svg>
+                          <p className="text-[11px] text-slate-400 font-medium">URL YouTube invalide — vérifiez le lien</p>
+                        </div>
+                      )}
+
+                      {/* ── Google Drive embed ───────────────────────────── */}
+                      {videoType === 'drive' && videoUrl && videoUrl.includes('drive.google.com') && (
+                        <div className="rounded-xl overflow-hidden border border-slate-600 bg-black w-full shadow-inner" style={{ aspectRatio: '16/9' }}>
+                          <iframe
+                            src={videoUrl.replace('/view', '/preview').replace('?usp=sharing', '')}
+                            title="Aperçu Google Drive"
+                            className="w-full h-full"
+                            allow="autoplay"
+                            allowFullScreen
+                          />
+                        </div>
                       )}
                     </div>
-
-                    <p className="text-[10px] text-slate-400">
-                      {videoType === 'youtube'
-                        ? "✦ Collez l'URL YouTube — un aperçu intégré apparaîtra automatiquement ci-dessous."
-                        : "✦ Collez le lien de partage Google Drive. Assurez-vous que les droits d'accès sont définis sur « Tous les utilisateurs avec le lien »."}
-                    </p>
-
-                    {/* ── YouTube embed full width ─────────────────────── */}
-                    {videoType === 'youtube' && extractYouTubeId(videoUrl) && (
-                      <div className="rounded-xl overflow-hidden border border-slate-600 bg-black w-full shadow-inner" style={{ aspectRatio: '16/9' }}>
-                        <iframe
-                          src={`https://www.youtube.com/embed/${extractYouTubeId(videoUrl)}?rel=0&modestbranding=1`}
-                          title="Aperçu Highlights Joueur"
-                          className="w-full h-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      </div>
-                    )}
-
-                    {/* Placeholder si YouTube sans vidéo valide */}
-                    {videoType === 'youtube' && videoUrl && !extractYouTubeId(videoUrl) && (
-                      <div className="rounded-xl border border-dashed border-slate-600 bg-slate-800/50 flex flex-col items-center justify-center py-8 gap-2">
-                        <svg className="w-8 h-8 text-red-500 opacity-60" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                        </svg>
-                        <p className="text-[11px] text-slate-400 font-medium">URL YouTube invalide — vérifiez le lien</p>
-                      </div>
-                    )}
-
-                    {/* ── Google Drive embed ───────────────────────────── */}
-                    {videoType === 'drive' && videoUrl && videoUrl.includes('drive.google.com') && (
-                      <div className="rounded-xl overflow-hidden border border-slate-600 bg-black w-full shadow-inner" style={{ aspectRatio: '16/9' }}>
-                        <iframe
-                          src={videoUrl.replace('/view', '/preview').replace('?usp=sharing', '')}
-                          title="Aperçu Google Drive"
-                          className="w-full h-full"
-                          allow="autoplay"
-                          allowFullScreen
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ONGLET SCOUT */}
-          {activeSection === 'scout' && (
-            <div className="p-6 space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                    <Compass className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-800">Scout & Métriques du Poste</h4>
-                    <p className="text-[11px] text-slate-500">Sélectionnez le scout découvreur et notez le joueur selon les métriques configurées pour son poste</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="px-3.5 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-black flex items-center gap-1.5 shadow-xs">
-                    <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                    <span>Score Global : {overallScore}/10</span>
-                  </div>
+                  )}
                 </div>
               </div>
+            )}
 
-              {/* Sélection du Scout et du Poste Détecté */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                    <Compass className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Scout Découvreur *</span>
-                  </label>
-                  <select
-                    value={discoveringScoutId}
-                    onChange={(e) => setDiscoveringScoutId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-medium focus:ring-2 focus:ring-primary/20"
-                    required
-                  >
-                    <option value="">-- Sélectionner un Scout --</option>
-                    {scoutMembers.map(s => (
-                      <option key={s.id} value={s.id}>{s.full_name} ({s.role_title})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                    <Shield className="w-3.5 h-3.5 text-primary" />
-                    <span>Poste Détecté / Observé *</span>
-                  </label>
-                  <select
-                    value={primaryPosition}
-                    onChange={(e) => setPrimaryPosition(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold focus:ring-2 focus:ring-primary/20"
-                    required
-                  >
-                    {positions.map(p => (
-                      <option key={p.id || p.code} value={p.code}>
-                        {getMetricPositionFrenchName(p)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-
-            </div>
-          )}
-
-          {/* ONGLET EVALUATION */}
-          {activeSection === 'evaluation' && (
-            <div className="p-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              {/* Bloc Métriques Configurées selon le Poste */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{positionConfig.emoji}</span>
+            {/* ONGLET SCOUT */}
+            {activeSection === 'scout' && (
+              <div className="p-6 space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                      <Compass className="w-5 h-5" />
+                    </div>
                     <div>
-                      <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                        <span>Métriques configurées pour le poste {getMetricPositionFrenchName(positionConfig)}</span>
-                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
-                          {positionConfig.category ? getMetricCategoryFrenchLabel(positionConfig.category) : 'Poste'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">Critères dynamiques configurés dans Paramétrage &gt; Configuration des métriques</p>
+                      <h4 className="text-sm font-bold text-slate-800">Scout & Métriques du Poste</h4>
+                      <p className="text-[11px] text-slate-500">Sélectionnez le scout découvreur et notez le joueur selon les métriques configurées pour son poste</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="px-3.5 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-black flex items-center gap-1.5 shadow-xs">
+                      <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                      <span>Score Global : {overallScore}/10</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Onglets des 4 piliers */}
-                <div className="flex gap-2 border-b border-slate-200 overflow-x-auto pb-2">
-                  {[
-                    { id: 'tech', label: 'Technique (25%)', icon: Zap, score: techScore },
-                    { id: 'tact', label: 'Tactique (25%)', icon: Compass, score: tactScore },
-                    { id: 'phys', label: 'Physique (25%)', icon: Zap, score: physScore },
-                    { id: 'ment', label: 'Mental (25%)', icon: Star, score: mentScore }
-                  ].map(tab => {
-                    const Icon = tab.icon;
-                    const isActive = activeEvalTab === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setActiveEvalTab(tab.id as any)}
-                        className={cn(
-                          "px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shrink-0",
-                          isActive
-                            ? "bg-primary text-white shadow-xs"
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        )}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{tab.label}</span>
-                        <span className={cn(
-                          "px-1.5 py-0.5 rounded text-[10px] font-black",
-                          isActive ? "bg-white/20 text-white" : "bg-white text-slate-700"
-                        )}>
-                          {tab.score}/10
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Grille des critères configurés pour le pilier sélectionné */}
-                <div className="space-y-4">
-                  {activeEvalTab === 'tech' && renderPillarSection('technique', 'A', 'Techniques', 'Barème 1 à 10 spécifique au poste', techScore)}
-                  {activeEvalTab === 'tact' && renderPillarSection('tactique', 'B', 'Tactiques', 'Intelligence, vision & placement', tactScore)}
-                  {activeEvalTab === 'phys' && renderPillarSection('physique', 'C', 'Physiques & Athlétiques', 'Vitesse, endurance et profil athlétique', physScore)}
-                  {activeEvalTab === 'ment' && renderPillarSection('mental', 'D', 'Mentaux & Comportement', 'Mentalité, discipline et leadership', mentScore)}
-
-                  <div className="mt-4 p-4 rounded-2xl bg-blue-50/70 border border-blue-200/80 space-y-2">
-                    <label className="flex items-center gap-2 text-xs font-bold text-blue-900">
-                      <FileText className="w-4 h-4 text-blue-600" />
-                      <span>Rapport & Observations du Scout ({activeEvalTab === 'tech' ? 'Technique' : activeEvalTab === 'tact' ? 'Tactique' : activeEvalTab === 'phys' ? 'Physique' : 'Mental'})</span>
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={activeEvalTab === 'tech' ? techReport : activeEvalTab === 'tact' ? tactReport : activeEvalTab === 'phys' ? physReport : mentReport}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (activeEvalTab === 'tech') setTechReport(val);
-                        else if (activeEvalTab === 'tact') setTactReport(val);
-                        else if (activeEvalTab === 'phys') setPhysReport(val);
-                        else setMentReport(val);
-                      }}
-                      placeholder={`Observations et remarques du scout pour ce domaine...`}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-blue-200/90 bg-white text-xs resize-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeSection === 'report' && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300 max-w-4xl mx-auto">
-              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                <div className="flex items-center gap-2 mb-6 pb-4 border-b border-slate-200">
-                  <FileText className="w-5 h-5 text-primary" />
+                {/* Sélection du Scout et du Poste Détecté */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80">
                   <div>
-                    <h3 className="font-black text-slate-800 text-lg">Rapport de Scout</h3>
-                    <p className="text-xs text-slate-500">Synthèse et projection du recrutement</p>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                      <Compass className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Scout Découvreur *</span>
+                    </label>
+                    <select
+                      value={discoveringScoutId}
+                      onChange={(e) => setDiscoveringScoutId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-medium focus:ring-2 focus:ring-primary/20"
+                      required
+                    >
+                      <option value="">-- Sélectionner un Scout --</option>
+                      {scoutMembers.map(s => (
+                        <option key={s.id} value={s.id}>{s.full_name} ({s.role_title})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-primary" />
+                      <span>Poste Détecté / Observé *</span>
+                    </label>
+                    <select
+                      value={primaryPosition}
+                      onChange={(e) => setPrimaryPosition(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold focus:ring-2 focus:ring-primary/20"
+                      required
+                    >
+                      {positions.map(p => (
+                        <option key={p.id || p.code} value={p.code}>
+                          {getMetricPositionFrenchName(p)}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-emerald-500" />
-                      Points forts
-                    </label>
-                    <RichTextEditor
-                      value={strengths}
-                      onChange={setStrengths}
-                      placeholder="Quelles sont les qualités majeures du joueur ?"
-                    />
+
+              </div>
+            )}
+
+            {/* ONGLET EVALUATION */}
+            {activeSection === 'evaluation' && (
+              <div className="p-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                {/* Bloc Métriques Configurées selon le Poste */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{positionConfig.emoji}</span>
+                      <div>
+                        <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                          <span>Métriques configurées pour le poste {getMetricPositionFrenchName(positionConfig)}</span>
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                            {positionConfig.category ? getMetricCategoryFrenchLabel(positionConfig.category) : 'Poste'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">Critères dynamiques configurés dans Paramétrage &gt; Configuration des métriques</p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                      <Target className="w-4 h-4 text-rose-500" />
-                      Points à développer
-                    </label>
-                    <RichTextEditor
-                      value={weaknesses}
-                      onChange={setWeaknesses}
-                      placeholder="Quels sont les axes d'amélioration ?"
-                    />
+                  {/* Onglets des 4 piliers */}
+                  <div className="flex gap-2 border-b border-slate-200 overflow-x-auto pb-2">
+                    {[
+                      { id: 'tech', label: 'Technique (25%)', icon: Zap, score: techScore },
+                      { id: 'tact', label: 'Tactique (25%)', icon: Compass, score: tactScore },
+                      { id: 'phys', label: 'Physique (25%)', icon: Zap, score: physScore },
+                      { id: 'ment', label: 'Mental (25%)', icon: Star, score: mentScore }
+                    ].map(tab => {
+                      const Icon = tab.icon;
+                      const isActive = activeEvalTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setActiveEvalTab(tab.id as any)}
+                          className={cn(
+                            "px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shrink-0",
+                            isActive
+                              ? "bg-primary text-white shadow-xs"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          )}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{tab.label}</span>
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-black",
+                            isActive ? "bg-white/20 text-white" : "bg-white text-slate-700"
+                          )}>
+                            {tab.score}/10
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                      <Star className="w-4 h-4 text-amber-500" />
-                      Projection
-                    </label>
-                    <RichTextEditor
-                      value={projection}
-                      onChange={setProjection}
-                      placeholder="Comment voyez-vous l'évolution du joueur au FUS ?"
-                    />
+                  {/* Grille des critères configurés pour le pilier sélectionné */}
+                  <div className="space-y-4">
+                    {activeEvalTab === 'tech' && renderPillarSection('technique', 'A', 'Techniques', 'Barème 1 à 10 spécifique au poste', techScore)}
+                    {activeEvalTab === 'tact' && renderPillarSection('tactique', 'B', 'Tactiques', 'Intelligence, vision & placement', tactScore)}
+                    {activeEvalTab === 'phys' && renderPillarSection('physique', 'C', 'Physiques & Athlétiques', 'Vitesse, endurance et profil athlétique', physScore)}
+                    {activeEvalTab === 'ment' && renderPillarSection('mental', 'D', 'Mentaux & Comportement', 'Mentalité, discipline et leadership', mentScore)}
+
+                    <div className="mt-4 p-4 rounded-2xl bg-blue-50/70 border border-blue-200/80 space-y-2">
+                      <label className="flex items-center gap-2 text-xs font-bold text-blue-900">
+                        <FileText className="w-4 h-4 text-blue-600" />
+                        <span>Rapport & Observations du Scout ({activeEvalTab === 'tech' ? 'Technique' : activeEvalTab === 'tact' ? 'Tactique' : activeEvalTab === 'phys' ? 'Physique' : 'Mental'})</span>
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={activeEvalTab === 'tech' ? techReport : activeEvalTab === 'tact' ? tactReport : activeEvalTab === 'phys' ? physReport : mentReport}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (activeEvalTab === 'tech') setTechReport(val);
+                          else if (activeEvalTab === 'tact') setTactReport(val);
+                          else if (activeEvalTab === 'phys') setPhysReport(val);
+                          else setMentReport(val);
+                        }}
+                        placeholder={`Observations et remarques du scout pour ce domaine...`}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-blue-200/90 bg-white text-xs resize-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {activeSection === 'report' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300 max-w-4xl mx-auto">
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                  <div className="flex items-center gap-2 mb-6 pb-4 border-b border-slate-200">
+                    <FileText className="w-5 h-5 text-primary" />
+                    <div>
+                      <h3 className="font-black text-slate-800 text-lg">Rapport de Scout</h3>
+                      <p className="text-xs text-slate-500">Synthèse et projection du recrutement</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-emerald-500" />
+                        Points forts
+                      </label>
+                      <RichTextEditor
+                        value={strengths}
+                        onChange={setStrengths}
+                        placeholder="Quelles sont les qualités majeures du joueur ?"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                        <Target className="w-4 h-4 text-rose-500" />
+                        Points à développer
+                      </label>
+                      <RichTextEditor
+                        value={weaknesses}
+                        onChange={setWeaknesses}
+                        placeholder="Quels sont les axes d'amélioration ?"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                        <Star className="w-4 h-4 text-amber-500" />
+                        Projection
+                      </label>
+                      <RichTextEditor
+                        value={projection}
+                        onChange={setProjection}
+                        placeholder="Comment voyez-vous l'évolution du joueur au FUS ?"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
 
-          {/* Footer Actions */}
-          <div className="pt-4 border-t flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow hover:bg-primary/90 disabled:opacity-50"
-            >
-              {isSubmitting ? 'Enregistrement...' : candidate ? 'Mettre à jour la Fiche' : 'Enregistrer le Joueur'}
-            </button>
+            {/* Footer Actions */}
+            <div className="pt-4 border-t flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-xl border text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold shadow hover:bg-primary/90 disabled:opacity-50"
+              >
+                {isSubmitting ? 'Enregistrement...' : candidate ? 'Mettre à jour la Fiche' : 'Enregistrer le Joueur'}
+              </button>
             </div>
           </div>
         </form>

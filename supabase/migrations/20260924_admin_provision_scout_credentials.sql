@@ -7,6 +7,9 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 -- Garantir que la colonne force_password_change existe sur user_profiles
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS force_password_change BOOLEAN NOT NULL DEFAULT false;
 
+DROP FUNCTION IF EXISTS public.admin_provision_scout_credentials(uuid, text, text, text, text, text);
+DROP FUNCTION IF EXISTS public.admin_provision_scout_credentials;
+
 -- Fonction RPC pour provisionner ou mettre à jour les identifiants d'un Scout avec mot de passe haché
 CREATE OR REPLACE FUNCTION public.admin_provision_scout_credentials(
   target_user_id uuid,
@@ -19,7 +22,7 @@ CREATE OR REPLACE FUNCTION public.admin_provision_scout_credentials(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, auth, extensionssi on la ssu
+SET search_path = public, auth, extensions
 AS $$
 DECLARE
   calling_user_id uuid;

@@ -66,7 +66,7 @@ export const DashboardLeagueStandingsWidget: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('U21');
 
   const availableCategories = useMemo(() => {
-    const merged = new Set<string>(['SENIOR', 'U23', ...PLAYER_CATEGORIES, ...frmfDataService.getCategories()]);
+    const merged = new Set<string>(['SENIOR', 'U25', ...PLAYER_CATEGORIES, ...frmfDataService.getCategories()]);
     return Array.from(merged);
   }, [frmfDataset]);
 

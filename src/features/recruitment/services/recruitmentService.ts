@@ -359,8 +359,8 @@ export const recruitmentService = {
           training_ground: 'Terrain Synthétique 1',
           target_team: 'Académie FUS',
           test_type: 'comprehensive',
-          category_age: s.category_age || 'U19',
-          age_category: s.category_age || 'U19',
+          category_age: s.category_age || 'U18',
+          age_category: s.category_age || 'U18',
           max_participants: 25,
           status: s.status || 'scheduled',
           notes: s.notes || undefined,
@@ -425,7 +425,7 @@ export const recruitmentService = {
         session_name: test.test_name,
         session_date: test.test_date,
         location: test.location,
-        category_age: test.age_category || 'U19',
+        category_age: test.age_category || 'U18',
         status: test.status || 'scheduled',
       }]);
       if (error) {

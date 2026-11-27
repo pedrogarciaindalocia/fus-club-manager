@@ -7,7 +7,7 @@ export type { Team };
 
 // Catégories autorisées par l'enum public.age_category dans PostgreSQL
 export const VALID_DB_TEAM_CATEGORIES = [
-  'U7', 'U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U19', 'U20', 'U21', 'U22', 'U23', 'SENIOR', 'PRO', 'OTHER'
+  'U7', 'U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14', 'U15', 'U16', 'U17', 'U18', 'U21', 'U25', 'SENIOR', 'PRO', 'OTHER'
 ] as const;
 
 const VALID_CATEGORIES_SET = new Set<string>(VALID_DB_TEAM_CATEGORIES);

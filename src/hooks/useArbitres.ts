@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { arbitreService } from '../services/arbitreService';
 import type { Arbitre, ArbitreFormData, RolePrincipalArbitre, StatutArbitre, GradeArbitre } from '../types/arbitre';
 import { toast } from 'sonner';
-import { AuditLogger } from '../services/auditLogger';
 
 export function useArbitres() {
   const [arbitres, setArbitres] = useState<Arbitre[]>([]);
@@ -62,14 +61,6 @@ export function useArbitres() {
       const created = await arbitreService.createArbitre(formData);
       setArbitres((prev) => [created, ...prev]);
       toast.success(`Arbitre ${created.prenom} ${created.nom} ajouté avec succès`);
-      
-      AuditLogger.logCreate(
-        'ARBITRES',
-        'ARBITRE',
-        String(created.id),
-        created,
-        `Création de la fiche d'arbitre ${created.prenom} ${created.nom} (${created.role_principal})`
-      );
       return created;
     } catch (err: any) {
       toast.error(err.message || 'Impossible d\'ajouter l\'arbitre');
@@ -78,20 +69,10 @@ export function useArbitres() {
   };
 
   const updateArbitre = async (id: number | string, formData: Partial<ArbitreFormData>) => {
-    const oldArbitre = arbitres.find(a => String(a.id) === String(id));
     try {
       const updated = await arbitreService.updateArbitre(id, formData);
       setArbitres((prev) => prev.map((a) => (String(a.id) === String(id) ? updated : a)));
       toast.success('Fiche arbitre mise à jour');
-
-      AuditLogger.logUpdate(
-        'ARBITRES',
-        'ARBITRE',
-        String(id),
-        oldArbitre || null,
-        updated,
-        `Mise à jour de la fiche arbitre ${updated.prenom} ${updated.nom}`
-      );
       return updated;
     } catch (err: any) {
       toast.error(err.message || 'Impossible de mettre à jour l\'arbitre');
@@ -100,19 +81,10 @@ export function useArbitres() {
   };
 
   const deleteArbitre = async (id: number | string) => {
-    const oldArbitre = arbitres.find(a => String(a.id) === String(id));
     try {
       await arbitreService.deleteArbitre(id);
       setArbitres((prev) => prev.filter((a) => String(a.id) !== String(id)));
       toast.success('Arbitre supprimé');
-
-      AuditLogger.logDelete(
-        'ARBITRES',
-        'ARBITRE',
-        String(id),
-        oldArbitre || null,
-        `Suppression de l'arbitre ${oldArbitre ? `${oldArbitre.prenom} ${oldArbitre.nom}` : `#${id}`}`
-      );
     } catch (err: any) {
       toast.error(err.message || 'Impossible de supprimer l\'arbitre');
       throw err;

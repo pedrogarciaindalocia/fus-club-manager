@@ -471,16 +471,21 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
 
       // 3. Diffuser l'événement en temps réel pour fus-app
       try {
-        await supabase.channel('scouting_basket_realtime').send({
-          type: 'broadcast',
-          event: 'basket_player_removed',
-          payload: {
-            playerId: player.player_id,
-            matchId: player.match_id,
-            fullName: player.full_name,
-            jerseyNumber: player.jersey_number,
-          },
-        });
+        const basketChannel = supabase.channel('scouting_basket_realtime');
+        try {
+          await basketChannel.send({
+            type: 'broadcast',
+            event: 'basket_player_removed',
+            payload: {
+              playerId: player.player_id,
+              matchId: player.match_id,
+              fullName: player.full_name,
+              jerseyNumber: player.jersey_number,
+            },
+          });
+        } finally {
+          supabase.removeChannel(basketChannel);
+        }
       } catch (broadcastErr) {
         console.warn('[ScoutingBasket] Broadcast error:', broadcastErr);
       }
@@ -733,10 +738,10 @@ export const ScoutingBasketSection: React.FC<ScoutingBasketSectionProps> = ({
                       {/* PASTILLE NOTE RONDE & BOUTON RETIRER */}
                       <div className="flex items-center gap-2">
                         <div className="flex flex-col items-center">
-                          <div className={cn("w-11 h-11 rounded-full border-2 flex items-center justify-center shadow-xs font-black text-sm", ratingBadge.bg, ratingBadge.text, ratingBadge.border)}>
+                          <div className={cn("w-11 h-11 rounded-full border-2 flex items-center justify-center shadow-xs font-black text-sm", ratingBadge.bg, ratingBadge.text, ratingBadge.border)} title={`Note de potentiel : ${player.rating ?? '—'}/10`}>
                             {player.rating != null ? `${player.rating}` : '—'}
                           </div>
-                          <span className="text-[10px] text-slate-500 font-bold mt-0.5">Note match</span>
+                          <span className="text-[10px] text-slate-500 font-bold mt-0.5">Note Potentiel</span>
                         </div>
                         {canUserAssign && (
                           <button

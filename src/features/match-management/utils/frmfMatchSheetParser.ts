@@ -447,7 +447,7 @@ export function categoryFromSeasonAge(seasonAge: number): string {
   if (seasonAge === 17) return 'U17';
   if (seasonAge === 18) return 'U18';
   if (seasonAge >= 19 && seasonAge <= 21) return 'U21';
-  if (seasonAge >= 22 && seasonAge <= 23) return 'U23';
+  if (seasonAge >= 22 && seasonAge <= 25) return 'U25';
   return 'SENIOR';
 }
 

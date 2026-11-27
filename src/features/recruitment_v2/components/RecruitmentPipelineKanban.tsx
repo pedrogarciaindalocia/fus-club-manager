@@ -211,7 +211,7 @@ export const RecruitmentPipelineKanban: React.FC<RecruitmentPipelineKanbanProps>
                                   {c.primary_position}
                                 </span>
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200/80">
-                                  {c.age_category || 'U19'}
+                                  {c.age_category || 'U18'}
                                 </span>
                               </div>
                             </div>

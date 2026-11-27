@@ -124,7 +124,7 @@ export const CandidateDriveLinkModal: React.FC<CandidateDriveLinkModalProps> = (
                 {candidate.first_name} {candidate.last_name}
               </h3>
               <p className="text-xs text-slate-400 truncate">
-                {candidate.primary_position} • {candidate.age_category || 'U19'} • {candidate.current_club || 'Club non renseigné'}
+                {candidate.primary_position} • {candidate.age_category || 'U18'} • {candidate.current_club || 'Club non renseigné'}
               </p>
             </div>
           </div>

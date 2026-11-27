@@ -269,7 +269,8 @@ export const playerDepartureService = {
 
   async createDeparture(input: CreatePlayerDepartureInput): Promise<PlayerDeparture> {
     const clubId = await getMyClubId();
-    const { data: authData } = await supabase.auth.getUser();
+    const { data: sessionRes } = await supabase.auth.getSession();
+    const authUser = sessionRes?.session?.user;
     const now = new Date().toISOString();
 
     const payload = {
@@ -284,7 +285,7 @@ export const playerDepartureService = {
       currency: input.currency || 'MAD',
       reason: (input.reason || '').trim(),
       notes: (input.notes || '').trim(),
-      created_by: authData?.user?.id || null,
+      created_by: authUser?.id || null,
       created_at: now,
       updated_at: now,
     };

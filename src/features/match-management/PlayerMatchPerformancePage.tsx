@@ -26,7 +26,6 @@ import { usePlayers } from '../../hooks/usePlayers';
 import { useTeams } from '../../hooks/useTeams';
 import { useMetricSets } from '../../hooks/useMetricSets';
 import { usePermissions } from '../../context/PermissionsContext';
-import { AuditLogger } from '../../services/auditLogger';
 import {
   PlayerPerformanceRadarChart,
   type RadarEvaluationSnapshot,
@@ -739,23 +738,6 @@ export const PlayerMatchPerformancePage: React.FC = () => {
           currentJobTitle
         );
 
-        void AuditLogger.logUpdate(
-          'PLAYERS',
-          'PLAYER_PERFORMANCE',
-          updated.id,
-          previousSnapshot,
-          {
-            technique_score: updated.technique_score,
-            tactique_score: updated.tactique_score,
-            physique_score: updated.physique_score,
-            mental_score: updated.mental_score,
-            global_score: updated.global_score,
-            position_code: updated.position_code,
-            evaluation_date: updated.evaluation_date,
-          },
-          `Mise à jour performance de ${selectedPlayer.full_name} (${formatDateFr(filterDate)}) : ${updated.global_score}/10`
-        );
-
         const freshList = await refreshPlayerEvaluations(selectedPlayer.id);
         setAllPlayerEvaluations(
           freshList.length > 0
@@ -796,19 +778,6 @@ export const PlayerMatchPerformancePage: React.FC = () => {
           currentJobTitle
         );
 
-        void AuditLogger.logCreate(
-          'PLAYERS',
-          'PLAYER_PERFORMANCE',
-          created.id,
-          {
-            player_id: created.player_id,
-            evaluation_date: created.evaluation_date,
-            position_code: created.position_code,
-            global_score: created.global_score,
-          },
-          `Enregistrement performance de ${selectedPlayer.full_name} (${formatDateFr(filterDate)}) : ${created.global_score}/10`
-        );
-
         const freshList = await refreshPlayerEvaluations(selectedPlayer.id);
         setAllPlayerEvaluations(
           freshList.length > 0 ? freshList : [...allPlayerEvaluations, created]
@@ -844,18 +813,6 @@ export const PlayerMatchPerformancePage: React.FC = () => {
         currentRole,
         currentJobTitle,
         { playerId: activeEval.player_id, matchId: activeEval.match_id }
-      );
-
-      void AuditLogger.logDelete(
-        'PLAYERS',
-        'PLAYER_PERFORMANCE',
-        activeEval.id,
-        {
-          player_id: activeEval.player_id,
-          evaluation_date: activeEval.evaluation_date,
-          global_score: activeEval.global_score,
-        },
-        `Suppression performance de ${selectedPlayer.full_name} (${formatDateFr(filterDate)})`
       );
 
       const freshList = await refreshPlayerEvaluations(selectedPlayer.id);

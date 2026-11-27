@@ -5,6 +5,7 @@ import {
   getCategoryRank,
   isHigherCategory,
   isLowerCategory,
+  isEligibleForSurclassement,
   getMobilityType,
   CATEGORY_ORDER,
   type MobilityType,
@@ -14,6 +15,7 @@ export {
   getCategoryRank,
   isHigherCategory,
   isLowerCategory,
+  isEligibleForSurclassement,
   getMobilityType,
   CATEGORY_ORDER,
   type MobilityType,
@@ -270,6 +272,9 @@ export const surclassementService = {
         if (!origTeamId || !targetTeamId) throw new Error('Impossible d’identifier les équipes pour historiser ce surclassement.');
 
         const currentLineup = currentMatchData?.lineup || {};
+        const isSousClassement = isLowerCategory(playerCategory, m.category);
+        const resolvedMobilityType: MobilityType = isSousClassement ? 'sous_classement' : 'surclassement';
+
         const updatedSurclasses = {
           ...(currentLineup.surclasses || {}),
           [player.id]: {
@@ -280,7 +285,7 @@ export const surclassementService = {
             photo_url: player.photo_url,
             original_category: playerCategory,
             target_category: m.category,
-            mobility_type: 'surclassement',
+            mobility_type: resolvedMobilityType,
             match_id: m.id,
             assigned_at: new Date().toISOString(),
           },
@@ -317,7 +322,7 @@ export const surclassementService = {
             opponent: m.opponent?.name || 'Adversaire',
             match_date: m.match_date,
             match_time: m.match_time,
-            mobility_type: 'surclassement',
+            mobility_type: resolvedMobilityType,
             reason: notes || null,
             roster_link_created: createdMatchPlayerLink,
           }),
