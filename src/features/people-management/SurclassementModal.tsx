@@ -17,7 +17,8 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
-import { isHigherCategory, isEligibleForSurclassement, isLowerCategory, surclassementService } from '../../services/surclassementService';
+import { isHigherCategory, isEligibleForSurclassement, isLowerCategory, surclassementService, isPlayerAssignedInLineup } from '../../services/surclassementService';
+import { normalizeAgeCategory } from '../../constants';
 import type { Player, Team, PlayerSurclassement } from '../../types';
 import type { SurclassementWithDetails } from '../../services/surclassementService';
 import { useQueryClient } from '@tanstack/react-query';
@@ -95,7 +96,8 @@ export default function SurclassementModal({
 
   // Équipe et catégorie réelles d'origine
   const currentTeam = originalTeam ?? teams.find(t => t.id === player.team_id);
-  const currentCategory = currentTeam?.category ?? player.category ?? '';
+  const rawCat = currentTeam?.category ?? player.category ?? '';
+  const currentCategory = normalizeAgeCategory(rawCat) || rawCat;
 
   const [tab, setTab] = useState<'action' | 'history'>('action');
 
@@ -106,9 +108,13 @@ export default function SurclassementModal({
   const [savingBatch, setSavingBatch] = useState(false);
   const [revertingAll, setRevertingAll] = useState(false);
 
+  const isPlayerAssignedInMatch = (matchObj: any): boolean => {
+    return isPlayerAssignedInLineup(matchObj?.lineup, player.id);
+  };
+
   const hasActiveSurclassement =
     history.some(s => s.status === 'active') ||
-    matches.some(m => !!m.lineup?.surclasses?.[player.id]);
+    matches.some(m => isPlayerAssignedInMatch(m));
 
   // Form inputs
   const [targetJerseyNumber, setTargetJerseyNumber] = useState<string>('');
@@ -120,60 +126,118 @@ export default function SurclassementModal({
     const fetchUpcomingMatches = async () => {
       try {
         setLoadingMatches(true);
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const { data, error } = await supabase
+        const now = new Date();
+        const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+        // 1. Récupération des clubs (pour assurer logo et nom même en l'absence de relation FK explicite)
+        const clubsMap = new Map<string, { name: string; logo_url: string | null }>();
+        try {
+          const { data: clubsData } = await supabase.from('clubs').select('id, name, logo_url');
+          (clubsData || []).forEach(c => clubsMap.set(c.id, { name: c.name, logo_url: c.logo_url }));
+        } catch {
+          // ignore non bloquant
+        }
+
+        // 2. Récupération des matchs non terminés et non annulés
+        let rawMatches: any[] = [];
+        const { data: matchesWithClubs, error: joinErr } = await supabase
           .from('matches')
           .select(`
             id, category, match_date, match_time, status, club_id, opponent_id, location, is_home, match_type, lineup, team_id,
             opponent:clubs!opponent_id(id, name, logo_url),
-            club:clubs!club_id(id, name, logo_url),
-            league:leagues!league_id(name)
+            club:clubs!club_id(id, name, logo_url)
           `)
-          .gte('match_date', todayStr)
-          .not('status', 'in', '("finished","completed","cancelled")')
+          .neq('status', 'finished')
+          .neq('status', 'cancelled')
           .order('match_date', { ascending: true });
 
-        if (error) throw error;
+        if (!joinErr && matchesWithClubs) {
+          rawMatches = matchesWithClubs;
+        } else {
+          // Fallback direct sans jointures FK si la relation échoue
+          const { data: fallbackMatches, error: fallbackErr } = await supabase
+            .from('matches')
+            .select('id, category, match_date, match_time, status, club_id, opponent_id, location, is_home, match_type, lineup, team_id')
+            .neq('status', 'finished')
+            .neq('status', 'cancelled')
+            .order('match_date', { ascending: true });
+
+          if (fallbackErr) throw fallbackErr;
+          rawMatches = fallbackMatches || [];
+        }
+
         if (!isMounted) return;
 
-        const raw = (data || []) as any[];
-
-        // RÈGLE MÉTIER FUS :
-        // 1. Proposer uniquement les matchs À VENIR (non terminés)
-        // 2. Éligibilité : catégorie supérieure (U14 -> U15, U16...) OU exception bidirectionnelle U25 <-> SENIOR
-        const { data: activeAssignments, error: assignmentsError } = await supabase
-          .from('player_surclassements')
-          .select('id, notes, original_category, target_category, target_jersey_number')
-          .eq('player_id', player.id)
-          .eq('status', 'active');
-        if (assignmentsError) throw assignmentsError;
-
-        const assignmentsByMatch = new Map<string, any>();
-        (activeAssignments || []).forEach((assignment: any) => {
-          try {
-            const details = typeof assignment.notes === 'string' ? JSON.parse(assignment.notes) : assignment.notes;
-            if (details?.match_id) assignmentsByMatch.set(String(details.match_id), assignment);
-          } catch { /* ignore ancienne note non JSON */ }
-        });
-
-        const higherMatches = raw.filter(m =>
-          m.category && isEligibleForSurclassement(currentCategory, m.category)
-        ).map(m => {
-          const assignment = assignmentsByMatch.get(String(m.id));
-          if (!assignment || m.lineup?.surclasses?.[player.id]) return m;
+        // Compléter les informations de clubs si manquantes
+        rawMatches = rawMatches.map(m => {
+          const oppInfo = m.opponent || (m.opponent_id ? clubsMap.get(m.opponent_id) : null);
+          const clubInfo = m.club || (m.club_id ? clubsMap.get(m.club_id) : null);
           return {
             ...m,
-            lineup: {
-              ...(m.lineup || {}),
-              surclasses: {
-                ...(m.lineup?.surclasses || {}),
+            opponent: oppInfo || { name: 'Adversaire', logo_url: null },
+            club: clubInfo || { name: 'FUS Rabat', logo_url: '/fus-logo.png' },
+          };
+        });
+
+        // 3. Charger les affectations actives du joueur dans player_surclassements
+        const assignmentsByMatch = new Map<string, any>();
+        try {
+          const { data: activeAssignments } = await supabase
+            .from('player_surclassements')
+            .select('id, notes, original_category, target_category, target_jersey_number')
+            .eq('player_id', player.id)
+            .eq('status', 'active');
+
+          (activeAssignments || []).forEach((assignment: any) => {
+            try {
+              const details = typeof assignment.notes === 'string' ? JSON.parse(assignment.notes) : assignment.notes;
+              if (details?.match_id) assignmentsByMatch.set(String(details.match_id), assignment);
+            } catch { /* ignore non-JSON */ }
+          });
+        } catch (assignErr) {
+          console.warn('Erreur chargement activeAssignments:', assignErr);
+        }
+
+        // RÈGLE MÉTIER FUS :
+        // 1. Proposer les matchs à venir / planifiés (non terminés)
+        // 2. Éligibilité : catégorie supérieure (ex: U18 -> U21, U25, SENIOR...) OU exception bidirectionnelle U25 <-> SENIOR
+        const higherMatches = rawMatches.filter(m => {
+          if (m.status === 'finished' || m.status === 'cancelled') return false;
+          const isOpenMatch = !m.match_date || m.match_date >= localToday || ['scheduled', 'planned', 'live', 'in_progress', 'paused'].includes(m.status);
+          if (!isOpenMatch) return false;
+
+          return m.category && isEligibleForSurclassement(currentCategory, m.category);
+        }).map(m => {
+          const assignment = assignmentsByMatch.get(String(m.id));
+          const alreadyAssigned = isPlayerAssignedInMatch(m);
+          if (!assignment || alreadyAssigned) return m;
+
+          const currentSurclasses = m.lineup?.surclasses;
+          const updatedSurclasses = Array.isArray(currentSurclasses)
+            ? [
+                ...currentSurclasses,
+                {
+                  player_id: player.id,
+                  original_category: assignment.original_category || currentCategory,
+                  target_category: assignment.target_category || m.category,
+                  match_id: m.id,
+                }
+              ]
+            : {
+                ...(currentSurclasses || {}),
                 [player.id]: {
                   player_id: player.id,
                   original_category: assignment.original_category || currentCategory,
                   target_category: assignment.target_category || m.category,
                   match_id: m.id,
                 },
-              },
+              };
+
+          return {
+            ...m,
+            lineup: {
+              ...(m.lineup || {}),
+              surclasses: updatedSurclasses,
             },
           };
         });
@@ -183,7 +247,7 @@ export default function SurclassementModal({
         // Pré-cocher les matchs où le joueur est déjà planifié
         const preselected = new Set<string>();
         higherMatches.forEach(m => {
-          if (m.lineup?.surclasses?.[player.id]) {
+          if (isPlayerAssignedInMatch(m)) {
             preselected.add(m.id);
           }
         });
@@ -200,7 +264,7 @@ export default function SurclassementModal({
   }, [player.id, currentCategory]);
 
   const canToggleMatch = (matchObj: any, currentlySelected: boolean) => {
-    const wasAssigned = !!matchObj?.lineup?.surclasses?.[player.id];
+    const wasAssigned = isPlayerAssignedInMatch(matchObj);
     if (currentlySelected) {
       // Décocher un match déjà assigné en base équivaut à une suppression d'affectation
       return wasAssigned ? canDelete : canCreate;
@@ -252,7 +316,7 @@ export default function SurclassementModal({
   // ── Sauvegarde du surclassement sur les matchs sélectionnés ──
   const handleSaveSurclassementBatch = async () => {
     if (!canMutateBatch) return;
-    const hasCurrentAssignments = matches.some(m => !!m.lineup?.surclasses?.[player.id]);
+    const hasCurrentAssignments = matches.some(m => isPlayerAssignedInMatch(m));
     if (selectedMatchIds.size === 0 && !hasCurrentAssignments) {
       toast.error('Sélectionnez au moins un match.');
       return;
@@ -463,7 +527,7 @@ export default function SurclassementModal({
                     <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                       {matches.map(m => {
                         const isSelected = selectedMatchIds.has(m.id);
-                        const wasAssigned = !!m.lineup?.surclasses?.[player.id];
+                        const wasAssigned = isPlayerAssignedInMatch(m);
                         const isToggleAllowed = canToggleMatch(m, isSelected);
                         const oppName = m.opponent?.name || 'Adversaire';
                         const oppLogo = m.opponent?.logo_url;
@@ -572,7 +636,7 @@ export default function SurclassementModal({
                 {matches.length > 0 && canMutateBatch ? (
                   <Button
                     onClick={handleSaveSurclassementBatch}
-                    disabled={(selectedMatchIds.size === 0 && !matches.some(m => !!m.lineup?.surclasses?.[player.id])) || savingBatch}
+                    disabled={(selectedMatchIds.size === 0 && !matches.some(m => isPlayerAssignedInMatch(m))) || savingBatch}
                     className="w-full h-12 rounded-2xl font-black uppercase tracking-widest text-xs gap-2 text-white bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 shadow-lg shadow-orange-200 transition-all"
                   >
                     {savingBatch ? (

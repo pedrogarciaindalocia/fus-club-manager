@@ -9,8 +9,10 @@ export function getCategoryRank(cat?: string | null): number {
   if (numMatch) {
     return parseInt(numMatch[1], 10);
   }
-  if (upper.includes('SENIOR')) return 30;
+  if (upper.includes('SENIOR') || upper === 'SR' || upper === 'SENIORS' || upper.includes('ÉLITE') || upper.includes('ELITE')) return 30;
   if (upper.includes('PRO')) return 40;
+  if (upper.includes('ESPOIR')) return 21;
+  if (upper.includes('RESERVE')) return 25;
   return 0;
 }
 

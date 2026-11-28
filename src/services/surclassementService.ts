@@ -38,6 +38,18 @@ export type CreateSurclassementPayload = {
   target_jersey_number?: number | null;
 };
 
+export const isPlayerAssignedInLineup = (lineup: any, playerId: string): boolean => {
+  const surclasses = lineup?.surclasses;
+  if (!surclasses) return false;
+  if (Array.isArray(surclasses)) {
+    return surclasses.some((s: any) => s?.player_id === playerId);
+  }
+  if (typeof surclasses === 'object') {
+    return !!surclasses[playerId];
+  }
+  return false;
+};
+
 export const surclassementService = {
   /** Tous les surclassements du club (avec jointures joueur + équipes) */
   async getAll(): Promise<SurclassementWithDetails[]> {
@@ -248,7 +260,7 @@ export const surclassementService = {
 
     for (const m of matches) {
       const isSelected = selectedMatchIds.has(m.id);
-      const wasAssigned = !!m.lineup?.surclasses?.[player.id];
+      const wasAssigned = isPlayerAssignedInLineup(m.lineup, player.id);
 
       if (isSelected && !wasAssigned) {
         const { data: currentMatchData, error: matchReadError } = await supabase
@@ -275,21 +287,30 @@ export const surclassementService = {
         const isSousClassement = isLowerCategory(playerCategory, m.category);
         const resolvedMobilityType: MobilityType = isSousClassement ? 'sous_classement' : 'surclassement';
 
-        const updatedSurclasses = {
-          ...(currentLineup.surclasses || {}),
-          [player.id]: {
-            player_id: player.id,
-            full_name: player.full_name,
-            jersey_number: targetJerseyNumber ?? player.jersey_number,
-            position: player.position,
-            photo_url: player.photo_url,
-            original_category: playerCategory,
-            target_category: m.category,
-            mobility_type: resolvedMobilityType,
-            match_id: m.id,
-            assigned_at: new Date().toISOString(),
-          },
+        const existingSurclasses = currentLineup.surclasses;
+        const newAssignment = {
+          player_id: player.id,
+          full_name: player.full_name,
+          jersey_number: targetJerseyNumber ?? player.jersey_number,
+          position: player.position,
+          photo_url: player.photo_url,
+          original_category: playerCategory,
+          target_category: m.category,
+          mobility_type: resolvedMobilityType,
+          match_id: m.id,
+          assigned_at: new Date().toISOString(),
         };
+
+        let updatedSurclasses: any;
+        if (Array.isArray(existingSurclasses)) {
+          const filtered = existingSurclasses.filter((s: any) => s?.player_id !== player.id);
+          updatedSurclasses = [...filtered, newAssignment];
+        } else {
+          updatedSurclasses = {
+            ...(existingSurclasses || {}),
+            [player.id]: newAssignment,
+          };
+        }
 
         // Pour un match en direct ou terminé, créer le lien joueur-match manquant
         // afin que la convocation et les statistiques historiques le prennent en compte.
@@ -348,8 +369,13 @@ export const surclassementService = {
           .from('matches').select('lineup, status').eq('id', m.id).single();
         if (matchReadError) throw matchReadError;
         const currentLineup = currentMatchData?.lineup || {};
-        const currentSurclasses = { ...(currentLineup.surclasses || {}) };
-        delete currentSurclasses[player.id];
+        let currentSurclasses: any;
+        if (Array.isArray(currentLineup.surclasses)) {
+          currentSurclasses = currentLineup.surclasses.filter((s: any) => s?.player_id !== player.id);
+        } else {
+          currentSurclasses = { ...(currentLineup.surclasses || {}) };
+          delete currentSurclasses[player.id];
+        }
 
         const historyRows = await readMatchHistory(m.id);
         const historyIds = historyRows.map(row => row.id);

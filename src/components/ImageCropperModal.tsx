@@ -128,11 +128,11 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-xl p-0 overflow-hidden bg-white border-none rounded-[2rem] shadow-2xl">
-        <DialogHeader className="p-6 bg-secondary/10 border-b">
+      <DialogContent className="sm:max-w-xl p-0 max-h-[94vh] flex flex-col overflow-y-auto bg-white border-none rounded-[2rem] shadow-2xl">
+        <DialogHeader className="p-4 sm:p-5 bg-secondary/10 border-b shrink-0">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <DialogTitle className="text-xl font-black uppercase tracking-tighter flex items-center gap-2">
+              <DialogTitle className="text-lg sm:text-xl font-black uppercase tracking-tighter flex items-center gap-2">
                 <Scissors className="w-5 h-5 text-primary" />
                 {title}
               </DialogTitle>
@@ -147,7 +147,7 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
         </DialogHeader>
 
         <div 
-          className="relative h-96 w-full bg-slate-900 border-y border-white/5 select-none overflow-hidden"
+          className="relative h-64 sm:h-80 w-full bg-slate-900 border-y border-white/5 select-none overflow-hidden shrink-0"
           onMouseMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             setCursorPos({
@@ -192,8 +192,8 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
           </div>
         </div>
 
-        <DialogFooter className="p-6 sm:p-8 space-y-6 sm:flex-col sm:items-stretch sm:space-x-0">
-          <div className="space-y-4">
+        <DialogFooter className="p-4 sm:p-6 space-y-4 sm:flex-col sm:items-stretch sm:space-x-0 shrink-0 bg-white">
+          <div className="space-y-3">
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
                 <ZoomIn className="w-4 h-4 text-primary" />
@@ -226,7 +226,7 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
                 size="icon"
                 onClick={() => handleZoomStep(-0.2)}
                 disabled={zoom <= 1}
-                className="h-9 w-9 rounded-xl shrink-0 border-secondary/60 hover:bg-secondary"
+                className="h-8 w-8 rounded-xl shrink-0 border-secondary/60 hover:bg-secondary"
                 title="Dézoomer"
               >
                 <Minus className="w-3.5 h-3.5" />
@@ -238,7 +238,7 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
                 max={3}
                 step={0.05}
                 onValueChange={(value: number[]) => setZoom(value[0])}
-                className="py-2 flex-1"
+                className="py-1 flex-1"
               />
 
               <Button
@@ -247,7 +247,7 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
                 size="icon"
                 onClick={() => handleZoomStep(0.2)}
                 disabled={zoom >= 3}
-                className="h-9 w-9 rounded-xl shrink-0 border-secondary/60 hover:bg-secondary"
+                className="h-8 w-8 rounded-xl shrink-0 border-secondary/60 hover:bg-secondary"
                 title="Zoomer"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -255,7 +255,7 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
             </div>
 
             {/* Boutons d'accès direct au zoom */}
-            <div className="flex items-center justify-center gap-2 pt-1">
+            <div className="flex items-center justify-center gap-2 pt-0.5">
               {[1, 1.25, 1.5, 2, 2.5, 3].map((val) => (
                 <button
                   key={val}
@@ -273,17 +273,17 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
             </div>
           </div>
 
-          <div className="flex gap-4 pt-4 border-t border-secondary/30">
+          <div className="flex gap-3 pt-3 border-t border-secondary/30">
             <Button 
               variant="outline" 
               onClick={onClose} 
-              className="flex-1 h-12 rounded-xl font-black uppercase tracking-widest text-[10px]"
+              className="flex-1 h-11 rounded-xl font-black uppercase tracking-widest text-[10px]"
             >
               Annuler
             </Button>
             <Button 
               onClick={handleConfirm} 
-              className="flex-1 h-12 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground"
+              className="flex-1 h-11 rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               Appliquer & Valider
             </Button>
